@@ -46,6 +46,9 @@ class AudioCfg:
 @dataclass
 class SonarCfg:
     """Proximity warnings. Walking speed ~1.3 m/s, so 4 s of look-ahead is ~5 m."""
+    engine: str = field(default_factory=lambda: os.environ.get("KITE_SONAR_ENGINE", "auto"))
+    # where the per-tick decisions run: "rust" (kite_audio.Sonar, identical cue stream),
+    # "python" (sonar.py), or "auto" = rust when the extension is built
     walk_speed_mps: float = 1.2       # assumed closing speed for static obstacles
     corridor_half_width_m: float = 0.55   # half shoulder width + margin
     corridor_margin_m: float = 0.35       # soft edge: partial urgency just outside the corridor

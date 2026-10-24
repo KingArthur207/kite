@@ -132,8 +132,8 @@ class FakeCapture:
 def fake_cams(monkeypatch):
     FakeCapture.opened = []
     monkeypatch.setattr(cv2, "VideoCapture", FakeCapture)
-    monkeypatch.setattr(cams, "opencv_cameras", lambda: [(0, "MacBook Pro Camera", "A"), (1, "Arthur's iPhone Camera", "B")])
-    monkeypatch.setattr(cams, "system_cameras", lambda: ["MacBook Pro Camera", "Arthur's iPhone Camera",
+    monkeypatch.setattr(cams, "opencv_cameras", lambda: [(0, "MacBook Pro Camera", "A"), (1, "Kite's iPhone Camera", "B")])
+    monkeypatch.setattr(cams, "system_cameras", lambda: ["MacBook Pro Camera", "Kite's iPhone Camera",
                                                          "MacBook Pro Desk View Camera"])
 
 
@@ -158,7 +158,7 @@ def test_webcam_by_name_and_options(fake_cams):
     with open_source("webcam:iphone", cam_height=1.1, pitch=-10, hfov_deg=90) as src:
         ok, img = src.read()
         assert ok and int(img[0, 0, 0]) == 11  # index 1
-        assert src.name == "webcam:1 Arthur's iPhone Camera"
+        assert src.name == "webcam:1 Kite's iPhone Camera"
         assert src.pose["cam_height"] == 1.1 and src.pose["pitch"] == -10
         assert src.camera.fx == pytest.approx(640.0)  # 90 deg over 1280 px
     with open_source("webcam:1", camera=Camera(640, 360, 500, 500, 320, 180, "calibrated")) as src:
@@ -361,10 +361,10 @@ def test_list_cameras_cli(fake_cams, monkeypatch, capsys):
     monkeypatch.setattr(cams, "camera_permission", lambda: "authorized")
     assert op.main(["--list-cameras"]) == 0
     out = capsys.readouterr().out
-    assert "1  Arthur's iPhone Camera" in out and "Desk View" in out and "authorized" in out
+    assert "1  Kite's iPhone Camera" in out and "Desk View" in out and "authorized" in out
 
 
 def test_camera_name_match():
-    assert cams._match("iphone", ["MacBook Pro Camera", "Arthur's iPhone Camera"]) == "Arthur's iPhone Camera"
+    assert cams._match("iphone", ["MacBook Pro Camera", "Kite's iPhone Camera"]) == "Kite's iPhone Camera"
     assert cams._match("macbook pro camera", ["MacBook Pro Camera Extra", "MacBook Pro Camera"]) == "MacBook Pro Camera"
     assert cams._match("zzz", ["a"]) is None

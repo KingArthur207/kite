@@ -43,9 +43,11 @@ export function pbr(name: string, sizeM: number, o: PbrOpts = {}) {
   });
 }
 
-/** Facade materials by key. Sizes are the Poly Haven scan sizes. Tinted per building via vertex colours. */
+/** Facade materials by key: metres of wall one texture tile covers, measured off the texture against real
+ *  sizes (brick: 14 courses a tile at 7.5 cm, a US modular brick with mortar; siding: 20 boards at 12 cm;
+ *  concrete: 4 form panels at 0.9 m; metal: 32 corrugations at 8 cm). Tinted per building via vertex colours. */
 export const FACADE_SIZES = {
-  stucco: 2.0, plaster: 3.2, brick: 3.0, concrete: 2.7, metal: 2.7, siding: 1.8,
+  stucco: 2.0, plaster: 3.2, brick: 1.05, concrete: 3.6, metal: 2.7, siding: 2.4,
 } as const;
 export type FacadeKind = keyof typeof FACADE_SIZES;
 

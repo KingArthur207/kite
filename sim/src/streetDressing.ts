@@ -11,7 +11,7 @@ import { loadCar, type CarName } from "./actors";
 import { WALKER_RADIUS } from "./config";
 import { pbr, seeded } from "./osmLook";
 import { inPoly, inQuad, segDist, type Garage } from "./osmFacades";
-import { along, nearestOnRoads, offsetPts, type StreetData } from "./osmStreet";
+import { along, curbOffsets, nearestOnRoads, offsetPts, type StreetData } from "./osmStreet";
 import {
   LeafSoup, blobTexture, cartGeo, coverTexture, hydrantGeo, leafTexture, limb, litterCanGeo, mulchTexture,
   noParkingTexture, scooterGeo, signPostGeo, streetNameTexture, streetTree, wireGeo,
@@ -23,7 +23,7 @@ type Data = StreetData & { route: P[] };
 
 const CURB_H = 0.15;
 const ROUTE_CLEAR = WALKER_RADIUS + 0.2;   // m: free gap kept between any prop and the demo route
-const PARK_FROM_CURB = 1.0;                // m: parked car centre to curb face
+const PARK_FROM_CURB = 1.25;               // m: parked car centre to curb face (mirrors just clear of the curb)
 const POLE_EVERY = 30, POLE_H = 10.5, ARM_H = 9.6, COMM_H = 7.2;
 const AREA = { w: -60, e: 130, s: -135, n: 60 };   // where dressing goes: Moss and the Howard corner
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
@@ -161,7 +161,7 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   const place = (g: THREE.BufferGeometry, p: P, y: number, u: P = [1, 0]) =>
     g.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(u[1], u[0])).setPosition(p[0], y, -p[1]));
   const mossU = (p: P) => nearestOnRoads([moss], p).u;
-  const mossCurb = (side: 0 | 1, inset: number) => offsetPts(moss.pts, side ? moss.curbs[1] + inset : moss.curbs[0] - inset);
+  const mossCurb = (side: 0 | 1, inset: number) => offsetPts(moss.pts, curbOffsets(moss, side, inset));
 
   // --- utility poles along Moss's SW curb: crossarm with three primaries, two comms cables lower
   // down, a cobra-head light, a transformer on every other pole, service drops to the houses.
@@ -220,22 +220,31 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
 
   // --- street trees in pits: Moss SW sidewalk, both Howard sidewalks.
   const leaves = new LeafSoup();
-  const tree = (p: P, seed: number, h: number) => {
+  const tree = (p: P, seed: number, h: number, size: { crownR?: number; trunkR?: number } = {}) => {
     const rnd = seeded(seed);
     const y = ys(p), u = mossU(p);
-    batch.put(M.bark, streetTree(v3(p, y), h, seed, leaves));
+    batch.put(M.bark, streetTree(v3(p, y), h, seed, leaves, size));
     batch.put(M.mulch, place(new THREE.PlaneGeometry(1.0, 1.0).rotateX(-Math.PI / 2).translate(0, 0.006, 0), p, y, u));
     for (const s of [-1, 1]) for (const o of [0, 1]) {   // thin steel edge around the basin
       const e = o ? new THREE.BoxGeometry(1.04, 0.02, 0.03).translate(0, 0.01, s * 0.51) : new THREE.BoxGeometry(0.03, 0.02, 1.04).translate(s * 0.51, 0.01, 0);
       batch.put(M.metal, place(e, p, y, u));
     }
-    batch.segs.push(...boxSegs(p, u, 0.2, 0.2));
+    const half = size.trunkR ? Math.max(0.1, size.trunkR * 1.15 + 0.03) : 0.2;   // the trunk's base
+    batch.segs.push(...boxSegs(p, u, half, half));
     return rnd;
   };
   let seed = 100;
-  // DataSF's street tree inventory (moss.json furniture) puts real trees at their surveyed spots in osmStreet.ts;
-  // only invent trees when that inventory isn't there.
-  const inventoryTrees = data.furniture.some((f) => f.kind === "tree");
+  // DataSF's street tree inventory (moss.json furniture): real trees at their surveyed spots, sized from
+  // the inventory's height and trunk diameter, crown width by species. Invent trees only without it.
+  const inventory = data.furniture.filter((f) => f.kind === "tree" && !/stump/i.test(f.tags.species ?? ""));
+  for (const f of inventory) {
+    const p: P = [f.x, f.y];
+    const h = Number(f.tags.height_m) || 6;
+    const dbh = Number(f.tags.dbh_in) * 0.0254;   // trunk diameter at breast height, m
+    props.push({ p, r: 0.5 });
+    tree(p, f.id, h, { crownR: crownRadius(f.tags.species ?? "", h), trunkR: dbh > 0 ? Math.max(0.05, dbh / 2) : undefined });
+  }
+  const inventoryTrees = inventory.length > 0;
   if (!inventoryTrees) for (const { p } of along(mossCurb(0, 0.65), 5, 8.5)) {
     const rnd = seeded(seed++);
     if (rnd() < 0.3 || !clear(p, 0.5) || poles.some((o) => dist(o.p, p) < 3)) continue;
@@ -344,12 +353,22 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   return batch.segs;
 }
 
+/** Rough crown radius by species as a fraction of tree height (street trees, pruned for clearance). */
+const CROWN: [RegExp, number][] = [
+  [/tristaniopsis|ginkgo|pyrus|callistemon|dodonaea|pittosporum|lyonothamnus|syagrus|pinus/i, 0.22],
+  [/magnolia|lophostemon|ligustrum|rhaphiolepis|arbutus|elaeocarpus|ceratonia/i, 0.28],
+  [/platanus|ulmus|ficus|celtis|acer|prunus/i, 0.36],
+];
+function crownRadius(species: string, h: number) {
+  return h * (CROWN.find(([re]) => re.test(species))?.[1] ?? 0.3);
+}
+
 // --- parked cars: NE curb of Moss, nose SE (Moss is one-way SE), gaps at driveways and corners.
 const PARKED: CarName[] = ["sedan", "suv", "sedan2", "sedan", "suv", "sedan2", "sedan"];
 const PAINT = [0xb9bcc0, 0xe9e8e4, 0x15171a, 0x4a4f56, 0x1d2a45, 0x6b1a1e, 0xa9a08c, 0x8d9499, 0xdcdcd8, 0x2a3a2f, 0x2b2d31];
 
 function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: StreetData["roads"][number], _props: P[], hydrant: P | null, segs: Seg[]) {
-  const line = offsetPts(moss.pts, moss.curbs[1] - PARK_FROM_CURB);
+  const line = offsetPts(moss.pts, curbOffsets(moss, 1, -PARK_FROM_CURB));   // the surveyed curb, so cars stay in the parking lane
   const len = line.slice(1).reduce((s, b, i) => s + dist(line[i], b), 0);
   const blocked: [number, number][] = [];
   for (const c of data.crossings) if (c.road === moss.id) { const s = sOn(line, [c.x, c.y]); blocked.push([s - 9, s + 7]); }
@@ -389,7 +408,7 @@ function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: Str
     const r2 = seeded(i * 7 + 3);
     const yaw = (r2() - 0.5) * 0.03;
     const u: P = [pose.u[0] * Math.cos(yaw) - pose.u[1] * Math.sin(yaw), pose.u[0] * Math.sin(yaw) + pose.u[1] * Math.cos(yaw)];
-    const p = add(pose.p, [-u[1], u[0]], (r2() - 0.5) * 0.2);
+    const p = add(pose.p, [-u[1], u[0]], (r2() - 0.5) * 0.1);
     segs.push(...boxSegs(p, u, slot.len / 2, 0.92));
     shadows.rect(add(p, u, slot.len * 0.25), u, 1.0, 0.8, 0.008, [0.12, 0.11, 0.1, 0.35]);   // oil drip under the engine
     const paint = PAINT[Math.floor(r2() * PAINT.length)];

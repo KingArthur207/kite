@@ -333,6 +333,17 @@ def test_default_drone_is_a_dry_run(monkeypatch):
     assert seen == {"dry_run": True}
 
 
+def test_checks_the_chosen_video_backend(monkeypatch):
+    import kite.drone
+
+    seen = []
+    monkeypatch.setattr(kite.drone, "make_tello", lambda cfg, dry_run=False: seen.append(cfg.drone.video_backend)
+                        or FakeLinkDrone())
+    pf.drone_checks(**FAST, video_backend="opencv")
+    pf.drone_checks(**FAST)
+    assert seen == ["opencv", "pyav"]  # None: the config default (socket is opt-in)
+
+
 def test_through_the_real_drone_layer_sends_no_motion():
     """TelloDrone(dry_run) inside SafetyGovernor, as kite.record builds it: the raw state / command channel is found
     through both wrappers and only 'command' and the read-only queries reach the drone."""
@@ -385,7 +396,7 @@ def test_run_drone_flag_forces_it_and_busy_ports_block_it(monkeypatch):
 
 def test_main_go_prints_next_command(monkeypatch, capsys):
     all_go(monkeypatch)
-    monkeypatch.setattr(pf, "drone_checks", lambda make_drone=None: [pf.Check("drone battery", pf.GO, "90%")])
+    monkeypatch.setattr(pf, "drone_checks", lambda make_drone=None, **kw: [pf.Check("drone battery", pf.GO, "90%")])
     assert pf.main([]) == 0
     out = capsys.readouterr().out
     assert "GO (warnings: camera calibration). Next:" in out
@@ -394,7 +405,7 @@ def test_main_go_prints_next_command(monkeypatch, capsys):
 
 def test_main_no_go_exit_code(monkeypatch, capsys):
     all_go(monkeypatch)
-    monkeypatch.setattr(pf, "drone_checks", lambda make_drone=None: [pf.Check("drone battery", pf.NO_GO, "40%")])
+    monkeypatch.setattr(pf, "drone_checks", lambda make_drone=None, **kw: [pf.Check("drone battery", pf.NO_GO, "40%")])
     assert pf.main([]) == 1
     out = capsys.readouterr().out
     assert "NO-GO: drone battery." in out and "kite.record" not in out

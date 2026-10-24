@@ -9,7 +9,8 @@ import { Geo, facadeMaterial, pbr, seeded, type FacadeKind } from "./osmLook";
 
 type P = [number, number];
 type Quad = P[];
-export interface Building { id: number; h: number; pts: P[]; tags?: Record<string, string>; storefront?: boolean }
+/** pts: the roof outline. ground: the ground-floor outline where bays overhang the sidewalk from bay_z up. */
+export interface Building { id: number; h: number; pts: P[]; ground?: P[]; bay_z?: number; tags?: Record<string, string>; storefront?: boolean }
 /** A garage door on a street front: centre on the wall, along-wall unit u, outward normal n, width. */
 export interface Garage { x: number; n: number; u: P; out: P; w: number }
 
@@ -107,11 +108,12 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
   const trim = new Geo();
   const roofs: THREE.BufferGeometry[] = [];
   const garages: Garage[] = [];
-  const rings = buildings.map((b) => {
-    const r = b.pts.slice();
+  const open = (pts: P[]) => {   // ring without the closing point
+    const r = pts.slice();
     if (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) r.pop();
     return r;
-  });
+  };
+  const rings = buildings.map((b) => open(b.pts));
   const edges = rings.flatMap((r, bi) => r.map((a, i) => ({ bi, a, b: r[(i + 1) % r.length] })));
 
   const isParty = (bi: number, a: P, b: P) => {
@@ -146,73 +148,90 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     const trimColor = new THREE.Color(residential ? (rnd() < 0.75 ? 0xf3f0e8 : 0x4a4f55) : rnd() < 0.5 ? 0x3b3833 : 0x8d9296);
     const paneTint = () => new THREE.Color().setHSL(0.58, 0.12, rnd() < 0.15 ? 0.45 : 0.1 + rnd() * 0.08);
     const g = walls.get(kind) ?? walls.set(kind, new Geo()).get(kind)!;
-    const area = ring.reduce((s, p, i) => s + p[0] * ring[(i + 1) % ring.length][1] - ring[(i + 1) % ring.length][0] * p[1], 0);
     let s0 = rnd() * 10;
 
     const roof = new THREE.ShapeGeometry(new THREE.Shape(ring.map(([x, y]) => new THREE.Vector2(x, y))));
     roofs.push(roof.rotateX(-Math.PI / 2).translate(0, b.h, 0));
 
-    ring.forEach((a, i) => {
-      const c = ring[(i + 1) % ring.length];
-      const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
-      if (L < 0.05) return;
-      const u: P = [(c[0] - a[0]) / L, (c[1] - a[1]) / L];
-      const out: P = area > 0 ? [u[1], -u[0]] : [-u[1], u[0]];
-      if (skip.has(`${b.id}:${i}`)) { s0 += L; return; }
-      const n3 = new THREE.Vector3(out[0], 0, -out[1]);
-      g.quad([v3(a, 0), v3(c, 0), v3(c, b.h), v3(a, b.h)], n3, [[s0, 0], [s0 + L, 0], [s0 + L, b.h], [s0, b.h]], color);
-      s0 += L;
-      if (isParty(bi, a, c)) return;   // shared wall: blank
-      const at = (t: number, o = 0): P => [a[0] + u[0] * t + out[0] * o, a[1] + u[1] * t + out[1] * o];
-      cornice(trim, a, c, out, b.h - CORNICE_H, b.h, CORNICE_OUT, trimColor);
-      if (L < 1.4) return;
-      const street = isStreet(bi, at(L / 2), out);
-      const place = (k: KindName, t: number, y: number, frame = trimColor, pane = paneTint(), o = 0, oo = out) =>
-        inst[k].push({ m: basis(at(t, o), y, oo), frame, pane });
-      const busy: [number, number][] = [];   // along-wall spans taken by bays (upper floors)
+    // Where OSM's roof outline has bays over the sidewalk, the ground floor follows `ground` up to bay_z,
+    // and the roof outline starts there, with a soffit under the overhang.
+    const ground = b.ground ? open(b.ground) : null;
+    const bayZ = Math.min(b.bay_z ?? STOREY, b.h);
+    const parts = ground && ground.length >= 3
+      ? [{ ring: ground, y0: 0, y1: bayZ, low: true, high: false }, { ring, y0: bayZ, y1: b.h, low: false, high: true }]
+      : [{ ring, y0: 0, y1: b.h, low: true, high: true }];
+    if (parts.length > 1) {
+      const down = new THREE.Vector3(0, -1, 0);
+      for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(ring.map(([x, y]) => new THREE.Vector2(x, y)), [])) {
+        const t = [ring[i], ring[j], ring[k], ring[k]];
+        g.quad(t.map((q) => v3(q, bayZ)), down, t.map((q) => [q[0], q[1]] as [number, number]), color);
+      }
+    }
 
-      // Ground floor on street fronts.
-      if (street && b.storefront) {
-        const n = Math.max(1, Math.floor((L - 0.6) / 3.1));
-        for (let j = 0; j < n; j++) place("shop", L / 2 + (j - (n - 1) / 2) * 3.1, 0.35 + KINDS.shop.h / 2, new THREE.Color(0x2c2b29));
-        cornice(trim, a, c, out, 2.95, 3.35, 0.08, new THREE.Color(0x26282b));   // sign band
-      } else if (street && residential) {
-        const lots = Math.max(1, Math.round(L / LOT)), lw = L / lots;
-        cornice(trim, a, c, out, sh - 0.12, sh + 0.04, 0.07, trimColor);         // belt course
-        for (let j = 0; j < lots; j++) {
-          const t0 = j * lw;
-          if (lw >= 4.6) {
-            const gt = t0 + lw * 0.32;
-            place("garage", gt, 0.05 + KINDS.garage.h / 2, trimColor, new THREE.Color(rnd() < 0.5 ? 0xe8e6e0 : 0xa8adb0));
-            garages.push({ x: at(gt)[0], n: at(gt)[1], u, out, w: KINDS.garage.w });
-          } else if (lw >= 2.2) place("res", t0 + lw * 0.3, 1.5, trimColor);
-          if (lw >= 2.2) place("door", t0 + lw * 0.78, 0.15 + KINDS.door.h / 2, trimColor,
-            new THREE.Color([0x7a2e2a, 0x24324a, 0x1e1e1e, 0x6b4a32, 0xe8e4da][Math.floor(rnd() * 5)]));
-          // Bay window over the garage, storey 1 to the top.
-          if (levels >= 2 && lw >= 4.2 && rnd() < 0.65) {
-            const cx = t0 + lw / 2;
-            bay(g, trim, at, cx, sh - 0.15, b.h - CORNICE_H - 0.05, color, trimColor, (k, p, y, oo) =>
-              inst[k].push({ m: basis(p, y, oo), frame: trimColor, pane: paneTint() }), sh, levels);
-            busy.push([cx - 1.7, cx + 1.7]);
+    for (const { ring, y0, y1, low, high } of parts) {
+      const area = ring.reduce((s, p, i) => s + p[0] * ring[(i + 1) % ring.length][1] - ring[(i + 1) % ring.length][0] * p[1], 0);
+      ring.forEach((a, i) => {
+        const c = ring[(i + 1) % ring.length];
+        const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (L < 0.05) return;
+        const u: P = [(c[0] - a[0]) / L, (c[1] - a[1]) / L];
+        const out: P = area > 0 ? [u[1], -u[0]] : [-u[1], u[0]];
+        if (high && skip.has(`${b.id}:${i}`)) { s0 += L; return; }
+        const n3 = new THREE.Vector3(out[0], 0, -out[1]);
+        g.quad([v3(a, y0), v3(c, y0), v3(c, y1), v3(a, y1)], n3, [[s0, y0], [s0 + L, y0], [s0 + L, y1], [s0, y1]], color);
+        s0 += L;
+        if (isParty(bi, a, c)) return;   // shared wall: blank
+        const at = (t: number, o = 0): P => [a[0] + u[0] * t + out[0] * o, a[1] + u[1] * t + out[1] * o];
+        if (high) cornice(trim, a, c, out, b.h - CORNICE_H, b.h, CORNICE_OUT, trimColor);
+        if (L < 1.4) return;
+        const street = isStreet(bi, at(L / 2), out);
+        const place = (k: KindName, t: number, y: number, frame = trimColor, pane = paneTint(), o = 0, oo = out) =>
+          inst[k].push({ m: basis(at(t, o), y, oo), frame, pane });
+        const busy: [number, number][] = [];   // along-wall spans taken by bays (upper floors)
+
+        // Ground floor on street fronts.
+        if (!low) { /* upper part only */ } else if (street && b.storefront) {
+          const n = Math.max(1, Math.floor((L - 0.6) / 3.1));
+          for (let j = 0; j < n; j++) place("shop", L / 2 + (j - (n - 1) / 2) * 3.1, 0.35 + KINDS.shop.h / 2, new THREE.Color(0x2c2b29));
+          cornice(trim, a, c, out, 2.95, 3.35, 0.08, new THREE.Color(0x26282b));   // sign band
+        } else if (street && residential) {
+          const lots = Math.max(1, Math.round(L / LOT)), lw = L / lots;
+          cornice(trim, a, c, out, sh - 0.12, sh + 0.04, 0.07, trimColor);         // belt course
+          for (let j = 0; j < lots; j++) {
+            const t0 = j * lw;
+            if (lw >= 4.6) {
+              const gt = t0 + lw * 0.32;
+              place("garage", gt, 0.05 + KINDS.garage.h / 2, trimColor, new THREE.Color(rnd() < 0.5 ? 0xe8e6e0 : 0xa8adb0));
+              garages.push({ x: at(gt)[0], n: at(gt)[1], u, out, w: KINDS.garage.w });
+            } else if (lw >= 2.2) place("res", t0 + lw * 0.3, 1.5, trimColor);
+            if (lw >= 2.2) place("door", t0 + lw * 0.78, 0.15 + KINDS.door.h / 2, trimColor,
+              new THREE.Color([0x7a2e2a, 0x24324a, 0x1e1e1e, 0x6b4a32, 0xe8e4da][Math.floor(rnd() * 5)]));
+            // Bay window over the garage, storey 1 to the top.
+            if (high && levels >= 2 && lw >= 4.2 && rnd() < 0.65) {
+              const cx = t0 + lw / 2;
+              bay(g, trim, at, cx, sh - 0.15, b.h - CORNICE_H - 0.05, color, trimColor, (k, p, y, oo) =>
+                inst[k].push({ m: basis(p, y, oo), frame: trimColor, pane: paneTint() }), sh, levels);
+              busy.push([cx - 1.7, cx + 1.7]);
+            }
           }
+        } else if (street) {
+          if (L > 6 && rnd() < 0.6) {
+            place("rollup", L * (0.25 + rnd() * 0.5), 0.05 + KINDS.rollup.h / 2, trimColor, new THREE.Color(0xc0c4c6));
+          } else rowOfWindows(L, 3.4, (t) => place("ind", t, Math.min(sh * 0.5, 1.9)));
         }
-      } else if (street) {
-        if (L > 6 && rnd() < 0.6) {
-          place("rollup", L * (0.25 + rnd() * 0.5), 0.05 + KINDS.rollup.h / 2, trimColor, new THREE.Color(0xc0c4c6));
-        } else rowOfWindows(L, 3.4, (t) => place("ind", t, Math.min(sh * 0.5, 1.9)));
-      }
 
-      // Upper storeys (and the ground floor of back walls).
-      const wk: KindName = residential ? "res" : "ind";
-      const pitch = residential ? 2.3 : 3.4;
-      for (let k = street ? 1 : 0; k < levels; k++) {
-        const y = k * sh + Math.min(sh * 0.55, 1.95);
-        if (y + KINDS[wk].h / 2 > b.h - CORNICE_H - 0.1) continue;
-        rowOfWindows(L, pitch, (t) => {
-          if (!busy.some(([lo, hi]) => t > lo - 0.6 && t < hi + 0.6)) place(wk, t, y);
-        });
-      }
-    });
+        // Upper storeys (and the ground floor of back walls).
+        const wk: KindName = residential ? "res" : "ind";
+        const pitch = residential ? 2.3 : 3.4;
+        for (let k = street ? 1 : 0; k < levels; k++) {
+          const y = k * sh + Math.min(sh * 0.55, 1.95);
+          if (y - KINDS[wk].h / 2 < y0 || y + KINDS[wk].h / 2 > y1 - (high ? CORNICE_H : 0) - 0.1) continue;
+          rowOfWindows(L, pitch, (t) => {
+            if (!busy.some(([lo, hi]) => t > lo - 0.6 && t < hi + 0.6)) place(wk, t, y);
+          });
+        }
+      });
+    }
   });
 
   for (const [kind, geo] of walls) {
