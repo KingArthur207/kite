@@ -246,3 +246,22 @@ def test_caregiver_can_add_memories_over_the_wire(app):
     assert wait_for(lambda: any("library" in m.text for m in app.memory.docs.values()), 2)
     app.heard("remember that the elevator at the station is out of order")
     assert wait_for(lambda: any("elevator" in m.text for m in app.memory.docs.values()), 2)
+
+
+def test_walk_signal_needs_to_hold_but_dont_walk_is_instant(app):
+    c = client(app, "drone")
+    c.hazard("crosswalk", state="dont_walk", bearing=0, distance=6)
+    assert wait_for(lambda: "Don't walk." in spoken(app), 2)
+    # a single-frame "walk" misread, contradicted 0.2 s later: never announced
+    c.hazard("crosswalk", state="walk", bearing=0, distance=6)
+    time.sleep(0.2)
+    c.hazard("crosswalk", state="dont_walk", bearing=0, distance=6)
+    time.sleep(1.0)
+    assert "Walk signal is on." not in spoken(app)
+    # a real change, reported steadily: announced after it holds
+    t0 = time.time()
+    for _ in range(10):
+        c.hazard("crosswalk", state="walk", bearing=0, distance=6)
+        time.sleep(0.1)
+    assert wait_for(lambda: "Walk signal is on." in spoken(app), 3)
+    assert spoken(app).count("Walk signal is on.") == 1

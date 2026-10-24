@@ -207,3 +207,17 @@ def test_tool_validation():
 ])
 def test_wake_word(text, woke, rest):
     assert strip_wake(text, ()) == (woke, rest)
+
+
+def test_line_that_finishes_as_it_is_preempted_is_not_repeated(spk):
+    """Race: a hazard arrives in the last instant of a nav line. The nav line completed,
+    so it must not be re-queued and said a second time."""
+    spk.say("short nav line", "nav", ttl=10)
+    assert wait_for(lambda: spk._current is not None, 2)
+    time.sleep(0.13)                      # the fake TTS line is 0.15 s long: preempt at its very end
+    spk.say("Careful.", "hazard")
+    assert wait_for(lambda: not spk.busy and len(spk.history) >= 2, 5)
+    time.sleep(0.4)
+    texts = [h["text"] for h in spk.history]
+    assert texts.count("short nav line") == 1 or ("short nav line", "cut") in results(spk)
+    assert sum(1 for h in spk.history if h["text"] == "short nav line" and h["result"] == "done") == 1
