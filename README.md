@@ -391,7 +391,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 - **The drone flies about 30 cm above and behind the walker's head**, not out in front. From there it sees the route, crowds and crossings ahead without getting between the walker and the street. The sim mounts its virtual drone camera the same way (0.3 m above the head, 1 m behind, 960×720 like the Tello stream).
 - **The chest camera covers the near field**: the ground at the walker's feet that the drone can't see, plus anything sudden, like a cyclist, a bin or a sign at head height.
 - **AirPods are a managed output device.** Kite prefers them by name, announces connects and disconnects, warns on low AirPods battery, and turns stem presses into talk, repeat and pause.
-- **The kit:** a DJI Tello (standard model), a chest-worn webcam or phone, AirPods, and a laptop running the earpiece. [`tests/drone_test.py`](tests/drone_test.py) measures the Tello's command, video and motion lag.
+- **The kit:** a DJI Tello (standard model), a chest-worn webcam or phone, AirPods, and a laptop running the earpiece. [`tests/drone_test.py`](tests/drone_test.py) measures the Tello's command, video and motion lag. Besides the default PyAV reader, `--video-backend` picks kite's own UDP readers on every drone command, opt-in until they have run against a real Tello: `raw` ([`tello_raw.py`](kite/sources/tello_raw.py): its own socket and a bare H.264 decoder, no FFmpeg network code), `socket` ([`socket_stream.py`](kite/sources/socket_stream.py): a big receive buffer and PyAV's parser) or `auto` (raw on macOS).
 
 ## 🤝 Best People-First Hack
 

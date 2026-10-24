@@ -40,8 +40,8 @@ from pathlib import Path
 import numpy as np
 
 from .camera import DEFAULT_PATH, Camera, save_camera
+from .config import VIDEO_BACKENDS
 from .sources.base import FrameSource
-from .sources.opencv_sources import VIDEO_BACKENDS
 
 TELLO_SIZE = (960, 720)
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
@@ -350,7 +350,8 @@ def capture_live(frames: FrameSource, pattern: tuple[int, int], n: int = 15, max
 
     first = frames.wait_first(15.0)
     if first is None:
-        raise RuntimeError("no video frame within 15 s")
+        stats = frames.stats() if hasattr(frames, "stats") else None
+        raise RuntimeError("no video frame within 15 s" + (f" (video reader: {stats})" if stats else ""))
     size = (first.width, first.height)
     if size != TELLO_SIZE:
         print(f"WARNING: frames are {size[0]}x{size[1]}, the Tello stream is {TELLO_SIZE[0]}x{TELLO_SIZE[1]}")
@@ -523,7 +524,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--frames-dir", default=None, help="tello: where the captured frames go "
                    "(default recordings/calib_<stamp>)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="Tello H.264 decoder (default: socket on macOS, else pyav)")
+                   help="Tello H.264 reader (default pyav; opt-in: raw, socket, auto = raw on macOS)")
     p.add_argument("--show-board", action="store_true", help="show the chessboard full screen and exit")
     p.add_argument("--board-png", default=None, help="write the chessboard to this PNG and exit")
     p.add_argument("--known-object", type=float, metavar="WIDTH_M", help="fallback: width of an object (m)")

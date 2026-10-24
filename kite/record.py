@@ -53,9 +53,9 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import Config
+from .config import VIDEO_BACKENDS, Config, resolve_video_backend
 from .sources.base import FrameSource
-from .sources.opencv_sources import VIDEO_BACKENDS, SteppedVideoSource
+from .sources.opencv_sources import SteppedVideoSource
 from .types import Frame
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -618,7 +618,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pulse", type=float, default=1.0, help="seconds one key press drives a stick (default 1.0)")
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds (default: Ctrl+C)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="Tello H.264 decoder (default: socket on macOS, else pyav)")
+                   help="Tello H.264 reader (default pyav; opt-in: raw, socket, auto = raw on macOS)")
     p.add_argument("--follow", action="store_true", help="with --fly: g toggles follow mode (needs the 'follow' extra "
                    "and data/models/yolo11n.pt, see kite/follow.py)")
     p.add_argument("--follow-behind", type=float, default=None, help="follow distance behind the head, m (1.2)")
@@ -686,7 +686,7 @@ def main(argv: list[str] | None = None) -> int:
         cfg.drone.video_backend = args.video_backend
     rcfg = RecordCfg(out_dir=args.out, fly=args.fly, speed=args.speed, pulse_s=args.pulse, max_s=args.max_s)
     meta = {"source": args.source, "args": vars(args), "argv": sys.argv,
-            "drone_cfg": {"yaw_sign": cfg.drone.yaw_sign, "video_backend": cfg.drone.video_backend}}
+            "drone_cfg": {"yaw_sign": cfg.drone.yaw_sign, "video_backend": resolve_video_backend(cfg.drone.video_backend)}}
 
     if not tello:
         frames = FileReplay(args.source)
@@ -716,6 +716,8 @@ def main(argv: list[str] | None = None) -> int:
         print("waiting for the first video frame ...", flush=True)
         if frames.wait_first(15.0) is None:
             print("WARNING: no video yet; recording anyway (the reader keeps retrying, takeoff waits for video)")
+            if hasattr(frames, "stats"):
+                print(f"  video reader: {frames.stats()}")
         meta["battery_start"] = drone.telemetry().battery_pct
         if args.fly:
             follow = _make_follow(args, frames, cfg) if args.follow else None

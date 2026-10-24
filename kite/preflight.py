@@ -4,6 +4,7 @@
     python -m kite.preflight --quick    # laptop checks only (no drone, the Wi-Fi check only warns)
     python -m kite.preflight --drone    # force the drone checks
     python -m kite.preflight --json     # machine-readable results on stdout
+    python -m kite.preflight --video-backend opencv   # check another Tello video reader (default pyav)
 
 Laptop: python deps, ffmpeg, free disk and a writable recordings folder, the Tello UDP ports free (8889 commands,
 8890 state, 11111 video; the program holding one is named), laptop battery, the Tello Wi-Fi, the camera calibration
@@ -36,6 +37,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .camera import DEFAULT_PATH as CAMERA_JSON
+from .config import VIDEO_BACKENDS
 
 GO, WARN, NO_GO, SKIP = "GO", "WARN", "NO-GO", "SKIP"
 NEXT_COMMAND = "python -m kite.record --source tello --out {out} --fly --speed 50"
@@ -252,6 +254,26 @@ def check_wifi(quick: bool = False) -> Check:
                  f"{TELLO_SSID_PREFIX}xxxxxx Wi-Fi (macOS hides the SSID, so this is judged by the address)", data)
 
 
+AWDL_FIX = ("sudo ifconfig awdl0 down (back on reboot), and keep AirDrop at 'No One' and Handoff off "
+            "(System Settings > General > AirDrop & Handoff) so it stays down")
+
+
+def check_awdl() -> Check:
+    """macOS AWDL (AirDrop, Handoff, Continuity, AirPlay) hops the Wi-Fi radio off the Tello's channel about once a
+    second. The first real capture stalled 0.15-0.46 s about every second and got ~2 usable frames/s (31 KB/s)."""
+    if sys.platform != "darwin":
+        return Check("wi-fi radio", SKIP, "macOS only")
+    out = _run(["ifconfig", "awdl0"])
+    if not out:
+        return Check("wi-fi radio", GO, "no awdl0 interface")
+    active = "status: active" in out
+    if "<UP" in out and active:
+        return Check("wi-fi radio", WARN, f"AWDL (AirDrop/Handoff) is active: it pulls the radio off the Tello's channel "
+                     f"about once a second and the video drops to a few broken frames. Fix: {AWDL_FIX}",
+                     {"awdl0": "active"})
+    return Check("wi-fi radio", GO, "AWDL (AirDrop/Handoff) is down", {"awdl0": "up" if "<UP" in out else "down"})
+
+
 def check_camera_json(path: Path = CAMERA_JSON) -> Check:
     if not path.is_file():
         return Check("camera calibration", WARN, f"{path.name} missing: perception uses the published fx estimate "
@@ -346,6 +368,39 @@ def _measure(src, tello, first, seconds: float) -> tuple[float, float]:
     return frames / dt, states / dt
 
 
+def _reader_stats(src) -> dict:
+    try:
+        return src.stats() if hasattr(src, "stats") else {}
+    except Exception:
+        return {}
+
+
+def _no_frame_detail(stats: dict, first_frame_s: float) -> str:
+    """Why no frame: nothing arrived, or packets arrived and did not decode (the raw reader counts both)."""
+    backend = stats.get("backend", "?")
+    if stats.get("datagrams") == 0:
+        return (f"no frame within {first_frame_s:g} s ({backend} reader): no video packet reached the laptop. Close "
+                "the Tello phone app, power-cycle the drone; macOS: Local Network access for the terminal app")
+    if stats.get("datagrams"):
+        return (f"no frame within {first_frame_s:g} s ({backend} reader): {stats['datagrams']} video packets "
+                f"({stats.get('bytes', 0) // 1024} KB) arrived but none decoded (decode errors "
+                f"{stats.get('decode_errors')}, skipped {stats.get('skipped_bytes')} bytes waiting for a keyframe). "
+                "Capture them for analysis: python -m kite.video_doctor")
+    return (f"no frame within {first_frame_s:g} s ({backend} reader): close the Tello phone app, power-cycle the "
+            "drone; macOS: Local Network access for the terminal app. Then: python -m kite.video_doctor")
+
+
+def _reader_counters(stats: dict, seconds: float) -> str:
+    """One line of the raw reader's counters, to tell a weak link (few packets) from a decoder problem (packets but
+    few frames, errors, resyncs)."""
+    if "datagrams" not in stats:
+        return ""
+    sec = max(seconds, 1e-6)
+    keys = ("frames_decoded", "corrupt_frames", "decode_errors", "resyncs", "queue_drops", "skipped_bytes", "keyframe_seen")
+    return (f"; reader: {stats['datagrams'] / sec:.0f} packets/s, {stats.get('bytes', 0) / sec / 1024:.0f} KB/s, "
+            + ", ".join(f"{k} {stats.get(k)}" for k in keys) + (f", last error {stats['last_error']}" if stats.get("last_error") else ""))
+
+
 def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[Check]:
     """First frame, fps, frame size and (in the same window) the telemetry rate."""
     try:
@@ -355,20 +410,25 @@ def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[
     t_wait = time.monotonic()
     first = src.wait_first(first_frame_s)
     if first is None:
-        why = getattr(src, "diagnosis", lambda: None)()
-        return [Check("video", NO_GO, f"no frame within {first_frame_s:g} s: " + (f"{why}. " if why else "") +
-                      "Close the Tello phone app, power-cycle the drone; macOS: Local Network access for the terminal "
-                      "app; try another --video-backend; python -m kite.video_doctor records the raw packets")]
+        stats = _reader_stats(src)
+        why = getattr(src, "diagnosis", lambda: None)()  # the socket reader says which case it is
+        detail = _no_frame_detail(stats, first_frame_s) + (f". Reader: {why}" if why else "")
+        return [Check("video", NO_GO, detail + "; try another --video-backend", {"reader": stats})]
     wait = time.monotonic() - t_wait
     fps, hz = _measure(src, tello, first, measure_s)
     out = []
-    data = {"first_frame_s": round(wait, 2), "fps": round(fps, 1)}
+    stats = _reader_stats(src)
+    data = {"first_frame_s": round(wait, 2), "fps": round(fps, 1), "reader": stats}
     detail = f"first frame after {wait:.1f} s, {fps:.1f} fps over {measure_s:g} s"
+    if stats.get("backend"):
+        detail += f" ({stats['backend']} reader)"
+    since_start = time.monotonic() - t_wait
     if fps < FPS_NO_GO:
-        out.append(Check("video", NO_GO, f"{detail}: frozen, the governor would keep hovering", data))
+        out.append(Check("video", NO_GO, f"{detail}: frozen, the governor would keep hovering"
+                         + _reader_counters(stats, since_start), data))
     elif fps < FPS_WARN:
         out.append(Check("video", WARN, f"{detail}: under {FPS_WARN:.0f} fps (weak link? move closer, away from "
-                         "other 2.4 GHz Wi-Fi)", data))
+                         "other 2.4 GHz Wi-Fi)" + _reader_counters(stats, since_start), data))
     else:
         out.append(Check("video", GO, detail, data))
     size = (first.width, first.height)
@@ -409,18 +469,19 @@ def _latency_check(tello) -> Check:
 
 def drone_checks(make_drone=None, first_frame_s: float | None = None, measure_s: float | None = None,
                  video_backend: str | None = None) -> list[Check]:
-    """Connect (dry run: no motion), read and measure, close. make_drone: a factory for tests.
-    video_backend: the Tello decoder to check (None: the config default, the one kite.record uses)."""
+    """Connect (dry run: no motion), read and measure, close. make_drone: a factory for tests. video_backend: the
+    Tello video reader to check (None: DroneCfg's, the one kite.record uses; "auto" = raw on macOS, pyav elsewhere)."""
     first_frame_s = FIRST_FRAME_S if first_frame_s is None else first_frame_s
     measure_s = MEASURE_S if measure_s is None else measure_s
     if make_drone is None:
         from .config import Config
         from .drone import make_tello
 
+        cfg = Config()
+        if video_backend:
+            cfg.drone.video_backend = video_backend
+
         def make_drone():
-            cfg = Config()
-            if video_backend:
-                cfg.drone.video_backend = video_backend
             return make_tello(cfg, dry_run=True)  # dry run: takeoff / rc / moves are never sent
 
     out: list[Check] = []
@@ -472,6 +533,7 @@ def run(out: str = "recordings", quick: bool = False, drone: bool = False, make_
     ports = check_ports()
     add(ports)
     add(check_laptop_battery())
+    add(check_awdl())
     wifi = check_wifi(quick=quick)
     add(wifi)
     add(check_camera_json())
@@ -499,15 +561,13 @@ def _line(c: Check) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    from .sources.opencv_sources import VIDEO_BACKENDS  # here, not at the top: check_deps must report a missing numpy
-
     p = argparse.ArgumentParser(prog="python -m kite.preflight", description="GO / NO-GO check before the Tello shoot.")
     p.add_argument("--out", default="recordings", help="the recordings folder the take will be written to")
     p.add_argument("--quick", action="store_true", help="laptop checks only, no drone")
     p.add_argument("--drone", action="store_true", help="run the drone checks even when not on the Tello Wi-Fi")
     p.add_argument("--json", action="store_true", help="print machine-readable results")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="Tello H.264 decoder to check (default: socket on macOS, else pyav)")
+                   help="Tello H.264 reader to check (default pyav; opt-in: raw, socket, auto = raw on macOS)")
     args = p.parse_args(argv)
     if args.quick and args.drone:
         p.error("--quick and --drone contradict each other")

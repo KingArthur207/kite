@@ -1,4 +1,5 @@
-"""DJI Tello adapter (djitellopy for commands + state, the team's OpenCV reader for video).
+"""DJI Tello adapter (djitellopy for commands + state, kite's TelloVideoSource for video: video_backend picks the reader,
+default pyav; kite's own UDP readers raw / socket / auto (raw on macOS) are opt-in, see kite.config.resolve_video_backend).
 
 Discrete commands are NON-BLOCKING: the command is sent, and busy() polls djitellopy's reply list
 (filled by its UDP receiver thread) with a per-command timeout. After stop() the late reply of the
@@ -21,6 +22,7 @@ import socket
 import time
 from dataclasses import dataclass
 
+from ..config import resolve_video_backend
 from ..sources.opencv_sources import TelloVideoSource
 from ..types import Telemetry
 from .base import Drone, check_move, check_rotate, clamp_rc
@@ -61,7 +63,7 @@ class TelloDrone(Drone):
     name = "tello"
 
     def __init__(self, tello=None, video: bool = True, dry_run: bool = False, move_speed_cm_s: int = 50,
-                 yaw_sign: int = 1, velocity_scale: float = 0.1, video_fps: int = 60, video_backend: str = "pyav", host: str = "192.168.10.1"):
+                 yaw_sign: int = 1, velocity_scale: float = 0.1, video_fps: int = 60, video_backend: str | None = None, host: str = "192.168.10.1"):
         """tello: an existing djitellopy.Tello (or a test double); created on connect() if None.
         velocity_scale: state vgx/vgy/vgz -> m/s (the Tello reports dm/s; check with the latency test)."""
         self._tello = tello
@@ -72,7 +74,7 @@ class TelloDrone(Drone):
         self.yaw_sign = yaw_sign
         self.velocity_scale = velocity_scale
         self.video_fps = video_fps
-        self.video_backend = video_backend
+        self.video_backend = resolve_video_backend(video_backend)  # None -> the default, "auto" -> this platform's reader
         self._pending: _Pending | None = None
         self._result: str | None = "ok"
         self._flying = False
@@ -116,6 +118,7 @@ class TelloDrone(Drone):
             log.warning("no video packets yet (%d/%d), re-sending streamon", i + 1, STREAMON_TRIES)
         else:
             raise RuntimeError(NO_VIDEO.format(port=port))
+        log.info("video packets arrive on UDP %d: reading them with the %s backend", port, self.video_backend)
         self._source = TelloVideoSource(url, fps=self.video_fps, backend=self.video_backend).start()
 
     def close(self) -> None:

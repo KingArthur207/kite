@@ -12,7 +12,7 @@ from ..types import Frame
 from .base import FrameSource
 
 TELLO_UDP_URL = "udp://@0.0.0.0:11111"
-VIDEO_BACKENDS = ("socket", "pyav", "opencv")
+from ..config import VIDEO_BACKENDS  # noqa: E402,F401  (re-exported: every Tello command's --video-backend choices)
 
 
 def _readonly(img: np.ndarray) -> np.ndarray:
@@ -21,10 +21,34 @@ def _readonly(img: np.ndarray) -> np.ndarray:
     return img
 
 
+def stream_class(backend: str):
+    """The reader class for a resolved video backend (all share constructor(url, fps=, open_timeout_ms=,
+    read_timeout_ms=), start(), read_seq(copy=), stop())."""
+    if backend == "raw":
+        from .tello_raw import RawTelloStream
+
+        return RawTelloStream
+    if backend == "socket":
+        from .socket_stream import SocketStream
+
+        return SocketStream
+    if backend == "pyav":
+        from .pyav_stream import PyAVStream
+
+        return PyAVStream
+    if backend == "opencv":
+        from .video_stream import VideoStream
+
+        return VideoStream
+    raise ValueError(f"video backend {backend!r}: use raw, socket, pyav or opencv")
+
+
 class TelloVideoSource(FrameSource):
-    """The Tello's H.264 stream, decoded by PyAV through FFmpeg's udp:// reader (backend "pyav", djitellopy's way),
-    by the team's OpenCV VideoStream (backend "opencv"), or by our own UDP socket feeding PyAV's parser (backend
-    "socket", opt-in until tested on a real Tello: big receive buffer, no FFmpeg network code, see socket_stream.py).
+    """The Tello's H.264 stream, read by one of four backends (DroneCfg.video_backend, kite.config.resolve_video_backend):
+    "pyav" (FFmpeg's udp:// + h264 demuxer, djitellopy's decoder; the default), "opencv" (the team's OpenCV
+    VideoStream), and kite's own UDP readers, opt-in until tested on a real Tello: "raw" (UDP socket + PyAV's bare
+    H.264 decoder, tello_raw.py; "auto" picks it on macOS) and "socket" (UDP socket with a big receive buffer +
+    PyAV's parser, socket_stream.py).
 
     The drone must already have been told `streamon` (the drone adapter does that). Only one reader
     can bind UDP 11111: every consumer shares this source.
@@ -40,10 +64,10 @@ class TelloVideoSource(FrameSource):
     name = "tello"
 
     def __init__(self, url: str = TELLO_UDP_URL, fps: int = 60, timeout_ms: int = 15000, reconnect_after_s: float = 20.0,
-                 backend: str = "pyav"):
-        if backend not in VIDEO_BACKENDS:
-            raise ValueError(f"video backend {backend!r}: use {', '.join(VIDEO_BACKENDS)}")
-        self.url, self.fps, self.backend = url, fps, backend
+                 backend: str | None = None):
+        from ..config import resolve_video_backend
+
+        self.url, self.fps, self.backend = url, fps, resolve_video_backend(backend)  # ValueError if unknown
         # FFmpeg open/read timeout. It must outlast the wait for a clean keyframe: nothing decodes before one, and
         # the Tello sends them seconds apart (a lost packet costs a whole one). With 5 s / 3 s the capture was
         # aborted before its first keyframe on a weak link, and a timed-out capture never delivers again.
@@ -64,14 +88,16 @@ class TelloVideoSource(FrameSource):
             self._thread.start()
         return self
 
-    def _run(self) -> None:
-        if self.backend == "pyav":
-            from .pyav_stream import PyAVStream as Stream
-        elif self.backend == "socket":
-            from .socket_stream import SocketStream as Stream
-        else:
-            from .video_stream import VideoStream as Stream
+    def stats(self) -> dict:
+        """The current reader's counters (raw backend: datagrams, frames, decode errors, ...), {} otherwise."""
+        with self._lock:
+            stream = self._stream
+        fn = getattr(stream, "stats", None)
+        out = fn() if fn is not None else {}
+        return {"backend": self.backend, "reconnects": self.reconnects, **out}
 
+    def _run(self) -> None:
+        Stream = stream_class(self.backend)
         while not self._stop.is_set():
             try:
                 stream = Stream(self.url, fps=self.fps, open_timeout_ms=self.timeout_ms, read_timeout_ms=self.timeout_ms).start()

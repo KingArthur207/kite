@@ -90,9 +90,12 @@ def test_frames_are_read_only():
 
 def test_team_videostream_reader_via_tello_source(video):
     # the Tello source wraps the team's VideoStream; point it at a file to exercise it without a drone
-    import kite.sources.video_stream  # noqa: F401
+    import kite.sources.video_stream as vs
 
-    assert "nobuffer" in os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"]
+    assert "nobuffer" in vs.stream_options()
+    if "OPENCV_FFMPEG_CAPTURE_OPTIONS" not in os.environ:  # unless the user exported their own
+        # the stream options apply only while VideoStream opens: process-wide they cost file reads their first frame
+        assert vs.STREAM_OPTIONS == vs.stream_options()
     src = TelloVideoSource(url=video, fps=60, backend="opencv").start()
     try:
         f = src.wait_first(5.0)
@@ -164,7 +167,7 @@ UDP_SCRIPT = textwrap.dedent("""
 
 @pytest.mark.slow
 @needs_ffmpeg
-@pytest.mark.parametrize("backend,port", [("pyav", 11177), ("opencv", 11176), ("socket", 11175)])
+@pytest.mark.parametrize("backend,port", [("raw", 11175), ("pyav", 11177), ("opencv", 11176), ("socket", 11173)])
 def test_tello_reader_full_rate_and_safe_stop_on_stalled_udp_stream(backend, port):
     code = UDP_SCRIPT.format(root=ROOT, port=port, backend=backend)
     p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=90)
@@ -180,7 +183,7 @@ def test_tello_reader_full_rate_and_safe_stop_on_stalled_udp_stream(backend, por
 
 @pytest.mark.slow
 @needs_ffmpeg
-@pytest.mark.parametrize("backend,port", [("pyav", 11178), ("opencv", 11179), ("socket", 11174)])
+@pytest.mark.parametrize("backend,port", [("raw", 11174), ("pyav", 11178), ("opencv", 11179), ("socket", 11172)])
 def test_tello_source_waits_for_a_stream_that_starts_after_the_open_timeout(backend, port):
     # the "can't find camera" bugs: video starting > 5 s after start() raised; keyframes 5 s apart never decoded
     src = TelloVideoSource(url=f"udp://@0.0.0.0:{port}", backend=backend).start()  # must not raise
@@ -196,3 +199,27 @@ def test_tello_source_waits_for_a_stream_that_starts_after_the_open_timeout(back
         ff.wait()
         src.stop()
     assert src.read() is None
+
+
+def test_opening_the_tello_reader_does_not_change_how_files_are_read(tmp_path):
+    """OpenCV's stream options (fflags nobuffer) are scoped to VideoStream's open: a file read afterwards keeps frame 0."""
+    import cv2
+
+    import kite.sources.video_stream as vs
+
+    path = str(tmp_path / "count.mkv")
+    w = cv2.VideoWriter(path, cv2.VideoWriter_fourcc(*"MJPG"), 30, (64, 48))
+    for i in range(10):
+        w.write(np.full((48, 64, 3), i * 20, np.uint8))
+    w.release()
+    try:
+        vs.VideoStream(path, fps=30, open_timeout_ms=2000, read_timeout_ms=500).stop()
+    except RuntimeError:
+        pass
+    assert "OPENCV_FFMPEG_CAPTURE_OPTIONS" not in os.environ or os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] != vs.STREAM_OPTIONS
+    cap = cv2.VideoCapture(path)
+    frames = 0
+    while cap.read()[0]:
+        frames += 1
+    cap.release()
+    assert frames == 10
