@@ -28,7 +28,8 @@ _load_env()
 @dataclass
 class AudioCfg:
     sample_rate: int = 48000          # AirPods A2DP native rate; Cartesia renders at it directly
-    block: int = 512                  # ~10.7 ms per callback; Bluetooth itself adds 150-250 ms
+    block: int = 1024                 # ~21 ms per callback: headroom against GIL stalls (measured a
+    # 12.5 ms worst-case render at 512); Bluetooth itself adds 150-250 ms, so this is noise
     output_substr: str = "AirPods"    # preferred output device (name substring)
     master_gain: float = 0.9
     limiter_ceiling: float = 0.89     # -1 dBFS: protects hearing and avoids codec clipping
@@ -45,12 +46,12 @@ class SonarCfg:
     corridor_half_width_m: float = 0.55   # half shoulder width + margin
     corridor_margin_m: float = 0.35       # soft edge: partial urgency just outside the corridor
     max_range_m: float = 6.0
-    ttc_start_s: float = 4.0          # start beeping when time-to-contact drops below this
+    ttc_start_s: float = 3.5          # start beeping below this time-to-contact (BBeep: 2.5-5 s)
     ttc_critical_s: float = 1.0       # below this (or inside critical_dist) = critical
     critical_dist_m: float = 0.75
     hysteresis: float = 0.15          # exit thresholds are 15 % looser than entry thresholds
-    interval_slow_s: float = 0.85     # inter-beep interval at the edge of the warning zone
-    interval_fast_s: float = 0.11     # at critical
+    interval_slow_s: float = 1.0      # inter-beep gap at the edge of the zone (WatchOut: 1.2 s)
+    interval_fast_s: float = 0.11     # at critical (WatchOut: 0.21 s; parking sensors go continuous)
     pitch_low_hz: float = 520.0
     pitch_high_hz: float = 1250.0
     max_sources: int = 2              # >2 simultaneous sonified sources stop being intelligible
@@ -68,7 +69,8 @@ class BeaconCfg:
     near_dist_m: float = 5.0
     far_dist_m: float = 40.0
     on_course_deg: float = 15.0       # inside this cone: bright "on course" tick
-    behind_deg: float = 110.0         # beyond this: "turn around" cue instead of a tick
+    near_axis_deg: float = 55.0       # Soundscape's 4-region beacon: 15 / 55 / 125 deg
+    behind_deg: float = 125.0         # beyond this: "turn around" cue instead of a tick
     arrive_dist_m: float = 3.0
 
 

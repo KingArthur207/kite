@@ -170,3 +170,8 @@ def crossing_wait() -> np.ndarray:
 
 def ear_check(side: str) -> np.ndarray:
     return knock(880 if side == "left" else 1320, 0.12, 0.5)
+
+
+def nav_chime() -> np.ndarray:
+    """Soft two-note lead-in before a navigation instruction: 'directions coming'."""
+    return chime(988, 1319, step_s=0.07, peak=0.32)
