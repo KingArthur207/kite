@@ -80,6 +80,63 @@ def test_download_refuses_anything_but_https(url):
         imagine.download(url)
 
 
+def test_a_redirect_must_stay_on_https():
+    import urllib.request
+    h = imagine._HttpsOnlyRedirects()
+    req = urllib.request.Request("https://vidgen.x.ai/a.mp4")
+    for bad in ("http://vidgen.x.ai/a.mp4", "file:///etc/passwd", "ftp://x/y"):
+        with pytest.raises(ValueError, match="non-https"):
+            h.redirect_request(req, None, 302, "Found", {}, bad)
+    assert h.redirect_request(req, None, 302, "Found", {}, "https://cdn.x.ai/a.mp4").full_url == "https://cdn.x.ai/a.mp4"
+
+
+class _Body:
+    def __init__(self, n):
+        self.n = n
+
+    def read(self, k=-1):
+        return b"x" * (self.n if k < 0 else min(k, self.n))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+@pytest.mark.parametrize("size,ok", [(10, True), (1000, True), (1001, False)])
+def test_download_stops_reading_past_the_size_cap(monkeypatch, size, ok):
+    seen = {}
+
+    class Opener:
+        def open(self, url, timeout):
+            seen["timeout"] = timeout
+            return _Body(size)
+
+    monkeypatch.setattr(imagine.urllib.request, "build_opener", lambda *h: Opener())
+    if ok:
+        assert len(imagine.download("https://vidgen.x.ai/a.mp4", max_bytes=1000)) == size
+    else:
+        with pytest.raises(ValueError, match="over"):
+            imagine.download("https://vidgen.x.ai/a.mp4", max_bytes=1000)
+    assert seen["timeout"] == 120
+
+
+@pytest.mark.parametrize("d", ["0", "16", "600", "-1"])
+def test_duration_is_bounded_before_any_credit_is_spent(monkeypatch, d):
+    monkeypatch.setattr(imagine, "generate", lambda *a: pytest.fail("must not generate"))
+    monkeypatch.setattr("sys.argv", ["imagine_scenes.py", "generate", "cyclist", "--duration", d])
+    with pytest.raises(SystemExit):
+        imagine.main()
+
+
+def test_unknown_scene_names_are_refused(monkeypatch):
+    monkeypatch.setattr(imagine, "generate", lambda *a: pytest.fail("must not generate"))
+    monkeypatch.setattr("sys.argv", ["imagine_scenes.py", "generate", "../../etc/passwd"])
+    with pytest.raises(SystemExit, match="pick from"):
+        imagine.main()
+
+
 def test_rehearse_summarises_detector_and_earpiece(out, monkeypatch):
     (out / "oncoming.mp4").write_bytes(b"clip")
     events = [
