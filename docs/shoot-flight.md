@@ -73,3 +73,18 @@ Code: `kite/follow.py`. Tested in a simulation only; it has never flown. Set up 
 2. Fly: `python -m kite.record --source tello --out recordings --fly --follow`. Take off, climb to the walker's height plus 0.3 m, and get behind them by hand. The status line shows `follow off (walker conf .. box ..)` once it sees a person cut off by the bottom edge. Then press `g`.
 3. Any key cancels follow first: space hovers, `w`/`a`/... take over, `l` lands. If it loses the walker for 0.5 s it hovers (rc 0), beeps and waits. It never searches. It picks the walker up again once they are back at the bottom edge. A safety hover or `WI-FI DOWN` switches follow off for good: press `g` again once it clears.
 4. Knobs: `--follow-behind 1.5` shows more of the head and shoulders, which helps if the detector misses a bare head. `--follow-height` sets the altitude to hold (default: the height when you press `g`). The drone can't go faster than `SafetyCfg.max_rc` (50 is about 0.5 m/s), so the walker keeps to 0.5 m/s.
+
+### Follow with prediction (`--follow-predict`)
+
+`kite/predict.py` estimates the walker's velocity and turn rate (a Kalman filter that also knows "standing still"), predicts their next 1.5 s, and plans the drone's sticks over that 1.5 s so it stays about 1.2 m back along the path the walker already walked. Yaw turns toward where the walker is about to be, so it starts turning a little before the corner does. Lost walker (hover after 0.5 s), coast, altitude hold, the stick clamps, the safety governor and every refusal are the same as plain follow. Until the filter has 5 detections and is sure of the walker's position to 0.8 m, it sends the plain follow command. This mode has only flown in the simulation (`python scripts/follow_eval.py` prints reactive vs predict on the Moss walk).
+
+Rehearse first, no drone: `python -m kite.follow --source recordings/<dir> --overlay --predict`. The overlay draws the predicted walker path in green on the image (at head height) and a top-down inset in the bottom right: the walker's trail in grey, the predicted path in green with circles for its uncertainty, the planned drone path in blue, the drone at the bottom facing up, 1 m grid lines. If the take has `gps/frames_gps.csv` (from `python -m kite.gps ... --recording <dir>`), the route in `sim/public/osm/route.json` caps how far a predicted turn goes at the corner.
+
+Testing it for real, once the battery is charged:
+
+- Fly in an open area: a park lawn or an empty lot, at least 20 m clear in front, with no cars, no road and no bystanders within 10 m. Never at the venue (spec section 3), and never on Moss St.
+- Same setup as plain follow: `python -m kite.record --source tello --out recordings --fly --follow --follow-predict`, take off, climb to the walker's height plus 0.3 m, get behind them by hand, then `g`.
+- The walker does three things, about 20 s each: walk straight at 0.5 m/s, stop dead and stand for 5 s, then turn left (a slow 90 degrees, like the Moss/Howard corner) and walk on.
+- The pilot keeps a thumb over space (hover) or `l` (land) the whole time, walks 3 m behind and to one side of the drone, and has a spotter at the walker's elbow.
+- What to watch: at the stop, the drone should brake and settle at about 1.2 m without drifting closer than about 1 m; if it closes in, press space. In the turn, the drone should yaw a little early, keeping the walker's head near the middle of the frame. The status line should not flick between `FOLLOWING` and `LOST`. Back on normal Wi-Fi, `events.jsonl` has every decision, with `planner` saying whether predict or the plain controller steered.
+- If it drifts sideways, swings in yaw or brakes late, drop `--follow-predict`: plain follow is the fallback and needs no other change.

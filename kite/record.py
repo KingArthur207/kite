@@ -594,7 +594,7 @@ def _make_follow(args, frames, cfg):
     from .camera import load_camera
     from .follow import FollowCfg, FollowMode, YoloPersonDetector
 
-    fcfg = FollowCfg(height_m=args.follow_height, video_lag_s=cfg.drone.video_lag_s)
+    fcfg = FollowCfg(height_m=args.follow_height, video_lag_s=cfg.drone.video_lag_s, predict=args.follow_predict)
     if args.follow_behind:
         fcfg.behind_m = args.follow_behind
     print("follow: loading the person detector in the background ...", flush=True)
@@ -619,6 +619,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--follow-height", type=float, default=None, help="follow altitude, m above takeoff "
                    "(default: the height when g is pressed)")
     p.add_argument("--follow-weights", default=None, help="YOLO weights for --follow")
+    p.add_argument("--follow-predict", action="store_true", help="with --follow: steer on the walker prediction and "
+                   "the planned drone path (kite/predict.py); falls back to the reactive controller when unsure")
     args = p.parse_args(argv)
 
     if not 10 <= args.speed <= 100:
@@ -630,6 +632,8 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--fly needs --source tello")
     if args.fly and not sys.stdin.isatty():
         p.error("--fly needs an interactive terminal for the keys")
+    if args.follow_predict and not args.follow:
+        p.error("--follow-predict needs --follow")
     if args.follow:
         from .follow import detector_available
 

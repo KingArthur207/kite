@@ -3,6 +3,7 @@
     python -m kite.follow --source recordings/<take>              # rehearsal: what follow WOULD send, per frame
     python -m kite.follow --source clip.mp4 --overlay --preview    # any video; overlay mp4 next to the csv
     python -m kite.record --source tello --out recordings --fly --follow   # live: g toggles follow
+    python -m kite.record --source tello --out recordings --fly --follow --follow-predict   # steer on the prediction
 
 Geometry. The camera is fixed and level, so from above and behind only the top of the walker's head (and, further
 back, the shoulders) is in frame, cut off by the bottom edge: that cut-off person is the walker (spec 5.3). The head
@@ -18,7 +19,11 @@ Pieces (each testable without a drone):
                     (plus feed-forward of the walker's estimated speed), ud holds the altitude, small lr.
                     Deadbands, per-channel clamps, slew limits. Track older than lost_s -> rc 0 (hover); it
                     never searches by moving.
-  FollowMode        the live glue for kite.record: tracker thread, start checks, decisions -> events.jsonl.
+                    Prediction (kite/predict.py, opt in: FollowCfg.predict, --follow-predict / --predict): while
+                    following, a walker motion model (IMM Kalman filter) and a short-horizon drone planner replace
+                    lr, fb and yaw; the reactive command stays when the filter is not confident yet. Coast, lost
+                    (hover), ud, clamps and slew are the same either way.
+  FollowMode       the live glue for kite.record: tracker thread, start checks, decisions -> events.jsonl.
 Every rc goes through the SafetyGovernor (kite.record sends it), which clamps to SafetyCfg.max_rc.
 
 rc signs (Drone.rc, TelloDrone -> djitellopy send_rc_control(lr, fb, ud, yaw) -> "rc lr fb ud yaw"):
@@ -48,6 +53,7 @@ from typing import Callable
 import numpy as np
 
 from .camera import Camera, load_camera
+from .predict import DronePlanner, Plan, PlannerCfg, Prediction, WalkerFilter, fwd_right, route_turn_ahead
 from .types import Telemetry
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -96,6 +102,15 @@ class FollowCfg:
     max_range_m: float = 5.0  # head near or above the horizon reads as this far
     pitch_comp: float = 0.0  # 0: off. +1/-1 adds telemetry pitch (sign unverified, see recording.PITCH_SIGN)
     auto_resume: bool = True  # after a loss, resume when a walker touching the bottom edge is tracked again
+    # prediction (kite/predict.py). It always runs (the overlay draws it); predict=True lets its plan steer
+    predict: bool = False  # opt in: --follow-predict (kite.record), --predict (rehearsal)
+    horizon_s: float = 1.5  # predicted walker path and planned drone path
+    meas_px: float = 8.0  # head-top / box-centre noise of a detection (px), for the filter
+    min_updates: int = 5  # detections in the filter before its plan is trusted
+    max_std_m: float = 0.8  # predicted position 1-sigma at the horizon above this -> reactive controller instead
+    yaw_deg_s: float = 1.0  # deg/s per yaw stick unit (dead reckoning when telemetry has no yaw; the planner)
+    walker_accel: float = 0.8  # m/s^2: how sharply the filter lets the walker change speed (higher: quicker, noisier)
+    gap_s: float = 0.4  # standoff grows by walker speed x this: braking room for a stop the video shows late
 
 
 # ------------------------------------------------------------------ detection
@@ -249,6 +264,12 @@ class FollowCmd:
     bearing_deg: float | None = None  # + = walker to the right
     walker_m_s: float | None = None  # estimated walker speed (feed-forward)
     height_err_m: float | None = None
+    planner: str | None = None  # predict | reactive: which one steered (while following)
+    # prediction for display, in the drone's frame now: (forward m, right m) points
+    walker_path: np.ndarray | None = None
+    walker_std: np.ndarray | None = None
+    drone_path: np.ndarray | None = None
+    trail: np.ndarray | None = None
 
     @property
     def rc(self) -> tuple[int, int, int, int]:
@@ -271,10 +292,15 @@ def scaled_camera(cam: Camera, width: int, height: int) -> Camera:
 class FollowController:
     """Track + telemetry -> rc. Call update() at the control rate (kite.record: 10 Hz); it is rate independent."""
 
-    def __init__(self, cfg: FollowCfg | None = None, camera: Camera | None = None, max_rc: int = 100):
+    def __init__(self, cfg: FollowCfg | None = None, camera: Camera | None = None, max_rc: int = 100,
+                 route: np.ndarray | None = None, open_loop: bool = False):
         self.cfg = cfg or FollowCfg()
         self.camera = camera or load_camera()
         self.max_rc = max_rc
+        self.route = route  # route polyline in sim metres (kite.predict.load_route), with walker_xy: the prior
+        # open_loop (rehearsal on a file): the rc is never flown, so the camera moved only as it did in the video and
+        # the dead reckoning ignores the sticks. ponytail: a flown take could dead-reckon on telemetry vgx/vgy instead
+        self.open_loop = open_loop
         self.reset()
 
     def reset(self, height_target_m: float | None = None) -> None:
@@ -286,6 +312,20 @@ class FollowController:
         self._v_hist: deque = deque(maxlen=64)  # (t, modelled speed): the speed when the frame was taken
         self._v_rel = 0.0  # d(range)/dt, smoothed
         self._last_meas: tuple[float, float] | None = None  # (frame t, range)
+        # prediction: dead-reckoned drone pose (x, y, heading) from the sticks sent and telemetry yaw
+        self.filter = WalkerFilter(accel=self.cfg.walker_accel)
+        self.planner = DronePlanner(PlannerCfg(stick_m_s=self.cfg.stick_m_s, response_s=self.cfg.response_s,
+                                               yaw_deg_s=self.cfg.yaw_deg_s, slew=self.cfg.slew,
+                                               behind_m=self.cfg.behind_m, min_range_m=self.cfg.min_range_m,
+                                               k_yaw=self.cfg.k_yaw, db_yaw_deg=self.cfg.db_yaw_deg,
+                                               gap_s=self.cfg.gap_s))
+        self._pose = np.zeros(3)
+        self._vb = np.zeros(2)  # modelled forward, right speed (m/s)
+        self._pose_hist: deque = deque(maxlen=64)  # (t, x, y, heading)
+        self._trail: deque = deque(maxlen=80)  # filtered walker positions, for the standoff point
+        self._filter_t: float | None = None
+        self.prediction: Prediction | None = None
+        self.plan: Plan | None = None
 
     def target_row(self, cam: Camera | None = None) -> float:
         """Image row where the head top sits at the target distance."""
@@ -311,10 +351,12 @@ class FollowController:
                 return v
         return self._v_hist[0][1] if self._v_hist else 0.0
 
-    def update(self, track: Track | None, tel: Telemetry | None, t: float) -> FollowCmd:
+    def update(self, track: Track | None, tel: Telemetry | None, t: float, walker_xy=None) -> FollowCmd:
+        """walker_xy: the walker's GPS position in sim metres, when known (route prior); else None."""
         c = self.cfg
         dt = 0.1 if self._t is None else max(0.0, min(0.5, t - self._t))
         self._t = t
+        self._dead_reckon(tel, t, dt)
         age = math.inf if track is None else track.age(t)
         cmd = FollowCmd()
         if self.state == "lost":
@@ -322,6 +364,7 @@ class FollowController:
             if c.auto_resume and track is not None and track.confirmed and track.touches_bottom and age <= c.fresh_s:
                 self.state = "following"
                 self._last_meas = None
+                self._reset_prediction()
         elif age > c.lost_s:
             self.state = "lost"
         else:
@@ -350,6 +393,11 @@ class FollowController:
                 fb += c.ff * v_walker / c.stick_m_s
             out = np.array([c.k_lr * _db(lateral, c.db_lat_m), fb, self._ud(tel, cmd),
                             c.k_yaw * _db(bearing, c.db_yaw_deg)])
+            cmd.planner = "reactive"
+            plan = self._predict(track, rng, lateral, t, walker_xy)
+            if c.predict and plan is not None:
+                out[0], out[1], out[3] = plan.lr, plan.fb, plan.yaw
+                cmd.planner = "predict"
             out = self._limit(out, dt)
         self._out = out
         # modelled drone speed, for the feed-forward (first-order response to the fb actually sent)
@@ -357,7 +405,79 @@ class FollowController:
         self._v_hist.append((t, self._v_cmd))
         cmd.lr, cmd.fb, cmd.ud, cmd.yaw = (int(round(v)) for v in out)
         cmd.state = self.state
+        if self.state != "lost" and self.prediction is not None:
+            self._display(cmd)
         return cmd
+
+    # -- prediction
+    def _reset_prediction(self) -> None:
+        self.filter.reset()
+        self._trail.clear()
+        self._filter_t = None
+        self.prediction = self.plan = None
+
+    def _dead_reckon(self, tel: Telemetry | None, t: float, dt: float) -> None:
+        """Advance the modelled drone pose over the last dt with the sticks sent then."""
+        c = self.cfg
+        a = min(1.0, dt / c.response_s)
+        target = np.zeros(2) if self.open_loop else np.array([self._out[1], self._out[0]]) * c.stick_m_s
+        self._vb += (target - self._vb) * a
+        if tel is not None and tel.yaw_deg is not None:
+            self._pose[2] = tel.yaw_deg
+        elif not self.open_loop:
+            self._pose[2] += self._out[3] * c.yaw_deg_s * dt
+        f, r = fwd_right(self._pose[2])
+        self._pose[:2] += (self._vb[0] * f + self._vb[1] * r) * dt
+        self._pose_hist.append((t, *self._pose))
+
+    def _pose_at(self, t: float) -> np.ndarray:
+        for p in reversed(self._pose_hist):
+            if p[0] <= t:
+                return np.array(p[1:])
+        return np.array(self._pose_hist[0][1:]) if self._pose_hist else self._pose.copy()
+
+    def _predict(self, track: Track, rng: float, lateral: float, t: float, walker_xy) -> Plan | None:
+        """Feed the filter the new detection (at the frame's time), predict the walker, plan the drone.
+        Returns the plan when it is trusted, else None (the reactive command stays)."""
+        c = self.cfg
+        cam = scaled_camera(self.camera, *track.size)
+        t_meas = track.t - c.video_lag_s
+        if self._filter_t is None or track.t > self._filter_t + 1e-3:
+            self._filter_t = track.t
+            x, y, h = self._pose_at(t_meas)
+            f, r = fwd_right(h)
+            z = np.array([x, y]) + rng * f + lateral * r
+            s_f = rng * rng / (cam.fy * c.above_m) * c.meas_px + 0.03  # range from the head row
+            s_r = rng * c.meas_px / cam.fx + 0.03
+            J = np.stack([f, r], 1)
+            self.filter.update(t_meas, z, J @ np.diag([s_f ** 2, s_r ** 2]) @ J.T)
+            if not self._trail:  # seed the trail on the line walker -> drone, so the standoff starts where we are
+                d = np.array([x, y]) - z
+                self._trail.append(z + d / max(1e-6, np.hypot(*d)) * c.behind_m)
+            xf = self.filter.combined()[0][:2]
+            if np.hypot(*(xf - self._trail[-1])) > 0.05:
+                self._trail.append(xf)
+        turn = None
+        if walker_xy is not None and self.route is not None:
+            turn = route_turn_ahead(walker_xy, self.route)
+        pred = self.prediction = self.filter.predict(t, c.horizon_s, 0.1, turn)
+        if pred is None:
+            return None
+        lim = np.minimum([c.max_lr, c.max_fb, c.max_ud, c.max_yaw], self.max_rc).astype(float)
+        self.plan = self.planner.plan(pred, np.array(self._trail)[:-1], self._pose[:2], self._pose[2], self._vb,
+                                      self._out, lim)
+        ok = pred.n_updates >= c.min_updates and pred.std[-1] <= c.max_std_m
+        return self.plan if ok else None
+
+    def _display(self, cmd: FollowCmd) -> None:
+        """Prediction and plan in the drone's frame now (forward, right), for the overlay and the log."""
+        f, r = fwd_right(self._pose[2])
+        body = lambda p: np.stack([(p - self._pose[:2]) @ f, (p - self._pose[:2]) @ r], -1)  # noqa: E731
+        cmd.walker_path, cmd.walker_std = body(self.prediction.path), self.prediction.std
+        if self._trail:
+            cmd.trail = body(np.array(self._trail))
+        if self.plan is not None:
+            cmd.drone_path = body(self.plan.drone_path)
 
     def _ud(self, tel: Telemetry | None, cmd: FollowCmd) -> float:
         if self.height_target is None or tel is None or tel.height_m is None:
@@ -525,7 +645,7 @@ class FollowMode:
                  range_m=None if cmd.range_m is None else round(cmd.range_m, 2),
                  bearing_deg=None if cmd.bearing_deg is None else round(cmd.bearing_deg, 1),
                  walker_m_s=None if cmd.walker_m_s is None else round(cmd.walker_m_s, 2),
-                 height_err_m=None if cmd.height_err_m is None else round(cmd.height_err_m, 2))
+                 height_err_m=None if cmd.height_err_m is None else round(cmd.height_err_m, 2), planner=cmd.planner)
         return cmd.rc
 
     def status(self) -> str:
@@ -569,7 +689,7 @@ def _iter_source(path: Path):
                 if raw is not None:
                     h = raw.get("h")
                     tel = Telemetry(t=rec.t, height_m=None if h is None else float(h) / 100.0,
-                                    pitch_deg=pose.get("pitch"))
+                                    pitch_deg=pose.get("pitch"), yaw_deg=pose.get("heading"))
                 yield img, rec.t, tel, pose.get("flying"), fps, rec.camera
         finally:
             rec.release()
@@ -618,22 +738,87 @@ def draw_overlay(img: np.ndarray, dets: list[Detection], track: Track | None, cm
     cv2.putText(out, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2)
     c = (w // 2, h // 2)  # stick arrows: yaw/lr sideways, fb up
     cv2.arrowedLine(out, c, (c[0] + 2 * (cmd.yaw + cmd.lr), c[1] - 2 * cmd.fb), col, 2)
+    if cmd.walker_path is not None:
+        _draw_prediction(out, cmd, ctrl.cfg, cam)
     return out
 
 
+WALKER_BGR, DRONE_BGR, TRAIL_BGR = (60, 220, 60), (255, 160, 0), (150, 150, 150)
+
+
+def _draw_prediction(out: np.ndarray, cmd: FollowCmd, cfg: FollowCfg, cam: Camera) -> None:
+    """Predicted walker path on the image (at head-top height) and a top-down inset, bottom right: walker trail
+    (grey), predicted walker path with its 1-sigma circles (green), planned drone path (blue), 1 m grid, the drone
+    at the bottom centre facing up. Points are (forward, right) m in the drone's frame now."""
+    import cv2
+
+    h, w = out.shape[:2]
+    pts = [(cam.cx + cam.fx * r / f, cam.cy + cam.fy * cfg.above_m / f) for f, r in cmd.walker_path if f > 0.3]
+    pts = np.array([p for p in pts if -w < p[0] < 2 * w and -h < p[1] < 2 * h], np.int32)
+    if len(pts) > 1:
+        cv2.polylines(out, [pts], False, WALKER_BGR, 2)
+        cv2.circle(out, (int(pts[-1][0]), int(pts[-1][1])), 6, WALKER_BGR, 2)
+    size = int(0.4 * min(w, h))
+    scale = size / max(4.0, float(cmd.walker_path[:, 0].max()) + 1.0)  # 4 m across, more if the walker is further
+    x0, y0 = w - size - 10, h - size - 10
+    roi = out[y0:y0 + size, x0:x0 + size]
+    roi[:] = (roi * 0.35).astype(np.uint8)
+    org = np.array([size / 2, size - 0.5 * scale])
+
+    def px(p: np.ndarray) -> np.ndarray:
+        p = np.atleast_2d(p)
+        return np.stack([org[0] + p[:, 1] * scale, org[1] - p[:, 0] * scale], 1).astype(np.int32)
+
+    for m in range(1, int(size / scale)):
+        cv2.line(roi, (0, int(org[1] - m * scale)), (size, int(org[1] - m * scale)), (70, 70, 70), 1)
+    if cmd.trail is not None and len(cmd.trail) > 1:
+        cv2.polylines(roi, [px(cmd.trail)], False, TRAIL_BGR, 1)
+    wp = px(cmd.walker_path)
+    for (u, v), sd in zip(wp[::5], cmd.walker_std[::5]):
+        cv2.circle(roi, (int(u), int(v)), max(2, int(sd * scale)), WALKER_BGR, 1)
+    cv2.polylines(roi, [wp], False, WALKER_BGR, 2)
+    if cmd.drone_path is not None:
+        cv2.polylines(roi, [px(cmd.drone_path)], False, DRONE_BGR, 2)
+    cv2.drawMarker(roi, (int(org[0]), int(org[1])), DRONE_BGR, cv2.MARKER_TRIANGLE_UP, 14, 2)
+    cv2.putText(roi, f"{cmd.planner or '-'}  next {cfg.horizon_s:g} s", (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                (230, 230, 230), 1)
+
+
 CSV_COLS = ["index", "t", "flying", "state", "conf", "x1", "y1", "x2", "y2", "n_dets", "range_m", "bearing_deg",
-            "walker_m_s", "height_m", "lr", "fb", "ud", "yaw"]
+            "walker_m_s", "height_m", "lr", "fb", "ud", "yaw", "planner", "pred_speed", "pred_turn_deg_s", "p_stop"]
+
+
+def _pred_cols(ctrl: FollowController | None, cmd: FollowCmd) -> list[str]:
+    p = None if ctrl is None or cmd.walker_path is None else ctrl.prediction
+    return ["", "", ""] if p is None else [f"{p.speed:.2f}", f"{p.turn_deg_s:.1f}", f"{p.p_stop:.2f}"]
+
+
+def _walker_gps(take: Path) -> dict[int, tuple[float, float]]:
+    """frame index -> walker (x, y) sim metres from `python -m kite.gps ... --recording <take>` (gps/frames_gps.csv)."""
+    path = take / "gps" / "frames_gps.csv"
+    if not path.is_file():
+        return {}
+    with open(path, newline="") as fh:
+        return {int(r["index"]): (float(r["x"]), float(r["y"])) for r in csv.DictReader(fh) if r["x"] and r["y"]}
 
 
 def rehearse(source: str | Path, detector: Detector, cfg: FollowCfg | None = None, out_csv: str | Path | None = None,
              overlay: str | Path | None = None, preview: bool = False, control_hz: float = 10.0,
              max_rc: int = 50, max_s: float = 0.0) -> dict:
     """Run tracker + controller open loop on every frame of a take or clip; write the rc it WOULD send per frame.
-    Follow engages at the first walker touching the bottom edge, like pressing g. Returns a summary."""
+    Follow engages at the first walker touching the bottom edge, like pressing g. Returns a summary.
+    The prediction always runs (the overlay draws it); cfg.predict says whether its plan or the reactive rc is
+    written. A take with gps/frames_gps.csv (kite.gps) also gets the route prior."""
     import cv2
 
     src = Path(source)
     cfg = cfg or FollowCfg()
+    gps = _walker_gps(src) if src.is_dir() else {}
+    route = None
+    if gps:
+        from .predict import load_route
+
+        route = load_route()
     if out_csv is None:
         out_csv = src / "follow_dry_run.csv" if src.is_dir() else src.with_suffix(".follow_dry_run.csv")
     tracker = WalkerTracker(cfg)
@@ -657,13 +842,13 @@ def rehearse(source: str | Path, detector: Detector, cfg: FollowCfg | None = Non
                 stats["frames"] += 1
                 stats["walker_frames"] += fresh
                 if ctrl is None and fresh and tr.confirmed and tr.touches_bottom:
-                    ctrl = FollowController(cfg, cam or load_camera(), max_rc)
+                    ctrl = FollowController(cfg, cam or load_camera(), max_rc, route=route, open_loop=True)
                     ctrl.reset(tel.height_m if tel else None)
                     stats["engaged_at_s"] = round(t - t0, 2)
                     next_tick = t
                 if ctrl is not None and t >= next_tick:
                     prev = cmd.state
-                    cmd = ctrl.update(tr, tel, t)
+                    cmd = ctrl.update(tr, tel, t, gps.get(i))
                     next_tick += 1.0 / control_hz
                     stats["ticks"] += 1
                     stats[f"{cmd.state}_ticks"] += 1
@@ -674,7 +859,8 @@ def rehearse(source: str | Path, detector: Detector, cfg: FollowCfg | None = Non
                               len(dets), "" if cmd.range_m is None else f"{cmd.range_m:.2f}",
                               "" if cmd.bearing_deg is None else f"{cmd.bearing_deg:.1f}",
                               "" if cmd.walker_m_s is None else f"{cmd.walker_m_s:.2f}",
-                              "" if tel is None or tel.height_m is None else f"{tel.height_m:.2f}", *cmd.rc])
+                              "" if tel is None or tel.height_m is None else f"{tel.height_m:.2f}", *cmd.rc,
+                              cmd.planner or "", *_pred_cols(ctrl, cmd)])
                 if overlay or preview:
                     vis = draw_overlay(img, dets, tr, cmd, ctrl or FollowController(cfg, cam or load_camera(), max_rc))
                     if overlay:
@@ -707,6 +893,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--above", type=float, default=FollowCfg.above_m, help="camera above the head top, m")
     p.add_argument("--height", type=float, default=None, help="altitude to hold, m (default: height at engage)")
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds of the source")
+    p.add_argument("--predict", action="store_true", help="write the prediction planner's rc instead of the reactive "
+                   "controller's (the overlay draws the prediction either way)")
     args = p.parse_args(argv)
 
     src = Path(args.source)
@@ -716,7 +904,7 @@ def main(argv: list[str] | None = None) -> int:
     if why:
         print(why)
         return 1
-    cfg = FollowCfg(behind_m=args.behind, above_m=args.above, height_m=args.height)
+    cfg = FollowCfg(behind_m=args.behind, above_m=args.above, height_m=args.height, predict=args.predict)
     out = Path(args.out) if args.out else None
     overlay = None
     if args.overlay:
