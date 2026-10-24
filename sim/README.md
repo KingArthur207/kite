@@ -141,7 +141,7 @@ That runs on sim chest + drone frames and sends to `KITE_EARPIECE_HOST` (`.env`,
 
 `python3 sim/test_standin_geometry.py` checks the geometry and the hazard gate without a model. `--jsonl` writes the same events with a `t` field for `scripts/replay.py`. `--overlay` writes an mp4 with boxes and bearing/distance labels. Other flags: `--fx` (default 1000), `--cam-height`, `--device`, `--fast` (don't pace a video to real time), `--no-send`, `--max-seconds`. It uses `mps` when available.
 
-On Moss, with the walker stopped 4 m short of the corner facing NW, every car that turned in from Howard during a 60 s wait drew a drone `hazard` as it came down Moss toward the walker ("Car slightly left, 7 meters" when it was 8 to 9 m away at about -25 degrees). Two gaps showed up. On the walk up Moss, oncoming Moss cars also draw "Car slightly left, 6 meters": the 3 m lane test can't tell that the walker is on the sidewalk of a 6 m alley. Once the walker turns to face the zebra (SW), a turning car comes from behind-right and is only in frame when it is about 3 m away and cut off by the edge, and the stand-in gave no hazard for it.
+On Moss, with the walker stopped 4 m short of the corner facing NW, every car that turned in from Howard during a 60 s wait drew a drone `hazard` as it came down Moss toward the walker ("Car slightly left, 7 meters" when it was 8 to 9 m away at about -25 degrees). Two gaps showed up. On the walk up Moss, oncoming Moss cars also drew "Car slightly left, 6 meters": the 3 m lane test couldn't tell that the walker is on the sidewalk of a 6 m alley. Now a car counts only within 1.5 m of the walker's path, or when its sideways offset (tracked per car over the last second) is shrinking fast enough to reach the path within 3 s, so a car crossing ahead still draws a hazard and one driving past on the road doesn't. Not re-measured on Moss yet. Once the walker turns to face the zebra (SW), a turning car comes from behind-right and is only in frame when it is about 3 m away and cut off by the edge, and the stand-in gave no hazard for it.
 
 On an M-series Mac, YOLO11n with tracking takes about 25 ms a frame on `mps` with the machine idle, and 75 to 90 ms with headless Chrome rendering the sim alongside. The sim's placeholder boxes and capsules are rarely detected; the glTF cars and people are.
 
@@ -163,15 +163,15 @@ The live path is the stand-in detector with a camera index as `--source`. `sim/l
 Commands, from the repo root. `--show` needs `opencv-python` (with GUI), not the headless build:
 
 ```
-RUN="uv run --no-project --with ultralytics --with opencv-python --with lap --with websockets --with python-dotenv --with numpy --with scipy --with transformers"
+RUN="uv run --no-project --with ultralytics --with opencv-python --with lap --with websockets --with python-dotenv --with numpy --with scipy --with transformers --with av"
 $RUN python sim/standin_detect.py --download --depth          # once, with internet: YOLO weights and the depth model
-$RUN python sim/standin_detect.py --list-cameras              # which indices open, at what resolution
-$RUN python sim/standin_detect.py --source 1 --show --cam-height 1.2 --pitch 15 --depth
+$RUN python sim/standin_detect.py --list-cameras              # index, name and frame size of each camera
+$RUN python sim/standin_detect.py --source webcam:iPhone --show --cam-height 1.2 --pitch 15 --depth
 ```
 
 Frames are resized to 960 wide. A live camera defaults to `--fx 700`, which fits an iPhone at 1x or a MacBook camera at 960 wide. Calibrate on the day: stand someone on a tape mark 2 m from the judge and change `--pitch` (then `--fx`) until the label reads 2.0 m.
 
-To use the iPhone as the camera, sign it into the same Apple ID as the Mac, with Wi-Fi and Bluetooth on, and lock it in landscape near the Mac. Continuity Camera then shows it as another index in `--list-cameras`, usually 1 when the built-in camera is 0. Turn off Center Stage in Control Center > Video Effects so the field of view doesn't change mid-walk. To check you have the right index, run with `--show` and cover the phone's lens.
+To use the iPhone as the camera, sign it into the same Apple ID as the Mac, with Wi-Fi and Bluetooth on, and lock it in landscape near the Mac. Continuity Camera then shows it in `--list-cameras`, usually as index 1 when the built-in camera is 0. `--source` takes the index or any part of the name (`webcam:iPhone`); both go through `kite.sources.open_source()`, which can also open a Continuity Camera that OpenCV doesn't list, by name through PyAV. Turn off Center Stage in Control Center > Video Effects so the field of view doesn't change mid-walk. To check you have the right camera, run with `--show` and cover the phone's lens.
 
 macOS asks for Camera access the first time; grant it to the terminal app you run from. If `--list-cameras` finds nothing, check System Settings > Privacy & Security > Camera.
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import math
 import statistics
-import sys
 import time
 from collections import deque
 
@@ -143,37 +142,6 @@ def download_depth() -> None:
     from transformers import AutoModelForDepthEstimation
     AutoModelForDepthEstimation.from_pretrained(DEPTH_MODEL)
     print(f"cached {DEPTH_MODEL}")
-
-
-# ------------------------------------------------------------------ cameras
-def open_camera(index: int):
-    import cv2
-    backend = cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
-    cap = cv2.VideoCapture(index, backend)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    for _ in range(20):                 # AVFoundation needs a moment before the first frame
-        ok, _ = cap.read()
-        if ok:
-            return cap
-        time.sleep(0.05)
-    cap.release()
-    return None
-
-
-def list_cameras(n: int = 6) -> None:
-    import cv2
-    found = 0
-    for i in range(n):
-        cap = open_camera(i)
-        if cap is None:
-            continue
-        found += 1
-        print(f"{i}: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} "
-              f"@ {cap.get(cv2.CAP_PROP_FPS):.0f} fps")
-        cap.release()
-    if not found:
-        print("no camera opened. On macOS give the terminal app Camera access "
-              "(System Settings > Privacy & Security > Camera) and run again.")
 
 
 # ------------------------------------------------------------------ reveal screen

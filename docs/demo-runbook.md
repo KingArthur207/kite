@@ -27,13 +27,13 @@ One command from the repo root brings everything up in the background:
 
 ```bash
 scripts/demo.sh sim                    # earpiece, relay, sim, dashboard, stand-in detector; opens the sim and dashboard
-scripts/demo.sh live 1                 # earpiece, dashboard, stand-in detector on camera 1 with the reveal window
+scripts/demo.sh live iPhone            # earpiece, dashboard, stand-in detector on that camera (index or name) with the reveal window
 scripts/demo.sh replay data/sample_walk.jsonl   # earpiece, dashboard, and the replay
 scripts/demo.sh status                 # what is up, the last 3 log lines of each piece, then netcheck
 scripts/demo.sh stop                   # stops what the script started and nothing else
 ```
 
-Add `--output "<device>"` (or set `KITE_OUTPUT`) to pick the headphones; by default the earpiece looks for AirPods. `KITE_SPACETIME=0` turns off mirroring to SpacetimeDB. `KITE_OFFLINE=1` runs `scripts/offline.sh` first and points the earpiece at the local server, so you don't need to edit `.env`. `KITE_DETECT_ARGS="--depth"` passes extra flags to the detector. For `live`, find the camera index first with `--list-cameras` (sim/README.md).
+Add `--output "<device>"` (or set `KITE_OUTPUT`) to pick the headphones; by default the earpiece looks for AirPods. `KITE_SPACETIME=0` turns off mirroring to SpacetimeDB. `KITE_OFFLINE=1` runs `scripts/offline.sh` first and points the earpiece at the local server, so you don't need to edit `.env`. `KITE_DETECT_ARGS="--depth"` passes extra flags to the detector. For `live`, give a camera index or part of its name; `--list-cameras` lists them (sim/README.md).
 
 Before it starts anything, the script checks for `earpiece/.venv`, `node_modules` in `sim/` and `dashboard/`, and the detector weights, and prints the command that fixes each missing one. If a port it needs (5010, 5011, 5020, 5173, 5174) is already taken, it names the process holding it and refuses to start. Logs go to `logs/<piece>.log`. If the stand-in detector isn't on `main` yet, the script says so and starts the rest.
 
