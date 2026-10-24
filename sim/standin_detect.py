@@ -7,6 +7,7 @@ works before Rex's streetseg exists. Swap this file out; nothing downstream chan
     python sim/standin_detect.py                             # sim chest + drone via sim/relay.py
     python sim/standin_detect.py --source clip.mp4 --camera drone --jsonl out.jsonl --overlay out.mp4
     python sim/standin_detect.py --source webcam:iPhone --show   # live chest camera, by name or index (kite.sources)
+    python sim/standin_detect.py --source streetview:route --camera drone --jsonl sv.jsonl --no-send   # real imagery
 
 chest camera -> `obstacles` (every frame, ~8-10 Hz) + `heartbeat` when empty
 drone camera -> `hazard` crowd / vehicle (3-frame onset, silent ttl expiry) + `scene` every 10 s
@@ -220,7 +221,10 @@ def main() -> None:
     ap.add_argument("--fx", type=float, help=f"focal length in px at 960 wide (default {DEFAULT_FX:.0f}, "
                                               f"{LIVE_FX:.0f} for a live camera)")
     ap.add_argument("--cam-height", type=float, help="override camera height (m); sim uses its pose")
-    ap.add_argument("--pitch", type=float, default=0.0, help="camera tilt in degrees, + = down (chest phone)")
+    ap.add_argument("--pitch", type=float, default=0.0, help="camera tilt in degrees, + = down (chest phone); "
+                                                             "streetview: also the tilt the images are fetched at")
+    ap.add_argument("--hfov", type=float, help="streetview: horizontal FOV to fetch, deg (default the Tello's)")
+    ap.add_argument("--cache-dir", help="streetview: reuse responses between runs (under /tmp; delete it after)")
     ap.add_argument("--person-height", type=float, help="height of the person who steps in (default 1.7 m)")
     ap.add_argument("--stop-m", type=float, default=live_walk.STOP_M, help="chest: critical inside this range")
     ap.add_argument("--depth", action="store_true", help="chest: Depth Anything fallback for close non-YOLO things")
@@ -239,16 +243,18 @@ def main() -> None:
     if a.list_cameras:
         from kite.sources.open import list_cameras
         return list_cameras(probe=True)
-    live = False
+    live, sv, kind = False, None, None
     if a.source:
         from kite.sources import parse_spec
         try:
             kind = parse_spec(a.source)[0]
         except ValueError as e:
             sys.exit(str(e))
-        if kind not in ("webcam", "file"):
-            sys.exit(f"--source {a.source}: use a video file or a camera (sim frames are the default)")
+        if kind not in ("webcam", "file", "streetview"):
+            sys.exit(f"--source {a.source}: use a video file, a camera or streetview:... (sim frames are the default)")
         live = kind == "webcam"
+    if kind == "streetview" and a.overlay:
+        sys.exit("--overlay is off for streetview: Google's terms do not allow storing the images")
     if live and a.overlay:
         sys.exit("--overlay is off for live cameras: we don't store frames during the live demo (spec 5.3)")
     fx = a.fx or (LIVE_FX if live else DEFAULT_FX)
@@ -274,7 +280,15 @@ def main() -> None:
     jsonl = open(a.jsonl, "w") if a.jsonl else None
     t0 = time.monotonic()
 
-    if live:
+    if kind == "streetview":
+        from kite.sources import open_source
+        opts = {k: v for k, v in (("hfov_deg", a.hfov), ("cache_dir", a.cache_dir)) if v is not None}
+        try:
+            sv = open_source(a.source, pitch=-a.pitch, **opts)  # pose pitch: + = up
+        except (RuntimeError, ValueError) as e:
+            sys.exit(str(e))
+        fx, srcs = sv.camera.fx, None
+    elif live:
         from kite.sources import open_source
         try:
             cap = open_source(a.source, timeout=2.0)          # newest frame only, so no growing lag
@@ -309,7 +323,16 @@ def main() -> None:
             if a.max_seconds and time.monotonic() - t0 > a.max_seconds:
                 break
             frames, poses = {}, {}
-            if live:
+            if sv is not None:
+                ok, img = sv.read()
+                if not ok:
+                    break
+                t, fx = sv.pose["t"], sv.camera.fx
+                frames, poses = {c: img for c in cams}, {c: sv.pose for c in cams}
+                p = sv.pano
+                print(f"[standin] t={t:.1f} streetview {p['lat']:.6f},{p['lng']:.6f} heading {sv.pose['heading']} "
+                      f"{p['date']} {p['copyright']}", flush=True)
+            elif live:
                 ok, img = cap.read()
                 if not ok:
                     print("[standin] camera read failed", flush=True)
@@ -347,7 +370,8 @@ def main() -> None:
                 h, w = img.shape[:2]
                 cam_h = a.cam_height or poses.get(c, {}).get("cam_height") or DEFAULT_HEIGHT[c]
                 ts = time.perf_counter()
-                boxes = detect(models[c], img, track=True)
+                boxes = detect(models[c], img, track=sv is None)   # streetview: stills ~10 m apart, and
+                # ByteTrack only reports a new object from its second frame, so it hid most of them
                 dt = time.perf_counter() - ts
                 if warm is None:
                     warm = dt
@@ -415,6 +439,8 @@ def main() -> None:
             cv2.destroyAllWindows()
         if live:
             cap.release()
+        if sv is not None:
+            sv.release()                                      # prints the request count
         if n:
             print(f"[standin] {n} inferences, {infer_s / n * 1000:.1f} ms each ({n / infer_s:.1f} fps) "
                   f"on {device}; first call {warm * 1000:.0f} ms", flush=True)
