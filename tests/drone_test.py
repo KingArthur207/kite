@@ -31,6 +31,7 @@ than that, and the std includes the quantisation.
 import argparse
 import json
 import os
+import socket
 import threading
 import time
 from datetime import datetime
@@ -62,6 +63,63 @@ def log_state(tello, rec, stop):
             last = st
             rec["state"].append([time.time()] + [float(st.get(k, "nan")) for k in FIELDS])
         time.sleep(0.002)
+
+
+def probe_video_packets(tello, seconds=3.0):
+    """Count raw UDP packets on the video port after one more streamon, without decoding.
+
+    Tells "the drone sends nothing" (0 packets) from "packets arrive but OpenCV can't decode them".
+    Returns (packets, bytes), or (None, reason) if the port can't be bound.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(("0.0.0.0", tello.vs_udp_port))
+    except OSError as e:
+        sock.close()
+        return None, f"UDP {tello.vs_udp_port} is held by another program ({e})"
+    sock.settimeout(0.2)
+    n = size = 0
+    try:
+        tello.send_command_without_return("streamon")
+        end = time.time() + seconds
+        while time.time() < end:
+            try:
+                size += len(sock.recv(65536))
+                n += 1
+            except socket.timeout:
+                pass
+    finally:
+        sock.close()
+    return n, size
+
+
+def open_video(tello, fps, tries=3):
+    """streamon + VideoStream, re-sending streamon between tries: the Tello often ignores the first one.
+
+    On failure, probes the raw video port and prints what is wrong; returns None.
+    """
+    from kite.sources.video_stream import VideoStream
+
+    for i in range(tries):
+        try:
+            tello.streamon()
+        except Exception as e:  # an 'error' reply: try again
+            print(f"video try {i + 1}/{tries}: streamon -> {e}")
+            continue
+        try:
+            return VideoStream(tello.get_udp_video_address(), fps=fps).start()
+        except RuntimeError as e:
+            print(f"video try {i + 1}/{tries}: {e}")
+    n, size = probe_video_packets(tello)
+    if n is None:
+        print(f"video: {size}. Quit it: lsof -nP -iUDP:{tello.vs_udp_port}")
+    elif n:
+        print(f"video: the drone IS sending ({n} packets, {size // 1024} KB in 3 s), but OpenCV could not decode it. "
+              "Check with kite's PyAV reader: python -m kite.sources.open tello --preview")
+    else:
+        print(f"video: no packets reached UDP {tello.vs_udp_port} in 3 s: the drone is not streaming. "
+              "Close the Tello phone app, power-cycle the drone, rejoin its Wi-Fi and try again.")
+    return None
 
 
 def log_video(stream, rec, stop):
@@ -344,15 +402,17 @@ def run(args):
     # One OpenCV/FFmpeg reader for both the recorder and the preview: djitellopy's PyAV reader
     # and a second cv2.VideoCapture cannot both bind UDP 11111. The grab()-drain in VideoStream
     # also stops decoder backlog from inflating the measured video delay over a long flight.
-    tello.streamon()
     stream = None
     try:
-        stream = VideoStream(tello.get_udp_video_address(), fps=args.video_fps).start()
+        stream = open_video(tello, args.video_fps)
+    except Exception as e:  # a video problem must never stop the flight or the telemetry run
+        print(f"video unavailable ({e})")
+    if stream is None:
+        print("continuing with telemetry only")
+    else:
         threading.Thread(target=log_video, args=(stream, rec, stop), daemon=True).start()
         if args.preview:
             threading.Thread(target=preview_loop, args=(stream, hud, stop, args.preview_scale), daemon=True).start()
-    except Exception as e:  # a video problem must never stop the flight or the telemetry run
-        print(f"video unavailable ({e}) - continuing with telemetry only")
     time.sleep(3.0)  # let the video decoder start
 
     rec["meta"]["rtt"] = []
