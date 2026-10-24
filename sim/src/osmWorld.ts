@@ -4,8 +4,8 @@ import * as THREE from "three";
 import moss from "../public/osm/moss.json";
 import { spawnMossActors } from "./mossActors";
 import { addSkyAndSun, tuneRenderer } from "./osmLook";
-import { buildFacades, type Building } from "./osmFacades";
-import { buildStreets, ribbon, type StreetData } from "./osmStreet";
+import { buildFacades, capBays, type Building } from "./osmFacades";
+import { buildStreets, nearestOnRoads, ribbon, type StreetData } from "./osmStreet";
 import { buildStreetDressing } from "./streetDressing";
 
 type P = [number, number];
@@ -51,6 +51,30 @@ function flat(quads: Quad[], y: number, m: THREE.Material) {
   return new THREE.Mesh(g, m);
 }
 
+// Street View look per building. Moss's houses are Victorian row houses; the brick one (33 Moss, NE side,
+// next NW of the spawn house) stays brick. Howard's north side is pale mid-rise with big windows.
+const BRICK_IDS = new Set([260351180]);
+const MOSS_HOUSE_MAX = 200;   // Moss house numbers; the corner buildings carry Howard numbers (1073, 1077)
+const BAY_CAP = 0.8;          // m: real SF bays stick out 0.6-0.9 m; OSM roof outlines overhang about twice that
+const MOSS_FRONT = 7;          // m: a footprint corner this close to Moss's centreline fronts Moss
+const HOWARD_NORTH_DEPTH = 34; // m: centroid to Howard centreline for the buildings fronting its north side
+function styled(b: Building, roads: StreetData["roads"]): Building {
+  const c: P = [b.pts.reduce((s, p) => s + p[0], 0) / b.pts.length, b.pts.reduce((s, p) => s + p[1], 0) / b.pts.length];
+  const moss = roads.filter((r) => r.name === "Moss Street");
+  const nums = (b.tags?.["addr:housenumber"] ?? "").split(";").map(Number).filter((n) => n > 0);
+  // Fronts Moss (a corner within reach of its centreline), not numbered on another street. Unnumbered ones
+  // count too: Street View shows houses there.
+  const mossHouse = nums.every((n) => n < MOSS_HOUSE_MAX) && b.h < 14 && b.pts.some((p) => nearestOnRoads(moss, p).d < MOSS_FRONT);
+  if (mossHouse) {
+    const tags = BRICK_IDS.has(b.id) ? { ...b.tags, "building:material": "brick" } : b.tags;
+    return { ...capBays(b, 0), tags, style: "victorian" };   // angled bays drawn instead
+  }
+  // Howard runs SW, so its right (negative side) is the north side. Alleys sit between, so test Howard alone.
+  const howard = nearestOnRoads(roads.filter((r) => r.name === "Howard Street"), c);
+  if (howard.side < 0 && howard.d < HOWARD_NORTH_DEPTH && Math.hypot(c[0], c[1]) < 140) return { ...capBays(b, BAY_CAP), style: "midrise" };
+  return capBays(b, BAY_CAP);
+}
+
 function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
   const dx = x2 - x1, dn = n2 - n1;
   const t = Math.max(0, Math.min(1, ((x - x1) * dx + (n - n1) * dn) / (dx * dx + dn * dn || 1)));
@@ -68,17 +92,20 @@ export function buildOsmWorld(opts: {
   addSkyAndSun(scene, { x: 15, n: -25 }, 160);
   const visible = new THREE.Group();
   scene.add(visible);
-  const { garages, windows } = buildFacades(visible, data.buildings, data.road_quads, opts.skipWalls);
-  buildStreets(visible, data, garages);
-  console.info(`[osmWorld] ${data.buildings.length} buildings, ${windows} windows and doors, ${garages.length} garages`);
+  // The photo world skips walls by OSM edge index, so it keeps the raw footprints.
+  const buildings = opts.skipWalls?.size ? data.buildings : data.buildings.map((b) => styled(b, data.roads));
+  const world = { ...data, buildings };
+  const { garages, windows, stoops } = buildFacades(visible, buildings, data.road_quads, opts.skipWalls, data.route);
+  buildStreets(visible, world, garages);
+  console.info(`[osmWorld] ${buildings.length} buildings, ${windows} windows and doors, ${garages.length} garages`);
 
-  const walls: Wall[] = [...data.curbs];
+  const walls: Wall[] = [...data.curbs, ...stoops];
   // Ground floors: footprints are roof outlines, and bays overhanging the sidewalk (from 3 m up) don't block.
-  for (const b of data.buildings) {
+  for (const b of buildings) {
     const g = (b as { ground?: number[][] }).ground ?? b.pts;
     for (let k = 0; k + 1 < g.length; k++) walls.push([...g[k], ...g[k + 1]] as Wall);
   }
-  walls.push(...buildStreetDressing(visible, data, garages));   // parked cars, trees, poles, signs: they collide too
+  walls.push(...buildStreetDressing(visible, world, garages));   // parked cars, trees, poles, signs: they collide too
 
   // Planned demo walk, drawn faintly on screen only (main.ts hides it for camera frames).
   const overlay = new THREE.Group();

@@ -58,8 +58,12 @@ BUILDING_TAGS = ["building", "building:levels", "height", "building:material", "
                  "roof:shape", "roof:colour", "shop", "amenity", "addr:housenumber"]
 BAY_MIN, BAY_MAX, BAY_Z = 0.15, 2.0, 3.0
 BAY_SPREAD = 0.5   # roof-outline overhang past the property line: clipped, from 3 m up
+# Parked cars where OSM has no parking:lane tags, from Street View: Moss parks on its SW (right of travel)
+# curb only; the NE curb is NO PARKING with driveways.
+PARKING_SIDES = {MOSS: ("right",)}
 SPAWN_BEFORE_CROSSING = 70.0
 ROUTE_ALONG_HOWARD = 20.0
+TRUNK_CLEAR = 0.45     # m: walk line to a tree trunk (walker radius 0.3 plus the sim's 0.1 contact margin)
 
 
 def to_local(lat, lng):
@@ -263,7 +267,9 @@ def layout(way, buildings, sf=None):
         lanes = 1 if oneway else 2
         lane_w = ALLEY_W / lanes
     def side(s):
-        return t.get(f"parking:lane:{s}", t.get("parking:lane:both")) == "parallel", \
+        tagged = t.get(f"parking:lane:{s}", t.get("parking:lane:both"))
+        parked = tagged == "parallel" if tagged else s in PARKING_SIDES.get(way["id"], ())
+        return parked, \
                t.get(f"cycleway:{s}", t.get("cycleway:both")) == "track"
     (park_l, track_l), (park_r, track_r) = side("left"), side("right")
     W = lanes * lane_w + PARKING_W * (park_l + park_r) + (TRACK_W + TRACK_BUFFER) * (track_l + track_r)
@@ -282,7 +288,7 @@ def layout(way, buildings, sf=None):
         los, his = [round(a, 2) for a, _ in real], [round(b, 2) for _, b in real]
         lo, hi = statistics.median(los), statistics.median(his)
         if lane_w != LANE_W:   # untagged alley: the lane fills the real roadway
-            lane_w = (hi - lo) / lanes
+            lane_w = (hi - lo - PARKING_W * (park_l + park_r)) / lanes
     mph = float(t["maxspeed"].split()[0]) if "maxspeed" in t else DEFAULT_MPH.get(t["highway"], 25)
     # Lane centres from the left curb inward: track, buffer, parking, then travel lanes.
     x = vadd(his, -(TRACK_W + TRACK_BUFFER) * track_l - PARKING_W * park_l)
@@ -490,8 +496,27 @@ def build(raw, sf=None):
         best = min((intersect(a, b, p, q) for p, q in zip(hpts, hpts[1:])),
                    key=lambda r: abs(r[1]) if r else 1e9)
         return best[0]
-    spawn = point_at(moss["pts"], s_cross + SPAWN_BEFORE_CROSSING, ne_off)
+    # Spawn on the NE sidewalk centre (curb + surveyed width / 2): back there the bays overhang from 3 m up
+    # and don't narrow the walk, so the narrowest-face line above would put it about 0.8 m off the curb.
+    s_spawn = s_cross + SPAWN_BEFORE_CROSSING
+    spawn_off = curbs_at(moss, s_spawn)[1] + moss["sidewalk"] / 2
     corner, far = on_howard(ne_off), on_howard(sw_off)
+    # The first leg slants toward the curb, so nudge the spawn NE until it passes every street tree trunk
+    # (they collide in the sim) with TRUNK_CLEAR to spare. The nudge at a tree scales with its share of the leg.
+    trunks = [((f["x"], f["y"]), (f["tags"].get("dbh_in") or 0) * 0.0254 / 2) for f in furniture if f["kind"] == "tree"]
+    for _ in range(5):
+        spawn = point_at(moss["pts"], s_spawn, spawn_off)
+        L = math.dist(spawn, corner)
+        need = 0.0
+        for c, r in trunks:
+            t = dot(sub(c, corner), unit(sub(spawn, corner)))
+            if not 0 < t < L:
+                continue
+            gap = abs(cross(unit(sub(spawn, corner)), sub(c, corner))) - r
+            need = max(need, (TRUNK_CLEAR - gap) * L / t)
+        if need <= 1e-3:
+            break
+        spawn_off += need + 0.01
     end = add(far, mul(unit(sub(far, corner)), ROUTE_ALONG_HOWARD))
     route = [spawn, corner, far, end]
     names = ["spawn: Moss NE sidewalk", "corner: Moss NE sidewalk at Howard",
@@ -507,6 +532,7 @@ def build(raw, sf=None):
         "moss_sidewalk_m": round(moss["sidewalk"], 2),
         "moss_ne_sidewalk_narrowest_m": round(ne_face - ne_curb, 2),
         "moss_ne_walk_line_from_curb_m": round(ne_off - ne_curb, 2),
+        "moss_spawn_from_curb_m": round(spawn_off - curbs_at(moss, s_spawn)[1], 2),
         "moss_length_m": round(along_len(moss["pts"]), 1),
         "zebra_curb_to_curb_m": round(zebra["across"][1] - zebra["across"][0], 2),
         "zebra_walk_sidewalk_centre_to_centre_m": round(math.dist(corner, far), 2),
@@ -582,6 +608,7 @@ def self_check(data):
     assert 1.5 <= m["moss_sidewalk_m"] < 4, m
     sx, sy = data["spawn"]["x"], data["spawn"]["y"]
     assert sx > 0 and sy < 0 and 300 < data["spawn"]["heading"] < 330, data["spawn"]
+    assert m["moss_spawn_from_curb_m"] >= 0.9, m   # sidewalk centre, not hugging the curb
     assert 60 < m["route_length_m"] < 130, m
     sq = [(0, 0), (1, 0), (1, 1), (0, 1)]
     assert inside((0.5, 0.5), sq) and not inside((2, 0.5), sq)
