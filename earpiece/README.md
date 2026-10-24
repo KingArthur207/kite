@@ -13,10 +13,10 @@ python -m earpiece selftest                      # check audio, voices, STT, con
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
-python -m pytest                                 # 166 tests
+python -m pytest                                 # 210 tests (KITE_LIVE_TESTS=1 adds live API checks)
 ```
 
-Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`). Everything degrades gracefully without them.
+Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `GOOGLE_MAPS_API_KEY`). Everything degrades gracefully without them.
 
 ## Send it events
 
@@ -55,4 +55,17 @@ AirPods stem: once = talk, twice = repeat, three times = pause guidance (safety 
 | `sonar.py`, `beacon.py` | obstacle warnings by time-to-contact; Soundscape-style waypoint beacon |
 | `speech.py`, `listen.py` | Cartesia TTS/STT, priorities, preemption, time-to-live, offline fallback |
 | `brain.py`, `memory.py` | local voice commands, Claude with tools, Moss memory of places and hazards |
+| `route.py`, `geo.py` | Google Routes v2 walking directions turned into spoken turns and the beacon; lat/lng and sim meters |
 | `app.py`, `transport.py`, `controls.py` | wiring, UDP/WebSocket, AirPods stem presses |
+
+## Walking directions
+
+When the wearer asks for a saved, nearby or named place, the earpiece routes there itself (Google Routes API v2, walking) and follows every `position` event:
+
+- the first instruction at the start, said in the wearer's frame when a heading is known ("Head toward Lyon Street, slightly left");
+- a heads-up about 30 m before each turn ("In 30 meters, turn left onto Bay Street") and "Now turn left onto Bay Street" at about 6 m, each exactly once, however much the GPS wanders;
+- the beacon aimed at the next corner (never across it), then about 15 m along the route, with the distance left to the destination;
+- "You're off the route. Finding a new one." after 8 s more than 25 m away, then a new route from where the wearer is;
+- arrival within 8 m. With no key or no network, the beacon points straight at the place and real routing is retried.
+
+`position.heading` is a compass heading (0 north, 90 east). Without one, the walking direction over the last few fixes is used, and no beacon is sent while the wearer stands still. The sim and real GPS share one mapping, `geo.LocalFrame`: anchor it with `LocalFrame.from_landmarks([((lat, lng), (x, y)), ...])` on the same two or three landmarks that line up the splat, then `to_latlng(x, y)` for positions and `heading_of(dx, dy)` for headings. Route state goes out as `route` events (`started` with the polyline, `fallback`, `failed`, `rerouting`, `arrived`, `cancelled`) for the dashboard map.

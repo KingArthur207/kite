@@ -10,6 +10,7 @@ import pytest
 from conftest import wait_for
 from earpiece import geo
 from earpiece import route as R
+from earpiece.events import parse
 
 DATA = Path(__file__).parent / "data"
 
@@ -452,6 +453,71 @@ def test_guide_reroutes_from_the_latest_position(monkeypatch):
     assert fake.calls[1][0] != fake.calls[0][0]                    # from where the walker is now
     assert [m.text for m in out].count("You're off the route. Finding a new one.") == 1
     assert wait_for(lambda: g.follower is not None and g.follower is not f, 3)
+
+
+def _pos(lat, lng, heading=None):
+    d = {"type": "position", "lat": lat, "lng": lng}
+    if heading is not None:
+        d["heading"] = heading
+    return parse(d)
+
+
+def test_app_routes_a_nearby_place_end_to_end(app, monkeypatch):
+    route = marina()
+    monkeypatch.setattr(R, "compute_route", FakeRoutes(route))
+    events = []
+    app.transport.publish = events.append
+    app.places_search = lambda q, lat, lng, nearby: [{"name": "Walgreens", "address": "2141 Chestnut St, SF",
+                                                      "lat": route.destination[0], "lng": route.destination[1]}]
+    lat, lng = route.steps[0].start
+    app.handle(_pos(lat, lng, 180.0))
+    app.heard("take me to the nearest pharmacy")
+    assert wait_for(lambda: app.route.follower is not None, 5)
+    f = app.route.follower
+    assert wait_for(lambda: app.beacon.active and app.beacon.label == "Walgreens", 3)
+    assert app.context()["directions"]["destination"] == "Walgreens"
+    s = 0.0
+    while s <= f.length + 2 and app.route.active:
+        x, y = f.point_at(s)
+        x2, y2 = f.point_at(s + 1)
+        h = f.frame.heading_of(x2 - x, y2 - y) if (x2, y2) != (x, y) else 180.0
+        app.handle(_pos(*f.frame.to_latlng(x, y), h))
+        s += 1.2
+        time.sleep(0.002)
+    said = [e["text"] for e in events if e.get("type") == "guidance"]
+    assert said[0].startswith("Head toward Richardson Avenue")
+    assert said.count("Now turn left onto Chestnut Street.") == 1
+    assert said[-1] == "You have arrived at Walgreens."
+    assert not app.beacon.active and not app.route.active
+    states = [e["state"] for e in events if e.get("type") == "route"]
+    assert states == ["started", "arrived"]
+
+
+def test_app_routes_a_remembered_place_and_cancel_stops_it(app, monkeypatch):
+    route = marina()
+    monkeypatch.setattr(R, "compute_route", FakeRoutes(route))
+    app.memory.remember("place", "Blue Bottle Coffee on Filbert",
+                        {"name": "Blue Bottle Coffee", "lat": route.destination[0], "lng": route.destination[1]})
+    out = app.navigate("my Blue Bottle Coffee")
+    assert out == "Okay, heading to Blue Bottle Coffee."
+    assert app.route.active and app.route.follower is None       # waiting for a position
+    lat, lng = route.steps[0].start
+    app.handle(_pos(lat, lng, 180.0))
+    assert wait_for(lambda: app.beacon.active and app.beacon.label == "Blue Bottle Coffee", 5)
+    app.control("cancel_route")
+    assert not app.route.active and not app.beacon.active
+    app.handle(_pos(lat, lng, 180.0))
+    time.sleep(0.05)
+    assert not app.beacon.active
+
+
+def test_app_relative_targets_are_not_routed(app, monkeypatch):
+    fake = FakeRoutes(marina())
+    monkeypatch.setattr(R, "compute_route", fake)
+    app.handle(_pos(37.8013, -122.4477, 0.0))
+    assert app.navigate("the end of the street") == "Okay, I'll guide you to the end of the street."
+    time.sleep(0.1)
+    assert fake.calls == [] and not app.route.active
 
 
 @pytest.mark.skipif(not os.environ.get("KITE_LIVE_TESTS"), reason="set KITE_LIVE_TESTS=1")
