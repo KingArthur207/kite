@@ -15,6 +15,18 @@ npm install
 npm run dev        # connects to Maincloud by default
 ```
 
+![Dashboard](docs/screenshot.png)
+
+The map (Leaflet, OpenStreetMap tiles darkened in CSS) follows the walker from the newest `position` event that has `lat`/`lng`, and draws the recent trail. Active hazards are placed from their walker-frame `bearing` and `distance` plus the walker's compass `heading`, coloured by priority. The latest `beacon` shows as a green marker with a dashed line. Dragging the map stops auto-follow; the button turns it back on. On the right: walker, hazards, last spoken line, devices (green under 5 s since their last write, amber under 15 s, red after) and the live feed.
+
+To see it move without hardware, from the repo root:
+
+```bash
+earpiece/.venv/bin/python scripts/replay.py data/sample_track.jsonl --spacetime --speed 2
+```
+
+`data/sample_track.jsonl` is a 45 s synthetic walk up Lyon Street (source `test-dashboard`) with a beacon, three hazards and two status sources.
+
 ## Change the module
 
 ```bash
@@ -22,15 +34,24 @@ npm run spacetime:publish    # needs `spacetime login` as the database owner
 npm run spacetime:generate   # refresh src/module_bindings
 ```
 
+## Tables
+
+- `event`: every Kite event, newest 500 kept. Columns are `id`, `type`, `source`, `priority`, `payload` (the full event as a JSON string, same shapes as `earpiece/earpiece/events.py`) and `t` (server timestamp).
+- `latest`: the newest event per type and source, keyed `"type:source"` (for example `"position:sim"`), so a dashboard that joins late sees current state right away.
+
+Reducers: `push(type, source, priority, payload)` writes to both tables, and `clear()` wipes them before a new run. The dashboard reads both tables and calls only `clear`, from its "Clear run" button.
+
 ## Write from Python (drone or vision laptop)
 
-No SDK needed. Reducers are plain HTTP calls with a JSON object of arguments:
+No SDK needed. Reducers are plain HTTP calls with a JSON object of arguments. `payload` is itself a JSON string:
 
 ```bash
-TOKEN=$(curl -s -X POST https://maincloud.spacetimedb.com/v1/identity | jq -r .token)
-curl -X POST https://maincloud.spacetimedb.com/v1/database/kite-sync-pl6rp/call/add \
+HOST=https://maincloud.spacetimedb.com   # or http://127.0.0.1:3000 for a local server
+TOKEN=$(curl -s -X POST $HOST/v1/identity | jq -r .token)
+curl -X POST $HOST/v1/database/kite-sync-pl6rp/call/push \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"Ada"}'
+  -d '{"type":"position","source":"sim","priority":"info",
+       "payload":"{\"type\":\"position\",\"lat\":37.80,\"lng\":-122.45,\"heading\":270,\"place\":\"Lyon St\"}"}'
 ```
 
 ## Work offline against a local server

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kite sim</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font: 13px/1.4 system-ui, sans-serif; color: #eee; }
+      #view { position: absolute; inset: 0; }
+      #view.hidden { visibility: hidden; }
+      #hud { position: absolute; left: 10px; top: 10px; background: rgba(0,0,0,.6); padding: 8px 10px; border-radius: 6px; white-space: pre; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

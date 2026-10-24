@@ -16,7 +16,7 @@ Why it matters: commonly cited figures put a trained guide dog at around $50,000
 ## 2. Goals, non-goals, anti-goals
 
 Goals
-- A judge can walk a real street corner (a Gaussian splat of the corner outside Aneesh's apartment) with a black screen and AirPods, guided only by Kite, then see the view.
+- A judge can walk a model of the real corner outside Aneesh's apartment (Moss St at Howard, built from OpenStreetMap) with a black screen and AirPods, guided only by Kite, then see the view.
 - The same detection code runs on real Tello footage, on the sim's virtual drone camera, and on the live webcam. That is our main honesty claim.
 - Real Tello footage of a walker on that corner, with Kite's cues overlaid, in the demo video.
 - One real conversation with a blind person or an orientation and mobility instructor, quoted in the pitch.
@@ -54,7 +54,7 @@ The table kit: one laptop running the sim and the earpiece, AirPods, the body we
 
 The two-minute pitch, demo first:
 1. 0:00 to 0:10. "Kite is a guide dog for blind pedestrians that flies." Hand the judge the AirPods.
-2. 0:10 to 0:50. The judge walks the splat corner with the screen black, guided by beeps and voice. A car or a crowd appears; Kite stops them, waits until the way is clear, then says to continue. Kite does not detour around obstacles (team decision); "stop and wait" is the guide dog behavior we show.
+2. 0:10 to 0:50. The judge walks the sim corner with the screen black, guided by beeps and voice. A car or a crowd appears; Kite stops them, waits until the way is clear, then says to continue. Kite does not detour around obstacles (team decision); "stop and wait" is the guide dog behavior we show.
 3. 0:50 to 1:05. Reveal the view: the drone's camera with detections drawn on it.
 4. 1:05 to 1:25. The real Tello footage from the 7am shoot, same corner, same cues. "Same code."
 5. 1:25 to 1:45. Hold an obstacle in front of the webcam; the judge hears the beeps speed up. Then the quote from the interview and one measured number (collisions with and without Kite in the sim).
@@ -125,19 +125,19 @@ One pipeline, three frame sources: `process(frame, camera, pose) -> events`, whe
 
 ### 5.4 Sim
 
-- Eddy's call on the stack. Default is three.js with a Gaussian splat renderer in the browser, because judges can open it anywhere and SpacetimeDB has a TypeScript client.
+- Eddy's call on the stack: three.js in the browser, because judges can open it anywhere and SpacetimeDB has a TypeScript client.
 - The walker is driven with the arrow keys. A black-screen mode hides the view; a key reveals it.
 - The virtual drone camera matches the Tello: 960×720, fx from Arthur's calibration (start at 1000), mounted 0.3 m above the walker's head and about 1 m behind, pointing forward, no tilt.
-- Sim hazards come from the real detector, not from the sim's own object list (team decision). So moving cars and pedestrians are realistic glTF models (find free ones early and check YOLO detects them in a test render), composited into the splat, with collision boxes.
-- A second virtual camera at chest height stands in for the body webcam. Its frames go through the same detector and produce `obstacles`, so close-range cues in the sim come from the same code as the real webcam. The splat has no collision, so walls and curbs come from a hand-placed or OSM-derived layer lined up with the splat using two or three landmarks.
+- Sim hazards come from the real detector, not from the sim's own object list (team decision). So moving cars and pedestrians are realistic glTF models (find free ones early and check YOLO detects them in a test render), with collision boxes.
+- A second virtual camera at chest height stands in for the body webcam. Its frames go through the same detector and produce `obstacles`, so close-range cues in the sim come from the same code as the real webcam. Walls and curbs are collision geometry from the same OpenStreetMap model.
 - Metrics mode runs scripted walks with and without Kite's cues and counts collisions. That number goes in the pitch (Microsoft's "measurable usefulness" and our own credibility).
-- Until the splat exists, the world is a placeholder (boxes from OSM building footprints is fine).
+- The world is Moss St and Howard built from OpenStreetMap: extruded buildings, sidewalks, curbs, the zebra crossing. No Gaussian splat (see section 11).
 
 ### 5.5 Route
 
 - Real world: Google Routes API v2 and Places API (New); both are enabled on our key, the legacy APIs are not.
 - Karthik turns the route into `guidance` events (spoken turn instructions with a `ttl`) and `beacon` events (bearing and distance to the next waypoint).
-- In the sim, the route runs over the same corner. Karthik and Eddy agree on one mapping between latitude/longitude and sim meters, anchored on the same landmarks used to line up the splat.
+- In the sim, the route runs over the same corner. Karthik and Eddy agree on one mapping between latitude/longitude and sim meters, anchored on the zebra crossing node (section 8).
 
 ### 5.6 Judgment layer (Claude)
 
@@ -163,9 +163,8 @@ Test data, since it's night and our own footage waits for the 7am shoot:
 - Daytime street video from a free stock site (Pexels or Pixabay, search "walking sidewalk POV" or "crosswalk pedestrians"). Their licenses allow free use; credit them in the README. Pick one clip filmed from above head height and one from chest height. Don't rip YouTube walking tours (against its terms).
 - The sim's own frames once Eddy's placeholder world runs.
 - The earpiece's scripted scenarios for anything audio-side (no video needed).
-- For the splat pipeline: a public sample scene (the Mip-NeRF 360 "garden" or "bicycle" images) to prove the tool and settings tonight.
 - A quick night clip of the block is still fine for plumbing checks (does the pipeline run end to end), just not for judging quality.
-The real corner footage and splat capture come from the 7am shoot and replace all of this.
+The real corner footage comes from the 7am shoot and replaces all of this.
 
 Each owner's done check below runs without hardware.
 
@@ -175,10 +174,10 @@ Each person owns a deliverable, not a layer. One owner per job.
 
 | Owner | Owns | Build with Claude, no hardware (done check) | Plug in hardware afterward |
 |---|---|---|---|
-| Arthur | The drone and the 3D world: flight, recording, splat | Push the drone layer (`kite/`, `pyproject.toml`, tests) to `main`. A `record` command that saves video and telemetry to disk, tested in dry run against a video file. Splat pipeline run on a public sample scene, so the tool and settings are proven before the 7am capture. | The 7am shoot on the one battery (section 8). Then the splat from the real capture. Camera fx calibration if time allows (the sim starts at 1000). |
+| Arthur | The drone: flight and recording | Push the drone layer (`kite/`, `pyproject.toml`, tests) to `main`. A `record` command that saves video and telemetry to disk, tested in dry run against a video file. | The 7am shoot on the one battery (section 8). Camera fx calibration if time allows (the sim starts at 1000). |
 | Rex | Perception: `streetseg` | Move `streetseg` from `rexheng/videotesting` into this repo (rewritten or re-committed by Rex, per the rules), emitting earpiece events instead of the glasses' `turn`. Done check: `python -m streetseg --source <stock clip>` writes `hazard`, `scene` and `obstacles` events to a JSONL file and an overlay video that looks like a Waymo demo. | Point the source at Tello footage, the live webcam, and sim frames. Same command, different `--source`. |
 | Karthik | The voice: earpiece, Google Maps directions, Cartesia, Claude | Earpiece and destinations are merged (PRs #2 and #3). Done check: `python -m earpiece run --sim walk` and a replayed JSONL from Rex both play the right beeps and speech on laptop speakers, with the Claude judgment layer and cached phrases in, and every event mirrored to Spacetime. | AirPods as the output device. Walker's phone GPS as the `position` source. |
-| Eddy | Infrastructure, then the sim, the video and the submission | Replace the starter `person` table with the event tables; dashboard reads them. The `replay` script. `KITE_EARPIECE_HOST` in `.env`. Done check: a JSONL replayed from a second process plays in the earpiece and shows on the dashboard, on one laptop. Then the sim (section 5.4) with an arrow-key walker, the virtual drone and chest cameras, a placeholder world, frames to `streetseg`. | The Thunderbolt bridge: earpiece with `--bind 0.0.0.0`, `KITE_EARPIECE_HOST` set to the bridge address on the drone laptop, rerun the same check across two laptops. Splat into the sim once Arthur has it. |
+| Eddy | Infrastructure, then the sim, the video and the submission | Replace the starter `person` table with the event tables; dashboard reads them. The `replay` script. `KITE_EARPIECE_HOST` in `.env`. Done check: a JSONL replayed from a second process plays in the earpiece and shows on the dashboard, on one laptop. Then the sim (section 5.4) with an arrow-key walker, the virtual drone and chest cameras, a placeholder world, frames to `streetseg`. | The Thunderbolt bridge: earpiece with `--bind 0.0.0.0`, `KITE_EARPIECE_HOST` set to the bridge address on the drone laptop, rerun the same check across two laptops. |
 
 Everyone works in this repo, on short branches merged to `main` often. Nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
 
@@ -188,12 +187,16 @@ Also owned: Rex runs the interview and verifies the guide dog figures. Eddy owns
 
 Each owner pulls `main` and starts their agent with one of these. They assume the agent can read the repo.
 
-- Arthur: "Read docs/superpowers/specs/2026-10-23-kite-design.md sections 6 to 8 and kite-notes-02.md. Commit the drone layer in kite/ with pyproject.toml and its tests. Add `python -m kite.record --source <file|tello> --out <dir>` that saves BGR video and timestamped telemetry, working in dry run against a video file. Then set up a splat pipeline that runs on Apple Silicon and test it on a public sample scene (Mip-NeRF 360 garden or bicycle)."
+- Arthur: "Read docs/superpowers/specs/2026-10-23-kite-design.md sections 6 to 8 and kite-notes-02.md. Commit the drone layer in kite/ with pyproject.toml and its tests. Add `python -m kite.record --source <file|tello> --out <dir>` that saves BGR video and timestamped telemetry, working in dry run against a video file."
 - Rex: "Read the spec sections 5.1, 5.3, 6 and 7, and earpiece/earpiece/events.py. Bring streetseg into this repo as a top-level package. Replace its glasses `turn` output with earpiece events sent through earpiece.client.EarpieceClient, plus a `--jsonl` option that writes the same events to a file. Done when `python -m streetseg --source <stock clip> --jsonl out.jsonl --overlay out.mp4` works."
 - Karthik: "Read the spec sections 5.1, 5.2, 5.6 and 7. Add the Claude judgment layer to the earpiece under the safety rule in 5.6, cache the fixed Cartesia phrases, and mirror every received and spoken event to SpacetimeDB through the existing bridge hook. Done when `python -m earpiece run --sim walk` and a replayed JSONL both sound right on laptop speakers."
 - Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
 
 ## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
+
+Location: Moss Street at Howard Street, SoMa (OSM way 8916291). Moss is a one-way alley, 192 m from Folsom to Howard, with sidewalks on both sides. Where Moss meets Howard there is a marked zebra crosswalk across Moss with no signal and tactile paving (OSM node at 37.778352, -122.408768); cars turn into Moss from Howard across it. Howard is three lanes one-way at 25 mph with a protected bike track.
+
+Route: start on the NE sidewalk of Moss about 70 m before Howard, walk NW to the corner, turn left, cross Moss on the zebra, and stop about 20 m along Howard's south sidewalk. We never cross Howard. The whole of Moss would take over 5 minutes at 0.6 m/s, which is the entire battery, so we skip the first two thirds. The crossing is uncontrolled, so there is no signal to read: the drone's job there is spotting a car turning in from Howard, and Kite says to stop and wait. That fits section 4. The sim's origin is the zebra crossing node, so sim and real lat/lng line up.
 
 We have one charged Tello battery and no charger until someone buys a USB-C to Micro-USB cable in the morning (the Tello charges its battery in the drone over Micro-USB). Aneesh won't be at the apartment in the morning, so confirm tonight that we can still reach the corner and our gear.
 
@@ -201,7 +204,7 @@ We have one charged Tello battery and no charger until someone buys a USB-C to M
 - 7:00 AM: one scripted take on the one battery, about 5 minutes, landing at 20 to 30%. It has to count: rehearse the route on foot first, with the drone still off.
 - Rex runs it: timing, props, the walker's safety and the shot list. The blindfolded walker always has a spotter at arm's length and never walks near moving cars.
 - Arthur flies, recording video and telemetry to disk. Manual or simple follow; we say which in the pitch.
-- Eddy films the splat capture (a slow loop of the corner with the phone overhead at about 2 m) and the side-angle video of the take.
+- Eddy films the side-angle video of the take.
 - The walker logs GPS on their phone, walks at about 0.5 to 0.7 m/s, and has their height measured with shoes to within 2 cm.
 - Props: something at head height a cane would miss, a bag or bin on the sidewalk, a teammate as a "crowd" near the crossing.
 - After the shoot: buy the cable, charge (expect about 90 minutes per battery), and do a second take later in the morning only if the first one failed.
@@ -239,15 +242,17 @@ What each entered track needs from us:
 
 ## 11. Calls already made
 
-Made by the team: the drone flies behind and above, not ahead (fix the README, which says "ahead"). The drone is for the demo only. The 7am shoot plus a splat sim of the same corner. Beeps with direction and pitch plus verbal directions. Cartesia and Spacetime are in.
+Made by the team: the drone flies behind and above, not ahead (fix the README, which says "ahead"). The drone is for the demo only. The 7am shoot plus a sim of the same corner. Beeps with direction and pitch plus verbal directions. Cartesia and Spacetime are in.
 
 Also made by the team (Oct 23, 11:50 PM): sim hazards come from the real detector, with realistic models and a chest-height virtual camera; Kite stops and waits instead of detouring.
+
+Also made by the team (Oct 24, 1:30 AM): no Gaussian splat. The judge walks with the screen black, so the world only shows at the reveal, and the real Tello footage of the corner (pitch step 4) is what makes it look real. The sim uses the OpenStreetMap model of Moss and Howard with glTF cars and people. The reveal shows the judge's own walk in the sim with detections drawn, then cuts to the real footage.
 
 Made in this spec, change them by editing it: webcam `obstacles` go to the earpiece over localhost, not through the cloud. Venue Wi-Fi is the primary link, with offline fallbacks. Karthik's earpiece events are the contract. Spacetime as the cross-machine transport with an `event` table. Claude instead of Gemini for scene description. Signal reading demoted. The owner split in section 6. Recording at the shoot instead of running live.
 
 ## 12. Left to each owner
 
-- Arthur: splat tool and settings, manual or follow flight at the shoot, the recorder's file format.
+- Arthur: manual or follow flight at the shoot, the recorder's file format.
 - Rex: segmentation and detection models (YOLO26, RF-DETR or others), thresholds, how walker heading is estimated on real footage.
 - Eddy: exact Spacetime schema and pruning (Karthik consumes it), network layout, sim stack and renderer, collision geometry, the video edit.
 - Karthik: route-to-cue wording, Claude prompt and call rate, how the earpiece consumes Spacetime.
