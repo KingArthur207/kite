@@ -150,3 +150,13 @@ def test_errors_never_show_the_key(monkeypatch):
     monkeypatch.delenv("GOOGLE_MAPS_API_KEY")
     with pytest.raises(RuntimeError, match="GOOGLE_MAPS_API_KEY"):
         sv.StreetViewSource(ROUTE)
+
+
+def test_scope_is_moss_street_only():
+    from kite.sources.streetview import _require_scope, in_scope
+    assert in_scope(37.778352, -122.408768)          # the Moss/Howard zebra
+    assert in_scope(37.7771792, -122.4073136)        # Moss at Folsom
+    assert not in_scope(37.8013, -122.4477)          # Lyon St, far away
+    import pytest
+    with pytest.raises(ValueError):
+        _require_scope(37.7749, -122.4194)           # Civic Center
