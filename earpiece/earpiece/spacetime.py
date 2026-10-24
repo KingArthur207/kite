@@ -80,6 +80,12 @@ def _host_db(host: str | None, db: str | None) -> tuple[str, str]:
             db or os.environ.get("SPACETIME_DB") or DEFAULT_DB)
 
 
+def sign_caregiver(token: str, text: str, ts_ms: int) -> dict:
+    """The dashboard's signature on a caregiver message (App.tsx signMessage): `ts` in ms and
+    `sig` = hex HMAC-SHA256(token, f"{ts}:{text}"). CaregiverInbox checks exactly this."""
+    return {"ts": ts_ms, "sig": hmac.new(token.encode(), f"{ts_ms}:{text}".encode(), hashlib.sha256).hexdigest()}
+
+
 def _identity(http: httpx.Client, host: str) -> str:
     r = http.post(f"{host}/v1/identity")
     r.raise_for_status()
@@ -446,8 +452,7 @@ class CaregiverInbox:
             return False
         if abs(time.time() - ts / 1000) > CAREGIVER_MAX_AGE_S:
             return False
-        want = hmac.new(self.secret.encode(), f"{ts}:{text}".encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(want, sig)
+        return hmac.compare_digest(sign_caregiver(self.secret, text, ts)["sig"], sig)
 
     def poll(self, http: httpx.Client) -> None:
         rows = sorted(self.fetch(http))

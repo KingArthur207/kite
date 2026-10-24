@@ -65,13 +65,13 @@ class Clock:
         return self.t
 
 
-def make_link(fake=None, clock=None):
+def make_link(fake=None, clock=None, token=""):
     fake = fake or FakeSpacetime()
     http = httpx.Client(transport=httpx.MockTransport(fake))
     bridge = SpacetimeBridge("http://st.test", "kite", source="caregiver", log=lambda *_: None,
                              start=False, max_calls_per_s=1000, backoff_s=0.001)
     link = cv.KiteLink("http://st.test", "kite", http=http, bridge=bridge, clock=clock or Clock(),
-                       log=lambda *_: None, cache_s=0)
+                       log=lambda *_: None, cache_s=0, token=token)
     return link, fake
 
 
@@ -176,6 +176,33 @@ def test_dry_run_never_pushes():
     t = cv.Tools(link, log=lambda *_: None, dry_run=True)
     assert json.loads(t.call("message_walker", '{"text": "hello"}'))["sent"] is False
     assert fake.pushes == []
+
+
+@pytest.mark.parametrize("line_token, spoken", [("s3cret", True), ("", False), ("other", False)])
+def test_an_earpiece_that_requires_the_token_speaks_only_signed_line_messages(line_token, spoken):
+    """Found by the headless end-to-end run: with KITE_CAREGIVER_TOKEN set on the earpiece, the
+    line's messages were pushed unsigned, so Grok said "sent" and the walker never heard them."""
+    import time
+
+    from earpiece.spacetime import CaregiverInbox
+    fake = FakeSpacetime()
+    link, _ = make_link(fake, clock=time.time, token=line_token)
+    heard: list = []
+    inbox = CaregiverInbox(heard.append, "http://st.test", "kite", log=lambda *_: None, start=False, token="s3cret")
+    http = httpx.Client(transport=httpx.MockTransport(fake))
+    inbox.poll(http)                                         # startup: older rows are history
+    assert json.loads(cv.Tools(link, log=lambda *_: None).call(
+        "message_walker", '{"text": "Running five minutes late"}'))["sent"] is True
+    [call] = fake.pushes
+    fake.events.append([1, call["type"], call["source"], call["priority"], call["payload"], [int(time.time() * 1e6)]])
+    inbox.poll(http)
+    assert [m.text for m in heard] == (["Message from your caregiver: Running five minutes late"] if spoken else [])
+    assert inbox.stats["unsigned"] == (0 if spoken else 1)
+    payload = json.loads(call["payload"])
+    want = ["type", "source", "priority", "text", "key"] + (["ts", "sig"] if line_token else [])
+    assert list(payload) == want                             # the dashboard's order, then its signature
+    if line_token:
+        assert payload["key"] == f"caregiver-{payload['ts']}"
 
 
 # ------------------------------------------------------------------ walk_status and alerts

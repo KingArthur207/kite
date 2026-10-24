@@ -36,7 +36,8 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from .spacetime import CAREGIVER, TIMEOUT_S, SpacetimeBridge, _host_db, _identity, row_time, sql_rows
+from .spacetime import (CAREGIVER, TIMEOUT_S, SpacetimeBridge, _host_db, _identity, row_time, sign_caregiver,
+                        sql_rows)
 
 XAI_URL = "wss://api.x.ai/v1/realtime"
 DEFAULT_MODEL = "grok-voice-latest"
@@ -203,8 +204,12 @@ class KiteLink:
     CACHE_S, and event history is fetched incrementally (only ids newer than the last seen)."""
 
     def __init__(self, host: str | None = None, db: str | None = None, *, http: httpx.Client | None = None,
-                 bridge: SpacetimeBridge | None = None, clock=time.time, log=_log, cache_s: float = CACHE_S):
-        self.host, self.db = _host_db(host, db)
+                 bridge: SpacetimeBridge | None = None, clock=time.time, log=_log, cache_s: float = CACHE_S,
+                 token: str | None = None):
+        self.host, self.db = _host_db(host, db)          # loads the repo-root .env first
+        # Same secret as the earpiece's KITE_CAREGIVER_TOKEN: with it set there, unsigned rows are
+        # dropped, so the line must sign exactly like the dashboard does.
+        self.secret = (os.environ.get("KITE_CAREGIVER_TOKEN", "") if token is None else token).strip()
         self.http = http or httpx.Client(timeout=TIMEOUT_S)
         self.bridge = bridge or SpacetimeBridge(self.host, self.db, source=CAREGIVER, log=log, start=False)
         self.clock = clock
@@ -261,9 +266,12 @@ class KiteLink:
             return list(self.history)
 
     def push_say(self, text: str) -> bool:
-        """The dashboard's caregiver message, byte for byte: {type, source, priority, text, key}."""
-        msg = {"type": "say", "source": CAREGIVER, "priority": "info", "text": text,
-               "key": f"caregiver-{int(self.clock() * 1000)}"}
+        """The dashboard's caregiver message, byte for byte: {type, source, priority, text, key},
+        plus {ts, sig} when KITE_CAREGIVER_TOKEN is set (App.tsx signMessage)."""
+        now_ms = int(self.clock() * 1000)
+        msg = {"type": "say", "source": CAREGIVER, "priority": "info", "text": text, "key": f"caregiver-{now_ms}"}
+        if self.secret:
+            msg.update(sign_caregiver(self.secret, text, now_ms))
         self.stats["pushes"] += 1
         return self.bridge.send_now(msg, self.http)
 
