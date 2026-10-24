@@ -126,7 +126,6 @@ def sides(data, ids, heights):
     front, from the top of the neighbour against them (or the ground) to the roofline. heights: {id: m} (the layout
     rooflines where known). [dict(key, bid, a, b, normal, z0, h)], a -> b left to right seen from outside."""
     o, u = moss_line(data)
-    n_line = np.array([-u[1], u[0]])
     F = fronts(data, ids)
     rings = {b["id"]: np.asarray(b.get("ground") or b["pts"], float) for b in data["buildings"]}
     hs = {b["id"]: heights.get(b["id"], float(b["h"])) for b in data["buildings"]}
