@@ -24,7 +24,7 @@ Detail lives in [STATUS](../../STATUS.md), [the shoot pack](../../shoot-day.md),
 | Earpiece and voice | Done |
 | Claude judgment and vision | Done; judgment tuning in progress (agent) |
 | Spacetime and dashboard | Done |
-| Live walk | Built and tested on laptop cameras. Never run on a real phone. |
+| Live walk | Built and tested on recorded clips only. Never run on a live camera or a real phone. |
 | Detector | Stand-in done. Rex's `streetseg` not in this repo yet. |
 | Drone hardware | Not tested. The Tello is still in the box. |
 | Follow mode | Code merged. Never flown. Path prediction in progress (agent). |
@@ -328,7 +328,8 @@ Made in this spec, change them by editing it: webcam `obstacles` go to the earpi
 ## 13. Open items
 
 - Eddy asks in #0-ask-directors (optional): may a powered-on Tello, motors off, stream video at our table? It is a Wi-Fi access point.
-- Target kit, if needed: a USB-C to Micro-USB cable if Karthik doesn't bring one, a phone chest mount or clip, two sleep masks, wipes. Eddy brings over-ear Bluetooth headphones.
+- Target kit, if needed: a USB-C to Micro-USB cable if Rex doesn't bring one (he said he would), a phone chest mount or clip, two sleep masks, wipes. Eddy brings over-ear Bluetooth headphones.
 - fx calibration for our Tello (Arthur, if battery allows). The sim uses 1000 until then.
 - Tape the width of the Moss crossing on site; the sim assumes 6.1 m.
 - Fill in the Google rep name in `docs/google-permission.md`.
+- Who walks at the shoot, and whether the crew can reach the corner and the gear at 7 AM without Aneesh.

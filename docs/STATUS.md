@@ -44,7 +44,7 @@ Karthik built the Claude judgment layer integration, the camera descriptions ("w
 ## Not done, said plainly
 
 - The Tello is untested. It is still in the box.
-- The live walk has never run on a real phone, only on laptop cameras.
+- The live walk has never run on a live camera, only on recorded clips (macOS has not yet given the terminal camera access).
 - Follow mode has never flown.
 - There is no real footage yet.
 - The sim is not yet close to the real street.
