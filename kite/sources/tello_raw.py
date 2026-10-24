@@ -15,8 +15,9 @@ packets but never delivered a frame (h264 "non-existing PPS", "Stream timeout tr
 
 Loss: the Tello's datagrams carry no sequence numbers, so a lost one shows up as a broken frame. FFmpeg conceals it
 and the stream heals at the next IDR (frames keep flowing: the safety governor hovers after 1 s without one).
-After a hard failure (many decode errors in a row, a queue overflow, or a gap of GAP_RESYNC_S without data) the
-decoder is rebuilt and waits for the next SPS.
+After a hard failure (decode errors with no frame at all for NO_FRAME_RESYNC_S while data keeps arriving, a queue
+overflow, or a gap of GAP_RESYNC_S without data) the decoder is rebuilt and waits for the next SPS. Errors alone never
+reset it: FFmpeg recovers by itself, and a reset throws away everything until the next SPS.
 
 The constructor binds the socket but never waits for a frame (TelloVideoSource does the waiting and reconnects);
 stop() frees the port within ~0.2 s. Tests pass `feed=`: an iterable of byte chunks (datagrams) instead of a socket.
@@ -37,7 +38,8 @@ import av
 RCVBUF_BYTES = 8 * 1024 * 1024  # ~20 s of Tello video; macOS's default kern.ipc.maxsockbuf is 8 MB
 QUEUE_DATAGRAMS = 8192  # ~12 MB of 1460-byte datagrams between the receiver and the decoder
 GAP_RESYNC_S = 2.0  # no data this long: the decoder's references are stale, wait for a fresh SPS + IDR
-MAX_ERRORS_IN_A_ROW = 50  # decode errors without a single frame: rebuild the decoder, wait for an SPS
+MAX_ERRORS_IN_A_ROW = 50  # decode errors without a single frame ...
+NO_FRAME_RESYNC_S = 3.0  # ... AND no frame for this long: only then rebuild the decoder and wait for an SPS
 _EOF, _RESYNC = object(), object()  # queue markers
 
 
@@ -261,6 +263,7 @@ class RawTelloStream:
         synced = False
         pending = b""  # tail kept while looking for an SPS start code split across datagrams
         errors_in_a_row = 0
+        last_frame_t = time.monotonic()  # last decoded frame (or sync), for the reset rule
         tokens, last_t = 2.0, time.monotonic()  # conversion budget: fps per second, burst of 2 (arrival jitter)
 
         def resync():
@@ -325,6 +328,7 @@ class RawTelloStream:
                     continue
                 for f in frames:
                     errors_in_a_row = 0
+                    last_frame_t = time.monotonic()
                     st["frames_decoded"] += 1
                     if f.key_frame:
                         st["keyframe_seen"] = True
@@ -343,6 +347,30 @@ class RawTelloStream:
                 if tokens >= 1.0:  # under the fps cap
                     tokens -= 1.0
                     self._publish(newest)
-            if errors_in_a_row >= MAX_ERRORS_IN_A_ROW:
+            if errors_in_a_row >= MAX_ERRORS_IN_A_ROW and time.monotonic() - last_frame_t > NO_FRAME_RESYNC_S:
                 resync()
+                last_frame_t = time.monotonic()
         self.finished = eof
+
+
+def rates(prev: dict, cur: dict, dt: float) -> dict:
+    """Per-second rates between two stats() snapshots, for live displays (window HUD, terminal lines)."""
+    dt = max(dt, 1e-6)
+
+    def d(k):
+        return (cur.get(k) or 0) - (prev.get(k) or 0)
+
+    return {"packets_s": d("datagrams") / dt, "kb_s": d("bytes") / dt / 1024, "decoded_fps": d("frames_decoded") / dt,
+            "shown_fps": d("frames") / dt, "corrupt_s": d("corrupt_frames") / dt, "errors_s": d("decode_errors") / dt,
+            "resyncs": cur.get("resyncs", 0), "queue_drops": cur.get("queue_drops", 0),
+            "keyframe_seen": cur.get("keyframe_seen"), "last_error": cur.get("last_error")}
+
+
+def format_rates(r: dict) -> str:
+    """One line, e.g. '280 pkt/s 190 KB/s | decoded 29.8 fps, shown 29.8 | corrupt 0.0/s errors 0.0/s | resyncs 0'."""
+    line = (f"{r['packets_s']:.0f} pkt/s {r['kb_s']:.0f} KB/s | decoded {r['decoded_fps']:.1f} fps, shown "
+            f"{r['shown_fps']:.1f} | corrupt {r['corrupt_s']:.1f}/s errors {r['errors_s']:.1f}/s | resyncs {r['resyncs']}"
+            f" qdrops {r['queue_drops']}")
+    if not r.get("keyframe_seen"):
+        line += " | no full keyframe yet"
+    return line

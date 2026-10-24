@@ -209,8 +209,20 @@ def preview_loop(ui, done, scale):
     win = "Tello live  -  q closes preview, Ctrl+C in terminal lands"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     last = -1
+    has_stats = hasattr(stream, "stats")
+    prev, prev_t, last_print, counters = (stream.stats() if has_stats else {}), time.monotonic(), 0.0, ""
     try:
         while not done.is_set():
+            now = time.monotonic()
+            if has_stats and now - prev_t >= 1.0:  # the reader's own counters, once a second
+                from kite.sources.tello_raw import format_rates, rates
+
+                cur = stream.stats()
+                counters = format_rates(rates(prev, cur, now - prev_t))
+                prev, prev_t = cur, now
+                if now - last_print >= 2.0:
+                    print(f"  video: {counters}", flush=True)
+                    last_print = now
             seq, img, ts = stream.read_seq(copy=True)  # we draw on it, so take a copy
             if img is None or seq == last:
                 cv2.waitKey(1)
@@ -220,8 +232,10 @@ def preview_loop(ui, done, scale):
             if scale != 1.0:
                 img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
             label = f"{hud.get('phase', '')}   frame age {1000 * (time.time() - ts):.0f} ms"
-            cv2.putText(img, label, (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3, cv2.LINE_AA)
-            cv2.putText(img, label, (8, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 1, cv2.LINE_AA)
+            for y, text in ((22, label), (44, counters)):
+                if text:
+                    cv2.putText(img, text, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
+                    cv2.putText(img, text, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
             cv2.imshow(win, img)
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
