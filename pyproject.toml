@@ -17,9 +17,14 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 follow = ["ultralytics>=8.3"]  # kite.follow person detector (YOLO11n); weights: see kite/follow.py, never fetched at runtime
+fly = ["scipy>=1.11"]                              # kite.fly: the fly-brain yaw source (sparse LIF network)
+train = ["scipy>=1.11", "cma>=3.3", "modal>=1.0"]  # kite.fly.train: CMA-ES fine-tuning, locally or on Modal
 
 [tool.setuptools.packages.find]
 include = ["kite*"]
+
+[tool.setuptools.package-data]
+"kite.fly" = ["data/*.npz", "data/*.json", "data/init/*.json", "data/reference/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
