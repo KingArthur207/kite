@@ -31,6 +31,7 @@ Each track's judging criteria in its own words, then how Kite answers them.
 - [SpacetimeDB](https://trykite.pages.dev/judges#spacetime)
 - [Moss](https://trykite.pages.dev/judges#moss)
 - [Meta](https://trykite.pages.dev/judges#meta)
+- [SpaceXAI](https://trykite.pages.dev/judges#spacexai)
 - [Technically Complex](https://trykite.pages.dev/judges#complex)
 - [Hardware](https://trykite.pages.dev/judges#hardware)
 - [People-First](https://trykite.pages.dev/judges#people)
@@ -187,6 +188,33 @@ Family follow the walk on a live map and can send a message the walker hears. No
 **Essential AI**
 
 Claude describes the world in a sentence, Cartesia speaks it, Moss remembers the places that matter to you.
+
+SpaceXAI · Make it Legendary
+
+## Grok is Kite's caregiver line and its test street.
+
+judged on
+
+- Built with Cursor
+- Uses the Grok Imagine or Voice API
+- Bonus: Grok Bot for planning and teamwork
+**Grok Voice: a caregiver who can just ask**
+
+Run `python -m earpiece caregiver` and talk. "How's the walk going?" makes Grok read the live walk from SpacetimeDB and answer out loud; "tell her I'm five minutes late" becomes a message the walker hears in their AirPods. For a caregiver who is driving, cooking or blind themselves.
+
+**Grok Imagine: the street we can't film**
+
+A cyclist cutting across, a car turning into the crosswalk, someone stepping out of a doorway: Grok Imagine generates each one from the walker's chest height, and Kite's real detector and earpiece play it. On the doorway and oncoming clips Kite says "Person, ahead."
+
+**Built with Cursor and Grok**
+
+The team built Kite in Cursor and used Grok for research and planning throughout the weekend.
+
+_cyclist at the crosswalk_
+
+_a car turning in_
+
+_out of a doorway_
 
 Cal Hacks prizes
 
