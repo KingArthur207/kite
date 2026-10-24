@@ -45,18 +45,22 @@ Setup, once per laptop, on normal internet (the Tello's Wi-Fi has none), from th
 ```bash
 uv venv --python 3.12 --seed .venv      # or: python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -r requirements.txt         # same as: pip install -e ".[dev]"
 python -m pytest -m "not slow"          # ~15 s, no drone needed
 python -m pytest                        # + the H.264-over-UDP reader tests (needs ffmpeg, ~75 s more)
 ```
 
-If the repo is on an iCloud-synced Desktop or Documents folder, iCloud marks everything inside `.venv` hidden, and Python 3.12.14 and later skip hidden `.pth` files, so `import kite` fails outside pytest ("No module named 'kite'"). Keep the venv where iCloud doesn't touch it, behind the usual name:
+If the repo is on an iCloud-synced Desktop or Documents folder, iCloud marks everything inside `.venv` hidden, and Python 3.12.14 and later skip hidden `.pth` files, so `import kite` fails outside pytest ("No module named 'kite'"). Keep the venv outside the synced folder, behind the usual name (a `.nosync` name is not enough: iCloud still hid the files):
 
 ```bash
-mv .venv .venv.nosync && ln -s .venv.nosync .venv && chflags -R nohidden .venv.nosync
+mkdir -p ~/venvs && mv .venv ~/venvs/kite && ln -s ~/venvs/kite .venv && chflags -R nohidden ~/venvs/kite
 ```
 
 The same applies to `earpiece/.venv`.
+
+Windows: `py -3.12 -m venv .venv`, `.venv\Scripts\activate`, `pip install -r requirements.txt`, and allow Python through the
+firewall on Public networks too (Windows files the Tello's Wi-Fi as Public). `python tests\drone_test.py --ground
+--preview` and `python -m kite.video_doctor` work there; `kite.record --fly` (keyboard flight) is macOS/Linux only.
 
 ### Drone layer (`kite/`)
 
