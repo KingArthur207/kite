@@ -130,7 +130,9 @@ const onZebra = (z: Zebra, x: number, n: number) => {
   return Math.abs(along) < ZEBRA_HALF + ZEBRA_MARGIN && across > z.a0 - ZEBRA_MARGIN && across < z.a1 + ZEBRA_MARGIN;
 };
 
-export function spawnMossActors(scene: THREE.Scene, others: () => { x: number; n: number }[]) {
+/** scriptedCorner: a shot (shot.ts) scripts the corner itself, so no cars in Howard's left lane or turning
+ *  into Moss, and nobody walking the demo route. */
+export function spawnMossActors(scene: THREE.Scene, others: () => { x: number; n: number }[], { scriptedCorner = false } = {}) {
   const { howard, turn } = mossPaths();
   const zebras: Zebra[] = crossings.filter((c) => ["zebra", "yes", "ladder"].includes(c.markings))
     .map((c) => ({ x: c.x, n: c.y, ux: c.u[0], un: c.u[1], a0: c.across[0], a1: c.across[1] }));
@@ -176,6 +178,7 @@ export function spawnMossActors(scene: THREE.Scene, others: () => { x: number; n
   const idle: THREE.AnimationMixer[] = [];
 
   for (const c of CARS) {
+    if (scriptedCorner && (c.path === turn || c.path === howard[0])) continue;
     loadCar(c.model).then(({ obj, length, width, height }) => {
       scene.add(obj);
       const zebraS = zebras.map((z) => ({ z, ...c.path.nearest(z.x, z.n) }))
@@ -184,6 +187,7 @@ export function spawnMossActors(scene: THREE.Scene, others: () => { x: number; n
     }).catch((e) => console.error(`[mossActors] ${c.model}`, e));
   }
   for (const w of WALKERS) {
+    if (scriptedCorner && w.path === "route") continue;
     loadPerson(w.model, false).then(({ obj, mixer }) => {
       scene.add(obj);
       mixer.timeScale = w.speed / WALK_CYCLE_SPEED;

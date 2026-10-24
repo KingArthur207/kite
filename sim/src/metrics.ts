@@ -23,6 +23,10 @@ const ORACLE_AHEAD = 5, ORACLE_HALF_W = 0.6, ORACLE_LOOKAHEAD_S = [0, 0.5, 1, 1.
 // The turning car: speed, seconds from its trigger to the zebra (+- jitter), seconds it drives on after.
 const CAR = { v: 6, lead: 8, jitter: 1.2, after: 10, length: 4.6, width: 1.9, height: 1.5 };
 
+const OBSTACLE_NAMES: Record<string, string> = {
+  pedA: "Pedestrian crossing", bin: "Bin", head: "Head-height sign", car: "Car turning in", pedB: "Pedestrian from a doorway",
+};
+
 const STATUS_KEYS = ["perception-down", "perception-up", "continue"];   // earpiece app.py speech keys
 
 type Mode ="blind" | "kite" | "oracle";
@@ -79,8 +83,7 @@ export function startMetrics(ctx: {
   walker: { x: number; n: number; heading: number };
   scene: THREE.Scene;
   walls: (x: number, n: number, r: number) => object[];
-}) {
-  const q = new URLSearchParams(location.search);
+}, q = new URLSearchParams(location.search)) {
   if (q.get("metrics") !== "1") return null;
   const mode = (["blind", "kite", "oracle"].includes(q.get("mode") ?? "") ? q.get("mode") : "blind") as Mode;
   const trials = Math.max(1, Number(q.get("trials")) || 20);
@@ -344,6 +347,11 @@ export function startMetrics(ctx: {
       for (let k = Math.round((speed * dt) / DT); k > 0 && !done; k--) stepOnce(DT);
       (window as any).kiteMetrics = out();
     },
+    /** For the explainer shot (shot.ts): obstacles with their names and hit state, and the running count. */
+    live: () => ({
+      label: LABEL[mode], collisions, done,
+      obstacles: obs.map((o) => ({ name: OBSTACLE_NAMES[o.name], pos: o.obj.position.clone(), hit: o.hit, top: o.y + (o.y ? 0.4 : o.car ? CAR.height : 1.8) })),
+    }),
     hud() {
       const sm = summary();
       const rows = results.slice(-12).map((r) =>
