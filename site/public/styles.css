@@ -449,3 +449,10 @@ mark { background: none; color: inherit; padding: 0 2px;
   .page-head { padding-top: 44px; }
   .track { padding: 22px 18px 20px; }
 }
+
+/* ------------------------------------------------------------ contrast */
+/* handwritten text uses a slightly deeper pink than the strokes, so it reads at 4.5:1 on paper */
+:root { --verm-ink: #C8287A; }
+.hand, .label, .group-title, .brief dt, .caption .who.critical { color: var(--verm-ink); }
+.sketch .note, .sketch .beep { fill: var(--verm-ink); }
+.sketch .note.blue-ink { fill: var(--indigo); }
