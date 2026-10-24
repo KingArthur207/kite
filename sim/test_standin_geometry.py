@@ -120,6 +120,22 @@ assert distance_m(720, 720 - y_top, 1.2, fx, 720, 1.7) > 2.0     # bottom row al
 cut = objects_from_boxes([(300, y_top, 660, 720, "person", 0.9, 3)], fx, 1.2, 960, 720)
 assert cut[0]["cut_off"] and math.isclose(cut[0]["distance"], 1.5, abs_tol=0.01)
 
+# live geometry (scripts/demo.sh live): iPhone 1280x720 -> 960x540, fx 700, 1.2 m up, 15 deg down.
+# Closer than ~1.65 m the head is above the frame and the feet below it; no row can tell 1.2 m from 1.6 m,
+# so the shoulders (box width) must. Before: 1.65 m whatever the distance, and "Stop" (1.6 m) never fired.
+for d_true in (1.0, 1.2, 1.4):
+    half = 700 * 0.53 / d_true / 2                 # a 0.53 m wide person (the bench's sprite)
+    o = objects_from_boxes([(480 - half, 3, 480 + half, 530, "person", 0.9, 1)], 700, 1.2, 960, 540, 15)[0]
+    assert o["distance"] < 1.6 and o["distance"] <= d_true, (d_true, o)
+# head above the frame, box bottom 7 px above the edge (not "cut"): the top row still bounds the distance.
+# Before: 3.2 m on one frame and 1.3 m on the next for the same person (bench clip "approach").
+far, near = (objects_from_boxes([(410, 1, 613, y2, "person", 0.9, 1)], 700, 1.2, 960, 540)[0]["distance"]
+             for y2 in (533, 532))
+assert far < 1.4 and math.isclose(far, near, abs_tol=0.05), (far, near)
+# feet in frame, head in frame: unchanged (ground row)
+assert math.isclose(objects_from_boxes([(450, 200, 510, 470, "person", 0.9, 1)], 700, 1.2, 960, 540)[0]["distance"],
+                    1.2 * 700 / 200, abs_tol=0.01)
+
 # live walk: median smoothing, closing speed, stop zone
 from live_walk import center_obstacle, chest_step, is_stop, to_event_objects  # noqa: E402
 
