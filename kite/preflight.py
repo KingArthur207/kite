@@ -12,8 +12,9 @@ file and an interactive terminal (the --fly keys need one).
 
 Drone: opened through kite's drone layer with dry_run=True, so NO motion command can be sent. Reads the battery and
 temperature, waits for the first video frame, measures the frame rate, frame size and telemetry rate over a few
-seconds and the command round trip, then closes the link at once (streaming drains the battery and heats the drone
-on the ground). The drone part takes about 6 s with a healthy drone, 15 s at most.
+seconds, the IMU at rest (level, 1 g) and the longest gap between state packets over 1 s, and the command round
+trip, then closes the link at once (streaming drains the battery and heats the drone on the ground). The drone part
+takes about 7 s with a healthy drone, 16 s at most.
 
 Exit code: 0 for GO (warnings allowed), 1 for NO-GO.
 """
@@ -61,6 +62,10 @@ MEASURE_S = 3.0  # window for fps and telemetry rate
 FRAME_SIZE = (960, 720)
 FPS_WARN, FPS_NO_GO = 20.0, 5.0  # the governor hovers after 1 s without a new frame
 TELEMETRY_WARN_HZ = 5.0
+STATE_S = 1.0  # window for the IMU / state-gap check
+STATE_GAP_WARN_S = 0.5  # longest gap between state packets; the governor hovers after telemetry_timeout_s (1 s)
+TILT_WARN_DEG = 5.0  # at rest on a level surface pitch and roll read ~0
+ACCEL_G_MG, ACCEL_TOL = 1000.0, 0.15  # at rest |(agx, agy, agz)| ~ 1 g = ~1000 (milli-g in the state stream)
 RTT_SAMPLES, RTT_TIMEOUT_S, RTT_WARN_MS = 3, 1.0, 200.0
 RTT_GAP_S = 0.1  # the Tello drops commands sent closer together than this
 LINK_TARGET_S = 15.0
@@ -468,6 +473,58 @@ def _link_check(stats: dict) -> Check:
     return Check("video link", GO if grade == "GOOD" else WARN, line, {"grade": grade})
 
 
+def _state_checks(tello, seconds: float | None = None) -> list[Check]:
+    """IMU sanity and the state stream's longest gap, from `seconds` of state packets with the drone at rest.
+    IMU: pitch / roll near 0 and |acceleration| near 1 g. A tilted or wrong reading is what the Tello's takeoff
+    'error No valid imu' looks like (Tello app > Settings > More > Calibrate IMU, props off); it can also just mean
+    the surface is not level, so it only warns. Gap: the governor hovers when telemetry is older than 1 s."""
+    seconds = STATE_S if seconds is None else seconds
+    if tello is None:
+        return [Check("imu", SKIP, "no raw state reader on this drone")]
+    states, stamps = [], []
+    last = tello.get_current_state()
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < seconds:
+        st = tello.get_current_state()
+        if st is not last and st:
+            states.append(st)
+            stamps.append(time.monotonic())
+            last = st
+        time.sleep(0.002)
+    out = []
+
+    def mean(k):
+        vals = [float(s[k]) for s in states if isinstance(s.get(k), (int, float))]
+        return sum(vals) / len(vals) if vals else None
+
+    pitch, roll = mean("pitch"), mean("roll")
+    acc = [mean(k) for k in ("agx", "agy", "agz")]
+    if pitch is None or roll is None or None in acc:
+        out.append(Check("imu", SKIP, "no attitude / acceleration in the state stream"))
+    else:
+        g = (acc[0] ** 2 + acc[1] ** 2 + acc[2] ** 2) ** 0.5
+        data = {"pitch": round(pitch, 1), "roll": round(roll, 1), "accel": round(g)}
+        detail = f"pitch {pitch:+.0f} deg, roll {roll:+.0f} deg, |a| {g:.0f} (1 g ~ {ACCEL_G_MG:.0f})"
+        if abs(g - ACCEL_G_MG) > ACCEL_TOL * ACCEL_G_MG:
+            out.append(Check("imu", WARN, f"{detail}: the accelerometer does not read 1 g at rest; calibrate the IMU "
+                             "(Tello app > Settings > More > Calibrate IMU, props off)", data))
+        elif max(abs(pitch), abs(roll)) > TILT_WARN_DEG:
+            out.append(Check("imu", WARN, f"{detail}: not level. Put it on a level surface; if it still reads tilted, "
+                             "calibrate the IMU (Tello app > Settings > More > Calibrate IMU)", data))
+        else:
+            out.append(Check("imu", GO, detail, data))
+    if len(stamps) >= 2:
+        gap = max(b - a for a, b in zip(stamps, stamps[1:]))
+        gap = max(gap, time.monotonic() - stamps[-1])
+        data = {"max_gap_s": round(gap, 2), "packets": len(stamps)}
+        if gap > STATE_GAP_WARN_S:
+            out.append(Check("telemetry gaps", WARN, f"{gap:.2f} s without a state packet in {seconds:g} s: the "
+                             "governor hovers at 1 s (weak link? move closer, away from other 2.4 GHz Wi-Fi)", data))
+        else:
+            out.append(Check("telemetry gaps", GO, f"longest {gap * 1000:.0f} ms", data))
+    return out
+
+
 def _latency_check(tello) -> Check:
     if tello is None:
         return Check("command latency", SKIP, "no raw command channel on this drone")
@@ -522,6 +579,7 @@ def drone_checks(make_drone=None, first_frame_s: float | None = None, measure_s:
         out.append(_temperature(state))
 
         out += _video_checks(drone, tello, first_frame_s, measure_s)
+        out += _state_checks(tello)
         out.append(_latency_check(tello))
     finally:
         try:
