@@ -215,6 +215,8 @@ class TelloDrone(Drone):
         self._pending = None
         self._result = "ok"
         self._flying = False
+        if self._tello is not None:
+            self._tello.is_flying = False  # as djitellopy's own emergency(): its end() must not send 'land' afterwards
         return True
 
     def rc(self, lr: int, fb: int, ud: int, yaw: int) -> None:

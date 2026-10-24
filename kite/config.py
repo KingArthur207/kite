@@ -44,6 +44,7 @@ class SafetyCfg:
 @dataclass
 class DroneCfg:
     kind: str = "tello"  # tello | dry_run
+    host: str = "192.168.10.1"  # the drone's address (tests point it at kite.testing's loopback emulator)
     move_speed_cm_s: int = 50  # speed for discrete moves ('speed' command)
     yaw_sign: int = 1  # +1 if telemetry yaw grows with `cw`
     video_fps: int = 60  # reader retrieve cap: must sit above the ~30 fps stream (equal drops ~40 % of frames)
