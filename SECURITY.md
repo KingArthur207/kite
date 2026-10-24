@@ -19,7 +19,6 @@ Open a [private security advisory](https://github.com/KingArthur207/kite/securit
 | `ANTHROPIC_API_KEY` | earpiece voice brain (Claude) | console.anthropic.com |
 | `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY` | earpiece memory | portal.usemoss.dev, API keys |
 | `GOOGLE_MAPS_API_KEY` | destination lookup (Places API New, Routes API v2) | Google Cloud console; restrict it to those APIs and add a daily quota |
-| `GEMINI_API_KEY` | drone scene description | aistudio.google.com |
 
 ## How the earpiece limits damage
 

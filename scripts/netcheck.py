@@ -28,7 +28,7 @@ from pathlib import Path
 
 ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 REQUIRED_KEYS = ["ANTHROPIC_API_KEY", "CARTESIA_API_KEY", "GOOGLE_MAPS_API_KEY"]
-OPTIONAL_KEYS = ["GEMINI_API_KEY", "MOSS_PROJECT_ID", "MOSS_PROJECT_KEY"]
+OPTIONAL_KEYS = ["MOSS_PROJECT_ID", "MOSS_PROJECT_KEY"]
 INTERNET = ["https://api.anthropic.com", "https://api.cartesia.ai", "https://routes.googleapis.com"]
 TIMEOUT_S = 4.0
 STATE_WAIT_S = 2.0          # state goes out at 5 Hz, so a couple of seconds is plenty

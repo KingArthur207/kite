@@ -167,7 +167,7 @@ One pipeline, three frame sources: `process(frame, camera, pose) -> events`, whe
 
 - Input: current hazards, the route, the latest `scene` text, walker pose. Output: one short spoken decision ("Wait, the crosswalk is crowded.") and an optional priority upgrade.
 - Claude can tell the walker to wait or warn them. It never reroutes (no detours, team decision), and it cannot clear a stop. Sonar, `critical` obstacles and `dont_walk` hazards are handled in deterministic code before Claude sees anything.
-- Use Claude for the scene description too (it reads images), instead of adding Gemini, so Claude is load-bearing for the Anthropic track.
+- Use Claude for the scene description too (it reads images), so Claude is load-bearing for the Anthropic track.
 - Fixed phrases ("stop", "curb ahead", "bear left") are generated once with Cartesia and played from a cache. Only changing sentences, like street names and Claude's decisions, are streamed. Navigation speech older than its `ttl` is dropped.
 
 ## 6. Build everything without hardware first
