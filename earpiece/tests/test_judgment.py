@@ -1,5 +1,6 @@
 """Claude judgment layer: guardrails with a fake client (no network), plus one optional live call."""
 
+import json
 import time
 from types import SimpleNamespace
 
@@ -7,16 +8,18 @@ import pytest
 
 from conftest import LIVE_ANTHROPIC_KEY, wait_for
 from earpiece.client import EarpieceClient
-from earpiece.judgment import Judgment, validate
+from earpiece.judgment import Judgment, brief, parse_reply, validate
 
 
 class FakeClient:
-    """Stands in for anthropic.Anthropic: returns a scripted decide() call."""
+    """Stands in for anthropic.Anthropic: replies with a scripted decision as Claude's one-line text
+    ("-" for silence, "!key ..." for an upgrade)."""
 
-    def __init__(self, decision=None, delay=0.0, error=None):
+    def __init__(self, decision=None, delay=0.0, error=None, stop_reason="end_turn"):
         self.decision = decision or {}
         self.delay = delay
         self.error = error
+        self.stop_reason = stop_reason
         self.calls = []
         self.messages = self
 
@@ -26,9 +29,9 @@ class FakeClient:
             time.sleep(self.delay)
         if self.error:
             raise self.error
-        d = {"say": "", "warning": False, "upgrade_key": "", "upgrade_priority": "", **self.decision}
-        return SimpleNamespace(stop_reason="tool_use",
-                               content=[SimpleNamespace(type="tool_use", name="decide", input=d)])
+        d = self.decision
+        line = " ".join(x for x in (f"!{d['upgrade_key']}" if d.get("upgrade_key") else "", d.get("say", "")) if x)
+        return SimpleNamespace(stop_reason=self.stop_reason, content=[SimpleNamespace(type="text", text=line or "-")])
 
 
 HAZ = {"hazards": [{"key": "crowd", "kind": "crowd", "text": "Crowd ahead.", "priority": "nav"}],
@@ -40,7 +43,7 @@ def make(decision=None, snap=None, **kw):
     state = {"snap": snap or HAZ}
     j = Judgment(lambda: state["snap"], lambda *a, **k: said.append((a, k)),
                  lambda key, p: ups.append((key, p)) or True, lambda t, d: events.append((t, d)),
-                 client=FakeClient(decision, **{k: v for k, v in kw.items() if k in ("delay", "error")}),
+                 client=FakeClient(decision, **{k: v for k, v in kw.items() if k in ("delay", "error", "stop_reason")}),
                  log=lambda *_: None, **{k: v for k, v in kw.items() if k in ("min_gap_s", "timeout_s")})
     j.stop()                                   # drive step() by hand
     return j, said, events, ups, state
@@ -64,6 +67,76 @@ def test_a_warning_is_spoken_at_hazard_priority_and_mirrored_as_say():
     assert args == ("Wait, the crosswalk is crowded.", "hazard") and kw["ttl"] <= 5
     (kind, d), = events
     assert kind == "say" and d["source"] == "judgment" and d["priority"] == "hazard"
+
+
+def test_reply_line_parsing():
+    assert parse_reply("-")["say"] == "" and parse_reply("")["say"] == ""
+    assert parse_reply('"Wait. Car turning in from your right."\n')["say"] == "Wait. Car turning in from your right."
+    d = parse_reply("!crowd Crowd on the crossing. Hold here.\nextra line")
+    assert (d["say"], d["upgrade_key"], d["upgrade_priority"]) == ("Crowd on the crossing. Hold here.", "crowd", "hazard")
+    assert parse_reply("!crowd")["say"] == "" and parse_reply("!crowd")["upgrade_key"] == "crowd"
+    assert validate(parse_reply("Sign ahead says use other side."), {})[0] is None   # echoing a sign is a reroute
+
+
+def test_a_reply_cut_off_at_max_tokens_is_never_spoken():
+    j, said, events, *_ = make({"say": "Wait. Car turning in", "warning": True}, stop_reason="max_tokens")
+    assert j.step() == "none" and said == [] and events == []
+
+
+def test_upgrade_does_not_trigger_another_call():
+    j, _, _, _, state = make({"upgrade_key": "crowd"})
+    j.step()
+    state["snap"] = {**HAZ, "hazards": [{**HAZ["hazards"][0], "priority": "hazard"}]}
+    assert j.step() == "unchanged" and len(j.client.calls) == 1
+
+
+def test_claude_sees_a_brief_snapshot_with_recent_speech():
+    snap = {"hazards": [{"key": "vehicle", "kind": "vehicle", "text": "Car at 2 o'clock, 9 meters.", "bearing": 55.04,
+                         "distance": 9.0, "state": None, "priority": "hazard"}],
+            "nearby": [{"kind": "bike", "bearing": 3.7, "distance": 6.23, "urgency": 0.1}], "scene": "A car turns in.",
+            "route": {"label": "Howard Street", "bearing": 0.0, "distance": 26.4, "region": "ahead"},
+            "last_instruction": {"text": "Cross Moss Street.", "seconds_ago": 2}, "drone": {"battery": 60},
+            "position": {"lat": 37.7, "lng": -122.4, "place": "Moss St at Howard St"}, "local_time": "14:02",
+            "recent_speech": ["Stop."], "guidance_paused": False}
+    b = brief(snap)
+    assert b == {"hazards": [{"key": "vehicle", "kind": "vehicle", "text": "Car at 2 o'clock, 9 meters.", "bearing": 55,
+                              "distance": 9, "priority": "hazard"}],
+                 "nearby": [{"kind": "bike", "bearing": 4, "distance": 6.2}], "scene": "A car turns in.",
+                 "route": {"to": "Howard Street", "distance": 26, "last_instruction": "Cross Moss Street."},
+                 "place": "Moss St at Howard St", "recent_speech": ["Stop."]}
+    j, *_ = make(snap=snap)
+    j.step()
+    assert json.loads(j.client.calls[0]["messages"][0]["content"]) == b
+
+
+def test_a_slow_answer_is_raced_by_a_second_request():
+    class Slow(FakeClient):
+        def create(self, **kw):
+            self.delay = 0.6 if not self.calls else 0.0   # first request stuck in the slow tail
+            return super().create(**kw)
+
+    said = []
+    j = Judgment(lambda: HAZ, lambda *a, **k: said.append(a), lambda *a: True, lambda *a: None,
+                 client=Slow({"say": "Crowd on the crossing. Hold here."}), hedge_s=0.1, timeout_s=0.5,
+                 log=lambda *_: None)
+    j.stop()
+    t0 = time.monotonic()
+    assert j.step() == "said" and time.monotonic() - t0 < 0.4
+    assert j.stats["hedged"] == 1 and len(j.client.calls) == 2
+
+
+def test_the_same_line_is_not_said_twice_in_a_row():
+    j, said, _, _, state = make({"say": "Listen for turning cars first."})
+    j.step()
+    state["snap"] = {**HAZ, "scene": "Still a busy crosswalk."}
+    j.step()
+    assert len(said) == 1 and j.stats["repeats"] == 1
+    assert "Listen for turning cars first." in json.loads(j.client.calls[1]["messages"][0]["content"])["recent_speech"]
+
+
+def test_app_context_lists_what_was_just_said(app):
+    app.say("Stop.", "critical")
+    assert wait_for(lambda: "Stop." in app.context()["recent_speech"], 3)
 
 
 def test_too_long_is_rejected():

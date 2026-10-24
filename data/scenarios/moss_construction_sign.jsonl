@@ -1,0 +1,5 @@
+{"type": "position", "source": "route-plan", "lat": 37.77834, "lng": -122.40874, "heading": 315.0, "place": "Moss St at Howard St", "t": 0.0}
+{"type": "guidance", "source": "route-plan", "text": "Head northwest on Moss Street for 15 meters, then turn left onto Howard.", "key": "moss-1", "ttl": 10, "t": 0.3}
+{"type": "beacon", "source": "route-plan", "bearing": 0, "distance": 15, "label": "the corner of Moss and Howard", "t": 0.5}
+{"type": "scene", "source": "scene-drone", "text": "An orange sign on the sidewalk 8 meters ahead reads SIDEWALK CLOSED, USE OTHER SIDE. Orange cones block the right half of the sidewalk.", "t": 1.0}
+{"type": "scene", "source": "scene-drone", "text": "Orange cones and a SIDEWALK CLOSED sign are 4 meters ahead; a narrow gap remains on the left.", "t": 6.0}

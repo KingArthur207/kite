@@ -1,0 +1,7 @@
+{"type": "position", "source": "route-plan", "lat": 37.77834, "lng": -122.40874, "heading": 225.0, "place": "Moss St at Howard St", "t": 0.0}
+{"type": "guidance", "source": "route-plan", "text": "Cross Moss Street on the zebra crossing ahead.", "key": "cross-moss", "ttl": 10, "t": 0.3}
+{"type": "beacon", "source": "route-plan", "bearing": 0, "distance": 26, "label": "Howard Street, 20 meters past Moss", "t": 0.5}
+{"type": "scene", "source": "scene-drone", "text": "About six people are standing on the zebra crossing over Moss Street, 5 meters ahead, some walking toward you.", "t": 1.0}
+{"type": "hazard", "source": "drone", "kind": "crowd", "text": "Crowd ahead, 5 meters.", "bearing": 4, "distance": 5, "ttl": 4, "priority": "nav", "t": 2.0}
+{"type": "hazard", "source": "drone", "kind": "crowd", "text": "Crowd ahead, 5 meters.", "bearing": 2, "distance": 4, "ttl": 4, "priority": "nav", "t": 4.0}
+{"type": "hazard", "source": "drone", "kind": "crowd", "text": "Crowd ahead, 5 meters.", "bearing": 0, "distance": 4, "ttl": 4, "priority": "nav", "t": 6.0}
