@@ -62,6 +62,13 @@ Windows: `py -3.12 -m venv .venv`, `.venv\Scripts\activate`, `pip install -r req
 firewall on Public networks too (Windows files the Tello's Wi-Fi as Public). `python tests\drone_test.py --ground
 --preview` and `python -m kite.video_doctor` work there; `kite.record --fly` (keyboard flight) is macOS/Linux only.
 
+Quick drone tests (any OS, run from the repo root):
+
+- `python tests/drone_test.py --ground --preview`: camera window, command latency and stream rates, no takeoff.
+- `python tests/drone_test.py --simple --preview`: a ~45 s flight, one push each way on every axis, then it lands.
+- `python tests/drone_fly.py`: fly by hand from the camera window: `t` takeoff, arrows move, `w`/`s` up/down,
+  `a`/`d` turn, space hover, `q` land (then quit), `3` emergency motor stop. `--dry-run` rehearses on the table.
+
 ### Drone layer (`kite/`)
 
 | Module | What it does |
