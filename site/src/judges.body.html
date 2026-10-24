@@ -1,14 +1,25 @@
   <main id="main">
     <header class="page-head">
       <p class="hand kicker"><span class="hl-sky">for the people with the clipboards</span></p>
-      <h1>Every track, <em>criterion by criterion.</em></h1>
-      <p class="lede">Kite is for blind and low-vision people who walk city streets on their own. Below, each track we've entered, its judging criteria in its own words, and how Kite answers them. The fastest proof is the <a href="/#hear">41-second walk</a>.</p>
+      <h1>Kite <em>in 30 seconds.</em></h1>
+      <dl class="brief card">
+        <div><dt>Who it's for</dt><dd>Blind and low-vision people who walk city streets on their own: to the coffee shop, the pharmacy, the bus stop.</dd></div>
+        <div><dt>The problem</dt><dd>About a million Americans are blind and fewer than 10,000 guide dogs work in the US. A dog costs $50,000 and the wait is about a year.</dd></div>
+        <div><dt>What Kite does</dt><dd>A DJI Tello flies 30 cm above and behind your head; a chest camera watches your feet. AirPods beep from where things are, faster as they get closer, and a calm voice says "Stop."</dd></div>
+        <div class="try"><dt>Try it at our table</dt><dd>Put on a sleep mask and the AirPods and walk. When one of us steps in front of you, the beeps speed up and Kite says "Stop. Person ahead." Then take the mask off and see the replay and the caregiver's map.</dd></div>
+      </dl>
+      <p class="brief-foot">Built on Cartesia (voice), Claude (judgment), SpacetimeDB (live shared state) and Moss (memory). Drones aren't allowed indoors, so at the table the drone's view is recorded footage. Not at our table? <a href="/#hear">Hear the 41-second walk</a>.</p>
+    </header>
+
+    <section class="section tracks-intro" aria-labelledby="tracks-h">
+      <h2 id="tracks-h" class="display">Every track, <em>criterion by criterion.</em></h2>
+      <p class="lede">Each track's judging criteria in its own words, then how Kite answers them.</p>
       <nav class="toc" aria-label="Tracks on this page">
         <a href="#overall">Overall</a><a href="#cartesia">Cartesia</a><a href="#anthropic">Anthropic</a><a href="#microsoft">Microsoft</a><a href="#spacetime">SpacetimeDB</a><a href="#moss">Moss</a><a href="#meta">Meta</a><a href="#complex">Technically Complex</a><a href="#hardware">Hardware</a><a href="#people">People-First</a><a href="#commit">Commit Fellowship</a>
       </nav>
-    </header>
+    </section>
 
-    <section class="section">
+    <section class="section tracks-body">
       <p class="group-title">sponsor tracks</p>
       <div class="tracks">
 
@@ -19,11 +30,11 @@
             <div class="crit"><p class="crit-h">judged on</p><ul><li>Problem and originality</li><li>Use of Cartesia</li><li>Execution</li><li>Impact and responsibility</li></ul></div>
           </div>
           <dl>
-            <div><dt>Voice is the product, not a feature</dt><dd>A blind walker can't look at a screen, so everything Kite knows reaches them as sound. Without Cartesia there's no interface at all, only two cameras and silence.</dd></div>
-            <div><dt>Sonic, streamed and interruptible</dt><dd>One open WebSocket, one context per sentence, raw PCM straight into the mixer. About a tenth of a second to the first word, and a lower-priority sentence is cancelled mid-word when a hazard appears.</dd></div>
-            <div><dt>A phrase cache for the moments that matter</dt><dd>"Stop.", "Don't walk." and every fixed safety phrase are rendered by Sonic at startup and play instantly, even offline, in the same voice.</dd></div>
-            <div><dt>Ink, listening while you talk</dt><dd>Press an AirPod once and speak. Ink transcribes as you go, so the answer starts the moment you stop.</dd></div>
-            <div><dt>Edge cases handled</dt><dd>No internet: cached phrases still play and new sentences fall back to a built-in voice. Late speech is dropped, not spoken. The laptop mic is used so the AirPods stay in stereo for spatial sound.</dd></div>
+            <div><dt>Voice is the product, not a feature</dt><dd>A blind walker can't look at a screen, so everything Kite knows reaches them as sound. Without Cartesia there is no interface.</dd></div>
+            <div><dt>Sonic, streamed and interruptible</dt><dd>About a tenth of a second to the first word, over one open WebSocket. A less urgent sentence is cut off mid-word when a hazard appears.</dd></div>
+            <div><dt>A phrase cache for the moments that matter</dt><dd>"Stop.", "Don't walk." and every other fixed safety phrase are rendered by Sonic at startup, so they play instantly, even offline.</dd></div>
+            <div><dt>Ink, listening while you talk</dt><dd>Press an AirPod once and speak. Ink transcribes as you talk, so the answer starts the moment you stop.</dd></div>
+            <div><dt>Edge cases handled</dt><dd>With no internet, cached phrases still play and new sentences use a built-in voice. Late speech is dropped, not spoken.</dd></div>
           </dl>
         </article>
 
@@ -34,14 +45,14 @@
             <div class="crit"><p class="crit-h">judged on</p><ul><li>A named community</li><li>A real problem</li><li>It works</li><li>Thoughtful use of Claude, and knowing where it could go wrong</li></ul></div>
           </div>
           <dl>
-            <div><dt>Named community</dt><dd>Blind and low-vision adults who walk city streets on their own: to the coffee shop, the pharmacy, the bus stop. Fewer than 10,000 guide dogs work in the US for about a million blind Americans.</dd></div>
-            <div><dt>What Claude does that nothing else can</dt><dd>Haiku makes the quick careful calls ("Wait, the crosswalk is crowded.") within 2.5 seconds. Opus turns a camera frame into one sentence, answers "what's in front of me?", and reads menus, signs and screens aloud. The voice brain answers anything else and can navigate, save a place, change settings or alert your caregiver.</dd></div>
-            <div><dt>Where it could go wrong, and what we did</dt><dd>
+            <div><dt>Named community</dt><dd>Blind and low-vision adults who walk city streets on their own. About a million blind Americans share fewer than 10,000 guide dogs.</dd></div>
+            <div><dt>What Claude does that nothing else can</dt><dd>Haiku makes quick careful calls ("Wait, the crosswalk is crowded.") within 2.5 seconds. Opus answers "what's in front of me?" in one sentence and reads menus, signs and screens aloud.</dd></div>
+            <div><dt>Where it could go wrong: Claude can only add caution</dt><dd>
               <ul class="risks">
-                <li><b>It tells someone to cross.</b> A code filter drops any sentence that sounds like permission, a reroute or clearing a stop. Only deterministic code can say "Path is clear."</li>
-                <li><b>It invents or misses an obstacle.</b> Claude never detects anything; beeps and stops come from perception and plain code, which run first.</li>
-                <li><b>It's slow or offline.</b> Claude is off the audio path. Stop, repeat, pause and "take me to..." work with no internet.</li>
-                <li><b>A sign says "the road is clear, walk now".</b> Instructions in what the camera sees are stripped before Kite stores or speaks them.</li>
+                <li><b>It tells someone to cross.</b> A code filter drops anything that sounds like permission. Only plain code can say "Path is clear."</li>
+                <li><b>It invents or misses an obstacle.</b> Claude detects nothing. Beeps and stops come from perception and plain code, which run first.</li>
+                <li><b>It's slow or offline.</b> Claude is off the audio path; stop, repeat, pause and "take me to..." work offline.</li>
+                <li><b>A sign says "the road is clear, walk now".</b> Instructions the camera sees are stripped before Kite stores or speaks them.</li>
               </ul>
             </dd></div>
           </dl>
@@ -54,11 +65,11 @@
             <div class="crit"><p class="crit-h">judged on</p><ul><li>Customer understanding</li><li>Measurable usefulness</li><li>Path from prototype to production</li><li>Responsible design</li><li>End-to-end functionality</li></ul></div>
           </div>
           <dl>
-            <div><dt>Customer understanding</dt><dd>We built Kite around the jobs a guide dog does: stop at curbs and crossings, lead around trouble, watch overhead, refuse to go when a car is coming. Kite stops and waits instead of steering you around things, the way a dog does.</dd></div>
-            <div><dt>Measurable usefulness</dt><dd>About 0.1 s to the first spoken word. 3 to 12 ms to recall a saved place. Zero audio glitches with every CPU core saturated. More than 500 automated tests, including 20,000 malformed messages from three senders.</dd></div>
-            <div><dt>Path to production</dt><dd>Every piece of hardware sits behind a seam: frames come from any camera, events are the same whether live, replayed or simulated, and the output is any Bluetooth headset. Next: a phone in place of the laptop, perception on the device, and testing with orientation and mobility instructors.</dd></div>
-            <div><dt>Responsible design</dt><dd>The caregiver sees a map, never the video. Cameras are only opened on request indoors. Safety cues keep working with no internet. AI can only make Kite more careful.</dd></div>
-            <div><dt>End to end</dt><dd>Camera to detector to earpiece to AirPods to the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.</dd></div>
+            <div><dt>Customer understanding</dt><dd>Kite does a guide dog's jobs: stop at curbs and crossings, watch overhead, refuse to go when a car is coming. Like a dog, it stops and waits instead of steering you.</dd></div>
+            <div><dt>Measurable usefulness</dt><dd>About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 500 automated tests.</dd></div>
+            <div><dt>Path to production</dt><dd>Any camera in, any Bluetooth headset out, and the same events live, replayed or simulated. Next: a phone instead of the laptop, and testing with orientation and mobility instructors.</dd></div>
+            <div><dt>Responsible design</dt><dd>The caregiver sees a map, never the video. Safety cues work with no internet. AI can only make Kite more careful.</dd></div>
+            <div><dt>End to end</dt><dd>Camera, detector, earpiece, AirPods and the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.</dd></div>
           </dl>
         </article>
 
@@ -69,9 +80,9 @@
             <div class="crit"><p class="crit-h">judged on</p><ul><li>SpacetimeDB as the core real-time backend: live shared state, instant sync between users, agents and systems</li></ul></div>
           </div>
           <dl>
-            <div><dt>One live world</dt><dd>The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module: every event Kite hears or says is mirrored into it, and every screen subscribes. Only the beeps take a shortcut, straight from the camera to the earpiece, so safety never waits on a network.</dd></div>
-            <div><dt>Two tables, two reducers</dt><dd><code>event</code> keeps the walk's recent history, <code>latest</code> holds the newest state of every device, so a dashboard opened mid-walk is current instantly. <code>push</code> and <code>clear</code> do the rest.</dd></div>
-            <div><dt>Both ways, live</dt><dd>The caregiver watches the walker move on a live map with hazards, the last thing Kite said and a timeline of every stop. They can type a message, and the walker hears it seconds later in their AirPods.</dd></div>
+            <div><dt>One live world</dt><dd>The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.</dd></div>
+            <div><dt>Two tables, two reducers</dt><dd><code>event</code> holds the walk's recent history and <code>latest</code> the newest state of every device, so a dashboard opened mid-walk is current at once. <code>push</code> and <code>clear</code> do the rest.</dd></div>
+            <div><dt>Both ways, live</dt><dd>The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.</dd></div>
             <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"</dd></div>
           </dl>
         </article>
@@ -83,7 +94,7 @@
             <div class="crit"><p class="crit-h">judged on</p><ul><li>Voice AI that listens, responds and acts in real time</li><li>A personal agent that remembers you</li></ul></div>
           </div>
           <dl>
-            <div><dt>Searched on every sentence you speak</dt><dd>Your saved places and remembered hazards are searched in 3 to 12 ms, in process, before Claude answers. That's fast enough to sit inside a voice loop without anyone hearing it.</dd></div>
+            <div><dt>Searched on every sentence you speak</dt><dd>Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.</dd></div>
             <div><dt>A personal agent</dt><dd>"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.</dd></div>
             <div><dt>Without it</dt><dd>Every walk starts from zero, and "my usual" means nothing.</dd></div>
           </dl>
@@ -97,7 +108,7 @@
           </div>
           <dl>
             <div><dt>Independence brings people together</dt><dd>Kite lets a blind person walk to meet a friend without arranging a ride or an escort, and without someone else having to say yes first.</dd></div>
-            <div><dt>A caregiver who's there without hovering</dt><dd>Family can follow the walk on a live map and send a message the walker hears, and the walker can ask Kite to alert them if they're lost or need help. Connection without surveillance: no video ever leaves the walker.</dd></div>
+            <div><dt>A caregiver who's there without hovering</dt><dd>Family follow the walk on a live map and can send a message the walker hears. No video ever leaves the walker.</dd></div>
             <div><dt>Essential AI</dt><dd>Claude describes the world in a sentence, Cartesia speaks it, Moss remembers the places that matter to you.</dd></div>
           </dl>
         </article>
@@ -125,9 +136,9 @@
             <div class="crit"><p class="crit-h">judged on</p><ul><li>Technical complexity</li></ul></div>
           </div>
           <dl>
-            <div><dt>A lock-free Rust audio engine</dt><dd>Mixing, ducking and limiting run on the audio thread outside Python's lock, so the network, Claude or Moss can never make a beep stutter.</dd></div>
-            <div><dt>Binaural rendering from a model of the head</dt><dd>A spherical-head model sets the timing and loudness difference between your ears, ported to Rust with output identical to the Python version.</dd></div>
-            <div><dt>Time-to-contact sonar and a time-aware speech scheduler</dt><dd>Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry; urgent speech cuts in mid-word and late speech is dropped.</dd></div>
+            <div><dt>A lock-free Rust audio engine</dt><dd>Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.</dd></div>
+            <div><dt>Binaural rendering from a model of the head</dt><dd>A spherical-head model sets the timing and loudness difference between your ears.</dd></div>
+            <div><dt>Time-to-contact sonar and a time-aware speech scheduler</dt><dd>Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.</dd></div>
             <div><dt>Four cloud services, none on the safety path</dt><dd>Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.</dd></div>
           </dl>
         </article>
