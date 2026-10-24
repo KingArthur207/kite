@@ -354,3 +354,75 @@ def test_live_maincloud_round_trip():
         http.post(f"{host}/v1/database/{db}/call/clear", json={},
                   headers={"Authorization": f"Bearer {b._token}"}).raise_for_status()
     assert b.stats["calls"] == 3
+
+
+# ------------------------------------------------------------------ failure modes
+def test_rate_limited_429_backs_off_and_still_lands(fake, make):
+    fake.script = [(429, "too many requests"), (429, "too many requests")]
+    b = make(backoff_s=0.05)
+    b.publish({"type": "say", "text": "after a 429"})
+    assert b.flush(10)
+    assert [c["type"] for c in fake.calls] == ["say"]
+    assert b.stats["failed"] == 2 and b.stats["dropped"] == 0 and not b.stats["disabled"]
+
+
+def test_stale_identity_is_refetched(fake, make):
+    fake.script = [(401, "bad token")]
+    b = make(backoff_s=0.01)
+    b.publish({"type": "say", "text": "x"})
+    assert b.flush(10)
+    assert len(fake.calls) == 1 and b.stats["sent"] == 1
+
+
+def test_a_server_that_never_answers_bounds_the_queue_and_never_blocks(monkeypatch):
+    """Accepts connections and then says nothing: every call times out."""
+    import socket
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(64)
+    srv.settimeout(0.2)
+    held = []
+    stop = threading.Event()
+
+    def accept():
+        while not stop.is_set():
+            try:
+                held.append(srv.accept()[0])
+            except OSError:
+                pass
+    threading.Thread(target=accept, daemon=True).start()
+    monkeypatch.setattr(spacetime, "TIMEOUT_S", 0.2)
+    b = SpacetimeBridge(f"http://127.0.0.1:{srv.getsockname()[1]}", DB, "earpiece", lambda *_: None,
+                        backoff_s=0.01, max_calls_per_s=1000.0)
+    try:
+        t = time.perf_counter()
+        for i in range(3 * spacetime.QUEUE_MAX):
+            b.publish({"type": "say", "text": "x", "n": i})
+        assert time.perf_counter() - t < 0.5
+        assert b._q.qsize() <= spacetime.QUEUE_MAX
+        assert b.stats["dropped"] >= spacetime.QUEUE_MAX
+        assert wait_for(lambda: b.stats["failed"] >= 2, 5)       # timeouts count as failures
+        assert b.stats["sent"] == 0
+    finally:
+        stop.set()
+        srv.close()
+        for c in held:
+            c.close()
+
+
+def test_garbage_identity_reply_is_a_retry_not_a_dead_worker():
+    calls = {"n": 0}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/v1/identity":
+            calls["n"] += 1
+            if calls["n"] < 3:
+                return httpx.Response(200, text="<html>captive portal</html>")
+            return httpx.Response(200, json={"token": "t"})
+        return httpx.Response(200)
+
+    b = SpacetimeBridge("http://st.test", DB, "earpiece", lambda *_: None, backoff_s=0.01,
+                        max_calls_per_s=1000.0, start=False)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+        assert b.send_now({"type": "say", "text": "x"}, http, tries=4)
+    assert calls["n"] == 3 and b.stats["failed"] == 2
