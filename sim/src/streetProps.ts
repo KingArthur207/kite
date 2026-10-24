@@ -141,14 +141,16 @@ function limb(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, seg = 
   return g;
 }
 
-/** A street tree at (x, y, z), about `height` m tall, crown clear of the sidewalk below 2.6 m. */
-export function streetTree(at: THREE.Vector3, height: number, seed: number, leaves: LeafSoup): THREE.BufferGeometry[] {
+/** A street tree at (x, y, z), about `height` m tall, crown clear of the sidewalk below 2.6 m.
+ *  size: crown radius and trunk radius in m (defaults scale with height). */
+export function streetTree(at: THREE.Vector3, height: number, seed: number, leaves: LeafSoup,
+                           size: { crownR?: number; trunkR?: number } = {}): THREE.BufferGeometry[] {
   const r = seeded(seed);
   const bark: THREE.BufferGeometry[] = [];
   const crown = at.clone().add(new THREE.Vector3(0, height * 0.66, 0));
-  const crownR = height * 0.32;
+  const crownR = size.crownR ?? height * 0.32;
   const trunkTop = at.clone().add(new THREE.Vector3((r() - 0.5) * 0.25, 2.5 + r() * 0.6, (r() - 0.5) * 0.25));
-  const trunkR = 0.1 + height * 0.012;
+  const trunkR = size.trunkR ?? 0.1 + height * 0.012;
   bark.push(limb(at.clone().add(new THREE.Vector3(0, -0.05, 0)), trunkTop, trunkR * 1.15, trunkR * 0.85, 9));
   const tips: THREE.Vector3[] = [];
   const grow = (from: THREE.Vector3, dir: THREE.Vector3, len: number, rad: number, depth: number) => {
@@ -165,7 +167,7 @@ export function streetTree(at: THREE.Vector3, height: number, seed: number, leav
     }
   };
   const n = 3 + (r() < 0.5 ? 1 : 0);
-  const spread = height * 0.24;
+  const spread = crownR * 0.75;
   for (let k = 0; k < n; k++) {
     const az = (k / n) * Math.PI * 2 + r() * 0.8, tilt = 0.55 + r() * 0.3;
     const dir = new THREE.Vector3(Math.cos(az) * Math.sin(tilt), Math.cos(tilt), Math.sin(az) * Math.sin(tilt));
