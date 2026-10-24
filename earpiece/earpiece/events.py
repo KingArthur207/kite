@@ -21,6 +21,8 @@ the wearer's frame (0 ahead, +90 right, -90 left); distances are metres.
     position   {"type":"position","lat":37.80,"lng":-122.45,"heading":270,"place":"Lyon St"}
     status     {"type":"status","source":"drone","battery":34,"state":"following"}
     heartbeat  {"type":"heartbeat","source":"webcam"}
+    memory     a place / hazard / note for Kite to remember (caregiver dashboard, teammates)
+               {"type":"memory","kind":"place","text":"Blue Bottle Coffee on Chestnut","lat":37.8,"lng":-122.44}
     control    {"type":"control","action":"mute_cues"|"unmute_cues"|"pause"|"resume"
                 |"volume_up"|"volume_down"|"repeat"|"beacon_on"|"beacon_off"}
 
@@ -213,6 +215,14 @@ def parse(raw: bytes | str | dict) -> Msg:
         return Msg("status", src, seq, text=_text(d), data=data)
     if t == "heartbeat":
         return Msg("heartbeat", src, seq)
+    if t == "memory":
+        kind = str(d.get("kind", "note")).lower()
+        if kind not in ("place", "hazard", "note"):
+            raise BadMessage("memory kind must be place, hazard or note")
+        data = {k: _num(d, k) for k in ("lat", "lng")}
+        data["name"] = _text(d, "name")
+        data["address"] = _text(d, "address")
+        return Msg("memory", src, seq, kind=kind, text=_text(d, required=True), data=data)
     if t == "control":
         a = str(d.get("action", "")).lower()
         if a not in CONTROL_ACTIONS:

@@ -26,6 +26,7 @@ from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
 from .events import Msg, clock_phrase, distance_phrase
 from .listen import Listener
+from .memory import MemoryStore
 from .mixer import Engine
 from .output import DeviceOutput, NullOutput
 from .sonar import Sonar
@@ -39,7 +40,8 @@ def _stereo(mono: np.ndarray) -> np.ndarray:
 
 class Earpiece:
     def __init__(self, cfg: Cfg | None = None, output: str = "device", record: bool = False,
-                 network: bool = True, log: Callable[[str], None] = print, output_device: str | None = None):
+                 network: bool = True, log: Callable[[str], None] = print, output_device: str | None = None,
+                 memory: MemoryStore | None = None):
         self.cfg = cfg or Cfg()
         self.log = log
         a = self.cfg.audio
@@ -57,9 +59,12 @@ class Earpiece:
         self.beacon = Beacon(self.engine, self.cfg.beacon, speak=self.say, log=log)
         self.listener = Listener(self.cfg.listen, self.cfg.cartesia_key, on_text=self.heard,
                                  cue=self.cue, on_listening=self._on_listening, say=self.say, log=log)
+        self.memory = memory if memory is not None else MemoryStore(log=log)
         self.brain = Brain(self.context, Actions(self.navigate, self.control, self.alert_caregiver,
-                                                 self.stop_speaking, self.ear_check),
+                                                 self.stop_speaking, self.ear_check,
+                                                 remember=self.remember, recall=self.recall),
                            self.say, self.cfg.anthropic_key, log=log)
+        self._noted_places: set[str] = set()
         self.gestures = Gestures(self.gesture, log=log)
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
                                    self.cfg.net.ws_port, log=log) if network else None
@@ -89,6 +94,7 @@ class Earpiece:
             self.speaker.prewarm()
         if self.transport is not None:
             self.transport.start()
+        self.memory.start()
         threading.Thread(target=self._control_loop, name="control", daemon=True).start()
         if isinstance(self.output, DeviceOutput):
             devices.on_device_change(lambda: None)    # keeps CoreAudio notifications flowing
@@ -179,6 +185,14 @@ class Earpiece:
             self.scene = (msg.text, now)
         elif t == "position":
             self.position = {k: v for k, v in msg.data.items() if v is not None}
+            place = self.position.get("place")
+            if place and place not in self._noted_places:
+                self._noted_places.add(place)
+                threading.Thread(target=self._place_notes, args=(place,), daemon=True).start()
+        elif t == "memory":
+            meta = {k: v for k, v in msg.data.items() if v is not None}
+            m = self.memory.remember(msg.kind, msg.text, meta)
+            self._event("memory", {"id": m.id, "kind": m.kind, "text": m.text, "source": msg.source})
         elif t == "status":
             self._status(msg)
         elif t == "control":
@@ -300,9 +314,46 @@ class Earpiece:
                 self.say("No directions yet.", "system", ttl=5)
 
     def navigate(self, destination: str) -> str:
+        """Resolve personal places through memory ('my coffee shop') before asking the
+        navigation side for a route; it receives the real name and coordinates."""
         destination = destination.strip().rstrip(".")
-        self._event("voice_request", {"intent": "navigate", "destination": destination})
+        req = {"intent": "navigate", "destination": destination}
+        place = self.memory.resolve_place(destination)
+        if place is not None:
+            name = place.meta.get("name") or place.text.split(":")[0]
+            req.update({"resolved": name, "address": place.meta.get("address"),
+                        "lat": place.meta.get("lat"), "lng": place.meta.get("lng"), "memory_id": place.id})
+            self._event("voice_request", req)
+            return f"Okay, heading to {name}."
+        self._event("voice_request", req)
         return f"Okay, finding a route to {destination}."
+
+    def remember(self, kind: str, text: str) -> str:
+        text = text.strip().rstrip(".")
+        if not text:
+            return "What should I remember?"
+        meta = {}
+        if kind == "place":
+            pos = self.position or {}
+            meta = {"name": text, "lat": pos.get("lat"), "lng": pos.get("lng"), "near": pos.get("place")}
+            body = f"{text}" + (f", near {pos['place']}" if pos.get("place") else "")
+            m = self.memory.remember("place", body, meta)
+            reply = f"Saved. I'll remember this place as {text}."
+            if pos.get("lat") is None:
+                reply += " I don't have your exact location yet, so I saved the name only."
+        else:
+            m = self.memory.remember(kind, text, {"near": (self.position or {}).get("place")})
+            reply = "Got it. I'll remember that."
+        self._event("memory", {"id": m.id, "kind": m.kind, "text": m.text, "source": "voice"})
+        return reply
+
+    def recall(self, query: str) -> list[dict]:
+        return [{"kind": h.kind, "text": h.text, "score": round(h.score, 3)}
+                for h in self.memory.search(query, top_k=3)]
+
+    def _place_notes(self, place: str) -> None:
+        for h in self.memory.notes_for(place)[:1]:
+            self.say(f"Heads up: {h.text}", "hazard", key=f"memory:{h.id}", ttl=20)
 
     def alert_caregiver(self, message: str) -> str:
         self._event("caregiver_alert", {"message": message, "position": self.position})
@@ -424,5 +475,6 @@ class Earpiece:
                                                       if k != "first_sentence_ms"}},
             "net": dict(self.transport.stats) if self.transport else None,
             "battery": self.battery.last if out else None,
+            "memory": self.memory.summary(),
             "uptime_s": round(time.time() - self.started_at),
         }

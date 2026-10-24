@@ -272,7 +272,11 @@ class Sonar:
             return
         if not self.labels or self.muted:
             return
-        if (t.urgency >= 0.45 and now - t.last_label_t > c.speak_label_cooldown_s
+        # Label early (urgency 0.3) so the words finish before any "Stop"; skip the label
+        # entirely when contact is so near that "Stop" would cut it off mid-word.
+        v = t.closing_speed
+        imminent = v is not None and v > 0.3 and t.ttc < c.ttc_critical_s + 1.2
+        if (t.urgency >= 0.3 and not imminent and now - t.last_label_t > c.speak_label_cooldown_s
                 and now - self._last_global_label > c.speak_global_gap_s):
             t.last_label_t = now
             self._last_global_label = now

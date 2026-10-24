@@ -23,7 +23,9 @@ def app(offline_speech):
     cfg.speech.cache_dir = offline_speech / "cache"
     cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
     logs = []
-    a = Earpiece(cfg, output="null", record=True, log=logs.append)
+    from earpiece.memory import MemoryStore
+    mem = MemoryStore(project_id="", project_key="", store=offline_speech / "memory.json", log=logs.append)
+    a = Earpiece(cfg, output="null", record=True, log=logs.append, memory=mem)
     a.logs = logs
     a.start(prewarm=False, announce=False)
     yield a
@@ -215,3 +217,47 @@ def test_speech_queue_storm(app):
     assert said.count("Stop.") >= 1
     non_crit = [s for s in said if s != "Stop."]
     assert len(non_crit) <= 7 * 2       # dedupe + TTL keep chatter bounded
+
+
+def test_personal_destination_is_resolved_from_memory(app):
+    from websockets.sync.client import connect
+    with connect(f"ws://127.0.0.1:{app.cfg.net.ws_port}") as ws:
+        ws.recv(timeout=2)
+        app.heard("take me to my coffee shop")
+        t0 = time.time()
+        req = None
+        while time.time() - t0 < 3:
+            m = json.loads(ws.recv(timeout=3))
+            if m["type"] == "voice_request":
+                req = m
+                break
+    assert req["resolved"] == "Blue Bottle Coffee" and req["lat"] is not None
+    assert wait_for(lambda: "Okay, heading to Blue Bottle Coffee." in spoken(app), 3)
+
+
+def test_remember_place_by_voice_then_navigate_there(app):
+    c = client(app, "nav")
+    c.position(lat=37.7990, lng=-122.4400, place="Lombard Street")
+    time.sleep(0.2)
+    app.heard("remember this place as the pharmacy")
+    assert wait_for(lambda: any("the pharmacy" in t for t in spoken(app)), 3)
+    p = app.memory.resolve_place("the pharmacy")
+    assert p is not None and p.meta["lat"] == 37.799
+    assert app.navigate("the pharmacy") == "Okay, heading to the pharmacy."
+
+
+def test_arriving_somewhere_with_a_saved_hazard_warns_once(app):
+    c = client(app, "nav")
+    c.position(place="Lyon Street and Bay Street")
+    c.position(place="Lyon Street and Bay Street")
+    assert wait_for(lambda: any(t.startswith("Heads up: The curb at Lyon") for t in spoken(app)), 3)
+    time.sleep(0.5)
+    assert sum(t.startswith("Heads up") for t in spoken(app)) == 1
+
+
+def test_caregiver_can_add_memories_over_the_wire(app):
+    c = client(app, "dashboard")
+    c.send({"type": "memory", "kind": "hazard", "text": "Broken paving outside the library on Union"})
+    assert wait_for(lambda: any("library" in m.text for m in app.memory.docs.values()), 2)
+    app.heard("remember that the elevator at the station is out of order")
+    assert wait_for(lambda: any("elevator" in m.text for m in app.memory.docs.values()), 2)

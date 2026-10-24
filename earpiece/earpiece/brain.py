@@ -32,6 +32,7 @@ How to answer:
 - Give directions as clock positions or "left/right/ahead" and distances in meters, from the user's point of view.
 - Only describe what the context contains. If something is not in the context, say you can't see it yet. Never guess about obstacles, traffic, or signals.
 - Safety first: never tell the user it is safe to cross a street. If the context shows a walk signal, say the signal shows walk and remind them to listen for traffic.
+- "memories" in the context are the user's own saved places and notes: use them to understand "my usual", "home", or a known hazard, and mention a remembered hazard when it matters.
 - If the user wants to go somewhere, call navigate_to. If they want a setting changed, call control. If they are lost, hurt, scared, or ask for help, call alert_caregiver and tell them help has been notified.
 - Be warm and calm, never chatty."""
 
@@ -46,6 +47,11 @@ TOOLS = [
          "mute_cues", "unmute_cues", "pause", "resume", "volume_up", "volume_down", "repeat",
          "beacon_on", "beacon_off", "cancel_route"]}},
          "required": ["action"], "additionalProperties": False}},
+    {"name": "remember", "eager_input_streaming": True,
+     "description": "Save something the user wants Kite to remember: a place at their current location, a hazard, or a note.",
+     "input_schema": {"type": "object", "properties": {
+         "kind": {"type": "string", "enum": ["place", "hazard", "note"]}, "text": {"type": "string"}},
+         "required": ["kind", "text"], "additionalProperties": False}},
     {"name": "alert_caregiver", "eager_input_streaming": True,
      "description": "Send an urgent message to the user's caregiver dashboard (lost, hurt, needs help).",
      "input_schema": {"type": "object", "properties": {"message": {"type": "string"}},
@@ -61,6 +67,8 @@ class Actions:
     alert_caregiver: Callable[[str], str | None]
     stop_speaking: Callable[[], None]
     ear_check: Callable[[], None]
+    remember: Callable[[str, str], str | None] = lambda kind, text: None
+    recall: Callable[[str], list] = lambda query: []
 
 
 _LOCAL = [
@@ -79,6 +87,12 @@ _LOCAL = [
     (r"\b(?:cancel|stop|end)\b.*\b(?:route|navigation|directions)\b", "cancel_route"),
     (r"\b(?:check|test)\b.*\b(?:ears?|audio|sound|airpods)\b|\bwhich ear\b", "ear_check"),
 ]
+_REMEMBER_PLACE = re.compile(r"(?i)^(?:please\s+)?(?:remember|save|mark|bookmark)\s+(?:this place|this spot|"
+                             r"this location|where i am|my location|this|here)\s*(?:as|is|called)?\s+(?P<name>.+?)[.!?]*$")
+_REMEMBER_NOTE = re.compile(r"(?i)^(?:please\s+)?(?:remember|note|keep in mind|make a note)\s+(?:that\s+)?(?P<text>.+?)[.!?]*$")
+_RECALL = re.compile(r"\bwhat do you (?:remember|know) about\b|\bdo you remember\b")
+_HAZARD_WORDS = re.compile(r"\b(curb|step|stairs?|construction|scaffold\w*|pole|hole|slippery|uneven|broken|"
+                           r"crack\w*|ramp|puddle|narrow\w*|tall)\b", re.I)
 _NAV = re.compile(r"(?i)\b(?:take me|navigate|guide me|walk me|get me|directions|route me|lead me|bring me|go)"
                   r"\s+(?:back\s+)?(?:to|towards?)\s+(?:the\s+)?(?P<dest>.+?)[.!?]*$")
 _AROUND = re.compile(r"\b(?:what'?s|what is|anything|anyone|who'?s|who is)\b.*\b(?:around|ahead|in front|near|nearby|close)\b")
@@ -166,7 +180,16 @@ class Brain:
             return "fallback"
 
     def local_intent(self, low: str, original: str | None = None) -> tuple[str, str | None] | None:
-        m = _NAV.search(original or low)
+        o = original or low
+        m = _REMEMBER_PLACE.search(o)
+        if m:
+            return ("remember_place", m.group("name").strip())
+        m = _REMEMBER_NOTE.search(o)
+        if m and not re.match(r"(?i)^remember (?:this|here)\b", o):
+            return ("remember_note", m.group("text").strip())
+        if _RECALL.search(low):
+            return ("recall", None)
+        m = _NAV.search(o)
         if m and len(m.group("dest")) >= 2:
             return ("navigate", m.group("dest").strip())
         for pat, name in _LOCAL:
@@ -182,7 +205,21 @@ class Brain:
 
     def _do_local(self, kind: tuple[str, str | None], low: str) -> None:
         name, arg = kind
-        if name == "navigate":
+        if name == "remember_place":
+            msg = self.actions.remember("place", arg or "")
+            if msg:
+                self.speak(msg, "answer", ttl=15)
+        elif name == "remember_note":
+            kind = "hazard" if _HAZARD_WORDS.search(arg or "") else "note"
+            msg = self.actions.remember(kind, arg or "")
+            if msg:
+                self.speak(msg, "answer", ttl=15)
+        elif name == "recall":
+            q = re.sub(r"^.*?\b(?:remember|know) about\s+", "", low)
+            hits = self.actions.recall(q)
+            self.speak(f"I remember: {hits[0]['text']}" if hits else "I don't have anything saved about that.",
+                       "answer", ttl=20)
+        elif name == "navigate":
             msg = self.actions.navigate(arg or "")
             if msg:
                 self.speak(msg, "answer", ttl=15)
@@ -243,7 +280,12 @@ class Brain:
     async def _ask_llm(self, text: str) -> None:
         import anthropic
 
-        ctx = json.dumps(self.context(), separators=(",", ":"), default=str)
+        c = self.context()
+        try:
+            c["memories"] = self.actions.recall(text)
+        except Exception:
+            c["memories"] = []
+        ctx = json.dumps(c, separators=(",", ":"), default=str)
         messages = list(self.history[-6:])
         messages.append({"role": "user", "content": f"<context>{ctx}</context>\n\nUser said: {text}"})
         t0 = time.monotonic()
@@ -311,10 +353,16 @@ class Brain:
                 return self.actions.navigate(dest) or "ok", False
             if name == "control":
                 a = str(inp.get("action", ""))
-                allowed = TOOLS[1]["input_schema"]["properties"]["action"]["enum"]
+                allowed = next(t for t in TOOLS if t["name"] == "control")["input_schema"]["properties"]["action"]["enum"]
                 if a not in allowed:
                     return f"unknown action {a}", True
                 return self.actions.control(a) or "ok", False
+            if name == "remember":
+                k = str(inp.get("kind", "note"))
+                txt = str(inp.get("text", "")).strip()[:300]
+                if k not in ("place", "hazard", "note") or not txt:
+                    return "invalid memory", True
+                return self.actions.remember(k, txt) or "saved", False
             if name == "alert_caregiver":
                 msg = str(inp.get("message", "")).strip()[:300]
                 return self.actions.alert_caregiver(msg or "The user asked for help.") or "sent", False
