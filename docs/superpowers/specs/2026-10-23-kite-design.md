@@ -120,7 +120,7 @@ We use the event types already defined in `earpiece/earpiece/events.py` (validat
 
 ### 5.2 Transport: UDP to the earpiece, SpacetimeDB for shared state
 
-What exists on `main`: the earpiece takes events on UDP 5010 and WebSocket 5011, on localhost by default and on the LAN with `--bind 0.0.0.0`. With `--spacetime` it mirrors every event it receives and speaks to SpacetimeDB. It reads nothing back yet; caregiver messages (below) will be the one exception.
+What exists on `main`: the earpiece takes events on UDP 5010 and WebSocket 5011, on localhost by default and on the LAN with `--bind 0.0.0.0`. With `--spacetime` it mirrors every event it receives and speaks to SpacetimeDB. It reads back only caregiver messages (below).
 
 So the live path is direct: every producer uses `EarpieceClient`, pointed at `127.0.0.1` on one laptop or at the wearable laptop's Thunderbolt bridge address from the drone laptop (earpiece run with `--bind 0.0.0.0`). The address comes from `.env` (`KITE_EARPIECE_HOST`). This keeps the safety path off the internet and means nobody waits on Eddy's tables to test.
 
@@ -130,7 +130,7 @@ Networks: we build at Aneesh's apartment on its Wi-Fi. Maincloud, Claude and Car
 
 The dashboard shows the walker on a map, the current route, active hazards and drone or sim status. It shows no camera video (privacy).
 
-Caregiver messages (Eddy, next): the dashboard sends a short message to the walker by calling `push` with a `say` event, source `caregiver`, priority `info`. The earpiece polls Spacetime about once a second for new caregiver events and speaks them. These are the only events that flow from Spacetime into the earpiece. They never carry a priority above `info` and can't clear a stop. This makes Spacetime two-way, which is what its track asks for ("instant sync between users, agents and systems").
+Caregiver messages (built, PR #8): the dashboard sends a short message to the walker by calling `push` with a `say` event, source `caregiver`, priority `info`. The earpiece polls Spacetime about once a second for new caregiver events and speaks them. These are the only events that flow from Spacetime into the earpiece. They never carry a priority above `info` and can't clear a stop. This makes Spacetime two-way, which is what its track asks for ("instant sync between users, agents and systems").
 
 ### 5.3 Perception (Rex's `streetseg`)
 
