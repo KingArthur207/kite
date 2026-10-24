@@ -18,7 +18,9 @@ The pilot's half of spec section 8. One battery, one take of about 5 minutes on 
    - The status line shows about 30 fps, a battery figure and `on ground`.
    - Press `t`, `w`, `r`, space, `l`: each shows in the status line as `rc ...` or an event, and nothing moves (dry run).
    - Hold `w` for 2 s: the `rc` value should stay at 30 the whole time, then drop to 0 within 1 s of letting go.
+   - Pick the drone up and tilt the nose down for 2 s, then put it back.
 4. Power off. Note the battery figure: it is the whole budget for the morning.
+5. Back on normal Wi-Fi: `python -m kite.sources.recording recordings/<dir>`. The pitch range should go negative during the nose-down tilt. If it goes positive instead, the replay's pitch sign is backwards: change `PITCH_SIGN` in `kite/sources/recording.py` and tell Rex.
 
 Camera calibration runs in this same power-on window, right after step 3, not separately:
 
