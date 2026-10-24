@@ -1,5 +1,10 @@
 // Kite site: the walk player (waveform, live captions) and the sound legend.
+// Each page has only some of these, so every part checks that its elements exist.
 (() => {
+  // the kite in the hero keeps flying unless the visitor asked for less motion
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.querySelectorAll("svg.scene").forEach((s) => s.pauseAnimations && s.pauseAnimations());
+  }
   const audio = document.getElementById("walk");
   const btn = document.getElementById("play");
   const canvas = document.getElementById("wave");
@@ -67,6 +72,15 @@
     }
   }
 
+  const clip = new Audio();
+  let active = null;
+  function stopChip() {
+    clip.pause();
+    if (active) active.classList.remove("playing");
+    active = null;
+  }
+
+  if (audio && btn && canvas) {
   btn.addEventListener("click", () => {
     stopChip();
     if (audio.paused) audio.play(); else audio.pause();
@@ -82,22 +96,17 @@
     if (audio.paused) audio.play();
   });
   window.addEventListener("resize", () => draw(data ? audio.currentTime / data.duration : 0));
+  load();
+  }
 
   // ---------------------------------------------------------------- sound legend
-  const clip = new Audio();
-  let active = null;
-  function stopChip() {
-    clip.pause();
-    if (active) active.classList.remove("playing");
-    active = null;
-  }
   document.querySelectorAll(".chip").forEach((chip) => {
     chip.setAttribute("aria-label", `Play: ${chip.textContent}`);
     chip.addEventListener("click", () => {
       const same = active === chip;
       stopChip();
       if (same) return;
-      audio.pause();
+      if (audio) audio.pause();
       clip.src = `/assets/audio/${chip.dataset.src}.m4a`;
       clip.play();
       active = chip;
@@ -105,6 +114,4 @@
     });
   });
   clip.addEventListener("ended", stopChip);
-
-  load();
 })();

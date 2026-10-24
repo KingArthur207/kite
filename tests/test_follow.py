@@ -17,8 +17,8 @@ from kite.config import Config, SafetyCfg
 from kite.drone import SafetyGovernor
 from kite.drone.base import Drone
 from kite.drone.tello import TelloDrone
-from kite.follow import (Detection, FollowCfg, FollowController, FollowMode, Track, WalkerTracker, rehearse,
-                         scaled_camera)
+from kite.follow import (Detection, FollowCfg, FollowController, FollowMode, Track, WalkerTracker, draw_overlay,
+                         rehearse, scaled_camera)
 from kite.record import Recorder, RecordCfg
 from kite.record import main as record_main
 from kite.sources import FrameSource
@@ -487,8 +487,14 @@ def walker_schedule(speed, radius=1.5):
     return out
 
 
+def moss_route(radius=1.5):
+    """MOSS_WALK's polyline in the sim world (the route prior): 12 m north, the corner, 8 m west."""
+    return np.array([[0.0, 0.0], [0.0, 12.0 + radius], [-radius - 8.0, 12.0 + radius]])
+
+
 def run_sim(speed=0.5, max_rc=50, cfg=None, seed=0, drop=0.1, blackout=(20.0, 20.4), video_lag_s=0.25,
-            dt=1 / 90):
+            dt=1 / 90, route=None, gps_noise_m=2.0):
+    """route: give the controller the route prior, with the walker's GPS = truth + a bias of gps_noise_m."""
     cfg = cfg or FollowCfg()
     rng = np.random.default_rng(seed)
     body = walker_points(1.70)
@@ -496,7 +502,8 @@ def run_sim(speed=0.5, max_rc=50, cfg=None, seed=0, drop=0.1, blackout=(20.0, 20
     w_pos, w_head = np.zeros(3), 0.0  # walker heading north
     sim = SimTello([0.0, -cfg.behind_m, 1.70 + cfg.above_m], 0.0)
     gov = SafetyGovernor(sim, SafetyCfg(max_rc=max_rc))
-    tracker, ctrl = WalkerTracker(cfg), FollowController(cfg, CAM, max_rc)
+    tracker, ctrl = WalkerTracker(cfg), FollowController(cfg, CAM, max_rc, route=route)
+    gps_bias = rng.normal(0, gps_noise_m / math.sqrt(2), 2)
     history = []  # (t, cam pos, cam heading, walker pos, walker heading): the video shows the past
     engaged, next_frame, next_tick = False, 0.0, 0.0
     log = []
@@ -523,15 +530,48 @@ def run_sim(speed=0.5, max_rc=50, cfg=None, seed=0, drop=0.1, blackout=(20.0, 20
                 engaged = True  # g pressed once the walker is tracked
                 ctrl.reset(float(sim.pos[2]))
             if engaged:
-                cmd = ctrl.update(tr, gov.telemetry(), t)
+                f_w, _ = heading_axes(w_head)
+                gps = w_pos[:2] + gps_bias + rng.normal(0, 0.3, 2) if route is not None else None
+                cmd = ctrl.update(tr, gov.telemetry(), t, gps)
                 gov.rc(*cmd.rc)
                 rel = w_pos - sim.pos
                 fwd, _ = heading_axes(sim.heading)
                 bearing = math.degrees(math.atan2(rel[0], rel[1])) - sim.heading
                 log.append({"t": t, "state": cmd.state, "dist": float(np.hypot(rel[0], rel[1])),
                             "height": float(sim.pos[2]), "bearing": (bearing + 180) % 360 - 180, "rc": cmd.rc,
-                            "range_est": cmd.range_m})
+                            "range_est": cmd.range_m, "planner": cmd.planner,
+                            "standoff_err": float(np.hypot(*(trail_target(history, cfg.behind_m) - sim.pos[:2])))})
     return log
+
+
+def trail_target(history, behind_m):
+    """The ideal standoff: behind_m of arc length back along the walker's true path (where it already walked)."""
+    pts, rem = history[-1][3][:2], behind_m
+    for h in reversed(history[:-1]):
+        d = float(np.hypot(*(h[3][:2] - pts)))
+        if d >= rem:
+            return pts + (h[3][:2] - pts) * rem / d
+        rem -= d
+        pts = h[3][:2]
+    return pts
+
+
+def sim_metrics(log):
+    """Report numbers for one closed-loop run (after the first 3 s)."""
+    run = [r for r in log if r["t"] > 3.0]
+    err = np.array([r["standoff_err"] for r in run])
+    dist = np.array([r["dist"] for r in run])
+    states = [r["state"] for r in run]
+    rc = np.array([r["rc"] for r in run], float)
+    flips = sum(int(np.sum((np.sign(a[1:]) * np.sign(a[:-1]) < 0) & (np.abs(a[1:] - a[:-1]) > 10)))
+                for a in (rc[:, 0], rc[:, 1], rc[:, 3]))
+    dur_min = (run[-1]["t"] - run[0]["t"]) / 60
+    return {"standoff_mean": float(err.mean()), "standoff_p95": float(np.percentile(err, 95)),
+            "max_lag": float(dist.max() - FollowCfg().behind_m), "min_dist": float(dist.min()),
+            "max_bearing": max(abs(r["bearing"]) for r in run),
+            "lost": sum(1 for a, b in zip(states, states[1:]) if b == "lost" and a != "lost"),
+            "flips_per_min": flips / dur_min, "jerk": float(np.abs(np.diff(rc, axis=0)).sum(1).mean()),
+            "predict_frac": sum(r["planner"] == "predict" for r in run) / len(run)}
 
 
 def check_sim(log, cfg=FollowCfg(), tol_m=1.0):
@@ -565,3 +605,67 @@ def test_closed_loop_without_feed_forward_lags_but_keeps_the_walker():
     dist = check_sim(run_sim(speed=0.4, max_rc=50, cfg=FollowCfg(ff=0.0), seed=2), tol_m=1.6)
     with_ff = check_sim(run_sim(speed=0.4, max_rc=50, seed=2))
     assert dist.max() > with_ff.max() + 0.5
+
+
+# ------------------------------------------------------------------ prediction (kite/predict.py) in the closed loop
+def test_closed_loop_prediction_planner_holds_the_standoff_better_than_reactive():
+    """Same walk, same seed: the planner keeps closer to the point 1.2 m back along the walker's path and keeps the
+    walker nearer the frame centre through the corner, with every safety check of check_sim still holding."""
+    reactive = sim_metrics(run_sim(seed=0))
+    log = run_sim(cfg=FollowCfg(predict=True), seed=0)
+    check_sim(log)
+    pred = sim_metrics(log)
+    assert pred["predict_frac"] > 0.95  # it steered (not the fallback) almost all the time
+    assert pred["standoff_mean"] < reactive["standoff_mean"] - 0.05
+    assert pred["max_bearing"] < reactive["max_bearing"]
+    assert pred["lost"] == 0 and pred["flips_per_min"] < 2
+    assert max(abs(v) for r in log for v in r["rc"]) <= 50
+
+
+def test_closed_loop_prediction_with_more_video_lag_and_dropped_frames():
+    check_sim(run_sim(cfg=FollowCfg(predict=True), video_lag_s=0.4, drop=0.3, seed=3))
+
+
+def test_closed_loop_prediction_with_the_route_prior():
+    log = run_sim(cfg=FollowCfg(predict=True), route=moss_route(), seed=4)
+    check_sim(log)
+    assert sim_metrics(log)["standoff_mean"] < 0.5
+
+
+def test_prediction_falls_back_to_the_reactive_controller_when_unsure():
+    """max_std_m 0: the filter is never confident -> exactly the reactive controller's commands."""
+    unsure = run_sim(cfg=FollowCfg(predict=True, max_std_m=0.0), seed=5)
+    reactive = run_sim(seed=5)
+    assert {r["planner"] for r in unsure} <= {"reactive", None}
+    assert [r["rc"] for r in unsure] == [r["rc"] for r in reactive]
+
+
+def test_prediction_still_hovers_when_the_walker_is_lost_and_resumes():
+    """A 1 s blackout: rc 0 (hover) once lost_s has passed, even mid-plan; then the filter starts again."""
+    log = run_sim(cfg=FollowCfg(predict=True), blackout=(20.0, 21.0), drop=0.0, seed=6)
+    lost = [r for r in log if r["state"] == "lost"]
+    assert lost and all(r["rc"] == (0, 0, 0, 0) for r in lost)
+    after = [r for r in log if r["t"] > lost[-1]["t"]]
+    assert after and after[-1]["state"] == "following" and after[-1]["planner"] == "predict"
+    assert min(r["dist"] for r in log if r["t"] > 3) > 0.6
+
+
+def test_rehearsal_draws_the_predicted_walker_and_planned_drone_paths(tmp_path):
+    clip = make_clip(tmp_path / "walk.avi")
+    s = rehearse(clip, DriftingWalker(), FollowCfg(predict=True), overlay=tmp_path / "overlay.mp4")
+    rows = list(csv.DictReader(open(s["csv"])))
+    assert rows[-1]["planner"] == "predict" and float(rows[-1]["pred_speed"]) > 0
+    assert rows[0]["planner"] == "" and rows[0]["pred_speed"] == ""  # before follow engages
+    # the same pieces by hand: a prediction and a plan, and the overlay draws them (the inset, bottom right)
+    ctrl = FollowController(FollowCfg(predict=True), CAM, 50, open_loop=True)
+    ctrl.reset(None)
+    det, tr = DriftingWalker(), WalkerTracker(FollowCfg())
+    for i in range(20):
+        cmd = ctrl.update(tr.update(det(None), i / 10, W, H), None, i / 10)
+    assert cmd.walker_path is not None and cmd.drone_path is not None and len(cmd.walker_path) == 16
+    assert cmd.walker_path[-1][0] > cmd.walker_path[0][0]  # walking away from the camera
+    img = np.full((H, W, 3), 60, np.uint8)
+    with_pred = draw_overlay(img, [], tr.track, cmd, ctrl)
+    cmd.walker_path = None
+    plain = draw_overlay(img, [], tr.track, cmd, ctrl)
+    assert np.abs(with_pred[H // 2:, W // 2:].astype(int) - plain[H // 2:, W // 2:]).sum() > 1000
