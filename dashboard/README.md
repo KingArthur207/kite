@@ -17,17 +17,21 @@ npm run dev        # connects to Maincloud by default
 
 ![Dashboard](docs/reveal-normal.png)
 
-The map (Leaflet, OpenStreetMap tiles darkened in CSS) follows the walker from the newest `position` event that has `lat`/`lng`, and draws the recent trail. Active hazards are placed from their walker-frame `bearing` and `distance` plus the walker's compass `heading`, coloured by priority. The latest `beacon` shows as a green marker with a dashed line. Dragging the map stops auto-follow; the button turns it back on. On the right: the last spoken line with who said it, the walker, active hazards, shared live state (each source is green under 5 s since its last write, amber under 15 s, red after), the caregiver message box and the live feed.
+The map (Leaflet, OpenStreetMap tiles darkened in CSS) shows the walker from the newest `position` event with usable `lat`/`lng` (from either table, so one bad payload can't hide the walker), and draws the recent trail. A chip in the corner names the place, the direction the walker faces and how old the position is. Active hazards are placed from their walker-frame `bearing` and `distance` plus the walker's compass `heading`, coloured by priority. The latest `beacon` shows as a green marker with a dashed line. Two buttons pick the view: "Follow walker" keeps the walker centred, "Whole walk" frames the trail and every timeline moment. Dragging the map leaves both. On the right: the last spoken line with who said it, the latest stop, the walker, active hazards (with distance and direction in words, such as "8 m ahead right"), the caregiver message box, the devices and the live feed.
 
-Under the map, the walk timeline lists the last walk's key moments in order: stops (spoken "Stop." lines and critical hazards), hazards, Claude's judgments, answers and scene text, caregiver messages and route guidance. A walk is everything after the last 45 s gap in the event table. Each card has a badge for who acted: Kite (deterministic code, no AI), Claude, or Caregiver. Click a card to fly the map to where the walker was at that moment; stops stay marked on the map. Times come from the producer's own `t` when it is an epoch time, so a burst delivered late by a busy bridge still spreads out correctly.
+Under the map, the walk timeline lists the last walk's key moments in order: stops (spoken "Stop." lines and critical hazards, merged into one stop worded as the walker heard it), help requests (`caregiver_alert`), hazards, Claude's judgments, answers and scene text, caregiver messages and route guidance. A walk is everything after the last 45 s gap in the event table. A ribbon above the cards shows the whole walk at a glance, with stops marked in red. Each card has a badge for who acted: Kite (deterministic code, no AI), Claude, or Caregiver, and the header counts each. Click a card or a ribbon mark to fly the map to where the walker was at that moment; stops stay marked on the map. Times come from the producer's own `t` when it is an epoch time, so a burst delivered late by a busy bridge still spreads out correctly.
 
-"Shared live state" counts sources that wrote in the last 15 s and events in the last minute, with a sparkline per source, all from the `event` and `latest` tables. The event table keeps only the newest 500 rows, so when every row falls inside the last minute the rate shows as a lower bound (≥).
+"Devices" counts sources that wrote in the last 15 s and events in the last minute, with a sparkline per source, all from the `event` and `latest` tables. Each source is green under 5 s since its last write, amber under 15 s, red ("silent") after. The event table keeps only the newest 500 rows, so when every row falls inside the last minute the rate shows as a lower bound (≥).
 
-Press `P` (or the Present button) for presentation mode at the reveal. It hides the raw feed, the message box, the walker panel and the Clear button, and makes the map, timeline and last spoken line bigger. `#present` in the URL opens it that way.
+When the walker asks Kite to tell their caregiver (a `caregiver_alert` row), a red banner shows the request until the caregiver presses "Got it". The header always says whether the page is live, connecting, reconnecting (the SDK reconnects by itself; the last data stays on screen) or offline, and a banner says so when no device has written for 30 s.
+
+Press `P` (or the Present button) for presentation mode at the reveal; `Esc` leaves it. It hides the raw feed, the message box, the walker panel and the Clear button, frames the whole walk on the map, and makes the timeline, the last spoken line ("Kite just said") and the latest stop bigger. `#present` in the URL opens it that way.
+
+Accessibility: every control works from the keyboard with a visible focus ring, section titles are real headings, the timeline cards are buttons, and text colours meet WCAG AA contrast (checked with axe-core). New spoken lines are announced politely to screen readers; stops and help requests are announced assertively. Only changes after the page loads are announced, never the backlog. Motion is reduced when the system asks for it, and `prefers-contrast: more` brightens the secondary text. Payloads are untrusted: they are parsed defensively, clipped, and rendered as text, never as HTML.
 
 ![Presentation mode](docs/reveal-presentation.png)
 
-The timeline logic has a self-check: `node --experimental-strip-types src/timeline.check.ts` (Node 22+).
+The pure logic (timeline, payload parsing, freshness, distances, message delivery and the blocked-word mirror) has self-checks with no extra dependencies: `npm run check` (Node 22+).
 
 To see it move without hardware, from the repo root:
 
@@ -53,7 +57,9 @@ Reducers: `push(type, source, priority, payload)` writes to both tables, and `cl
 
 ## Caregiver messages
 
-"Message the walker" sends free text (trimmed, 200 characters max) or one of the quick buttons as a `say` event, source `caregiver`, priority `info`, payload `{"type":"say","source":"caregiver","priority":"info","text":"...","key":"caregiver-<ms>"}`. The last three sent show under the box and in the live feed (in blue).
+"Message the walker" sends free text (trimmed, 200 characters max, with a counter) or one of the quick replies as a `say` event, source `caregiver`, priority `info`, payload `{"type":"say","source":"caregiver","priority":"info","text":"...","key":"caregiver-<ms>"}`. The last three sent show under the box with their state: sending, sent and waiting for the earpiece, "Heard by the walker" once the earpiece logs a `spoken` row with the same words after "Message from your caregiver:", or a hint to check the earpiece if nothing was spoken after 20 s. They also appear in the live feed (in blue).
+
+The box mirrors the earpiece's permission filter (`earpiece/earpiece/judgment.py`): a message with a word like "go", "cross", "clear" or "you can" would never be spoken, so the dashboard explains why and doesn't send it. The earpiece stays the authority.
 
 An earpiece run with `--spacetime` polls for these about once a second and reads them aloud, prefixed "Message from your caregiver:". It uses the HTTP SQL endpoint:
 

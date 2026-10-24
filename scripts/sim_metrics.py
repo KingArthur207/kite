@@ -57,7 +57,7 @@ def main() -> None:
                                 cwd=SIM, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         wait_http(url, 30)
-        timeout_s = args.trials * 200 if args.mode == "kite" else 300
+        timeout_s = args.trials * 300 if args.mode == "kite" else 300   # walks are capped at 240 s (metrics.ts)
         with sync_playwright() as p:
             gl = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] if args.swiftshader or sys.platform != "darwin" \
                 else ["--use-angle=metal", "--ignore-gpu-blocklist"]

@@ -73,6 +73,29 @@ python video/overlay.py clips/london_street.mp4 --events data/sample_walk.jsonl 
 
 The clip was a free Pexels street clip (`videos.pexels.com/video-files/1721294`). Any street mp4 works.
 
+### POV video for the table (spec section 4)
+
+One command takes walker-eye footage to the finished POV mp4: the stand-in detector runs on the frames (chest path, with the Depth Anything fallback so bins and signs count), the earpiece renders what the walker hears from those events, and the overlay adds captions, sonar panel, face blur and the audio.
+
+```bash
+scripts/pov.sh <video> [-o out/pov/name.mp4] [--fx 700] [--pitch 10] [--cam-height 1.3] [--jsonl events.jsonl] [--seconds N]
+```
+
+It writes `<out>.events.jsonl`, `<out>.wav`, `<out>.captions.jsonl` and `<out>` (default `out/pov/<video name>.mp4`). `--jsonl` skips the detector and uses those events instead. `--seconds` trims the render and the overlay; the detector always reads the whole video. The render runs in real time. Run it from the main checkout so the earpiece venv and `.env` are there; in a worktree, point `KITE_EARPIECE_PY` at the main checkout's `earpiece/.venv/bin/python` and `KITE_TTS_CACHE` at its `earpiece/.cache/tts` so cached phrases cost no Cartesia calls.
+
+The lens settings matter, because distance comes from where things meet the ground. The defaults match the sim shot. For a phone held at chest height, measure the height and how far it tilts down, and keep `--fx 700` for an iPhone at 1x.
+
+The sim walk (no drone, no phone):
+
+```bash
+uv run --no-project --with playwright python scripts/record_shot.py pov --fps 25   # out/shots/pov-moss.mp4, about 4 min
+scripts/pov.sh out/shots/pov-moss.mp4 -o out/pov/pov_sim.mp4
+```
+
+`?shot=pov` is a 58 s walk up Moss's NE sidewalk at 1.3 m, 10° down, ending at the zebra curb. It uses the metrics walk's obstacles (seed 1): a person crossing the walker's line at about 13 s, the bin at about 37 s and the head-height sign at about 47 s. The walker is scripted and never reacts. Record it at 25 or 50 fps, because the metrics obstacles step in 0.02 s and other rates speed them up.
+
+On the first sim render the detector caught the person ("Person, ahead." at 14 s, closest 3.3 m), the bin ("Stop. Obstacle ahead." at 37 s) and the sign (47 s), then two more stops near the curb pole and wall. The audio peaks at -1 dB with a mean of -28 dB. It is silent from 0 to 13 s and from 15 to 37 s, because sonar only beeps for close things and nothing is close then.
+
 ### Segmentation under the cues (stand-in)
 
 Add `--seg` for the Waymo-style look: walkable ground in green, road in dark grey, people orange, vehicles purple, all translucent and drawn under the captions, banner and sonar. A white trapezoid marks the walker's corridor, and a panel at the bottom right shows how much of it is sidewalk ("walkable ahead"). Heads are blurred before the tint goes on, so they stay blurred.

@@ -175,7 +175,8 @@ floor = np.repeat(floor_depth(h, f, 1.2, 15)[:, None], w, axis=1)
 floor[~np.isfinite(floor)] = 20.0
 assert center_obstacle(floor, f, 1.2, 15) is None
 wall = floor.copy()
-wall[:200, 100:240] = 1.2
+yc = (np.arange(h) - h / 2) / f        # a vertical face 1.2 m ahead (z-depth along a camera tilted down 15 deg)
+wall[:200, 100:240] = (1.2 / (math.cos(math.radians(15)) - yc * math.sin(math.radians(15))))[:200, None]
 o = center_obstacle(wall, f, 1.2, 15)
 assert o and math.isclose(o["distance"], 1.2) and abs(o["bearing"]) < 5
 

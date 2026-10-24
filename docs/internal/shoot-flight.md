@@ -52,6 +52,7 @@ Positions: the walker starts on the NE sidewalk of Moss about 70 m before Howard
 4. `t` to take off. It climbs to about 1 m.
 5. Hold `r` until `h` in the status line reads the walker's height plus 0.3 m (about 2.0 m for a 1.7 m walker). The safety ceiling is 2.3 m.
 6. Rex starts the walk. Hold `w` to follow at the walker's pace; the drone tops out around 0.5 m/s at `--speed 50`, so the walker goes slowly (0.5 to 0.7 m/s). Small `a`/`d` to stay behind their head, `q`/`e` to turn with them at the corner.
+   Corner scout at Howard (team decision): about 3 m before the corner, fly ahead 2 m past the corner, climb to about 3 m (`up`), and turn (`q`) to look down Howard for cars. Stay over the sidewalk, never over the roadway. Hold while any car passes and the walker waits, then come back down to head height plus 0.3 m behind the walker and follow them across the zebra. The spotter watches the walker the whole time, since the drone isn't. Follow mode doesn't do this on its own yet; fly it by hand.
 7. Space hovers at once. `l` lands. Ctrl+C lands and stops recording; keep clear until it is down.
    - Letting go of a move key keeps the stick on for up to `--pulse` (1 s), about 0.5 m at speed 50. Tap space the moment the walker stops.
 

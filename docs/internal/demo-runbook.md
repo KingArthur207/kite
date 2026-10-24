@@ -2,6 +2,8 @@
 
 Sun Oct 25, 10:30 AM to 12:30 PM PT, Palace of Fine Arts. The whole team stays at the table for the full window.
 
+> Changed Sat Oct 24, 7:45 AM: the demo is passive. Judges watch the POV video with Kite's audio on speakers and wear nothing (spec section 4). The steps below still run the live and sim pieces, which are now optional extras.
+
 ## Table kit
 
 - One laptop running everything below, charged, charger plugged in

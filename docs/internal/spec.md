@@ -10,7 +10,7 @@ This is the shared contract for all four of us and our Claude sessions. If your 
 Detail lives in [STATUS](STATUS.md), [the shoot pack](shoot-day.md), [the pitch](pitch.md) and [the demo runbook](demo-runbook.md).
 
 **The target at judging (Sun 10:30 AM).**
-- The judge wears Kite (phone chest camera, headphones, sleep mask) and walks 3 to 4 m. A teammate steps in. Kite says "Stop. Person ahead." and later "Path is clear. You can continue."
+- Passive demo (changed Sat 7:45 AM, section 4): the judge wears nothing. They watch a point-of-view video of a walk and hear what the walker hears: the sonar, the beacon and Kite's voice.
 - The reveal shows what the camera saw, next to the caregiver map.
 - Then the real Tello footage of Moss St with the segmentation overlay and Kite's cues, to show it is the same detector.
 - Then one measured number, collisions with and without Kite in the sim, and the honest research line.
@@ -36,7 +36,7 @@ Detail lives in [STATUS](STATUS.md), [the shoot pack](shoot-day.md), [the pitch]
 | Rehearsal | Not started. |
 
 **Next, in order.**
-- Eddy (role changed Sat 4:30 AM; Arthur takes all physical drone work): the live walk on the iPhone (first real-camera test), then demo, pitch and submission lead: record the non-drone video segments (live walk, reveal, dashboard, sim), judge sim accuracy against the real street, Devpost and pitch rehearsal, the table kit (Target: chest clip, sleep masks, wipes; over-ear headphones). At the shoot (when Arthur runs it): side-angle video. 3 PM cut. 6 PM rehearsal. 8 PM freeze. Devpost draft Sat night. Sun 8 AM audit, 9 AM submit.
+- Eddy (role changed Sat 4:30 AM; Arthur takes all physical drone work): the live walk on the iPhone (first real-camera test), then demo and submission lead: the POV demo video (section 4) and its non-drone segments (live walk, dashboard, sim), judging sim accuracy against the real street, and the table kit. Arthur and Rex do most of the pitching. At the shoot (when Arthur runs it): side-angle video. 3 PM cut. 6 PM rehearsal. 8 PM freeze. Devpost draft Sat night. Sun 8 AM audit, 9 AM submit.
 - Arthur (owns everything physical about the drone, on his own laptop, on his schedule): ground check and camera calibration (`docs/internal/shoot-flight.md`; no flying), the shoot (`docs/internal/shoot-day.md`; after the 7:27 sunrise), follow-mode tests (first in the 3D sim, then a real flight in an open area away from cars and the venue), and the Gaussian splat of Moss St from the phone walkthrough (pipeline paused on Eddy's laptop for RAM; branch `worktree-agent-acf911a6a9b755945` has partial work). Owner tasks: Actions off in Settings, repo visibility with Eddy. Kickoff prompt in 7.1.
 - Rex: bring `streetseg` in as an upgrade, sign off on `docs/research/facts.md`, run shoot logistics.
 - Karthik: review #8 and #56, decide the Moss track row in the README with Eddy.
@@ -50,12 +50,12 @@ The guide dog comparison shapes the features. A guide dog leads around obstacles
 
 Why it matters: Guiding Eyes for the Blind puts the cost of raising and training one guide dog at $50,000 (donors pay it, not the blind person), and fewer than 10,000 guide dogs work in the US against about 1 million Americans who are blind. Drop the old "2%" figure: its only traceable source is from about 1990. Sources and caveats are in `docs/research/facts.md`; Rex signs off before they go on a slide.
 
-What makes Kite's approach its own: everything reaches the walker as spatial sound and voice, the drone flies behind and above the walker, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
+What makes Kite's approach its own: everything reaches the walker as spatial sound and voice, the drone flies behind and above the walker (and briefly scouts ahead at corners, see section 11), a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
 
 ## 2. Goals, non-goals, anti-goals
 
 Goals
-- A judge wears Kite (sleep mask, headphones, a phone as the chest camera) and walks a few meters at our table. When a teammate steps into their path, Kite stops them, then tells them to go on. Then they see what Kite saw.
+- A judge, wearing nothing, sees a walk from the walker's point of view and hears exactly what the walker heard, so they understand Kite in under a minute.
 - The same detection code runs on real Tello footage, on the sim's cameras, and on the live chest camera. That is our main honesty claim.
 - Real Tello footage of a walker on that corner, with Kite's cues overlaid, in the demo video.
 - Honest research framing in the pitch: "We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and published surveys of blind travelers. Testing with orientation and mobility instructors is our next step." No interviews will be conducted.
@@ -91,29 +91,24 @@ Anti-goals (failure even if it technically works)
 
 ## 4. What judges see
 
-Judges give each table 2 minutes of pitch and 2 of questions, and the guide says the pitch needs a live demo. The playbook's strongest signal is putting the judge's body in the demo, so the judge wears Kite (team decision, Oct 24 meeting).
+Changed Sat Oct 24, 7:45 AM. The team dropped the plan where the judge wears Kite (mask, headphones, chest camera) and walks. It adds too much friction at a crowded table. The demo is now passive: judges watch and listen, and wear nothing.
 
-The table kit:
-- One laptop running the earpiece, the detector and the dashboard.
-- Chest camera: an iPhone on a chest clip, used as a Continuity Camera, so nothing tethers the judge to the table. Fallback: a USB webcam on a 3 m cable, which the spotter handles.
-- Over-ear Bluetooth headphones next to the AirPods, plus wipes, because a judge may not want to wear someone else's AirPods. Any stereo headphones carry the spatial cues.
-- A sleep mask as the blindfold.
-- A spotter at arm's length for every walk.
-- The Tello on the table, powered off, and the demo video ready on a second screen.
+The core piece is a point-of-view video: what the walker sees, with Kite's audio on top.
+- Picture: a walk from about chest height on Moss St, plus the drone's view behind the walker once we have Tello footage.
+- Sound: the binaural mix the walker hears (sonar beeps, the beacon, Kite's voice), from the same earpiece code. `python -m earpiece render` turns the walk's events into that audio, and `video/overlay.py` adds the spoken line as a caption, hazard banners and a left/right sonar panel (see [the video runbook](video-runbook.md)).
+- It plays on a screen at the table with speakers. Binaural audio only sounds 3D on headphones, so the on-screen sonar panel shows direction for anyone listening on speakers. Headphones can sit on the table for a judge who wants them, but nobody has to wear anything.
 
-The two-minute pitch, demo first (also the Cartesia track's format):
-1. 0:00 to 0:10. "Kite is a guide dog for blind people that flies. Put these on." Mask, headphones, chest camera.
-2. 0:10 to 0:50. The judge walks 3 or 4 m along the aisle. A teammate steps into their path. The beeps come from the teammate's side and speed up, and Kite says "Stop. Person ahead." The teammate steps away and Kite says to go on. If there's time, the judge asks "Kite, what's in front of me?" and Claude answers.
-3. 0:50 to 1:10. Mask off. The screen shows what Kite saw on their walk: the chest camera with its boxes, and the caregiver map with the stop on it.
-4. 1:10 to 1:35. "A chest camera sees a few meters. The drone sees the street." The real Tello footage from Moss St: the drone's view with segmentation, a car turning in from Howard, Kite saying stop. Same detector.
-5. 1:35 to 1:50. The research line above, said plainly, and one measured number (collisions with and without Kite in the sim).
-6. 1:50 to 2:00. What's real, then questions.
+Sources for the picture, in order of preference:
+1. Tello footage from the shoot (needs the drone's video working; Arthur).
+2. Phone footage of a walk on Moss St at chest height, run through the same detector. No drone needed.
+3. A sim walk on Moss St from the walker's eye height (`?shot=`, scripts/record_shot.py).
 
-The sim walk is the backup. If the chest camera path fails at the table, the judge walks the sim corner with the screen black, guided by the same earpiece.
+Also at the table:
+- The live phone-camera walk (`scripts/demo.sh live iPhone`) as an optional extra: a teammate walks, and Kite's audio plays on the speakers.
+- The dashboard and the caregiver line (`python -m earpiece caregiver`) on a second screen.
+- The Tello on the table, powered off (drones are banned at the venue).
 
-Optional, only with a written yes from the directors: a teammate holds the Tello (powered on, motors off) above and behind the judge during the walk, and its live camera goes through the same detector. Without that yes, the Tello stays off.
-
-The presenter is whoever wins a 30-second timed tryout Saturday night.
+Pitch order and timing: Arthur and Rex own this; not decided yet.
 
 Crossing signals: a signal head 20 m away is about 14 px tall in the Tello stream, so reading it from the drone is marginal. Take the crossing location from Maps, show signal handling in the sim, and attempt it on real footage only if time allows.
 
@@ -312,7 +307,9 @@ Made by the team: the drone flies behind and above, not ahead (fix the README, w
 
 Also made by the team (Oct 23, 11:50 PM): sim hazards come from the real detector, with realistic models and a chest-height virtual camera; Kite stops and waits instead of detouring.
 
-Also made by the team (Oct 24, 12:55 AM meeting): no Gaussian splat; the real Tello footage of the corner is what makes the demo look real, and the sim uses the OpenStreetMap model of Moss and Howard with glTF cars and people. The judge's live demo is wearing Kite blindfolded at the table, then seeing what it saw. The drone flies behind the walker. Filming is on Moss St, ending with the left turn across the zebra crossing. Every code change goes through a PR.
+Corner scout (Eddy, Sat Oct 24, 9:10 AM): the drone stays behind and above the walker, except at a corner on the route, where it flies about 2 m past the corner at about 3 m up, looks down the cross street for cars, then returns behind the walker. A car that's coming holds the walker ("Car approaching the corner.", deterministic, no Claude) until it has passed. This applies to the sim, the POV video and the real flight at the shoot. In the sim (PR #116) it took turning-car hits from 13 of 20 walks blind to 0 of 20.
+
+Also made by the team (Oct 24, 12:55 AM meeting): no Gaussian splat; the real Tello footage of the corner is what makes the demo look real, and the sim uses the OpenStreetMap model of Moss and Howard with glTF cars and people. The judge's live demo was wearing Kite blindfolded at the table (replaced Sat 7:45 AM by the passive POV demo in section 4). The drone flies behind the walker. Filming is on Moss St, ending with the left turn across the zebra crossing. Every code change goes through a PR.
 
 Made in this spec, change them by editing it: webcam `obstacles` go to the earpiece over localhost, not through the cloud. Venue Wi-Fi is the primary link, with offline fallbacks. Karthik's earpiece events are the contract. Spacetime as the cross-machine transport with an `event` table. Claude instead of Gemini for scene description (Gemini Vision came up in the meeting; one model vendor keeps the Anthropic story clean). Signal reading demoted. The owner split in section 7. Microsoft in, Anthropic ticked only. Caregiver messages as the one path from Spacetime into the earpiece. Recording at the shoot instead of running live.
 
@@ -326,7 +323,7 @@ Made in this spec, change them by editing it: webcam `obstacles` go to the earpi
 ## 13. Open items
 
 - Eddy asks in #0-ask-directors (optional): may a powered-on Tello, motors off, stream video at our table? It is a Wi-Fi access point.
-- Target kit, if needed: a USB-C to Micro-USB cable if Rex doesn't bring one (he said he would), a phone chest mount or clip, two sleep masks, wipes. Eddy brings over-ear Bluetooth headphones.
+- Target kit, if needed: a USB-C to Micro-USB cable if Rex doesn't bring one (he said he would), a phone chest mount or clip (for filming the POV walk), table speakers. Eddy brings over-ear Bluetooth headphones for judges who want them. No sleep masks needed now that the demo is passive.
 - fx calibration for our Tello (Arthur, if battery allows). The sim uses 1000 until then.
 - Tape the width of the Moss crossing on site; the sim assumes 6.1 m.
 - Fill in the Google representative's role in `docs/google-permission.md`.

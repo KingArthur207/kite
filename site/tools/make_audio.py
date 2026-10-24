@@ -54,7 +54,8 @@ def cues() -> None:
         x = np.concatenate([spatial.render(sounds.proximity_cue(kind, 900), az, RATE),
                             np.zeros((int(0.22 * RATE), 2), np.float32)] * 3)
         m4a(f"kind-{kind}", pad(x * 0.9))
-    for name, fn, az in (("beacon-on", sounds.beacon_on_course, 0), ("beacon-side", sounds.beacon_off_course, -60),
+    for name, fn, az in (("beacon-on", sounds.beacon_on_course, 0),
+                         ("beacon-side", lambda: sounds.beacon_off_course(-60), -60),
                          ("beacon-behind", sounds.beacon_behind, 170)):
         x = np.concatenate([spatial.render(fn(), az, RATE), np.zeros((int(0.5 * RATE), 2), np.float32)] * 3)
         m4a(name, pad(x * 0.9))

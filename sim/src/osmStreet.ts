@@ -1,12 +1,13 @@
 // Streets for the Moss world: textured asphalt with lane lines, zebras and stop lines as decals,
 // concrete sidewalks on 15 cm curbs, driveway aprons in front of garages, tactile pads at the
-// lowered kerbs OSM maps, OSM street furniture, and (not in OSM, added by us) cobra-head
-// streetlights on Howard. Poles, wires, street trees, parked cars and the rest of the dressing are in
+// lowered kerbs OSM maps, OSM street furniture, and (not in OSM, added by us) banner-carrying light poles,
+// green cycle-track paint with edge lines and flex posts on Howard. Poles, wires, street trees, parked cars and the rest of the dressing are in
 // streetDressing.ts. Nothing here collides; the walker's collision is the building faces and curbs.
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Geo, pbr } from "./osmLook";
 import { inPoly, inQuad, type Garage } from "./osmFacades";
+import { bannerTexture } from "./streetProps";
 
 type P = [number, number];
 type Quad = P[];
@@ -25,6 +26,10 @@ const MARK_Y = 0.012;
 const DASH_ON = 3, DASH_OFF = 9;       // m: SF lane line, 10 ft on, 30 ft off
 const LINE_W = 0.12;
 const HOWARD_LIGHT_EVERY = 36;
+const BANNER_KINDS = 3;
+const TRACK_BUFFER = 0.9;          // m: painted buffer between the cycle track and traffic (osm_corner.py TRACK_BUFFER)
+const TRACK_DETAIL_REACH = 120;    // m from the corner: edge lines and flex posts
+const FLEX_POST_EVERY = 6;
 const BBOX = { w: -80, s: -150, e: 140, n: 70 };
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -107,6 +112,7 @@ export function nearestOnRoads(roads: Road[], p: P) {
   return best;
 }
 
+/** Draws the streets and furniture; returns the furniture's collision walls [x1, n1, x2, n2]. */
 export function buildStreets(scene: THREE.Object3D, data: StreetData, garages: Garage[]) {
   const asphalt = pbr("asphalt", 3.0, { rough: true });
   const sidewalk = pbr("sidewalk", 1.8, { rough: true });
@@ -126,7 +132,8 @@ export function buildStreets(scene: THREE.Object3D, data: StreetData, garages: G
     new THREE.MeshStandardMaterial({ color: 0x77746e, roughness: 0.95 }));
   ground.receiveShadow = true;
   add(flatGeo(data.road_quads, 0), asphalt);
-  const track = asphalt.clone(); track.color.set(0x9fb59f);   // Howard's cycle track, faint green
+  // Howard's protected cycle track: green paint (Street View), a white line at its edge and the buffer's.
+  const track = new THREE.MeshStandardMaterial({ color: 0x4f9a5c, roughness: 0.8, normalMap: asphalt.normalMap });
   add(flatGeo(data.track_quads, 0.004), track);
 
   // Lane lines between a road's lanes: white dashes between same-direction lanes, double yellow otherwise.
@@ -163,6 +170,7 @@ export function buildStreets(scene: THREE.Object3D, data: StreetData, garages: G
       white.push([at(stop - 0.3, c.across[0] + 0.1), at(stop + 0.3, c.across[0] + 0.1), at(stop + 0.3, c.across[1] - 0.1), at(stop - 0.3, c.across[1] - 0.1)]);
     }
   }
+  for (const t of trackEdges(data)) white.push(...ribbon([t.a, t.b], LINE_W), ...ribbon(offsetPts([t.a, t.b], t.side * TRACK_BUFFER), LINE_W));
   add(flatGeo(white, MARK_Y), paint);
   if (yell.length) add(flatGeo(yell, MARK_Y), yellow);
 
@@ -202,7 +210,43 @@ export function buildStreets(scene: THREE.Object3D, data: StreetData, garages: G
   }
   if (!ramps.empty) add(ramps.build(), curb);
 
-  buildFurniture(scene, data, garages);
+  return buildFurniture(scene, data, garages);
+}
+
+/** The traffic-side edge of each cycle track quad (a to b), with side = +1/-1 for offsetPts toward the traffic. */
+function trackEdges(data: StreetData) {
+  const out: { a: P; b: P; side: number }[] = [];
+  for (const q of data.track_quads) {
+    const mid = (p: P, r: P): P => [(p[0] + r[0]) / 2, (p[1] + r[1]) / 2];
+    const inner = nearestOnRoads(data.roads, mid(q[0], q[1])).d < nearestOnRoads(data.roads, mid(q[2], q[3])).d;
+    const [a, b] = inner ? [q[0], q[1]] : [q[2], q[3]];
+    const other = inner ? q[3] : q[0];
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 0.2 || Math.hypot(a[0], a[1]) > TRACK_DETAIL_REACH) continue;
+    const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const left = (-(b[1] - a[1]) * (other[0] - a[0]) + (b[0] - a[0]) * (other[1] - a[1])) / L;   // >0: track on the left
+    out.push({ a, b, side: left > 0 ? -1 : 1 });
+  }
+  return out;
+}
+
+/** Not in OSM: light poles along both Howard curbs, clear of crossings, garages and buildings.
+ *  toRoad: unit vector from the pole toward the roadway. streetDressing.ts keeps trees off them. */
+export function howardLightSpots(data: StreetData, garages: Garage[]) {
+  const free = (p: P) =>
+    p[0] > BBOX.w && p[0] < BBOX.e && p[1] > BBOX.s && p[1] < BBOX.n &&
+    !data.road_quads.some((q) => inQuad(p, q)) && !data.buildings.some((b) => inPoly(p, b.pts)) &&
+    !data.crossings.some((c) => Math.hypot(c.x - p[0], c.y - p[1]) < 5) &&
+    !garages.some((g) => Math.hypot(g.x - p[0], g.n - p[1]) < 2.7);
+  const out: { p: P; toRoad: P; u: P }[] = [];
+  for (const r of data.roads.filter((x) => x.name === "Howard Street")) {
+    for (const side of [0, 1] as const) {
+      const off = side ? r.curbs[1] + 0.5 : r.curbs[0] - 0.5;
+      for (const { p, u } of along(offsetPts(r.pts, off), 10 + side * 18, HOWARD_LIGHT_EVERY)) {
+        if (free(p)) out.push({ p, u, toRoad: side ? [u[1], -u[0]] : [-u[1], u[0]] });
+      }
+    }
+  }
+  return out;
 }
 
 // --- furniture: geometry merged per material, so a handful of draw calls in all.
@@ -218,6 +262,8 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     unlit: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.3 }),
     paystation: new THREE.MeshStandardMaterial({ color: 0x2e3946, roughness: 0.5, metalness: 0.4 }),
     tactile: new THREE.MeshStandardMaterial({ color: 0xd8ae25, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 }),
+    banner: new THREE.MeshStandardMaterial({ color: 0x23302a, roughness: 0.5, metalness: 0.4 }),
+    base: new THREE.MeshStandardMaterial({ color: 0xa8322b, roughness: 0.55 }),
   };
   type MK = keyof typeof M;
   const parts = new Map<MK, THREE.BufferGeometry[]>();
@@ -234,14 +280,16 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   const box = (x: number, y: number, z: number) => new THREE.BoxGeometry(x, y, z);
 
   const ys = (p: P) => (data.road_quads.some((q) => inQuad(p, q)) ? 0 : CURB_H);
-  const free = (p: P, clear = 1.2) =>
-    p[0] > BBOX.w && p[0] < BBOX.e && p[1] > BBOX.s && p[1] < BBOX.n &&
-    !data.road_quads.some((q) => inQuad(p, q)) && !data.buildings.some((b) => inPoly(p, b.pts)) &&
-    !data.crossings.some((c) => Math.hypot(c.x - p[0], c.y - p[1]) < 5) &&
-    !garages.some((g) => Math.hypot(g.x - p[0], g.n - p[1]) < clear + 1.5);
+  // Collision: a square the size of each drawn base (poles, posts, hydrants, pay stations), so what you see blocks.
+  const walls: [number, number, number, number][] = [];
+  const solid = (p: P, r: number) => {
+    const k: P[] = [[p[0] - r, p[1] - r], [p[0] + r, p[1] - r], [p[0] + r, p[1] + r], [p[0] - r, p[1] + r]];
+    k.forEach((a, i) => walls.push([...a, ...k[(i + 1) % 4]]));
+  };
 
   const hydrant = (p: P) => {
     const y = ys(p);
+    solid(p, 0.17);
     put("hydrant", place(cyl(0.17, 0.17, 0.06, 12), p, y));
     put("hydrant", place(cyl(0.13, 0.12, 0.6, 12), p, y));
     put("hydrant", place(box(0.42, 0.09, 0.09).translate(0, 0.42, 0), p, y));
@@ -249,6 +297,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const woodPole = (p: P, across: P, light: boolean) => {   // across: toward the road
     const y = ys(p), u = zdir(across);
+    solid(p, 0.15);
     put("wood", place(cyl(0.15, 0.12, 10.5), p, y));
     put("wood", place(box(0.1, 0.1, 2.4).translate(0, 9.6, 0), p, y, u));              // crossarm across the street
     for (const z of [-1.0, 0, 1.0]) put("unlit", place(cyl(0.04, 0.03, 0.18, 6).translate(0, 9.65, z), p, y, u));
@@ -260,6 +309,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const streetLight = (p: P, toRoad: P) => {
     const y = ys(p), u = zdir(toRoad);   // arm along local +z, over the road
+    solid(p, 0.12);
     put("steel", place(cyl(0.12, 0.08, 8.5), p, y));
     put("steel", place(box(0.07, 0.07, 2.2).translate(0, 8.3, 1.1), p, y, u));
     put("steel", place(box(0.32, 0.15, 0.7).translate(0, 8.25, 2.3), p, y, u));
@@ -267,6 +317,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const signal = (p: P, face: P) => {
     const y = ys(p), u = zdir(face);
+    solid(p, 0.12);
     put("signal", place(cyl(0.12, 0.1, 5.2), p, y));
     put("signal", place(box(0.36, 1.05, 0.3).translate(0, 4.3, 0.2), p, y, u));
     put("unlit", place(new THREE.CircleGeometry(0.11, 12).translate(0, 4.62, 0.36), p, y, u));
@@ -275,11 +326,13 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const payStation = (p: P, u: P) => {
     const y = ys(p);
+    solid(p, 0.2);
     put("paystation", place(box(0.34, 1.45, 0.24).translate(0, 0.725, 0), p, y, u));
     put("unlit", place(box(0.22, 0.16, 0.02).translate(0, 1.2, 0.13), p, y, u));
   };
   const stopSign = (p: P, face: P) => {
     const y = ys(p), u = zdir(face);
+    solid(p, 0.05);
     put("steel", place(cyl(0.035, 0.035, 2.5, 6), p, y));
     const sign = new THREE.Mesh(new THREE.CircleGeometry(0.38, 8, Math.PI / 8), new THREE.MeshStandardMaterial({ map: stopTexture(), roughness: 0.5 }));
     sign.geometry.translate(0, 0, 0.05);
@@ -311,15 +364,37 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     }
   }
 
-  // Not in OSM: streetlights along both Howard curbs. Moss's poles and wires and the street trees
-  // (DataSF inventory trees included) are in streetDressing.ts.
-  const howard = data.roads.filter((r) => r.name === "Howard Street");
-  for (const r of howard) {
-    for (const side of [0, 1] as const) {
-      const off = side ? r.curbs[1] + 0.5 : r.curbs[0] - 0.5;
-      const toRoad = (u: P): P => (side ? [u[1], -u[0]] : [-u[1], u[0]]);
-      for (const { p, u } of along(offsetPts(r.pts, off), 10 + side * 18, HOWARD_LIGHT_EVERY)) if (free(p)) streetLight(p, toRoad(u));
+  // Not in OSM: Howard's light poles, painted dark green with a red base and a pair of banners each
+  // (Street View). Moss's poles and wires and the street trees are in streetDressing.ts.
+  const banners = new Map<number, THREE.BufferGeometry[]>();
+  howardLightSpots(data, garages).forEach(({ p, u, toRoad }, i) => {
+    const y = ys(p), a = zdir(toRoad);
+    solid(p, 0.2);   // the red base
+    put("banner", place(cyl(0.12, 0.08, 8.5), p, y));
+    put("banner", place(box(0.07, 0.07, 2.2).translate(0, 8.3, 1.1), p, y, a));
+    put("steel", place(box(0.32, 0.15, 0.7).translate(0, 8.25, 2.3), p, y, a));
+    put("lamp", place(box(0.26, 0.02, 0.55).translate(0, 8.17, 2.3), p, y, a));
+    put("base", place(cyl(0.2, 0.18, 0.9), p, y));
+    for (const s of [-1, 1]) {   // banner arms across the sidewalk, banners face along Howard
+      put("banner", place(box(0.04, 0.04, 0.95).translate(0, 5.9, s * 0.5), p, y, a));
+      const g = new THREE.PlaneGeometry(0.8, 1.7).rotateY(Math.PI / 2).translate(0, 5.0, s * 0.55);
+      place(g, p, y, a);
+      const k = (i * 2 + (s > 0 ? 1 : 0)) % BANNER_KINDS;
+      (banners.get(k) ?? banners.set(k, []).get(k)!).push(g);
     }
+  });
+  // Flex posts down the middle of the cycle track's buffer.
+  for (const t of trackEdges(data)) {
+    for (const { p } of along(offsetPts([t.a, t.b], t.side * TRACK_BUFFER / 2), 1, FLEX_POST_EVERY)) {
+      if (data.crossings.some((c) => Math.hypot(c.x - p[0], c.y - p[1]) < 6)) continue;
+      put("hydrant", place(cyl(0.05, 0.045, 0.9, 8), p, 0));
+      put("unlit", place(cyl(0.1, 0.1, 0.04, 10), p, 0));
+    }
+  }
+  for (const [k, gs] of banners) {
+    const m = new THREE.Mesh(mergeGeometries(gs)!, new THREE.MeshStandardMaterial({ map: bannerTexture(k + 3), roughness: 0.8, side: THREE.DoubleSide }));
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
   }
 
   for (const [k, gs] of parts) {
@@ -328,6 +403,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     mesh.receiveShadow = true;
     scene.add(mesh);
   }
+  return walls;
 }
 
 let stopTex: THREE.CanvasTexture | null = null;
