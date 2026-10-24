@@ -1,35 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
+import { WalkMap, PRIORITY_COLOR, type LatLng, type Pin, type Pose, type Relative } from './WalkMap';
+import { happenedAt, lastWalk, liveStats, moments as walkMoments, num, parse, speakerOf, str, type Ev, type Moment, type Payload } from './timeline';
+import { Badge, LiveState, Timeline } from './Reveal';
 import './App.css';
 
-// Caregiver dashboard: read-only view of the shared Kite world state. No camera video (privacy).
+// Caregiver dashboard: live view of the shared Kite world state, plus short messages to the walker
+// (a `say` from source `caregiver`; the earpiece polls for them and speaks them). No camera video (privacy).
+// Press P for presentation mode (the reveal): no raw feed or controls, bigger map, timeline and last line.
 
-type Payload = Record<string, unknown>;
-type Row = { type: string; source: string; priority: string; payload: string; t: { toMillis(): bigint } };
+// `event` rows have an id, `latest` rows a "type:source" key.
+type Row = { id?: bigint; key?: string; type: string; source: string; priority: string; payload: string; t: { toMillis(): bigint } };
 
-const FEED_SIZE = 50;
-const TRAIL_SIZE = 100;
+const FEED_SIZE = 40;
+const TRAIL_SIZE = 150;
 const DEFAULT_HAZARD_TTL_S = 20;
-const M_PER_DEG_LAT = 110_540;
-const M_PER_DEG_LNG = 111_320;
+const BEACON_TTL_S = 30;
+const MAX_MESSAGE = 200;
+const EVENT_TABLE_CAP = 500;   // the module keeps the newest 500 events
+const QUICK_MESSAGES = ["I'm on my way.", 'Call me when you can.', 'Take your time, no rush.'];
+const SHOWN_MESSAGES = 3;
+const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
+// Moment colours on the map; stops are always red.
+const PIN_COLOR: Record<string, string> = { stop: '#ef4444', kite: '#2dd4bf', claude: '#e8875f', caregiver: '#4da3ff' };
 
-function parse(json: string): Payload {
-  try {
-    const v = JSON.parse(json);
-    return v && typeof v === 'object' ? v : {};
-  } catch {
-    return {};
-  }
-}
-
-const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
-const str = (v: unknown): string => (v == null ? '' : String(v));
-const ms = (r: Row) => Number(r.t.toMillis());
-const newestFirst = <T extends Row>(rows: readonly T[]) => [...rows].sort((a, b) => ms(b) - ms(a));
+const toEv = (r: Row): Ev => ({ id: r.id?.toString() ?? r.key ?? '', type: r.type, source: r.source, priority: r.priority, t: Number(r.t.toMillis()), p: parse(r.payload) });
+const newestFirst = (rows: readonly Ev[]) => [...rows].sort((a, b) => b.t - a.t);
 const m = (v: unknown) => (num(v) != null ? `${num(v)!.toFixed(1)} m` : false);
 const deg = (v: unknown) => (num(v) != null ? `${Math.round(num(v)!)}°` : false);
-const ago = (now: number, t: number) => `${Math.max(0, Math.round((now - t) / 1000))}s ago`;
+const secs = (now: number, t: number) => Math.max(0, Math.round((now - t) / 1000));
+const ago = (now: number, t: number) => `${secs(now, t)}s ago`;
+// Hazards from sample data may carry no priority column; the payload or the type default decides.
+const priorityOf = (e: Ev) => str(e.p.priority) || e.priority || 'hazard';
 
 function summary(type: string, p: Payload): string {
   switch (type) {
@@ -50,157 +53,217 @@ function summary(type: string, p: Payload): string {
   }
 }
 
-// Project positions to local meters (or use x/y if the producer sends them). Missing coords are skipped.
-function trailPoints(positions: Payload[]): [number, number][] {
-  const pts: [number, number][] = [];
-  const origin = positions.find(p => num(p.lat) != null && num(p.lng) != null);
-  for (const p of positions) {
-    const x = num(p.x), y = num(p.y), lat = num(p.lat), lng = num(p.lng);
-    if (x != null && y != null) pts.push([x, y]);
-    else if (lat != null && lng != null && origin) {
-      const lat0 = origin.lat as number, lng0 = origin.lng as number;
-      pts.push([(lng - lng0) * M_PER_DEG_LNG * Math.cos((lat0 * Math.PI) / 180), (lat - lat0) * M_PER_DEG_LAT]);
-    }
-  }
-  return pts;
-}
+const poseOf = (p: Payload): Pose | undefined => {
+  const lat = num(p.lat), lng = num(p.lng);
+  return lat != null && lng != null ? { lat, lng, heading: num(p.heading) } : undefined;
+};
 
-function Trail({ points }: { points: [number, number][] }) {
-  if (points.length === 0) return <p className="muted">No coordinates yet (position events have no lat/lng or x/y).</p>;
-  const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
-  const pad = 5;
-  const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
-  const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
-  const w = maxX - minX, h = maxY - minY;
-  // SVG y grows down; flip so north is up.
-  const svgPts = points.map(([x, y]) => `${x - minX},${maxY - y}`).join(' ');
-  const [lx, ly] = points[points.length - 1];
-  return (
-    <svg className="trail" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
-      <polyline points={svgPts} fill="none" stroke="#4da3ff" strokeWidth={Math.max(w, h) / 150} vectorEffect="non-scaling-stroke" />
-      <circle cx={lx - minX} cy={maxY - ly} r={Math.max(w, h) / 40} fill="#ffd34d" />
-    </svg>
-  );
-}
+const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 
 function App() {
   const conn = useSpacetimeDB();
   const [events] = useTable(tables.event);
   const [latest] = useTable(tables.latest);
   const clear = useReducer(reducers.clear);
+  const push = useReducer(reducers.push);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
   const [now, setNow] = useState(Date.now());
+  const [present, setPresent] = useState(() => location.hash === '#present');
+  const [focusId, setFocusId] = useState<string>();
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
 
-  const sorted = newestFirst(events);
-  const latestSorted = newestFirst(latest);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'p' || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+      setPresent(on => !on);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  useEffect(() => { history.replaceState(null, '', present ? '#present' : location.pathname + location.search); }, [present]);
 
-  const positionRows = sorted.filter(e => e.type === 'position').slice(0, TRAIL_SIZE).reverse();
-  const lastPosRow = latestSorted.find(r => r.type === 'position');
-  const pos = lastPosRow ? parse(lastPosRow.payload) : undefined;
+  // Parse every payload once per table change, not once per render (the clock re-renders every second).
+  const sorted = useMemo(() => newestFirst(events.map(toEv)), [events]);
+  const latestSorted = useMemo(() => newestFirst(latest.map(toEv)), [latest]);
+
+  // Walker: newest position (any source) that has coordinates; its trail comes from the same source.
+  const lastPosRow = latestSorted.find(r => r.type === 'position' && poseOf(r.p));
+  const pos = lastPosRow?.p;
+  const pose = pos && poseOf(pos);
+  const walkerSource = lastPosRow?.source;
+  const trail: LatLng[] = useMemo(() => sorted
+    .filter(e => e.type === 'position' && e.source === walkerSource)
+    .slice(0, TRAIL_SIZE)
+    .map(e => poseOf(e.p))
+    .filter((p): p is Pose => p != null)
+    .map(p => [p.lat, p.lng] as LatLng)
+    .reverse(), [sorted, walkerSource]);
+
+  // The last walk's key moments, oldest first.
+  const walk = useMemo(() => lastWalk([...sorted].reverse()), [sorted]);
+  const moments: Moment[] = useMemo(() => walkMoments(walk, walkerSource), [walk, walkerSource]);
+  const pins: Pin[] = moments.flatMap(mo => mo.pos ? [{
+    id: mo.id, at: mo.pos, stop: mo.kind === 'stop', label: mo.text,
+    color: PIN_COLOR[mo.kind === 'stop' ? 'stop' : mo.who],
+  }] : []);
 
   // Active hazards: newest per (source, kind) still inside its ttl.
-  const hazards = new Map<string, { row: Row; p: Payload }>();
+  const hazards = new Map<string, Ev>();
   for (const e of sorted) {
     if (e.type !== 'hazard') continue;
-    const p = parse(e.payload);
-    const key = `${e.source}:${str(p.kind)}`;
+    const key = `${e.source}:${str(e.p.kind)}`;
     if (hazards.has(key)) continue;
-    const ttl = num(p.ttl) ?? DEFAULT_HAZARD_TTL_S;
-    if (now - ms(e) <= ttl * 1000) hazards.set(key, { row: e, p });
+    const ttl = num(e.p.ttl) ?? DEFAULT_HAZARD_TTL_S;
+    if (now - e.t <= ttl * 1000) hazards.set(key, e);
   }
+  const hazardList = [...hazards.entries()];
+  const hazardMarks: Relative[] = hazardList.flatMap(([key, e]) => {
+    const bearing = num(e.p.bearing), distance = num(e.p.distance);
+    return bearing == null || distance == null ? [] :
+      [{ key, bearing, distance, label: [e.p.kind, e.p.state].filter(Boolean).join(' ') || 'hazard', priority: priorityOf(e) }];
+  });
 
-  const statuses = latestSorted.filter(r => r.type === 'status');
-  const lastSpoken = latestSorted.find(r => ['guidance', 'spoken', 'say'].includes(r.type));
+  const beaconRow = latestSorted.find(r => r.type === 'beacon' && now - r.t <= BEACON_TTL_S * 1000);
+  const bp = beaconRow?.p;
+  const beacon: Relative | undefined = bp && bp.active !== false && num(bp.bearing) != null && num(bp.distance) != null
+    ? { key: 'beacon', bearing: num(bp.bearing)!, distance: num(bp.distance)!, label: str(bp.label) || 'Next waypoint', priority: 'nav' }
+    : undefined;
+
+  // Shared state: every source that has written anything, with its newest row time and last-minute rate.
+  const newestBySource = new Map<string, number>();
+  for (const r of latestSorted) if (!newestBySource.has(r.source)) newestBySource.set(r.source, r.t);
+  const live = liveStats(sorted, newestBySource, now);
+  // Every kept row is inside the last minute, so older ones were trimmed: the rate is a lower bound.
+  const capped = sorted.length >= EVENT_TABLE_CAP && live.perMin >= sorted.length;
+  const statusOf = (source: string) => {
+    const st = latestSorted.find(r => r.type === 'status' && r.source === source);
+    return st ? summary('status', st.p) : '';
+  };
+
+  const lastSpoken = latestSorted.find(r => ['guidance', 'spoken', 'say'].includes(r.type) && str(r.p.text));
+
+  const sent = sorted.filter(e => e.type === 'say' && e.source === 'caregiver').slice(0, SHOWN_MESSAGES);
+
+  const send = (raw: string) => {
+    const text = raw.trim().slice(0, MAX_MESSAGE);
+    if (!text || sending) return;
+    const msg = { type: 'say', source: 'caregiver', priority: 'info', text, key: `caregiver-${Date.now()}` };
+    setSending(true);
+    push({ type: 'say', source: 'caregiver', priority: 'info', payload: JSON.stringify(msg) })
+      .then(() => setDraft(''))
+      .catch(err => alert(`Message not sent: ${err}`))
+      .finally(() => setSending(false));
+  };
 
   const onClear = () => {
     if (confirm('Clear the event log and latest state for a fresh run?')) clear().catch(err => alert(`Clear failed: ${err}`));
   };
 
   return (
-    <main>
+    <div className={`app ${present ? 'present' : ''}`}>
       <header>
-        <h1>Kite</h1>
-        <span className={conn.isActive ? 'ok' : 'bad'}>
-          {conn.isActive ? 'Live' : conn.connectionError ? `Disconnected: ${conn.connectionError.message}` : 'Connecting...'}
+        <h1>Kite <span className="muted">{present ? 'what Kite saw and did on your walk' : 'caregiver view'}</span></h1>
+        <span className={`conn ${conn.isActive ? 'ok' : 'bad'}`}>
+          <i />{conn.isActive ? 'Live via SpacetimeDB' : conn.connectionError ? `Disconnected: ${conn.connectionError.message}` : 'Connecting...'}
         </span>
-        <button onClick={onClear} disabled={!conn.isActive}>Clear run</button>
+        <button className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
+          title="Toggle presentation mode (P)">{present ? 'Exit presentation' : 'Present'} <kbd>P</kbd></button>
+        {!present && <button onClick={onClear} disabled={!conn.isActive}>Clear run</button>}
       </header>
 
-      <div className="grid">
-        <section>
-          <h2>Walker</h2>
-          {pos ? (
-            <>
-              <div className="big">{str(pos.place) || 'Unknown place'}</div>
-              <div className="muted">
-                {num(pos.lat) != null ? `${num(pos.lat)!.toFixed(5)}, ${num(pos.lng)?.toFixed(5)}` : 'no coordinates'}
-                {num(pos.heading) != null && ` · heading ${deg(pos.heading)}`}
-                {lastPosRow && ` · ${ago(now, ms(lastPosRow))}`}
-              </div>
-            </>
-          ) : <p className="muted">No position yet.</p>}
-          <Trail points={trailPoints(positionRows.map(r => parse(r.payload)))} />
-        </section>
+      <div className="layout">
+        <div className="main-col">
+          <WalkMap pose={pose} trail={trail} hazards={hazardMarks} beacon={beacon}
+            freshness={lastPosRow ? ago(now, lastPosRow.t) : ''} pins={pins} focusId={focusId} onPick={setFocusId} />
+          <Timeline moments={moments} walkStart={walk.length ? Math.min(happenedAt(walk[0]), moments[0]?.t ?? Infinity) : undefined} focusId={focusId} onPick={setFocusId} />
+        </div>
 
-        <section>
-          <h2>Active hazards</h2>
-          {hazards.size === 0 ? <p className="muted">None.</p> : (
-            <ul className="hazards">
-              {[...hazards.values()].map(({ row, p }) => (
-                <li key={`${row.source}:${str(p.kind)}`} className={row.priority === 'critical' ? 'critical' : ''}>
-                  <strong>{str(p.kind) || 'hazard'}</strong> {summary('hazard', { ...p, kind: undefined })}
-                  <span className="muted"> · {row.source} · {ago(now, ms(row))}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+        <aside key={present ? 'present' : 'normal'}>{/* remount: each mode starts scrolled to the top */}
+          <section className="last-spoken">
+            <h2>Last spoken</h2>
+            {lastSpoken ? (
+              <p className="spoken">
+                “{str(lastSpoken.p.text)}”
+                <span className="spoken-meta"><Badge who={speakerOf(lastSpoken, sorted)} /><span className="muted small">{lastSpoken.type} · {ago(now, lastSpoken.t)}</span></span>
+              </p>
+            ) : <p className="muted">Nothing yet.</p>}
+          </section>
 
-          <h2>Last spoken</h2>
-          {lastSpoken ? (
-            <p className="big">
-              “{str(parse(lastSpoken.payload).text)}”
-              <span className="muted small"> {lastSpoken.type} · {ago(now, ms(lastSpoken))}</span>
-            </p>
-          ) : <p className="muted">Nothing yet.</p>}
+          <section className="walker">
+            <h2>Walker</h2>
+            {pos ? (
+              <>
+                <div className="big">{str(pos.place) || 'Unknown place'}</div>
+                <div className="muted">
+                  {summary('position', { ...pos, place: undefined })}
+                  {lastPosRow && ` · ${ago(now, lastPosRow.t)}`}
+                </div>
+                {beacon && <div className="beacon-line">Next: <strong>{beacon.label}</strong> · {Math.round(beacon.distance)} m</div>}
+              </>
+            ) : <p className="muted">No position yet.</p>}
+          </section>
 
-          <h2>Devices</h2>
-          {statuses.length === 0 ? <p className="muted">No status yet.</p> : (
-            <table>
-              <tbody>
-                {statuses.map(r => (
-                  <tr key={r.key}>
-                    <td><strong>{r.source}</strong></td>
-                    <td>{summary('status', parse(r.payload))}</td>
-                    <td className="muted">{ago(now, ms(r))}</td>
-                  </tr>
+          <section>
+            <h2>Active hazards</h2>
+            {hazardList.length === 0 ? <p className="muted">None.</p> : (
+              <ul className="hazards">
+                {hazardList.map(([key, e]) => (
+                  <li key={key} style={{ borderLeftColor: PRIORITY_COLOR[priorityOf(e)] ?? PRIORITY_COLOR.hazard }}
+                    className={`p-${priorityOf(e)}`}>
+                    <strong>{str(e.p.kind) || 'hazard'}</strong> {summary('hazard', { ...e.p, kind: undefined })}
+                    <div className="muted small">{priorityOf(e)} · {e.source} · {ago(now, e.t)}</div>
+                  </li>
                 ))}
-              </tbody>
-            </table>
-          )}
-        </section>
-      </div>
+              </ul>
+            )}
+          </section>
 
-      <section>
-        <h2>Live feed</h2>
-        <table className="feed">
-          <tbody>
-            {sorted.slice(0, FEED_SIZE).map(e => (
-              <tr key={e.id.toString()} className={`p-${e.priority}`}>
-                <td className="muted">{new Date(ms(e)).toLocaleTimeString()}</td>
-                <td>{e.type}</td>
-                <td>{e.source}</td>
-                <td>{e.priority}</td>
-                <td>{summary(e.type, parse(e.payload))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-    </main>
+          <LiveState perMin={live.perMin} capped={capped} sources={live.sources} limit={present ? PRESENT_SOURCES : undefined} statusOf={statusOf} compact={present} />
+
+          {!present && (
+            <>
+              <section>
+                <h2>Message the walker</h2>
+                <form className="message" onSubmit={e => { e.preventDefault(); send(draft); }}>
+                  <input value={draft} onChange={e => setDraft(e.target.value)} maxLength={MAX_MESSAGE}
+                    placeholder="Kite reads it aloud" aria-label="Message to the walker" disabled={!conn.isActive} />
+                  <button type="submit" disabled={!conn.isActive || sending || !draft.trim()}>Send</button>
+                </form>
+                <div className="quick">
+                  {QUICK_MESSAGES.map(q => (
+                    <button key={q} onClick={() => send(q)} disabled={!conn.isActive || sending}>{q}</button>
+                  ))}
+                </div>
+                {sent.map(e => (
+                  <div key={e.id} className="muted small">Sent “{str(e.p.text)}” · {ago(now, e.t)}</div>
+                ))}
+              </section>
+
+              <section>
+                <h2>Live feed</h2>
+                <table className="feed">
+                  <tbody>
+                    {sorted.slice(0, FEED_SIZE).map(e => (
+                      <tr key={e.id} className={`p-${e.priority} ${e.source === 'caregiver' ? 'caregiver' : ''}`}>
+                        <td className="muted">{new Date(e.t).toLocaleTimeString()}</td>
+                        <td>{e.type}</td>
+                        <td className="muted">{e.source}</td>
+                        <td>{summary(e.type, e.p)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </>
+          )}
+        </aside>
+      </div>
+    </div>
   );
 }
 

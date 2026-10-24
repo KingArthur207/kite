@@ -2,7 +2,42 @@
 .env.*
 !.env.example
 
-# stand-in detector: weights, stock clips, outputs
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Rust
+target/
+
+# Node
+node_modules/
+dist/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+
+# Local outputs
+results/
+earpiece/out/
+earpiece/.cache/
+.wrangler/
+recordings/
+data/models/
+
+# Claude Code agent worktrees
+.claude/worktrees/
+
+# Stand-in detector weights stay local (sim/standin_detect.py --download)
 weights/
+
+# Stock clips and demo renders stay local (Pexels/Mixkit), never committed
 clips/
 out/
+
+# scripts/demo.sh logs and pids
+logs/

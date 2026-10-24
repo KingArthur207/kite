@@ -93,7 +93,8 @@ def test_render_releases_the_gil_and_is_fast():
     rs.shutdown()
 
 
-@pytest.mark.skipif(not rust_engine._ka or not rust_engine._ka.Engine.outputs(), reason="no audio device")
+@pytest.mark.skipif(bool(__import__("os").environ.get("KITE_NO_DEVICE_TESTS")) or not rust_engine._ka
+                    or not rust_engine._ka.Engine.outputs(), reason="no audio device")
 def test_real_device_survives_python_abuse():
     """Open the real output, then hammer the GIL from several threads (pure-Python CPU
     burn + thousands of play() calls). The Rust callback must never be starved."""

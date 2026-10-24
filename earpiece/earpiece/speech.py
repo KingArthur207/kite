@@ -85,7 +85,7 @@ class PhraseCache:
         self._mem: dict[str, np.ndarray] = {}
 
     def _path(self, text: str, tag: str | None = None) -> Path:
-        h = hashlib.sha1(f"{tag or self.tag}|{text}".encode()).hexdigest()[:20]
+        h = hashlib.sha1(f"{tag or self.tag}|{text}".encode(), usedforsecurity=False).hexdigest()[:20]
         return self.dir / f"{h}.f32"
 
     def get(self, text: str) -> np.ndarray | None:
@@ -440,6 +440,10 @@ class Speaker:
         cur.cancelled = True
         self.engine.speech_cancel(cur.uid, fade_s=0.04)
         await self.tts.cancel(cur.uid)
+        # re-queueing happens in _consumer, and only if the line really was cut off: a line
+        # that finished in the same few milliseconds must not be said twice
+
+    def _requeue(self, cur: Utterance) -> None:
         if cur.requeue_on_preempt and not cur.expired(time.monotonic(), self.cfg.default_ttl_s):
             again = Utterance(cur.text, cur.priority, cur.key, cur.ttl, created=cur.created,
                               requeue_on_preempt=False, on_done=cur.on_done)
@@ -480,6 +484,7 @@ class Speaker:
                     pass
                 continue
             how = "cut"
+            started = time.time()
             try:
                 how = await self._speak(u)
             except Exception as e:
@@ -487,11 +492,13 @@ class Speaker:
             finally:
                 with self._qlock:
                     self._current = None
+            if how == "cut" and u.cancelled:
+                self._requeue(u)
             if how == "done":
                 self.stats["spoken"] += 1
                 if u.priority == "nav":
                     self.last_nav = u
-            rec = {"t": time.time(), "text": u.text, "priority": u.priority, "result": how}
+            rec = {"t": time.time(), "t_start": started, "text": u.text, "priority": u.priority, "result": how}
             self.history.append(rec)
             if self.on_spoken is not None:
                 try:
