@@ -1,0 +1,482 @@
+"""Per-building facade layouts for Moss St from Street View (permission: docs/google-permission.md; the images and
+everything measured from them stay local, never committed).
+
+    uv run --no-project --with numpy --with opencv-python-headless python scripts/facade_layouts.py rectify
+    uv run --no-project --with numpy --with opencv-python-headless --with anthropic python scripts/facade_layouts.py extract [ids]
+    uv run --no-project --with numpy --with opencv-python-headless --with playwright python scripts/facade_layouts.py compare [--url URL]
+    python scripts/facade_layouts.py --selftest
+
+rectify: one straight-on image per Moss front (sim/public/osm/moss.json ground footprint, the edges facing Moss
+  merged into one plane from the leftmost to the rightmost corner, as seen from the street), blended from the
+  cached, pose-calibrated Street View tiles of scripts/streetview_facades.py (/tmp/kite_sv; no new requests:
+  a tile that isn't cached is an error). Written to /tmp/kite_sv_layout/rect/<id>.jpg at PX_PER_M, plus a copy
+  with a 1 m grid for the model.
+extract: Claude reads each rectified front (with its metre scale) and returns the layout as strict JSON; it is
+  validated (openings inside the wall, no overlaps, sane sizes), retried once with the problems listed, and
+  written to sim/public/local/moss_facade_layouts.json keyed by building id. Fronts that don't validate are
+  left out (the sim draws them procedurally). ANTHROPIC_API_KEY from .env, never printed.
+compare: sim renders of each front from a square camera (sim/facadecam.html?look=2 on a vite of your own, or
+  one this starts on --port) next to the rectified Street View front, in out/facades_cmp/<id>.jpg.
+
+Layout JSON per building (metres; x along the front from its left end as seen from the street, y up from the
+sidewalk):
+  {"width", "height", "floors": [{"y0", "y1"}], "cornice": y|null, "belts": [y],
+   "openings": [{"type": window|bay|door|garage|storefront, "x0", "x1", "y0", "y1",
+                 "shape": rect|arch|segmental, "style": rollup|panel|gate|null, "panes": 1-4}]}
+A "bay" is a projecting bay window spanning floors y0..y1 (its windows are drawn on its faces).
+"""
+from __future__ import annotations
+
+import base64
+import json
+import math
+import os
+import re
+import sys
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+MAIN = ROOT if (ROOT / ".env").exists() else ROOT.parents[2] if (ROOT.parents[2] / ".env").exists() else ROOT
+MOSS = ROOT / "sim/public/osm/moss.json"
+LOCAL = ROOT / "sim/public/local"
+OUT_JSON = LOCAL / "moss_facade_layouts.json"
+CSV = LOCAL / "moss_buildings.csv"
+WORK = Path("/tmp/kite_sv_layout")
+CMP = ROOT / "out/facades_cmp"
+PX_PER_M = 60
+MODEL = "claude-sonnet-5-5"
+MOSS_ROAD = 8916291
+FACING = 0.35           # outward normal . (towards Moss) for an edge to be part of the front
+FRONT_MAX_OFF = 14.0    # m from Moss's centreline
+MIN_EDGE = 0.3
+TYPES = {"window", "bay", "door", "garage", "storefront"}
+SHAPES = {"rect", "arch", "segmental"}
+STYLES = {"rollup", "panel", "gate", None}
+GAP = 0.08              # m: openings closer than this overlap
+
+
+# ---------------------------------------------------------------- fronts
+def _ccw(pts):
+    p = np.asarray(pts, float)
+    return 0.5 * np.sum(p[:-1, 0] * p[1:, 1] - p[1:, 0] * p[:-1, 1]) > 0
+
+
+def moss_line(data):
+    road = next(r for r in data["roads"] if r["id"] == MOSS_ROAD)
+    p = np.asarray(road["pts"], float)
+    u = (p[-1] - p[0]) / np.linalg.norm(p[-1] - p[0])
+    return p[0], u
+
+
+def fronts(data, ids):
+    """{id: dict(a, b, normal, h)}: a -> b is the front's left to right as seen from Moss (sim x east, y north)."""
+    o, u = moss_line(data)
+    n_line = np.array([-u[1], u[0]])
+    out = {}
+    for b in data["buildings"]:
+        if b["id"] not in ids:
+            continue
+        poly = b.get("ground") or b["pts"]
+        ccw = _ccw(poly)
+        ends = []
+        for k in range(len(poly) - 1):
+            a, c = np.asarray(poly[k], float), np.asarray(poly[k + 1], float)
+            L = np.linalg.norm(c - a)
+            if L < MIN_EDGE:
+                continue
+            e = (c - a) / L
+            nrm = np.array([e[1], -e[0]]) if ccw else np.array([-e[1], e[0]])
+            off = ((a + c) / 2 - o) @ n_line
+            if abs(off) < FRONT_MAX_OFF and nrm @ (-np.sign(off) * n_line) > FACING:
+                ends += [a, c]
+        if not ends:
+            continue
+        ends = np.array(ends)
+        side = np.sign((ends.mean(0) - o) @ n_line)
+        t = (ends - o) @ u
+        p0, p1 = ends[t.argmin()], ends[t.argmax()]
+        # Seen from the street (looking along -side*n_line), left is ... pick so that the right-hand normal faces out.
+        nrm = -side * n_line
+        a, c = (p0, p1) if np.cross(np.append(p1 - p0, 0), np.append(nrm, 0))[2] < 0 else (p1, p0)
+        out[b["id"]] = {"a": a, "b": c, "normal": nrm, "h": float(b["h"]), "side": "NE" if side > 0 else "SW"}
+    return out
+
+
+def csv_ids():
+    import csv
+    return [int(r["building_id"]) for r in csv.DictReader(CSV.open())]
+
+
+# ---------------------------------------------------------------- rectify (cached Street View only)
+def rectify(ids=None):
+    import cv2
+    sys.path.insert(0, str(ROOT)), sys.path.insert(0, str(ROOT / "scripts"))
+    import streetview_facades as sv
+    from kite.sources.streetview import StreetViewSource
+
+    data = json.loads(MOSS.read_text())
+    src = StreetViewSource(single=(37.7783, -122.4087, 0), cache_dir=sv.CACHE, key="cache-only")   # no key: a tile missing from the cache fails
+    walls = sv.street_walls(data)
+    panos = sv.load_panos(data, src)
+    frames = {p["id"]: sv.pano_street(p, data) for p in panos}
+    shots = sv.fetch_tiles(sv.plan_tiles(walls, panos, data), src, None)
+    poses = json.loads((sv.CACHE.parent / "poses.json").read_text())
+    occ = sv.occluders(data)
+    (WORK / "rect").mkdir(parents=True, exist_ok=True)
+    F = fronts(data, set(ids or csv_ids()))
+    meta = {}
+    pmap = {p["id"]: p for p in panos}
+    for bid, f in F.items():
+        # occluders: everything but this building (its own bays sit in front of the merged plane)
+        occ_b = [e for e in occ if e[0] != bid]
+        d, agree, curve = front_depth(sv, f, shots, pmap, frames, occ_b, poses)
+        if "--depth-only" in sys.argv:
+            print(bid, f"best {d:+.2f} ({agree:.3f})", " ".join(f"{x:+.2f}:{r:.2f}" for x, r in curve))
+            continue
+        top = f["h"] + IMG_ABOVE
+        w = {"building": bid, "edge": "front", "a": f["a"] + d * f["normal"], "b": f["b"] + d * f["normal"],
+             "z0": 0.0, "z1": top, "normal": f["normal"], "street": "moss"}
+        pid, pick = best_pano(sv, w, shots, frames, poses, occ_b)
+        # One panorama only: no seams or ghosts between panoramas. Trees and cars stay in the picture (painted-out
+        # smears read worse than a tree the model can look past); only the Google logo rows are masked.
+        one = [dict(s, occ=s["occ"] & logo_rows(s["occ"])) for s in shots if s["pano"]["id"] == pid]
+        tex, clean, holes, used = sv.wall_texture(w, one, frames, poses, occ_b, ppm=PX_PER_M)
+        L = float(np.linalg.norm(f["b"] - f["a"]))
+        cv2.imwrite(str(WORK / "rect" / f"{bid}.jpg"), tex, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        cv2.imwrite(str(WORK / "rect" / f"{bid}_grid.jpg"), grid(tex, L, top), [cv2.IMWRITE_JPEG_QUALITY, 90])
+        meta[bid] = {"a": f["a"].round(3).tolist(), "b": f["b"].round(3).tolist(), "normal": f["normal"].round(4).tolist(),
+                     "width": round(L, 2), "h": f["h"], "img_top": top, "clean": round(clean, 3),
+                     "pano": pid, "pano_score": round(pick, 3), "side": f["side"], "depth": d, "agree": round(agree, 3)}
+        print(f"{bid} {f['side']}: {L:5.1f} x {f['h']:4.1f} m, plane {d:+.2f} m (agree {agree:.2f}), clean {clean:.0%}, "
+              f"panorama score {pick:.2f}")
+    if "--depth-only" in sys.argv:
+        return
+    (WORK / "fronts.json").write_text(json.dumps(meta, indent=1))
+    print(f"Street View requests: {src.requests}")
+
+
+DEPTHS = np.arange(-0.5, 3.01, 0.25)   # m towards the street from the footprint's front line
+IMG_ABOVE = 6.0                        # m drawn over the footprint height (LiDAR heights run 2-3 m under the photos)
+DEPTH_MIN_AGREE = 0.25
+
+
+def front_depth(sv, f, shots, pmap, frames, occ, poses):
+    """Where the facade really is: the plane offset (towards the street) at which the panoramas' views of it agree
+    best (high-pass NCC, as in streetview_facades' pose refinement). (best, score, curve)."""
+    walls = [{"building": -1, "edge": "front", "a": f["a"] + d * f["normal"], "b": f["b"] + d * f["normal"],
+              "z0": 0.0, "z1": f["h"], "normal": f["normal"], "street": "moss"} for d in DEPTHS]
+    sc = sv.Scorer(walls, shots, pmap, frames, occ, 12, max_oblique=sv.REFINE_OBLIQUE)
+    curve = []
+    for i, d in enumerate(DEPTHS):
+        pairs = sc.wall_pairs(i, poses)
+        n = sum(p[3] for p in pairs)
+        curve.append((float(d), sum(p[2] * p[3] for p in pairs) / n if n else -1.0))
+    d, r = max(curve, key=lambda c: c[1])
+    if r < DEPTH_MIN_AGREE:   # no clear answer (bays, trees): the footprint line
+        d = 0.0
+    return d, r, curve
+
+
+def logo_rows(occ, rows=24):
+    m = np.zeros_like(occ)
+    m[-rows:] = True
+    return m
+
+
+def best_pano(sv, w, shots, frames, poses, occ):
+    """The one panorama that sees the front best: clean coverage (its own tiles, cars and trees masked) times how
+    square it looks at the front's centre. Its tiles share one camera centre, so they rectify without seams."""
+    m = (w["a"] + w["b"]) / 2
+    best = (None, -1.0)
+    for pid in sorted({s["pano"]["id"] for s in shots}):
+        own = [s for s in shots if s["pano"]["id"] == pid]
+        C = sv.cam_centre(own[0]["pano"], poses.get(pid, sv.ZERO), frames[pid])
+        d = m - C[:2]
+        cos = float(-(d @ w["normal"]) / np.linalg.norm(d))
+        if cos < 0.3:
+            continue
+        _, clean, _, _ = sv.wall_texture(w, own, frames, poses, occ, ppm=6)
+        score = clean * (0.4 + 0.6 * cos)
+        if score > best[1]:
+            best = (pid, score)
+    return best
+
+
+def grid(tex, L, H):
+    """A copy with a line every metre (labelled) so the model can read positions in metres."""
+    import cv2
+    g = tex.copy()
+    h, w = g.shape[:2]
+    for m in range(int(L) + 1):
+        x = int(round(m / L * w))
+        cv2.line(g, (x, 0), (x, h), (0, 255, 255), 1)
+        cv2.putText(g, str(m), (x + 2, h - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 255), 1)
+    for m in range(int(H) + 1):
+        y = int(round(h - m / H * h))
+        cv2.line(g, (0, y), (w, y), (255, 0, 255), 1)
+        cv2.putText(g, str(m), (2, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
+    return g
+
+
+# ---------------------------------------------------------------- extract (Claude) and validate
+PROMPT = """This is a rectified, straight-on photo of ONE building front on Moss St, San Francisco, rectified from a \
+single Street View panorama. Trees, cars, poles and wires may stand in front of it: look past them. Smooth smeared \
+areas (often at the left or right end, or at the top) were not seen by the camera. It is {W:.2f} m wide and {H:.2f} m \
+tall: x runs 0 to {W:.2f} m left to right, y runs 0 (sidewalk) to {H:.2f} m (the image top). The second image is the \
+same photo with a labelled 1 m grid (yellow x, magenta y). Neighbouring buildings may show at the left or right end: \
+describe only the building that fills most of the image.
+
+Return ONLY a JSON object, no prose:
+{{"x0": left edge of this building's front (0 if it runs into an unseen area at the left), "x1": right edge (likewise {W:.2f}),
+ "roofline": y of the top of the front wall / parapet, "roof_seen": true if the roofline is in the picture,
+ "floors": [{{"y0": .., "y1": ..}}, ...]   storeys bottom to top, floor line to floor line, the first from 0,
+ "cornice": {{"y0": .., "y1": ..}} or null   the projecting cornice / eave band under the roofline,
+ "belts": [y, ...]   horizontal trim bands across the front between floors (centre heights), [] if none,
+ "openings": [{{"type": "window"|"bay"|"door"|"garage"|"storefront", "x0": .., "x1": .., "y0": .., "y1": ..,
+   "shape": "rect"|"arch"|"segmental", "spring": y where a curved top starts (null for rect),
+   "style": "rollup"|"panel"|"gate"|null, "panes": 1-8, "frame": "white"|"dark"|"wall"}}, ...]}}
+
+Rules:
+- Every window, door, garage door and shop window of this front, left to right, floor by floor. Coordinates are the \
+  opening itself (the glass, door leaf or garage opening, not its trim), in metres, to 0.05 m. Read them off the grid.
+- "bay": a projecting bay window (angled or square) as ONE entry from its underside (y0) to its top (y1), even when \
+  it is stacked over two or three floors; x0..x1 its width where it meets the wall. Do NOT list the windows inside a \
+  bay separately.
+- "shape": "arch" = round-arched top (half circle), "segmental" = a shallow curved top; "spring" = the height where \
+  the curve starts (the straight sides end). Else "rect". Arched garage openings, arched entries and segmental \
+  industrial windows are common on Moss: look carefully at each top edge.
+- "style" (garage only): "rollup" = horizontal slat shutter, "panel" = sectional or panelled door, "gate" = iron \
+  bars/grille. For a door: "gate" if an iron security gate covers it, else null. Windows: null.
+- "panes": glass panes across the width (a sash window 1, a pair 2, industrial grid windows the number of columns).
+- "frame": "white" painted trim/casing, "dark" dark trim, "wall" no visible casing.
+- No two openings may overlap; a door with a transom or fanlight is one opening. Sizes are real: doors about \
+  0.8-1.3 m wide and 2.0-2.8 m tall (more with a fanlight), garage doors 2.2-5 m wide.
+- If part of the front is hidden, still give your best reading of the visible pattern."""
+
+LIMITS = {"window": (0.3, 4.5, 0.4, 4.5), "bay": (1.2, 5.5, 1.5, 14.0), "door": (0.6, 2.6, 1.6, 3.6),
+          "garage": (1.8, 6.5, 1.8, 5.8), "storefront": (0.8, 12.0, 1.5, 5.0)}   # min/max width, min/max height
+
+
+def validate(lay, W, H):
+    """Problems with a layout (empty list = good). Fixes small things in place (sorts, clamps 5 cm)."""
+    errs = []
+    try:
+        x0, x1, roof = float(lay["x0"]), float(lay["x1"]), float(lay["roofline"])
+        ops = lay["openings"]
+        floors = lay["floors"]
+    except (KeyError, TypeError, ValueError) as e:
+        return [f"missing or bad field: {e}"]
+    if not (-0.1 <= x0 < x1 <= W + 0.1 and x1 - x0 > 0.5 * W):
+        errs.append(f"x0/x1 {x0}..{x1} should cover most of 0..{W:.2f}")
+    if not 2.5 < roof <= H + 0.1:
+        errs.append(f"roofline {roof} outside 2.5..{H:.2f}")
+    if not floors or any(f["y1"] <= f["y0"] for f in floors):
+        errs.append("floors must be bottom-to-top with y1 > y0")
+    for o in ops:
+        t = o.get("type")
+        if t not in TYPES:
+            errs.append(f"unknown type {t}")
+            continue
+        if o.get("shape", "rect") not in SHAPES:
+            errs.append(f"bad shape {o.get('shape')}")
+        sp = o.get("spring")
+        if o.get("shape") in ("arch", "segmental") and not (isinstance(sp, (int, float)) and float(o["y0"]) < sp < float(o["y1"])):
+            o["spring"] = None   # the renderer picks a rise from the width
+        for k in ("x0", "x1", "y0", "y1"):
+            o[k] = float(o[k])
+        o["x0"], o["x1"] = max(o["x0"], x0) if o["x0"] > x0 - 0.06 else o["x0"], min(o["x1"], x1) if o["x1"] < x1 + 0.06 else o["x1"]
+        o["y0"] = max(0.0, o["y0"]) if o["y0"] > -0.06 else o["y0"]
+        w, h = o["x1"] - o["x0"], o["y1"] - o["y0"]
+        wl, wh, hl, hh = LIMITS[t]
+        if not (wl <= w <= wh and hl <= h <= hh):
+            errs.append(f"{t} at x {o['x0']:.2f}-{o['x1']:.2f} y {o['y0']:.2f}-{o['y1']:.2f}: size {w:.2f} x {h:.2f} m not plausible")
+        if o["x0"] < x0 or o["x1"] > x1 or o["y0"] < 0 or o["y1"] > roof + 0.05:
+            errs.append(f"{t} at x {o['x0']:.2f}-{o['x1']:.2f} y {o['y0']:.2f}-{o['y1']:.2f} is outside the front "
+                        f"(x {x0:.2f}-{x1:.2f}, y 0-{roof:.2f})")
+    # A bay stacked over floors sometimes comes back as one bay per floor: one bay, underside to top.
+    bays = sorted((o for o in ops if o.get("type") == "bay"), key=lambda o: o["y0"])
+    for i, a in enumerate(bays):
+        for b in bays[i + 1:]:
+            if b.get("merged") or a.get("merged"):
+                continue
+            ov = min(a["x1"], b["x1"]) - max(a["x0"], b["x0"])
+            if ov > 0.7 * min(a["x1"] - a["x0"], b["x1"] - b["x0"]) and b["y0"] - a["y1"] < 0.8:
+                a.update(x0=min(a["x0"], b["x0"]), x1=max(a["x1"], b["x1"]), y1=max(a["y1"], b["y1"]))
+                b["merged"] = True
+    ops[:] = [o for o in ops if not o.get("merged")]
+    ops.sort(key=lambda o: (o["y0"], o["x0"]))
+    for i, a in enumerate(ops):
+        for b in ops[i + 1:]:
+            if min(a["x1"], b["x1"]) - max(a["x0"], b["x0"]) > GAP and min(a["y1"], b["y1"]) - max(a["y0"], b["y0"]) > GAP:
+                errs.append(f"{a['type']} x {a['x0']:.2f}-{a['x1']:.2f} y {a['y0']:.2f}-{a['y1']:.2f} overlaps "
+                            f"{b['type']} x {b['x0']:.2f}-{b['x1']:.2f} y {b['y0']:.2f}-{b['y1']:.2f}")
+    return errs
+
+
+def load_key():
+    for line in (MAIN / ".env").read_text().splitlines():
+        m = re.match(r"\s*(?:export\s+)?ANTHROPIC_API_KEY\s*=\s*['\"]?([^'\"\s]+)", line)
+        if m:
+            return m.group(1)
+    return os.environ.get("ANTHROPIC_API_KEY")
+
+
+def ask(client, bid, W, H, feedback=None, prev=None):
+    img = lambda p: {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",   # noqa: E731
+                                                 "data": base64.b64encode(p.read_bytes()).decode()}}
+    content = [img(WORK / "rect" / f"{bid}.jpg"), img(WORK / "rect" / f"{bid}_grid.jpg"),
+               {"type": "text", "text": PROMPT.format(W=W, H=H)}]
+    msgs = [{"role": "user", "content": content}]
+    if feedback:
+        msgs += [{"role": "assistant", "content": prev},
+                 {"role": "user", "content": "That layout has problems:\n- " + "\n- ".join(feedback) +
+                  "\nLook again and return the corrected JSON only."}]
+    r = client.messages.create(model=MODEL, max_tokens=6000, messages=msgs)
+    return "".join(b.text for b in r.content if b.type == "text"), r.usage
+
+
+def parse(text):
+    m = re.search(r"\{.*\}", text, re.S)
+    return json.loads(m.group(0)) if m else None
+
+
+def extract(ids=None):
+    import anthropic
+    meta = {int(k): v for k, v in json.loads((WORK / "fronts.json").read_text()).items()}
+    client = anthropic.Anthropic(api_key=load_key())
+    out = json.loads(OUT_JSON.read_text()) if OUT_JSON.exists() else {"buildings": {}}
+    (WORK / "claude").mkdir(parents=True, exist_ok=True)
+    calls = 0
+    for bid in ids or sorted(meta):
+        f = meta[bid]
+        if f["clean"] < 0.3:
+            print(f"{bid}: front barely seen ({f['clean']:.0%}), left procedural")
+            continue
+        W, H = f["width"], f["img_top"]
+        text, usage = ask(client, bid, W, H)
+        calls += 1
+        lay, errs = None, ["no JSON object in the answer"]
+        try:
+            lay = parse(text)
+            errs = validate(lay, W, H) if lay else errs
+        except (json.JSONDecodeError, ValueError) as e:
+            errs = [f"invalid JSON: {e}"]
+        if errs:
+            print(f"{bid}: retry ({len(errs)} problems: {errs[0]})")
+            text, usage = ask(client, bid, W, H, errs, text)
+            calls += 1
+            try:
+                lay = parse(text)
+                errs = validate(lay, W, H) if lay else ["no JSON"]
+            except (json.JSONDecodeError, ValueError) as e:
+                errs = [f"invalid JSON: {e}"]
+        (WORK / "claude" / f"{bid}.txt").write_text(text)
+        if errs:
+            print(f"{bid}: still invalid, left procedural: {errs[:3]}")
+            out["buildings"].pop(str(bid), None)
+            continue
+        lay.update(width=W, img_top=H, a=f["a"], b=f["b"], depth=f["depth"])
+        out["buildings"][str(bid)] = lay
+        kinds = {}
+        for o in lay["openings"]:
+            kinds[o["type"]] = kinds.get(o["type"], 0) + 1
+        print(f"{bid}: ok, roofline {lay['roofline']} m, {len(lay['floors'])} floors, {kinds}")
+        draw_overlay(bid, lay, W, H)
+    out["note"] = ("Moss St facade layouts read from Street View (scripts/facade_layouts.py; local only, never commit). "
+                   "Metres along the front from its left end as seen from the street (a -> b, moss.json frame), "
+                   "y up from the sidewalk.")
+    out["model"] = MODEL
+    OUT_JSON.write_text(json.dumps(out, indent=1))
+    print(f"{len(out['buildings'])} layouts in {OUT_JSON}; {calls} Claude calls this run")
+
+
+def draw_overlay(bid, lay, W, H):
+    import cv2
+    img = cv2.imread(str(WORK / "rect" / f"{bid}.jpg"))
+    h, w = img.shape[:2]
+    px = lambda x, y: (int(round(x / W * w)), int(round(h - y / H * h)))   # noqa: E731
+    col = {"window": (255, 200, 0), "bay": (0, 0, 255), "door": (0, 255, 0), "garage": (255, 0, 255), "storefront": (0, 255, 255)}
+    for o in lay["openings"]:
+        cv2.rectangle(img, px(o["x0"], o["y1"]), px(o["x1"], o["y0"]), col[o["type"]], 2)
+        cv2.putText(img, f"{o['type'][0]}{'A' if o.get('shape') == 'arch' else 'S' if o.get('shape') == 'segmental' else ''}",
+                    px(o["x0"] + 0.05, o["y1"] - 0.3), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col[o["type"]], 1)
+    for y in [lay["roofline"]] + list(lay.get("belts") or []):
+        cv2.line(img, px(lay["x0"], y), px(lay["x1"], y), (255, 255, 255), 1)
+    for x in (lay["x0"], lay["x1"]):
+        cv2.line(img, px(x, 0), px(x, H), (255, 255, 255), 1)
+    (WORK / "overlay").mkdir(exist_ok=True)
+    cv2.imwrite(str(WORK / "overlay" / f"{bid}.jpg"), img)
+
+
+# ---------------------------------------------------------------- compare with the sim
+CMP_D = 8.0             # m: camera distance from the front (Moss is about 12 m wall to wall, so stay on this side)
+CMP_SEG = 6.0           # m: widest strip one camera films; wider fronts are filmed in strips and stitched
+CMP_PPM = 60
+
+
+def sim_poses(f, H):
+    """Cameras square to the front, one per strip, each framing exactly its strip (0..H high)."""
+    a, b, nrm = np.asarray(f["a"]), np.asarray(f["b"]), np.asarray(f["normal"])
+    L = float(np.linalg.norm(b - a))
+    u = (b - a) / L
+    n = max(1, math.ceil(L / CMP_SEG))
+    out = []
+    for k in range(n):
+        m = a + u * (L * (k + 0.5) / n)
+        c = m + nrm * CMP_D
+        out.append({"pos": [float(c[0]), float(c[1]), H / 2], "look": [float(m[0]), float(m[1]), H / 2],
+                    "fov": math.degrees(2 * math.atan(H / 2 / CMP_D)),
+                    "w": round(L / n * CMP_PPM), "h": round(H * CMP_PPM)})
+    return out
+
+
+def compare(ids=None, url=None, port=5191, tag=""):
+    """Sim render of each front (square camera, cropped to the front) under its rectified Street View image."""
+    import cv2
+    from playwright.sync_api import sync_playwright
+    meta = {int(k): v for k, v in json.loads((WORK / "fronts.json").read_text()).items()}
+    url = url or f"http://localhost:{port}/facadecam.html?look=2"
+    CMP.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        br = p.chromium.launch(args=["--use-angle=metal", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"])
+        page = br.new_page(viewport={"width": 1280, "height": 960})
+        page.on("console", lambda m: m.type == "error" and print("  [page]", m.text))
+        page.goto(url)
+        page.wait_for_function("window.kiteCam !== undefined", timeout=60000)
+        page.evaluate("kiteCam.ready")
+        for bid in ids or sorted(meta):
+            f = meta.get(bid)
+            if f is None:
+                continue
+            H = f["img_top"]
+            strips = []
+            for pose in sim_poses(f, H):
+                page.evaluate("p => kiteCam.shot(p)", pose)   # first frame warms up shaders and AO
+                png = page.evaluate("p => kiteCam.shot(p)", pose)
+                strips.append(cv2.imdecode(np.frombuffer(base64.b64decode(png.split(",", 1)[1]), np.uint8), cv2.IMREAD_COLOR))
+            crop = np.hstack(strips)
+            sv = cv2.imread(str(WORK / "rect" / f"{bid}.jpg"))
+            crop = cv2.resize(crop, (sv.shape[1], sv.shape[0]), interpolation=cv2.INTER_AREA)
+            sep = np.full((8, sv.shape[1], 3), 255, np.uint8)
+            both = np.vstack([sv, sep, crop])
+            cv2.putText(both, f"{bid} Street View (top) | sim look=2 (bottom)", (6, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            cv2.imwrite(str(CMP / f"{bid}{tag}.jpg"), both, [cv2.IMWRITE_JPEG_QUALITY, 88])
+            print(f"  {CMP / f'{bid}{tag}.jpg'}")
+        br.close()
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "rectify"
+    args = [int(a) for a in sys.argv[2:] if a.isdigit()]
+    opt = lambda k, d=None: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d   # noqa: E731
+    if cmd == "rectify":
+        rectify(args or None)
+    elif cmd == "extract":
+        extract(args or None)
+    elif cmd == "compare":
+        compare(args or None, url=opt("--url"), tag=opt("--tag", ""))
+    elif cmd == "fronts":
+        for k, v in fronts(json.loads(MOSS.read_text()), set(args or csv_ids())).items():
+            print(k, v["side"], v["a"].round(2), v["b"].round(2), round(float(np.linalg.norm(v["b"] - v["a"])), 2))

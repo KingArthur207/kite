@@ -12,6 +12,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
+import { loadFacadeLayouts } from "./facadeLayouts";
 
 const DEFAULT_LOOK = "1";
 const query = new URLSearchParams(location.search);
@@ -28,6 +29,7 @@ export const buildingSheet = new Map<number, BuildingSheet>();
 /** Load the sheet if it's there (look 2 only). entry.ts awaits this before building the world. */
 export async function loadBuildingSheet() {
   if (!look2) return;
+  await loadFacadeLayouts();
   const r = await fetch("local/moss_buildings.json").catch(() => null);
   if (!r?.ok || !r.headers.get("content-type")?.includes("json")) return;   // vite answers a missing file with index.html
   try {

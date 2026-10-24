@@ -11,6 +11,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { Geo, facadeMaterial, pbr, seeded, type FacadeKind } from "./osmLook";
 import { buildingSheet, look2 } from "./look2";
 import { leafTexture } from "./streetProps";
+import { LayoutFronts, facadeLayouts, gaps, layoutHeight, onFront } from "./facadeLayouts";
 
 type P = [number, number];
 type Quad = P[];
@@ -33,6 +34,7 @@ const STOOP_RISE = 0.5, STOOP_D = 1.0, STOOP_MIN = 0.45;   // m: entry stoop hei
 const WALK_CLEAR = 1.4;         // m: stoops end this far from the demo walk line (walker radius, plus the 1 m the metrics
                                 // autopilot sidesteps toward the buildings on Moss, src/metrics.ts SIDE)
 const STEP_GREY = new THREE.Color(0xc4c1ba);   // painted concrete stoops
+const VIC_WINDOW_TOP = 1.85 / 2 + 0.13 + 0.3;  // m from a "vic" window's centre to the top of its hood
 
 // Street View on Moss: mint, pale blue, cream, pink, light grey, a pale yellow and a sage.
 const VICTORIAN = [0xdcefe2, 0xd6e6f2, 0xf7efd8, 0xf6dfe0, 0xe6e7e7, 0xf5ecc8, 0xd4e3d3, 0xf8f6f0, 0xcfe6e7];
@@ -186,10 +188,11 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
   const gates: THREE.Matrix4[] = [];
   const hedges: Hedge[] = [];
   const escapes: THREE.BufferGeometry[] = [];
+  const layoutFronts = look2 ? new LayoutFronts({ glass, shutter, panels }) : null;
   const open = (pts: P[]) => {   // ring without the closing point
     const r = pts.slice();
     if (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) r.pop();
-    return r;
+    return look2 ? simplify(r) : r;
   };
   const rings = buildings.map((b) => open(b.pts));
   const edges = rings.flatMap((r, bi) => r.map((a, i) => ({ bi, a, b: r[(i + 1) % r.length] })));
@@ -213,7 +216,9 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     return false;
   };
 
-  buildings.forEach((b, bi) => {
+  buildings.forEach((b0, bi) => {
+    const lay = layoutFronts ? facadeLayouts.get(b0.id) : undefined;   // look 2: this front from Street View
+    const b = lay ? { ...b0, h: layoutHeight(lay, b0.h) } : b0;
     const ring = rings[bi];
     if (ring.length < 3) return;
     const rnd = seeded(b.id);
@@ -262,30 +267,31 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
         const u: P = [(c[0] - a[0]) / L, (c[1] - a[1]) / L];
         const out: P = area > 0 ? [u[1], -u[0]] : [-u[1], u[0]];
         if (high && skip.has(`${b.id}:${i}`)) { s0 += L; return; }
+        if (lay && onFront(lay, a, c, out)) { s0 += L; return; }    // drawn from the layout below
         const n3 = new THREE.Vector3(out[0], 0, -out[1]);
         g.quad([v3(a, y0), v3(c, y0), v3(c, y1), v3(a, y1)], n3, [[s0, y0], [s0 + L, y0], [s0 + L, y1], [s0, y1]], color);
         s0 += L;
         if (isParty(bi, a, c)) return;   // shared wall: blank
         const at = (t: number, o = 0): P => [a[0] + u[0] * t + out[0] * o, a[1] + u[1] * t + out[1] * o];
         const street = L >= 1.4 && isStreet(bi, at(L / 2), out);
+        // look 2: a cornice only wraps a corner that's open (not against a neighbour's wall), so it never runs into one
+        const ends: [boolean, boolean] = look2
+          ? [!isParty(bi, ring[(i + ring.length - 1) % ring.length], a), !isParty(bi, c, ring[(i + 2) % ring.length])] : [true, true];
         if (high && vic && street) {   // cornice 0.55 m deep 0.4 m, frieze board, a bracket every 0.9 m
-          cornice(trim, a, c, out, b.h - 0.55, b.h, 0.4, trimColor);
-          cornice(trim, a, c, out, b.h - VIC_CORNICE_H, b.h - 0.55, 0.05, trimColor);
+          cornice(trim, a, c, out, b.h - 0.55, b.h, 0.4, trimColor, ends);
+          cornice(trim, a, c, out, b.h - VIC_CORNICE_H, b.h - 0.55, 0.05, trimColor, ends);
           for (let t = 0.3; t < L - 0.2; t += 0.9) slab(trim, at, u, out, t - 0.06, t + 0.06, 0, 0.36, b.h - 0.85, b.h - 0.55, trimColor);
-        } else if (high) cornice(trim, a, c, out, b.h - CORNICE_H, b.h, CORNICE_OUT, trimColor);
+        } else if (high) cornice(trim, a, c, out, b.h - CORNICE_H, b.h, CORNICE_OUT, trimColor, ends);
         if (L < 1.4) return;
         const place = (k: KindName, t: number, y: number, frame = trimColor, pane = paneTint(), o = 0, oo = out) =>
           inst[k].push({ m: basis(at(t, o), y, oo), frame, pane });
         const busy: [number, number][] = [];   // along-wall spans taken by bays (upper floors)
-        if (look2 && low && street && levels >= 3 && L > 6 && (sheet?.fire_escape ?? (midrise && rnd2() < FIRE_ESCAPE_SHARE))) {
-          const fe = fireEscape(levels, sh, b.h);
-          if (fe) escapes.push(fe.applyMatrix4(basis(at(L * 0.4), 0, out)));
-        }
+        const wantEscape = look2 && low && street && levels >= 3 && L > 6 && (sheet?.fire_escape ?? (midrise && rnd2() < FIRE_ESCAPE_SHARE));
 
         // Ground floor on street fronts.
         if (!low) { /* upper part only */ } else if (street && vic) {
           const lots = Math.max(1, Math.round(L / LOT)), lw = L / lots;
-          cornice(trim, a, c, out, sh - 0.12, sh + 0.04, 0.07, trimColor);         // belt course
+          if (!look2) cornice(trim, a, c, out, sh - 0.12, sh + 0.04, 0.07, trimColor);   // belt course (look 2: after the bays, around them)
           for (let j = 0; j < lots; j++) {
             const t0 = j * lw;
             if (lw >= 4.6 && garageCount-- > 0) {
@@ -293,7 +299,7 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
               const gc = new THREE.Color(VIC_GARAGES[Math.floor(rnd() * VIC_GARAGES.length)]);
               place("vgarage", gt, 0.15 + KINDS.vgarage.h / 2, trimColor, sheet?.garage_colour ? gc.set(sheet.garage_colour) : gc);
               garages.push({ x: at(gt)[0], n: at(gt)[1], u, out, w: KINDS.vgarage.w });
-            } else if (lw >= 2.2) place("vic", t0 + lw * 0.3, 1.6, trimColor);
+            } else if (lw >= 2.2) place("vic", t0 + lw * 0.3, look2 ? Math.min(1.6, sh - 0.17 - VIC_WINDOW_TOP) : 1.6, trimColor);   // look 2: hood under the belt
             if (lw >= 2.2) {   // front door up a stoop, where the stoop stays clear of the demo walk
               const dt = t0 + lw * (lw >= 4.6 ? 0.8 : 0.72), hw = KINDS.door.w / 2 + 0.25;
               const room = walk.length > 1 ? Math.min(...walk.slice(1).map((q, k) => segDist(at(dt), walk[k], q))) - WALK_CLEAR : STOOP_D;
@@ -326,6 +332,9 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
               busy.push([cx - 1.7, cx + 1.7]);
             }
           }
+          if (look2) for (const [t0, t1] of gaps(0, L, busy.map(([lo, hi]): [number, number] => [lo + 0.2, hi - 0.2]))) {
+            cornice(trim, at(t0), at(t1), out, sh - 0.12, sh + 0.04, 0.07, trimColor, [t0 < 0.01 && ends[0], t1 > L - 0.01 && ends[1]]);
+          }
         } else if (street && (b.storefront || midrise)) {
           const n = Math.max(1, Math.floor((L - 0.6) / 3.1));
           for (let j = 0; j < n; j++) place("shop", L / 2 + (j - (n - 1) / 2) * 3.1, 0.35 + KINDS.shop.h / 2, new THREE.Color(0x2c2b29));
@@ -355,20 +364,44 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
             place("rollup", L * (0.25 + rnd() * 0.5), 0.05 + KINDS.rollup.h / 2, trimColor, new THREE.Color(0xc0c4c6));
           } else rowOfWindows(L, 3.4, (t) => place("ind", t, Math.min(sh * 0.5, 1.9)));
         }
+        if (wantEscape) {   // look 2: a fire escape where it clears the bays (3.6 m wide, 1 m out)
+          const t = [0.4, 0.25, 0.6, 0.15, 0.75].map((k) => L * k).find((t) => t > 2 && t < L - 2 && !busy.some(([lo, hi]) => t + 2 > lo && t - 2 < hi));
+          const fe = t === undefined ? null : fireEscape(levels, sh, b.h);
+          if (fe && t !== undefined) escapes.push(fe.applyMatrix4(basis(at(t), 0, out)));
+        }
 
         // Upper storeys (and the ground floor of back walls).
         const wk: KindName = vic ? "vic" : midrise ? "large" : residential ? "res" : "ind";
         const pitch = vic ? 2.0 : midrise ? 2.8 : residential ? 2.3 : 3.4;
         for (let k = street ? 1 : 0; k < levels; k++) {
           const y = k * sh + Math.min(sh * 0.55, 1.95);
-          if (y - KINDS[wk].h / 2 < y0 || y + KINDS[wk].h / 2 > y1 - (high ? corniceH : 0) - 0.1) continue;
+          const head = look2 && wk === "vic" ? VIC_WINDOW_TOP : KINDS[wk].h / 2;   // look 2: the hood counts too
+          if (y - KINDS[wk].h / 2 < y0 || y + head > y1 - (high ? corniceH : 0) - 0.1) continue;
           rowOfWindows(L, pitch, (t) => {
             if (!busy.some(([lo, hi]) => t > lo - 0.6 && t < hi + 0.6)) place(wk, t, y);
           });
         }
       });
     }
+    if (lay && layoutFronts) {
+      const r = layoutFronts.front({
+        b, lay, wall: g, trim, color, trimColor,
+        garageColor: sheet?.garage_colour ? new THREE.Color(sheet.garage_colour) : undefined,
+        walkRoom: (p) => walk.length > 1 ? Math.min(...walk.slice(1).map((q, k) => segDist(p, walk[k], q))) - WALK_CLEAR : STOOP_D,
+        bay: (x0, x1, y0, y1, ys) => {
+          const L = Math.hypot(lay.b[0] - lay.a[0], lay.b[1] - lay.a[1]);
+          const u: P = [(lay.b[0] - lay.a[0]) / L, (lay.b[1] - lay.a[1]) / L], out: P = [u[1], -u[0]];
+          const at = (t: number, o = 0): P => [lay.a[0] + u[0] * t + out[0] * o, lay.a[1] + u[1] * t + out[1] * o];
+          bay(g, trim, at, (x0 + x1) / 2, y0, y1, color, trimColor, (k, p, y, oo) =>
+            inst[k === "res" ? "vic" : k].push({ m: basis(p, y, oo), frame: trimColor, pane: paneTint() }), sh, levels, { W: x1 - x0, ys });
+          return [x0, x1] as [number, number];
+        },
+      });
+      stoops.push(...r.stoops);
+      for (const q of r.garages) garages.push({ x: q.p[0], n: q.p[1], u: q.u, out: q.out, w: q.w });
+    }
   });
+  layoutFronts?.finish(scene);
 
   for (const [kind, geo] of walls) {
     const mesh = new THREE.Mesh(geo.build(), facadeMaterial(kind));
@@ -495,6 +528,23 @@ function hedgeMesh(hs: Hedge[]) {
 // --- helpers
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
 
+/** look 2: a footprint ring without slivers: corners closer than 10 cm merged, corners on a straight line
+ *  (under 8 degrees of turn) dropped. Bay clipping leaves fronts in collinear pieces a few cm apart, and every
+ *  piece got its own lot (a door and a window each), crowding three doors onto one house. */
+export function simplify(r: P[]): P[] {
+  let pts = r.filter((p, i) => i === 0 || Math.hypot(p[0] - r[i - 1][0], p[1] - r[i - 1][1]) > 0.1);
+  for (let changed = true; changed && pts.length > 3;) {
+    changed = false;
+    for (let i = 0; i < pts.length && pts.length > 3; i++) {
+      const p = pts[(i + pts.length - 1) % pts.length], q = pts[i], s = pts[(i + 1) % pts.length];
+      const a1 = Math.atan2(q[1] - p[1], q[0] - p[0]), a2 = Math.atan2(s[1] - q[1], s[0] - q[0]);
+      const turn = Math.abs(((a2 - a1 + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+      if (turn < THREE.MathUtils.degToRad(8) || Math.hypot(s[0] - q[0], s[1] - q[1]) < 0.1) { pts = pts.filter((_, j) => j !== i); changed = true; break; }
+    }
+  }
+  return pts;
+}
+
 /** Instance matrix: local +z out of the wall, +y up. x = y cross z keeps it a rotation (never mirrored),
  *  since InstancedMesh doesn't flip face winding for mirrored instances. */
 function basis(p: P, y: number, out: P) {
@@ -508,13 +558,14 @@ function rowOfWindows(L: number, pitch: number, put: (t: number) => void) {
 }
 
 /** A band along a wall from a to b at heights y0..y1, sticking out `o`: front, top and soffit faces. */
-function cornice(g: Geo, a: P, b: P, out: P, y0: number, y1: number, o: number, color: THREE.Color) {
+function cornice(g: Geo, a: P, b: P, out: P, y0: number, y1: number, o: number, color: THREE.Color, ends: [boolean, boolean] = [true, true]) {
   const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const u: P = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
-  const A: P = [a[0] - u[0] * o, a[1] - u[1] * o], B: P = [b[0] + u[0] * o, b[1] + u[1] * o];   // cover corners
+  const ea = ends[0] ? o : 0, eb = ends[1] ? o : 0;
+  const A: P = [a[0] - u[0] * ea, a[1] - u[1] * ea], B: P = [b[0] + u[0] * eb, b[1] + u[1] * eb];   // cover open corners
   const Ao: P = [A[0] + out[0] * o, A[1] + out[1] * o], Bo: P = [B[0] + out[0] * o, B[1] + out[1] * o];
   const n = new THREE.Vector3(out[0], 0, -out[1]);
-  const len = L + 2 * o;
+  const len = L + ea + eb;
   g.quad([v3(Ao, y0), v3(Bo, y0), v3(Bo, y1), v3(Ao, y1)], n, [[0, y0], [len, y0], [len, y1], [0, y1]], color);
   g.quad([v3(A, y1), v3(B, y1), v3(Bo, y1), v3(Ao, y1)], new THREE.Vector3(0, 1, 0), [[0, 0], [len, 0], [len, o], [0, o]], color);
   g.quad([v3(A, y0), v3(B, y0), v3(Bo, y0), v3(Ao, y0)], new THREE.Vector3(0, -1, 0), [[0, 0], [len, 0], [len, o], [0, o]], color);
@@ -537,8 +588,10 @@ type PlaceFn = (k: "res" | "narrow", p: P, y: number, out: P) => void;
 
 /** An SF angled bay: a trapezoid 3 m wide at the wall, 1.5 m at the front, BAY_D deep. */
 function bay(g: Geo, trim: Geo, at: (t: number, o?: number) => P, c: number, y0: number, y1: number,
-             color: THREE.Color, trimColor: THREE.Color, place: PlaceFn, sh: number, levels: number) {
-  const W = 3.0, Wf = 1.5, D = BAY_D;
+             color: THREE.Color, trimColor: THREE.Color, place: PlaceFn, sh: number, levels: number,
+             opts: { W?: number; ys?: number[] } = {}) {
+  const W = opts.W ?? 3.0, Wf = W / 2, D = BAY_D;
+  const ys = opts.ys ?? Array.from({ length: Math.max(0, levels - 1) }, (_, k) => (k + 1) * sh + Math.min(sh * 0.55, 1.95));
   const q = [at(c - W / 2), at(c - Wf / 2, D), at(c + Wf / 2, D), at(c + W / 2)];
   const back = at(c);
   for (let i = 0; i < 3; i++) {
@@ -551,9 +604,8 @@ function bay(g: Geo, trim: Geo, at: (t: number, o?: number) => P, c: number, y0:
     g.quad([v3(a, y0), v3(b, y0), v3(b, y1), v3(a, y1)], new THREE.Vector3(so[0], 0, -so[1]),
       [[0, y0], [L, y0], [L, y1], [0, y1]], color);
     cornice(trim, a, b, so, y1 - 0.3, y1, 0.1, trimColor);
-    for (let k = 1; k < levels; k++) {
-      const y = k * sh + Math.min(sh * 0.55, 1.95);
-      if (y + 0.85 > y1 - 0.3) continue;
+    for (const y of ys) {
+      if (y + 0.85 > y1 - 0.3 || (opts.ys && y - 0.85 < y0)) continue;
       place(i === 1 ? "res" : "narrow", mid, y, so);
     }
   }
