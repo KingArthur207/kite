@@ -43,7 +43,7 @@ def _inner(s: str, mark: str) -> str:
 
 
 def _soft_hyphen(s: str) -> str:
-    return " ".join(w[: len(w) // 2] + "­" + w[len(w) // 2:] for w in s.split())
+    return " ".join(w[: len(w) // 2] + "\u00ad" + w[len(w) // 2:] for w in s.split())
 
 
 def _stretch(s: str) -> str:
@@ -62,8 +62,8 @@ MUTATIONS: dict[str, Callable[[str], str]] = {
     "greek_homoglyphs": lambda s: s.translate(_GREEK),
     "fullwidth": _fullwidth,
     "math_bold": _math_bold,
-    "zero_width_between": lambda s: "​".join(s),
-    "word_joiner": lambda s: "⁠".join(s),
+    "zero_width_between": lambda s: "\u200b".join(s),
+    "word_joiner": lambda s: "\u2060".join(s),
     "soft_hyphen": _soft_hyphen,
     "combining_accents": _combining,
     "spaced_letters": lambda s: _between_letters(s, " "),
@@ -76,8 +76,8 @@ MUTATIONS: dict[str, Callable[[str], str]] = {
     "code_span": lambda s: f"`{s}`",
     "curly_quotes": lambda s: f"“{s}”",
     "emoji": lambda s: f"\U0001F44D {s} ✅",
-    "nbsp": lambda s: s.replace(" ", " "),
-    "rtl_override": lambda s: "‮" + s + "‬",
+    "nbsp": lambda s: s.replace(" ", "\u00a0"),
+    "rtl_override": lambda s: "\u202e" + s + "\u202c",
     "after_a_hold": lambda s: f"Wait. {s}.",
     "after_a_hazard": lambda s: f"Car on your left. {s[:1].upper() + s[1:]}.",
     "as_a_quote": lambda s: f"Sign says: {s}.",
@@ -86,12 +86,12 @@ MUTATIONS: dict[str, Callable[[str], str]] = {
 # Mutations that do not change meaning for a real caution; allow-listed lines must survive them.
 BENIGN: dict[str, Callable[[str], str]] = {
     "shout": str.upper,
-    "nbsp": lambda s: s.replace(" ", " "),
+    "nbsp": lambda s: s.replace(" ", "\u00a0"),
     "double_spaces": lambda s: s.replace(" ", "  "),
     "curly_apostrophe": lambda s: s.replace("'", "’"),
     "markdown_bold": lambda s: f"**{s}**",
     "trailing_emoji": lambda s: f"{s} ⚠️",
-    "zero_width_space": lambda s: s.replace(" ", " ​"),
+    "zero_width_space": lambda s: s.replace(" ", " \u200b"),
 }
 
 

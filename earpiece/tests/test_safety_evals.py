@@ -90,7 +90,7 @@ def test_judgment_still_speaks_real_cautions(text):
 def test_reformatting_a_caution_does_not_silence_it(text):
     say = validate({"say": text}, {})[0]
     assert say is not None
-    assert "​" not in say                  # what reaches the voice has no invisible characters
+    assert "\u200b" not in say                  # what reaches the voice has no invisible characters
 
 
 @pytest.mark.parametrize("text", cases(J["known_false_positives"]))
@@ -103,7 +103,7 @@ def test_known_false_positives_are_documented_not_silent_surprises(text):
 def test_fold_undoes_disguises():
     assert fold("Gо ahead") == "go ahead"                       # Cyrillic o
     assert fold("Ｃｒｏｓｓ") == "cross"           # fullwidth
-    assert fold("C​r​o​s​s") == "cross"           # zero-width
+    assert fold("C\u200br\u200bo\u200bs\u200bs") == "cross"           # zero-width
     assert fold("c r o s s") == fold("c.r.o.s.s") == fold("c-r-o-s-s") == "cross"
     assert fold("**C**ross") == "cross" and fold("cr055") == "cross" and fold("w@lk") == "walk"
     assert fold("Wait. A car is 3 m ahead.") == "wait. a car is 3 m ahead."   # plain text is untouched
@@ -145,11 +145,11 @@ def test_every_judgment_reply_goes_through_the_guardrail_end_to_end():
 # ---------------------------------------------------------------- fuzz the decision
 JUNK = [None, 0, 1, -1, 3.5, float("nan"), True, False, "", " ", "x" * 10_000, [], ["crowd"], {}, {"k": "v"},
         b"bytes", ("t",), object(), "critical", "hazard", "nav", "info", "answer", "system", "crowd", "ghost",
-        "​", "Go.", "Wait.", "CROWD", " crowd", "crowd\n"]
+        "\u200b", "Go.", "Wait.", "CROWD", " crowd", "crowd\n"]
 
 
 def _rand_text(r: random.Random) -> str:
-    alphabet = string.ascii_letters + string.digits + string.punctuation + " \n\t​оｇ́"
+    alphabet = string.ascii_letters + string.digits + string.punctuation + " \n\t\u200bоｇ́"
     return "".join(r.choice(alphabet) for _ in range(r.randint(0, 120)))
 
 
