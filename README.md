@@ -209,6 +209,16 @@ python -m kite.record --source tello --out recordings --fly            # the sho
   telemetry on `t_mono`. QuickTime can't open `.mkv`: VLC can, or `ffmpeg -i video.mkv -pix_fmt yuv420p video.mp4`.
 - About 0.7 GB per 5 minutes. Don't commit `recordings/`.
 
+### Replaying a recording and the camera
+
+- `python -m kite.sources.recording recordings/<dir>` checks a take (frames, drops, telemetry coverage, height and
+  battery); `--preview` plays it with a pose overlay. In code, `RecordingSource(dir)` reads like the sim's
+  `SimFrameSource`: `ok, bgr = src.read()`, then `src.pose` (camera height, pitch, heading for that frame) and
+  `src.camera` (fx, fy, cx, cy).
+- `kite/camera.py` holds the Tello intrinsics: fx 920 px until calibrated. `python -m kite.calibrate --source tello`
+  fits them from a chessboard on a screen with the drone on the ground (at most 45 s of stream) and writes
+  `data/tello_camera.json`. The pilot's shoot steps are in `docs/shoot-flight.md`.
+
 ## Known limitations
 
 - Perception isn't on `main` yet, so the sim produces no real hazards and nothing runs on webcam or Tello frames in this repo today.

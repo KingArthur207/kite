@@ -545,7 +545,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.video_backend:
         cfg.drone.video_backend = args.video_backend
     rcfg = RecordCfg(out_dir=args.out, fly=args.fly, speed=args.speed, pulse_s=args.pulse, max_s=args.max_s)
-    meta = {"source": args.source, "args": vars(args), "argv": sys.argv}
+    meta = {"source": args.source, "args": vars(args), "argv": sys.argv,
+            "drone_cfg": {"yaw_sign": cfg.drone.yaw_sign, "video_backend": cfg.drone.video_backend}}
 
     if not tello:
         frames = FileReplay(args.source)
