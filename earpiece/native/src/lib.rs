@@ -13,11 +13,17 @@
 //! And it owns the sonar's *decisions*: `Sonar` is the per-tick logic of
 //! `sonar.py` (tracks, time-to-contact, urgency, beep scheduling, "Stop."), so
 //! when each warning beep is due no longer depends on Python bytecode.
+//!
+//! And the cue *sounds*: `sounds` is `sounds.py` sample for sample, so a beep can
+//! be synthesised without the interpreter.
 
 mod mixer;
+pub mod numpy_rng;
 pub mod sonar;
 mod sonar_py;
+pub mod sounds;
 pub mod spatial;
+mod ziggurat;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use mixer::{Cmd, Mixer, Voice};
@@ -631,6 +637,99 @@ fn fractional_delay<'py>(
     f32_bytes(py, &out)
 }
 
+// -------------------------------------------------------------------- cue synthesis
+fn profile_arg(profile: &str) -> PyResult<sounds::Profile> {
+    sounds::Profile::parse(profile).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "unknown sound profile {profile:?}; expected 'standard' or 'gentle'"
+        ))
+    })
+}
+
+fn finite(name: &str, v: f64) -> PyResult<f64> {
+    if v.is_finite() {
+        Ok(v)
+    } else {
+        Err(PyValueError::new_err(format!(
+            "{name} must be finite, got {v}"
+        )))
+    }
+}
+
+/// `sounds.proximity_cue(kind, freq)` under `profile`: mono float32 LE bytes at 48 kHz,
+/// sample-identical to the numpy/scipy reference. Releases the GIL.
+#[pyfunction]
+#[pyo3(signature = (kind, freq, profile="standard"))]
+fn synth_proximity<'py>(
+    py: Python<'py>,
+    kind: &str,
+    freq: f64,
+    profile: &str,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let p = profile_arg(profile)?;
+    let freq = finite("freq", freq)?;
+    if freq <= 0.0 {
+        return Err(PyValueError::new_err("freq must be positive"));
+    }
+    let class = sounds::cue_class(kind);
+    let out = py.detach(move || sounds::class_cue(class, freq, p));
+    f32_bytes(py, &out)
+}
+
+/// `sounds.beacon_tick(region, bearing)` under `profile` (mono float32 LE bytes).
+#[pyfunction]
+#[pyo3(signature = (region, bearing, profile="standard"))]
+fn synth_beacon<'py>(
+    py: Python<'py>,
+    region: &str,
+    bearing: f64,
+    profile: &str,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let p = profile_arg(profile)?;
+    let bearing = finite("bearing", bearing)?;
+    let region = region.to_string();
+    let out = py
+        .detach(move || sounds::beacon_tick(&region, bearing, p))
+        .ok_or_else(|| PyValueError::new_err("region must be on, near, side or behind"))?;
+    f32_bytes(py, &out)
+}
+
+/// Any other cue of `sounds.py` by name: `"person"`, `"vehicle"`, `"obstacle"` and
+/// `"drop"` take `[freq]` and the profile; the status cues and building blocks take
+/// their numeric arguments in order (see `sounds::status`). Mono float32 LE bytes.
+#[pyfunction]
+#[pyo3(signature = (name, args=Vec::new(), profile="standard"))]
+fn synth<'py>(
+    py: Python<'py>,
+    name: &str,
+    args: Vec<f64>,
+    profile: &str,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let p = profile_arg(profile)?;
+    for &a in &args {
+        finite("argument", a)?;
+    }
+    let name = name.to_string();
+    let out = py.detach(move || {
+        let class = match name.as_str() {
+            "person" => Some(sounds::CueClass::Person),
+            "vehicle" => Some(sounds::CueClass::Vehicle),
+            "obstacle" => Some(sounds::CueClass::Obstacle),
+            "drop" => Some(sounds::CueClass::Drop),
+            _ => None,
+        };
+        match class {
+            Some(c) => args
+                .first()
+                .filter(|&&f| f > 0.0)
+                .map(|&f| sounds::class_cue(c, f, p)),
+            None => sounds::status(&name, &args),
+        }
+    });
+    let out = out.ok_or_else(|| PyValueError::new_err("unknown cue name or wrong arguments"))?;
+    f32_bytes(py, &out)
+}
+
 #[pymodule]
 fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
@@ -639,6 +738,10 @@ fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(render_binaural, m)?)?;
     m.add_function(wrap_pyfunction!(render_binaural_batch, m)?)?;
     m.add_function(wrap_pyfunction!(fractional_delay, m)?)?;
+    m.add_function(wrap_pyfunction!(synth_proximity, m)?)?;
+    m.add_function(wrap_pyfunction!(synth_beacon, m)?)?;
+    m.add_function(wrap_pyfunction!(synth, m)?)?;
+    m.add("SOUND_RATE", sounds::RATE)?;
     m.add("SINC_TAPS_MAX", spatial::MAX_SINC_TAPS)?;
     m.add("BUS_CUE", mixer::BUS_CUE)?;
     m.add("BUS_ALERT", mixer::BUS_ALERT)?;
