@@ -349,23 +349,31 @@ def _temperature(state: dict) -> Check:
 
 
 def _measure(src, tello, first, seconds: float) -> tuple[float, float]:
-    """(video fps, telemetry Hz) over one window: distinct frame seqs, and distinct state dicts (djitellopy stores a
-    new dict per state packet)."""
-    frames = states = 0
-    last_seq = first.seq
+    """(video fps, telemetry Hz) over one window. Video: how far Frame.seq advanced between the window's first and
+    last read, over the time between those reads, so a poll that oversleeps (a busy laptop) still counts every frame
+    the source delivered instead of one per poll. Telemetry: distinct state dicts (djitellopy stores a new dict per
+    state packet and keeps only the newest)."""
+    states = 0
+    seq0 = t_first = seq1 = t_last = None
     last_state = tello.get_current_state() if tello is not None else None
     t0 = time.monotonic()
     while time.monotonic() - t0 < seconds:
-        f = src.read()
-        if f is not None and f.seq != last_seq:
-            frames, last_seq = frames + 1, f.seq
+        t_read, f = time.monotonic(), src.read()
+        if seq0 is not None:
+            t_last = t_read  # also while read() gives None: video that stops pulls the rate down
+        if f is not None:
+            if seq0 is None:
+                seq0, t_first, t_last = f.seq, t_read, t_read
+            seq1 = f.seq
         if tello is not None:
             st = tello.get_current_state()
             if st is not last_state:
                 states, last_state = states + 1, st
         time.sleep(0.002)
     dt = time.monotonic() - t0
-    return frames / dt, states / dt
+    span = 0.0 if seq0 is None else t_last - t_first
+    fps = max(0, seq1 - seq0) / span if span > 0 else 0.0
+    return fps, states / dt
 
 
 def _reader_stats(src) -> dict:
