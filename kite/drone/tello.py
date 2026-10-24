@@ -123,7 +123,8 @@ class TelloDrone(Drone):
 
     def close(self) -> None:
         try:
-            if self._flying and not self.dry_run:
+            taking_off = self._pending is not None and self._pending.cmd == "takeoff"  # airborne before its 'ok'
+            if (self._flying or taking_off) and not self.dry_run:
                 self._send("land")
                 self._tello.is_flying = True  # djitellopy's end() lands again as a safety net
         finally:
@@ -297,8 +298,8 @@ class TelloDrone(Drone):
         return self._result
 
     def set_speed(self, cm_s: int) -> None:
+        self._start(f"speed {int(cm_s)}", 5.0, 0.2)  # raises while busy: change nothing then
         self.move_speed_cm_s = int(cm_s)
-        self._start(f"speed {int(cm_s)}", 5.0, 0.2)
 
     def telemetry(self) -> Telemetry:
         st = self._state()
