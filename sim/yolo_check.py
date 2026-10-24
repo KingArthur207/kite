@@ -11,7 +11,10 @@ in --url keeps the old walk north. The default world is Google 3D tiles when sim
 key, and the capture frames show tiles; `?detector=osm` keeps them on OSM Moss (tiles on screen
 only) and `?world=moss` is OSM everywhere. It waits for tiles to load at every stop, and fails if
 the sim requested a tile outside the Moss geofence or (with ?detector=osm) drew a tile into a
-capture frame. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
+capture frame. Drone frames go through the Tello camera model (tello_cam.py, as sim/frames.py does) unless
+the URL has ?cam=raw or --cam raw (--cam both scores the same frames off, then on); only its per-frame look applies here, no latency or dropped frames (frames are
+grabbed with the walker stopped, so there is no motion blur either). --frames DIR saves the clean drone frames for
+scripts/sim_real_gap.py. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
 with the camera model from config.ts. Prints per-camera, per-class recall of visible instances.
 """
 
@@ -27,6 +30,8 @@ import cv2
 import numpy as np
 from playwright.sync_api import sync_playwright
 from ultralytics import YOLO
+
+from tello_cam import TelloCam, load_model
 
 FX, W, H = 1000.0, 960, 720
 HEAD_TOP, DRONE_ABOVE, DRONE_BEHIND, CHEST_H, CHEST_OUT = 1.7, 0.3, 1.0, 1.2, 0.3
@@ -140,6 +145,7 @@ def grab(url: str, per_cam: int):
         page.clock.install()
         page.goto(url)
         page.wait_for_function("window.__kiteActors && window.__kiteActors().length >= 12", timeout=30000)
+        page.wait_for_function("window.__kiteReal !== 'loading'", timeout=60000)   # ?world=real: the local GLB
         page.clock.run_for(3000)
 
         def settle(max_s: float = 15):
@@ -190,27 +196,54 @@ def main():
     ap.add_argument("--per-stop", type=int, default=4)
     ap.add_argument("--out", default="sim/docs")
     ap.add_argument("--dump", default="", help="also write every raw frame here")
+    ap.add_argument("--cam", choices=["tello", "raw", "both"], default=None,
+                    help="Tello camera model on the drone frames (default: tello, raw if the URL has cam=raw); "
+                         "both scores the same grab twice, model off then on")
+    ap.add_argument("--frames", default="", help="write the drone frames the detector saw here (no boxes drawn)")
     args = ap.parse_args()
-
+    cam_mode = args.cam or ("raw" if "cam=raw" in args.url else "tello")
     frames = grab(args.url, args.per_stop)
-    model = YOLO(args.model)
+    yolo = YOLO(args.model)
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+    print(f"{len(frames)} frames, model {args.model}, visible = box >= {MIN_BOX_H}px tall, match IoU >= {IOU_MATCH}")
+    print("  frames per camera:", {CAMS[c]: sum(1 for f in frames if f[0] == c) for c in CAMS})
+    if OCCLUDED:
+        print("  skipped, behind 3D tiles:", dict(OCCLUDED))
+    for mode in (["raw", "tello"] if cam_mode == "both" else [cam_mode]):
+        evaluate(frames, yolo, mode, args, out, mode if cam_mode == "both" else "")
+
+
+CAMS = {0: "drone", 1: "chest"}
+
+
+def evaluate(frames, yolo, mode: str, args, out: Path, sub: str) -> None:
+    model_cfg = load_model()
+    tello = {c: TelloCam(model_cfg, seed=c) for c, name in CAMS.items() if mode == "tello" and name in model_cfg["cameras"]}
     stats = defaultdict(lambda: [0, 0])   # (cam, cls) -> [hit, total]
     by_dist = defaultdict(lambda: [0, 0])
     by_model = defaultdict(lambda: [0, 0])
+    confs = defaultdict(list)            # (cam, cls) -> confidence of each matched detection
     best = {}
     for n, (cam, jpeg, actors, pose) in enumerate(frames):
         img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
-        res = model(img, verbose=False, conf=0.25)[0]
+        if cam in tello:
+            img = tello[cam].process(img, t=n / 8)
+        if args.frames and cam == 0:
+            Path(args.frames, sub).mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(Path(args.frames, sub, f"{n:04d}.png")), img)
+        res = yolo(img, verbose=False, conf=0.25)[0]
         dets = [(COCO[int(c)], b.tolist(), float(s)) for b, c, s in zip(res.boxes.xyxy, res.boxes.cls, res.boxes.conf) if int(c) in COCO]
         gts = visible(actors, pose, cam)
         hits = 0
         for k, box, dist, name in gts:
-            ok = any(dk == k and iou(box, db) >= IOU_MATCH for dk, db, _ in dets)
+            match = [s for dk, db, s in dets if dk == k and iou(box, db) >= IOU_MATCH]
+            ok = bool(match)
+            if match:
+                confs[(cam, k)].append(max(match))
             hits += ok
             stats[(cam, k)][0] += ok; stats[(cam, k)][1] += 1
             band = "<10m" if dist < 10 else "10-20m" if dist < 20 else ">20m"
-            by_dist[(k, band)][0] += ok; by_dist[(k, band)][1] += 1
+            by_dist[(cam, k, band)][0] += ok; by_dist[(cam, k, band)][1] += 1
             by_model[name][0] += ok; by_model[name][1] += 1
             # ground truth: thin white if found, red if missed
             cv2.rectangle(img, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (255, 255, 255) if ok else (0, 0, 255), 1)
@@ -219,24 +252,22 @@ def main():
             cv2.rectangle(img, (int(db[0]), int(db[1])), (int(db[2]), int(db[3])), col, 2)
             cv2.putText(img, f"{k} {s:.2f}", (int(db[0]), int(db[1]) - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 1)
         if args.dump:
-            Path(args.dump).mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(f"{args.dump}/{n:03d}_{cam}_{hits}of{len(gts)}.jpg", img)
+            Path(args.dump, sub).mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(Path(args.dump, sub, f"{n:03d}_{cam}_{hits}of{len(gts)}.jpg")), img)
         score = (len({g[0] for g in gts}), hits)
         if score > best.get(cam, ((0, 0), None))[0]:
             best[cam] = (score, img)
 
-    cams = {0: "drone", 1: "chest"}
-    print(f"{len(frames)} frames, model {args.model}, visible = box >= {MIN_BOX_H}px tall, match IoU >= {IOU_MATCH}")
+    print(f"\ncamera model on drone frames: {mode}")
     for (cam, k), (h, t) in sorted(stats.items()):
-        print(f"  {cams[cam]:5s} {k:6s} {h}/{t} = {h / max(t, 1):.0%}")
-    for (k, band), (h, t) in sorted(by_dist.items()):
-        print(f"  {k:6s} {band:6s} {h}/{t} = {h / max(t, 1):.0%}")
+        c = confs[(cam, k)]
+        print(f"  {CAMS[cam]:5s} {k:6s} {h}/{t} = {h / max(t, 1):.0%}" + (f"   mean conf {np.mean(c):.2f}" if c else ""))
+    for (cam, k, band), (h, t) in sorted(by_dist.items()):
+        print(f"  {CAMS[cam]:5s} {k:6s} {band:6s} {h}/{t} = {h / max(t, 1):.0%}")
     print("  by model:", ", ".join(f"{m} {h}/{t}" for m, (h, t) in sorted(by_model.items())))
-    if OCCLUDED:
-        print("  skipped, behind 3D tiles:", dict(OCCLUDED))
-    print("  frames per camera:", {cams[c]: sum(1 for f in frames if f[0] == c) for c in cams})
     for cam, (_, img) in best.items():
-        cv2.imwrite(str(out / f"yolo_{cams[cam]}.jpg"), cv2.resize(img, (640, 480)), [cv2.IMWRITE_JPEG_QUALITY, 80])
+        name = f"yolo_{CAMS[cam]}{'_' + sub if sub else ''}.jpg"
+        cv2.imwrite(str(out / name), cv2.resize(img, (640, 480)), [cv2.IMWRITE_JPEG_QUALITY, 80])
 
 
 if __name__ == "__main__":

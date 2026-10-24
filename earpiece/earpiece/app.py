@@ -28,7 +28,7 @@ from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
 from .events import PRIORITY_RANK, Msg, clock_phrase, distance_phrase
 from .camera import BodyCamera
-from .judgment import Judgment
+from .judgment import RECENT_SPEECH_S, Judgment
 from .vision import Vision
 from .listen import Listener
 from .memory import MemoryStore
@@ -189,12 +189,15 @@ class Earpiece:
     # ================================================================== stop and wait
     CLEAR_HOLD_S = 1.5      # the way must look clear this long before "you can continue"
     WAIT_GIVE_UP_S = 60.0   # after this, stop tracking the episode (no late "continue")
+    JUDGMENT_HOLD_S = 6.0   # no "you can continue" this soon after Claude warned about something sonar can't see
 
     def _begin_wait(self) -> None:
         self._stop_since = time.monotonic()
         self._clear_since = None
 
     def _way_blocked(self) -> bool:
+        if self.judgment.last_said_age() < self.JUDGMENT_HOLD_S:     # Claude may veto a clear, never grant one
+            return True
         with self._lock:
             tracks = list(self.sonar.tracks.values())
         if any(t.critical or t.urgency > 0.45 for t in tracks):
@@ -722,6 +725,8 @@ class Earpiece:
             "last_instruction": None if self.last_guidance is None else {
                 "text": self.last_guidance[0], "seconds_ago": round(now - self.last_guidance[1])},
             "scene": self.scene[0] if self.scene and now - self.scene[1] < 90 else None,
+            "recent_speech": [h["text"] for h in list(self.speaker.history)
+                              if h.get("result") != "dropped" and time.time() - h["t"] < RECENT_SPEECH_S][-4:],
             "position": self.position,
             "drone": self.drone or None,
             "guidance_paused": self.paused,

@@ -7,7 +7,7 @@
   Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'
 
 /assets/*
-  Cache-Control: public, max-age=604800
+  Cache-Control: public, max-age=3600
 
 /assets/audio/*
   Cache-Control: public, max-age=604800, immutable
