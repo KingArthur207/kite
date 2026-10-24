@@ -1,7 +1,7 @@
 """Stand-in until streetseg lands; same events, same FrameSource.
 
 YOLO11n boxes -> earpiece events, so "real detector on sim frames -> beep in AirPods"
-works before Rex's streetseg exists. Swap this file out; nothing downstream changes.
+works before the streetseg perception package exists. Swap this file out; nothing downstream changes.
 
     python sim/standin_detect.py --download                  # once, fetches weights/yolo11n.pt
     python sim/standin_detect.py                             # sim chest + drone via sim/relay.py
