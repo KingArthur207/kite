@@ -15,6 +15,18 @@ npm install
 npm run dev        # connects to Maincloud by default
 ```
 
+![Dashboard](docs/screenshot.png)
+
+The map (Leaflet, OpenStreetMap tiles darkened in CSS) follows the walker from the newest `position` event that has `lat`/`lng`, and draws the recent trail. Active hazards are placed from their walker-frame `bearing` and `distance` plus the walker's compass `heading`, coloured by priority. The latest `beacon` shows as a green marker with a dashed line. Dragging the map stops auto-follow; the button turns it back on. On the right: walker, hazards, last spoken line, devices (green under 5 s since their last write, amber under 15 s, red after) and the live feed.
+
+To see it move without hardware, from the repo root:
+
+```bash
+earpiece/.venv/bin/python scripts/replay.py data/sample_track.jsonl --spacetime --speed 2
+```
+
+`data/sample_track.jsonl` is a 45 s synthetic walk up Lyon Street (source `test-dashboard`) with a beacon, three hazards and two status sources.
+
 ## Change the module
 
 ```bash

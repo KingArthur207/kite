@@ -12,11 +12,14 @@
     "spacetime:publish:local": "spacetime publish --module-path spacetimedb --server local kite-sync-pl6rp -y"
   },
   "dependencies": {
-    "spacetimedb": "2.13.*",
+    "leaflet": "^1.9.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
+    "spacetimedb": "2.13.*"
   },
   "devDependencies": {
+    "@types/leaflet": "^1.9.22",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^5.0.2",
