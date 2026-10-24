@@ -102,12 +102,12 @@ class Check:
             replies = tello.get_own_udp_object()["responses"]
             self.wait(0.15)
             replies.clear()
-            t0 = time.time()
+            t0 = time.perf_counter()  # not time.time(): on Windows (Python 3.12) it only ticks every ~16 ms
             tello.send_command_without_return("battery?")
-            while not replies and time.time() - t0 < 3.0:
+            while not replies and time.perf_counter() - t0 < 3.0:
                 time.sleep(0.001)
             if replies:
-                rtts.append(time.time() - t0)
+                rtts.append(time.perf_counter() - t0)
                 replies.pop(0)
         self.record("command round trip", len(rtts) >= 4,
                     f"{1000 * sum(rtts) / len(rtts):.0f} ms over {len(rtts)}/5" if rtts else "no reply")
@@ -201,23 +201,20 @@ class Check:
             self.wait(self.args.settle)
 
     def land(self) -> bool:
-        """Land and wait until it is down; Ctrl+C is ignored meanwhile."""
+        """Land and wait until it is down (the main thread ignores Ctrl+C meanwhile)."""
         self.phase = "landing"
         if not (self.d.flying or self.d.busy()):
             return True
         t_end, asked = time.time() + 25.0, -1e9
         while time.time() < t_end:
-            try:
-                busy = self.d.busy()
-                if asked > 0 and not busy and not self.d.flying:
-                    return True
-                if asked < 0 or (not busy and time.time() - asked > 2.0):
-                    self.d.land()
-                    asked = time.time()
-                self.d.check(time.time(), time.time())
-                time.sleep(0.05)
-            except KeyboardInterrupt:
-                print("  Ctrl+C ignored: still landing", flush=True)
+            busy = self.d.busy()
+            if asked > 0 and not busy and not self.d.flying:
+                return True
+            if asked < 0 or (not busy and time.time() - asked > 2.0):
+                self.d.land()  # first ask, or the last one failed while it still flies
+                asked = time.time()
+            self.d.check(time.time(), time.time())
+            time.sleep(0.05)
         return False
 
     def run(self) -> None:
@@ -322,7 +319,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             drone.connect()
         except Exception as e:
-            print(f"cannot connect: {e}\nJoin the TELLO-xxxxxx Wi-Fi and close other Tello programs.")
+            print(f"cannot connect: {e}\nJoin the TELLO-xxxxxx Wi-Fi and close other Tello programs. Windows: allow "
+                  "Python through the firewall on Private AND Public networks (the Tello's Wi-Fi is Public).")
             return 1
         src = drone.frame_source()
         src.wait_first(10.0)
@@ -342,8 +340,16 @@ def main(argv: list[str] | None = None) -> int:
 
         th = threading.Thread(target=worker, name="drone-check")
         th.start()
-        show(check, done, preview=not args.no_preview)
-        th.join()
+        try:
+            show(check, done, preview=not args.no_preview)
+        finally:  # whatever happened to the window: stop the sequence (it lands) before closing the drone
+            if not done.is_set():
+                check.abort.set()
+            while th.is_alive():
+                try:
+                    th.join()
+                except KeyboardInterrupt:
+                    print("  Ctrl+C ignored: still landing", flush=True)
     finally:
         drone.close()  # lands if still flying (never in dry run), stops the video
     failed = [name for name, ok, _ in check.results if not ok]

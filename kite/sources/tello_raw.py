@@ -115,7 +115,8 @@ class RawTelloStream:
             except OSError as e:
                 sock.close()
                 raise RuntimeError(f"cannot bind UDP {host}:{port} for the Tello video ({e}): another program holds "
-                                   f"it (lsof -nP -iUDP:{port})") from None
+                                   f"it (lsof -nP -iUDP:{port} on macOS/Linux, netstat -ano -p udp | findstr {port} "
+                                   f"on Windows)") from None
             sock.settimeout(0.1)  # the receiver checks the stop flag this often
             self._sock = sock
             self._st["rcvbuf"] = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)

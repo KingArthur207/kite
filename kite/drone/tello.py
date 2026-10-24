@@ -99,7 +99,8 @@ class TelloDrone(Drone):
         if self._tello is None:
             from djitellopy import Tello
 
-            Tello.LOGGER.setLevel(logging.WARNING)  # otherwise every rc packet is printed
+            if Tello.LOGGER.level < logging.WARNING:  # otherwise every rc packet is printed (a quieter level set by
+                Tello.LOGGER.setLevel(logging.WARNING)  # the caller stays)
             self._tello = Tello(self._host)
         self._tello.connect()
         log.info("connected, battery %s%%", self._state().get("bat"))
@@ -169,7 +170,7 @@ class TelloDrone(Drone):
     def _send(self, cmd: str) -> bool:
         wait = MIN_GAP_S - (time.monotonic() - self._last_send)
         if wait > 0:
-            time.sleep(min(wait, MIN_GAP_S))
+            time.sleep(wait)
         self.log.append((time.time(), cmd))
         ok = True
         if self.dry_run and not cmd.endswith("?") and cmd not in ("command", "streamon", "streamoff"):
@@ -187,7 +188,7 @@ class TelloDrone(Drone):
         # cannot be taken as the answer to THIS command.
         wait = self._ignore_until - time.monotonic()
         if wait > 0 and not self.dry_run:
-            time.sleep(min(wait, STOP_SETTLE_S))
+            time.sleep(wait)
         self._ignore_until = 0.0
         self._replies().clear()  # anything queued now is stale
         self._result = None
@@ -283,10 +284,16 @@ class TelloDrone(Drone):
     def _complete(self, result: str) -> None:
         p = self._pending
         self._pending = None
-        if p is not None and p.cmd == "land" and result != "ok" and not self.dry_run:
+        # kite: never judge by height when the command did not even leave the laptop (Wi-Fi down): nothing happened
+        sent = not result.startswith("error: not sent")
+        if p is not None and p.cmd == "land" and result != "ok" and sent and not self.dry_run:
             h = self.telemetry().height_m
             if h is not None and h <= 0.2:
                 result = "ok"  # the reply was lost / 'error' because it is already down: it has landed
+        if p is not None and p.cmd == "takeoff" and result == "error: timeout" and not self.dry_run:
+            h = self.telemetry().height_m
+            if h is not None and h >= 0.3:
+                result = "ok"  # kite: the 'ok' was lost but it is up: count it as flying so every landing path applies
         self._result = result
         if p is None:
             return

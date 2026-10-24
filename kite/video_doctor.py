@@ -287,7 +287,8 @@ def run(args) -> int:
         video = _Receiver(args.video_port, rcvbuf=args.rcvbuf)
     except OSError as e:
         print(f"cannot bind the Tello ports ({e}): close every other Tello program "
-              f"(lsof -nP -iUDP:{args.local_cmd_port} -iUDP:{args.video_port})")
+              f"(lsof -nP -iUDP:{args.local_cmd_port} -iUDP:{args.video_port} on macOS/Linux, "
+              f"netstat -ano -p udp | findstr {args.video_port} on Windows)")
         return 2
 
     def send(text: str, wait: bool = True) -> str | None:
@@ -296,7 +297,7 @@ def run(args) -> int:
             return None
         try:
             data = cmd.recv(2048)
-        except socket.timeout:
+        except (socket.timeout, ConnectionResetError):  # Windows: ICMP port unreachable (drone still booting)
             return None
         try:
             return data.decode("utf-8").strip()

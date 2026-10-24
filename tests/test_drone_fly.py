@@ -78,7 +78,8 @@ def motion(fake):
 
 @pytest.mark.parametrize("code, name", [(UP_MAC, "up"), (UP_WIN, "up"), (UP_LINUX, "up"), (2424832, "left"),
                                         (63235, "right"), (65364, "down"), (ord("Q"), "q"), (ord("3"), "3"),
-                                        (ord(" "), " "), (-1, None), (0x10FFFF, None)])
+                                        (ord(" "), " "), (-1, None), (0x10FFFF, None),
+                                        (63275, None), (63277, None), (65367, None)])  # End / PageDown are not letters
 def test_key_names_cover_windows_macos_and_linux_arrows(code, name):
     assert key_name(code) == name
 
@@ -148,3 +149,11 @@ def test_dry_run_never_sends_motion():
     d.close()
     assert motion(fake) == []
     assert time.time() - t0 < 15  # ended on the second q, not on the backstop
+
+
+def test_a_second_takeoff_in_the_same_run_is_refused():
+    d, fake = drone()
+    gui = FakeGui([(0.3, "t"), (1.2, "q"), (3.0, "t"), (3.6, "q")])  # take off, land, try again, quit
+    fly(d, LiveImage(), args(), cv2=gui)
+    d.close()
+    assert motion(fake).count("takeoff") == 1

@@ -1,7 +1,8 @@
 # Drone layer (kite/): everything the Tello tools and tests need, on macOS, Windows or Linux.
 #
 #   python -m venv .venv
-#   .venv/bin/activate            (Windows: .venv\Scripts\activate)
+#   source .venv/bin/activate     (Windows PowerShell: .venv\Scripts\activate; if scripts are blocked, run once:
+#                                  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned)
 #   pip install -r requirements.txt
 #
 # Then: python tests/drone_test.py --ground --preview, python -m kite.video_doctor, python -m kite.preflight (macOS).

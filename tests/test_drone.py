@@ -461,3 +461,52 @@ def test_governor_hovers_when_video_or_telemetry_goes_stale_and_recovers():
     gov.rc(0, 40, 0, 0)
     assert fake.rcs[-1] == (0, 40, 0, 0)
     assert gov.check(now + 5.0, now + 5.0) == "hover"  # telemetry that stops updating also means hover
+
+
+class _LinkFake:
+    """The djitellopy surface TelloDrone needs; sends raise like a dropped Wi-Fi link when `down`."""
+
+    def __init__(self, h_cm=10):
+        self.down, self.sent, self.is_flying = False, [], False
+        self.state = {"h": h_cm, "tof": h_cm, "bat": 80}
+        self.udp = {"responses": []}
+
+    def send_command_without_return(self, cmd):
+        if self.down:
+            raise OSError(51, "Network is unreachable")
+        self.sent.append(cmd)
+
+    def get_own_udp_object(self):
+        return self.udp
+
+    def get_current_state(self):
+        return self.state
+
+
+def test_a_land_that_never_left_the_laptop_is_not_counted_as_landed_even_low_down():
+    fake = _LinkFake(h_cm=10)  # 0.1 m: under the 0.2 m "it is already down" rule
+    d = TelloDrone(tello=fake, video=False)
+    d._flying = fake.is_flying = True
+    fake.down = True
+    d.land()
+    assert d.last_result().startswith("error: not sent")
+    assert d.flying and fake.is_flying  # still flying: the governor, close() and djitellopy's end() keep trying
+    fake.down = False
+    d.land()
+    assert "land" in fake.sent
+
+
+def test_a_takeoff_whose_ok_was_lost_counts_as_flying_once_it_is_up():
+    fake = _LinkFake(h_cm=80)
+    d = TelloDrone(tello=fake, video=False)
+    d.takeoff()
+    d._complete("error: timeout")  # the 'ok' never came back
+    assert d.last_result() == "ok" and d.flying and fake.is_flying  # so every landing path applies
+
+
+def test_a_refused_takeoff_on_the_ground_stays_on_the_ground():
+    fake = _LinkFake(h_cm=0)
+    d = TelloDrone(tello=fake, video=False)
+    d.takeoff()
+    d._complete("error: battery low")
+    assert d.last_result() == "error: battery low" and not d.flying

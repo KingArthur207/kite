@@ -51,9 +51,8 @@ def key_name(code: int) -> str | None:
         return None
     if code in ARROWS:
         return ARROWS[code]
-    ch = code & 0xFF
-    if 32 <= ch < 127:
-        return chr(ch).lower()
+    if 32 <= code < 127:  # plain keys only: other special keys (End = 63275 on macOS, 65367 on Linux) must not
+        return chr(code).lower()  # turn into a letter through their low byte (End would become 'w', climb)
     return None
 
 
@@ -104,6 +103,9 @@ class Pilot:
         elif key == "t":
             if d.flying or d.busy():
                 self.say("takeoff refused: already flying or busy")
+            elif getattr(d, "land_requested", False):
+                self.say("takeoff refused: it landed in this run (the safety governor would land it again): "
+                         "restart to fly again")
             elif video_age_s is None or video_age_s > 1.0:
                 self.say("takeoff refused: no live video (the safety governor would only hover)")
             else:
@@ -200,6 +202,7 @@ def fly(drone, src, args, cv2=None, clock=time.monotonic, wall=time.time) -> Non
     blank = np.zeros((720, 960, 3), np.uint8)
     last_img, last_seq, last_frame_t = None, -1, None
     next_tick = 0.0
+    shown = False
     fps, n_frames, fps_t = 0.0, 0, clock()
     print(HELP)
     try:
@@ -212,7 +215,13 @@ def fly(drone, src, args, cv2=None, clock=time.monotonic, wall=time.time) -> Non
             if now - fps_t >= 1.0:
                 fps, n_frames, fps_t = n_frames / (now - fps_t), 0, now
             age = None if last_frame_t is None else wall() - last_frame_t
-            pilot.on_key(key_name(cv2.waitKeyEx(1)), now, age)
+            code = cv2.waitKeyEx(1)
+            # window closed (X): checked right after the event pump and before imshow, which on Windows would
+            # silently open a new window of the same name
+            if shown and cv2.getWindowProperty(WIN, cv2.WND_PROP_VISIBLE) < 1:
+                pilot.say("window closed")
+                break
+            pilot.on_key(key_name(code), now, age)
             if now >= next_tick:
                 next_tick = now + 0.1
                 pilot.tick(now, wall(), last_frame_t)
@@ -225,9 +234,7 @@ def fly(drone, src, args, cv2=None, clock=time.monotonic, wall=time.time) -> Non
                 tel = None
             link = getattr(getattr(drone, "inner", drone), "link_error", None)
             cv2.imshow(WIN, hud(img, pilot, tel, fps, link, args.dry_run))
-            if cv2.getWindowProperty(WIN, cv2.WND_PROP_VISIBLE) < 1:  # window closed: land and quit
-                pilot.say("window closed")
-                break
+            shown = True
     except KeyboardInterrupt:
         print("\nCtrl+C")
     except Exception as e:  # a bug here must still land the drone

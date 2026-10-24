@@ -783,6 +783,8 @@ def test_leftover_replies_after_an_answer_are_kept_until_the_next_command_clears
 @pytest.mark.parametrize("name, call, text, timeout_s, expected_s", DISCRETE, ids=DISCRETE_IDS)
 def test_silent_drone_times_out_strictly_after_the_command_timeout(clock, name, call, text, timeout_s, expected_s):
     d, fake = make(clock)
+    if name == "takeoff":
+        fake.state = dict(fake.state, h=0, tof=0)  # still on the ground (up there, a lost 'ok' counts as flying)
     call(d)
     clock.advance(timeout_s)
     assert d.busy()  # exactly at the timeout: still waiting (strict >)
@@ -800,6 +802,7 @@ def test_a_reply_that_lands_after_the_timeout_but_before_the_poll_still_counts(c
 
 def test_wall_clock_steps_never_time_out_or_stall_a_command(clock):
     d, fake = make(clock)
+    fake.state = dict(fake.state, h=0, tof=0)  # on the ground: the timeout is not overridden by the height
     d.takeoff()
     clock.step_wall(+3600)
     assert d.busy()
@@ -822,7 +825,8 @@ COMPLETION = [
     # id, setup state, command, reply (None: timeout), h (cm), result, flying after, djitellopy is_flying after
     ("takeoff_ok", "ground", "takeoff", "ok", 150, "ok", True, True),
     ("takeoff_error", "ground", "takeoff", "error", 0, "error: error", False, False),
-    ("takeoff_timeout", "ground", "takeoff", None, 150, "error: timeout", False, False),
+    ("takeoff_timeout", "ground", "takeoff", None, 0, "error: timeout", False, False),
+    ("takeoff_timeout_but_up", "ground", "takeoff", None, 150, "ok", True, True),  # the 'ok' was lost: it flies
     ("land_ok", "flying", "land", "ok", 150, "ok", False, False),
     ("land_error_airborne", "flying", "land", "error", 150, "error: error", True, True),
     ("land_error_on_ground", "flying", "land", "error", 20, "ok", False, False),
@@ -934,14 +938,24 @@ def test_discrete_command_that_cannot_be_sent_fails_at_once_and_can_be_resent(cl
     assert fake.cmds[-1] == text and d.busy() and d.link_error is None
 
 
-def test_land_that_cannot_be_sent_while_on_the_ground_counts_as_landed(clock):
-    # the h <= 0.2 m rule also applies to an unsent land (frozen state with h=0): flying is cleared
+def test_a_land_that_cannot_be_sent_is_never_counted_as_landed(clock):
+    # the h <= 0.2 m rule needs a land that reached the drone: an unsent one (Wi-Fi down, telemetry frozen low) keeps
+    # flying set, so the governor, close() and djitellopy's end() keep trying once the link is back
     d, fake = make(clock)
     fly(d, fake, clock)
     fake.state = dict(fake.state, h=0)
     fake.down = True
     d.land()
-    assert d.last_result() == "ok" and not d.flying
+    assert d.last_result().startswith("error: not sent") and d.flying and fake.is_flying
+
+
+def test_a_takeoff_whose_ok_is_lost_counts_as_flying_once_it_is_up(clock):
+    d, fake = make(clock)
+    fake.state = dict(fake.state, h=0, tof=0)
+    d.takeoff()
+    fake.state = dict(fake.state, h=90, tof=92)  # it climbed, but the 'ok' never came back
+    clock.advance(20.0 + 1e-6)
+    assert not d.busy() and d.last_result() == "ok" and d.flying and fake.is_flying
 
 
 # ====================================================================== TelloDrone: land()
