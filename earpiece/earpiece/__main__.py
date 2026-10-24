@@ -6,6 +6,7 @@
     python -m earpiece render --jsonl events.jsonl out.wav   # same, from a detector/recorded timeline
     python -m earpiece selftest            # check audio, voices, STT, controls, network
     python -m earpiece send '{"type":"say","text":"hello"}'   # poke a running earpiece
+    python -m earpiece caregiver           # the caregiver's hands-free voice line (Grok Voice)
 """
 
 from __future__ import annotations
@@ -187,6 +188,11 @@ def cmd_selftest(a) -> int:
     return run(play=not a.silent, log=_log)
 
 
+def cmd_caregiver(a) -> int:
+    from .caregiver_voice import cmd_caregiver as run
+    return run(a)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="kite-earpiece", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -215,10 +221,13 @@ def main(argv=None) -> int:
     s.add_argument("--port", type=int, default=5010)
     t = sub.add_parser("selftest", help="check audio, voices, STT, controls and network")
     t.add_argument("--silent", action="store_true", help="do not play sound")
+    from .caregiver_voice import add_parser as add_caregiver
+    add_caregiver(sub)
     a = p.parse_args(argv)
     if a.cmd is None:
         a = p.parse_args(["run", *(argv or sys.argv[1:])])
-    return {"run": cmd_run, "render": cmd_render, "send": cmd_send, "selftest": cmd_selftest}[a.cmd](a)
+    return {"run": cmd_run, "render": cmd_render, "send": cmd_send, "selftest": cmd_selftest,
+            "caregiver": cmd_caregiver}[a.cmd](a)
 
 
 if __name__ == "__main__":

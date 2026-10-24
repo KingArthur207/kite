@@ -17,7 +17,7 @@ python -m earpiece render --jsonl events.jsonl out/heard.wav   # same, from a JS
 python -m pytest                                 # 330+ tests (also with KITE_AUDIO_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
 ```
 
-Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `GOOGLE_MAPS_API_KEY`). Everything degrades gracefully without them.
+Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `GOOGLE_MAPS_API_KEY`, and `XAI_API_KEY` for the caregiver line). Everything degrades gracefully without them.
 
 ## Send it events
 
@@ -72,6 +72,26 @@ Characters sent to Cartesia are counted across runs in `earpiece/.cache/cartesia
 
 AirPods (or any Bluetooth headphones' play button): once = talk, twice = repeat, three times = pause guidance (safety warnings stay on). Keyboard fallback: Enter / `r` / `p`, plus `t <words>` to type a command.
 
+## Caregiver line (Grok Voice)
+
+A caregiver who is driving, cooking, or blind or low vision can talk to Kite instead of watching the dashboard. On the caregiver's laptop:
+
+```bash
+python -m earpiece caregiver                 # talk through the laptop mic and speakers
+python -m earpiece caregiver --text          # type instead (add --mute for no audio)
+python -m earpiece caregiver --dry-run       # no Grok session: print what the tools return, send nothing
+```
+
+It opens one realtime speech-to-speech session with xAI's Grok Voice Agent API (`XAI_API_KEY` in the repo-root `.env`; `--voice`, default `eve`; `--db`, default `kite-sync-pl6rp`) and gives Grok three tools over the shared SpacetimeDB state:
+
+| Caregiver says | Tool | What it does |
+|---|---|---|
+| "How's the walk going?" / "Where is she?" | `walk_status` | position, route, recent hazards, what Kite last said, which devices are reporting, each with its age |
+| "Tell her I'm running five minutes late" | `message_walker` | pushes a caregiver `say` at priority info, the same row the dashboard's message box writes; the walker's earpiece speaks it |
+| "Is she okay? Did she ask for help?" | `recent_alerts` | the walker's "tell my caregiver" alerts and recent stop warnings |
+
+While the line is open, a new walker alert is announced right away without being asked. Grok only knows what the tools return; when the newest update is more than 90 s old, the tool result says so and Grok says how old the information is. Rows from earlier walks (more than 15 minutes before the newest update) are left out. In code, messages are cut to 200 characters, a go-ahead to cross is never relayed, and a repeated message is not sent twice. Reads are cached for 3 s and share the Spacetime token bucket. The mic is paused while Kite talks so the laptop speaker cannot interrupt it (`--barge-in` keeps it open; use headphones). The call hangs up after `--max-minutes` (default 30).
+
 ## Layout
 
 | Module | Job |
@@ -85,6 +105,7 @@ AirPods (or any Bluetooth headphones' play button): once = talk, twice = repeat,
 | `judgment.py` | Claude judgment calls on hazards and scene ("Wait, the crosswalk is crowded."), with code guardrails |
 | `vision.py`, `camera.py` | Claude vision: scene descriptions, "what's in front of me?" and reading text aloud from the body camera |
 | `app.py`, `transport.py`, `controls.py` | wiring, UDP/WebSocket, AirPods stem presses |
+| `spacetime.py`, `caregiver_voice.py` | SpacetimeDB mirror and caregiver inbox; the caregiver's Grok Voice line |
 
 ## Walking directions
 
