@@ -9,6 +9,16 @@ __pycache__/
 *.nosync
 *.egg-info/
 .pytest_cache/
+.hypothesis/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.cache/
+# the venvs are built with `uv pip install` (scripts/check.sh), so a uv.lock from `uv run` is a stray
+uv.lock
 
 # Rust
 target/
