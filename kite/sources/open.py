@@ -15,6 +15,9 @@ Specs (case-insensitive kinds):
     webcam:<n>, <n>         camera index n (cv2.VideoCapture(n)). Newest frame only.
     webcam:<name>           the camera whose name contains <name>, e.g. webcam:iPhone (Continuity Camera).
     sim:drone, sim:chest    the browser sim's cameras through sim/frames.py (sim relay running).
+    streetview:route        Google Street View along sim/public/osm/route.json (GOOGLE_MAPS_API_KEY; billed per image)
+    streetview:<lat>,<lng>,<heading>   one Street View image. Options: kite/sources/streetview.py (pitch, hfov_deg,
+                            step_m, cache_dir, ...)
 
 Every source has: read() -> (ok, bgr) (BGR uint8, yours to draw on), .pose (dict for the frame just read, None before
 the first; keys in kite.sources.pose.POSE_KEYS, None where unknown), .camera (kite.camera.Camera at the size of the
@@ -413,6 +416,8 @@ def parse_spec(spec) -> tuple[str, object]:
         if which not in ("drone", "chest"):
             raise ValueError(f"{spec!r}: use sim:drone or sim:chest")
         return "sim", which
+    if kind == "streetview":
+        return "streetview", rest
     if sep and kind == "recording":
         return "recording", Path(rest).expanduser()
     if sep and kind in ("file", "video"):
@@ -425,6 +430,7 @@ def parse_spec(spec) -> tuple[str, object]:
     if p.is_file():
         return "file", p
     raise ValueError(f"unknown source {spec!r}: use tello, sim:drone, sim:chest, webcam:<index or name>, <index>, "
+                     "streetview:route, streetview:<lat>,<lng>,<heading>, "
                      "recording:<dir>, a take folder, or a video file (which must exist)")
 
 
@@ -444,6 +450,10 @@ def open_source(spec, **opts):
         return FileSource(arg, **opts)
     if kind == "sim":
         return SimSource(arg, **opts)
+    if kind == "streetview":
+        from .streetview import StreetViewSource, parse
+
+        return StreetViewSource(**parse(arg), **opts)
     from .cameras import find_camera, opencv_cameras
 
     if isinstance(arg, int):

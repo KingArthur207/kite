@@ -2,7 +2,7 @@
 # One command to bring the Kite demo up and down on this Mac (docs/demo-runbook.md).
 #
 #   scripts/demo.sh sim [--output <device>]              earpiece, relay, sim, dashboard, stand-in detector
-#   scripts/demo.sh live [camera-index] [--output <dev>] earpiece, dashboard, detector on a real camera
+#   scripts/demo.sh live [camera] [--output <dev>]       earpiece, dashboard, detector on a camera (index, name or video file)
 #   scripts/demo.sh replay <file.jsonl> [--output <dev>] earpiece, dashboard, scripts/replay.py
 #   scripts/demo.sh stop                                 stops only what this script started
 #   scripts/demo.sh status                               what is up, last log lines, netcheck
@@ -38,6 +38,14 @@ any_running() {
   [ -f "$PIDS" ] || return 1
   while IFS='|' read -r name pid start; do
     alive_ours "$pid" "$start" && return 0
+  done < "$PIDS"
+  return 1
+}
+
+still_up() {  # name: true if the process this script started under that name is running
+  local name pid start
+  while IFS='|' read -r name pid start; do
+    [ "$name" = "$1" ] && alive_ours "$pid" "$start" && return 0
   done < "$PIDS"
   return 1
 }
@@ -127,7 +135,7 @@ start_detector() {  # extra standin flags...
     return 1
   fi
   local deps="$DETECT_DEPS --with opencv-python-headless" extra=()
-  [ "${1:-}" = --source ] && deps="$DETECT_DEPS --with opencv-python --with transformers"  # --show needs GUI OpenCV
+  [ "${1:-}" = --source ] && deps="$DETECT_DEPS --with opencv-python --with transformers --with av"  # --show needs GUI OpenCV; av opens cameras by name
   # The detector always sends to port 5010, so with a port offset it must not send (it would feed someone else's earpiece).
   [ "$OFF" != 0 ] && { extra+=(--no-send); say "  note: KITE_PORT_OFFSET is set, so the detector runs with --no-send"; }
   # shellcheck disable=SC2206
@@ -178,8 +186,9 @@ cmd_sim() {
 }
 
 cmd_live() {
-  local cam="${1:-0}"
-  [[ "$cam" =~ ^[0-9]+$ ]] || die "camera index must be a number (try: uv run --no-project --with opencv-python python sim/standin_detect.py --list-cameras)"
+  local cam="${1:-0}"   # an index, a name (iPhone) or webcam:<index or name>; see: python -m kite.sources.open --list-cameras
+  if [ -f "$cam" ]; then cam="$(cd "$(dirname "$cam")" && pwd)/$(basename "$cam")"  # a video file: rehearse without a camera
+  elif [[ ! "$cam" =~ ^[0-9]+$ && "$cam" != webcam:* ]]; then cam="webcam:$cam"; fi
   begin venv dashboard uv -- earpiece:$UDP_PORT:udp earpiece:$WS_PORT:tcp dashboard:$DASH_PORT:tcp
   say "starting the live walk on camera $cam"
   start_earpiece
@@ -189,6 +198,14 @@ cmd_live() {
   start_detector --source "$cam" --camera chest --show --cam-height 1.2 --pitch 15 || det=0
   wait_port dashboard "$DASH_PORT" tcp 20; wait_port earpiece "$WS_PORT" tcp 45
   open_url "http://localhost:$DASH_PORT"
+  if [ $det = 1 ]; then  # it prints "[standin] cams=" once the camera is open; a camera that won't open ends it
+    local i
+    for ((i = 0; i < 120; i++)); do
+      grep -q '^\[standin\] cams=' "$LOGS/detector.log" 2>/dev/null && { say "  ok   detector has the camera"; break; }
+      still_up detector || { det=0; say "  FAIL detector exited. Last log lines:"; tail -n 2 "$LOGS/detector.log" | sed 's/^/       /'; break; }
+      sleep 0.5
+    done
+  fi
   if [ $det = 1 ]; then
     say "up. The reveal window is the detector's: r replays the last 20 s, l goes live. Stop with: scripts/demo.sh stop"
   else

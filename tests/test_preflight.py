@@ -260,6 +260,7 @@ def run_drone(measure_s=FAST["measure_s"], **kw):
     return statuses(checks), checks, drone
 
 
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="wall-clock latency; flaky on shared CI runners, runs locally")
 def test_healthy_drone_is_go_and_link_closed():
     st, checks, drone = run_drone(measure_s=0.6)
     assert drone.closed

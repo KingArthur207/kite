@@ -141,11 +141,60 @@ That runs on sim chest + drone frames and sends to `KITE_EARPIECE_HOST` (`.env`,
 
 `python3 sim/test_standin_geometry.py` checks the geometry and the hazard gate without a model. `--jsonl` writes the same events with a `t` field for `scripts/replay.py`. `--overlay` writes an mp4 with boxes and bearing/distance labels. Other flags: `--fx` (default 1000), `--cam-height`, `--device`, `--fast` (don't pace a video to real time), `--no-send`, `--max-seconds`. It uses `mps` when available.
 
-On Moss, with the walker stopped 4 m short of the corner facing NW, every car that turned in from Howard during a 60 s wait drew a drone `hazard` as it came down Moss toward the walker ("Car slightly left, 7 meters" when it was 8 to 9 m away at about -25 degrees). Two gaps showed up. On the walk up Moss, oncoming Moss cars also draw "Car slightly left, 6 meters": the 3 m lane test can't tell that the walker is on the sidewalk of a 6 m alley. Once the walker turns to face the zebra (SW), a turning car comes from behind-right and is only in frame when it is about 3 m away and cut off by the edge, and the stand-in gave no hazard for it.
+On Moss, with the walker stopped 4 m short of the corner facing NW, every car that turned in from Howard during a 60 s wait drew a drone `hazard` as it came down Moss toward the walker ("Car slightly left, 7 meters" when it was 8 to 9 m away at about -25 degrees). Two gaps showed up. On the walk up Moss, oncoming Moss cars also drew "Car slightly left, 6 meters": the 3 m lane test couldn't tell that the walker is on the sidewalk of a 6 m alley. Now a car counts only within 1.5 m of the walker's path, or when its sideways offset (tracked per car over the last second) is shrinking fast enough to reach the path within 3 s, so a car crossing ahead still draws a hazard and one driving past on the road doesn't. Not re-measured on Moss yet. Once the walker turns to face the zebra (SW), a turning car comes from behind-right and is only in frame when it is about 3 m away and cut off by the edge, and the stand-in gave no hazard for it.
 
 On an M-series Mac, YOLO11n with tracking takes about 25 ms a frame on `mps` with the machine idle, and 75 to 90 ms with headless Chrome rendering the sim alongside. The sim's placeholder boxes and capsules are rarely detected; the glTF cars and people are.
 
 Test clips come from Mixkit (free license, mixkit.co): "A man being followed walking in a city" (`https://assets.mixkit.co/videos/134/134-720.mp4`) is close to the drone's view, and "Times Square during a sunny day" (`.../4442/4442-720.mp4`) has lots of cars. Download them into the gitignored `clips/`.
+
+## Live walk (spec section 4)
+
+The judge wears a phone on their chest as the camera, headphones and a sleep mask, and walks 3 to 4 m. A teammate steps in front. Kite says "Stop. Person ahead." Then the reveal window replays what the chest camera saw, with boxes and the STOP banner.
+
+The live path is the stand-in detector with a camera index as `--source`. `sim/live_walk.py` holds the chest-only parts, and they run on sim chest frames too:
+
+- Distances are a median over 3 frames, and closing speed is a least-squares fit over the last second.
+- Anything inside 1.6 m (`--stop-m`) and within 0.7 m of the walker's path is a stop. So is anything under 1 s from contact. A stop goes out with a closing speed that puts the earpiece's time to contact at 0.8 s. Its sonar then goes critical and says "Stop. Person ahead." at about 1.5 m instead of its own 0.75 m.
+- When a box is cut off by the bottom edge (a person close to a chest camera), the distance comes from the top of the head, assumed 1.7 m (`--person-height`).
+- `--pitch` is the camera's downward tilt in degrees. It goes into the ground-plane distance, and a phone clipped to a shirt usually points 10 to 20 degrees down.
+- `--depth` adds Depth Anything V2 Small (metric, indoor) at 336x252 as a fallback for things YOLO has no class for, such as walls, doors and boxes. It reports something closer than 2.5 m that fills the centre of the frame and isn't floor. It takes about 18 ms a frame on `mps`.
+- `--show` opens the reveal window: live view, labels (kind, bearing, distance, closing speed), and a red banner such as `STOP - person 1.4 m` that stays up 1.5 s. Press `r` to replay the last 20 s, `l` for live, `q` to quit. Heads are pixelated (`--no-blur` turns that off). The 20 s buffer is JPEG bytes in RAM and is never written to disk, and `--overlay` is refused for a live camera (spec 5.3).
+
+Commands, from the repo root. `--show` needs `opencv-python` (with GUI), not the headless build:
+
+```
+RUN="uv run --no-project --with ultralytics --with opencv-python --with lap --with websockets --with python-dotenv --with numpy --with scipy --with transformers --with av"
+$RUN python sim/standin_detect.py --download --depth          # once, with internet: YOLO weights and the depth model
+$RUN python sim/standin_detect.py --list-cameras              # index, name and frame size of each camera
+$RUN python sim/standin_detect.py --source webcam:iPhone --show --cam-height 1.2 --pitch 15 --depth
+```
+
+Frames are resized to 960 wide. A live camera defaults to `--fx 700`, which fits an iPhone at 1x or a MacBook camera at 960 wide. Calibrate on the day: stand someone on a tape mark 2 m from the judge and change `--pitch` (then `--fx`) until the label reads 2.0 m.
+
+To use the iPhone as the camera, sign it into the same Apple ID as the Mac, with Wi-Fi and Bluetooth on, and lock it in landscape near the Mac. Continuity Camera then shows it in `--list-cameras`, usually as index 1 when the built-in camera is 0. `--source` takes the index or any part of the name (`webcam:iPhone`); both go through `kite.sources.open_source()`, which can also open a Continuity Camera that OpenCV doesn't list, by name through PyAV. Turn off Center Stage in Control Center > Video Effects so the field of view doesn't change mid-walk. To check you have the right camera, run with `--show` and cover the phone's lens.
+
+macOS asks for Camera access the first time; grant it to the terminal app you run from. If `--list-cameras` finds nothing, check System Settings > Privacy & Security > Camera.
+
+Measured on an M5 MacBook with `--show` and nothing else running, on a stock clip: about 22 fps end to end with YOLO alone, and about 15 fps with `--depth`. The STOP line printed at 1.3 m in `clips/approach.mp4` (below), and the earpiece said "Stop. Person ahead." at critical priority.
+
+Table checklist:
+
+- [ ] Earpiece running with the headphones as output: `cd earpiece && .venv/bin/python -m earpiece run --output "<device name>"` (default is any AirPods)
+- [ ] `--list-cameras`, then the detector running with `--show` on the phone's index
+- [ ] Phone clipped flat to the judge's chest, about 1.2 m up, landscape, lens clear of jacket and lanyard; `--cam-height` and `--pitch` match
+- [ ] Calibrated on the 2 m tape mark
+- [ ] 4 m of clear floor taped out, with nothing at head height
+- [ ] One spotter walks beside the judge, within arm's reach, the whole time
+- [ ] One teammate steps in at about 2 m and stays put until Kite says "Stop"
+- [ ] Sleep mask on after the headphones are in; take it off for the reveal
+- [ ] Reveal: press `r` on the laptop, and turn the screen to the judge
+
+Test clip for the live path without a second person: Pexels "Woman walking inside a building with camera" (`https://www.pexels.com/download/video/2795407/`, free under the Pexels license), with its last 9 s reversed so she walks toward a waist-height camera:
+
+```
+ffmpeg -ss 9 -i clips/pexels-2795407.mp4 -vf "fps=30,scale=960:-2,reverse" -an clips/approach.mp4
+$RUN python sim/standin_detect.py --source clips/approach.mp4 --camera chest --show
+```
 
 ## Files and placeholders
 
