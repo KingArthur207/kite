@@ -127,10 +127,10 @@ for d_true in (1.0, 1.2, 1.4):
     half = 700 * 0.53 / d_true / 2                 # a 0.53 m wide person (the bench's sprite)
     o = objects_from_boxes([(480 - half, 3, 480 + half, 530, "person", 0.9, 1)], 700, 1.2, 960, 540, 15)[0]
     assert o["distance"] < 1.6 and o["distance"] <= d_true, (d_true, o)
-# head above the frame, box bottom 7 px above the edge (not "cut"): the top row still bounds the distance.
+# head above the frame, box bottom 7 px or 20 px above the edge: the top row still bounds the distance.
 # Before: 3.2 m on one frame and 1.3 m on the next for the same person (bench clip "approach").
 far, near = (objects_from_boxes([(410, 1, 613, y2, "person", 0.9, 1)], 700, 1.2, 960, 540)[0]["distance"]
-             for y2 in (533, 532))
+             for y2 in (520, 533))
 assert far < 1.4 and math.isclose(far, near, abs_tol=0.05), (far, near)
 # feet in frame, head in frame: unchanged (ground row)
 assert math.isclose(objects_from_boxes([(450, 200, 510, 470, "person", 0.9, 1)], 700, 1.2, 960, 540)[0]["distance"],

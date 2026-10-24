@@ -7,6 +7,7 @@ headless earpiece on its own ports, then scores what the earpiece said against t
     $RUN python scripts/live_walk_bench.py prepare          # once, with internet: clips/bench/
     $RUN python scripts/live_walk_bench.py run              # 40 runs: table on stdout, JSON in out/bench/
     $RUN python scripts/live_walk_bench.py run --runs 8 --only syn_walkup,syn_cross
+    $RUN python scripts/live_walk_bench.py rescore out/bench/<report>.json   # new scoring rules, same runs
     python scripts/live_walk_bench.py selftest              # the scoring rules, no clips needed
 
 Clips (all local, gitignored): stock walks from Pexels and Mixkit (free licenses, never committed),
@@ -14,12 +15,14 @@ cut into approach-then-walk-away "ping-pong" clips, plus synthetic walks: a pers
 stock frame and drawn into an empty corridor along a scripted path with the live camera's geometry
 (fx 700, 960x540, 1.2 m up, 15 deg down), so their true distance is known on every frame.
 Every run gets fresh jitter (speed, stop point, offset, brightness, chest bob).
+Stock clips have no measured distances: their truth is the detector's own geometry, run on every
+frame and median-smoothed offline. They test flicker, tracking, crowds and timing, not range.
 
 Scoring, per run: a stop is expected when the truth (nearest person within 0.7 m of the path)
-reaches 1.5 m. Latency runs from that frame to the start of "Stop. Person ahead.". Any stop while
-the truth is beyond 2.5 m, or on a clip that never comes inside 1.5 m, is a false stop. "Path is
-clear" must come after the person has left (beyond 2.5 m or off the path) and before the clip ends;
-one that comes while they are still there is an early continue (counted as a failure).
+reaches 1.5 m. Latency runs from that frame to the start of "Stop. Person ahead.". A stop while
+the truth is beyond 2.2 m, or nobody is on the path, is a false stop. "Path is clear" must come
+after the person has left (beyond 2.5 m or off the path) and before the clip ends; one that comes
+while they are still there is an early continue (counted as a failure).
 """
 
 from __future__ import annotations
@@ -371,6 +374,7 @@ class Earpiece:
             time.sleep(0.2)
 
     def _ws(self) -> None:
+        from websockets.exceptions import WebSocketException
         from websockets.sync.client import connect
         while self.proc.poll() is None:
             try:
@@ -380,7 +384,7 @@ class Earpiece:
                         with self.lock:
                             if m.get("type") in ("spoken", "continue") or not self.spoken:
                                 self.spoken.append(m)
-            except (OSError, Exception):
+            except (OSError, TimeoutError, WebSocketException):     # earpiece not up yet, or restarting
                 time.sleep(0.3)
 
     def _heartbeat(self) -> None:
