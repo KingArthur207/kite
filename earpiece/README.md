@@ -13,7 +13,7 @@ python -m earpiece selftest                      # check audio, voices, STT, con
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
-python -m pytest                                 # 148 tests
+python -m pytest                                 # 166 tests
 ```
 
 Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`). Everything degrades gracefully without them.
@@ -30,6 +30,15 @@ ear.guidance("In 20 meters, turn left onto Lyon Street", key="step-3")
 ear.beacon(bearing=-35, distance=42, label="Palace of Fine Arts")
 ear.hazard("crosswalk", state="dont_walk", bearing=5, distance=9)
 ```
+
+Voice requests come back over the WebSocket, already resolved:
+
+| Wearer says | `voice_request` |
+|---|---|
+| "take me to my coffee shop" | `target_type: "memory"`, name, address, lat/lng (from Moss) |
+| "bring me to the end of the street" | `target_type: "relative"`, `relation: "end_of_street"` (also `next_intersection`, `nearest_crosswalk`, `cross_street`, `back`, `nearest_entrance`) |
+| "the nearest pharmacy" | `target_type: "nearby"`, name, address, lat/lng, `distance_m` (Google Places, ranked by distance) |
+| "Palace of Fine Arts" | `target_type: "named"`, name, address, lat/lng |
 
 The full message contract is in `earpiece/events.py`. Bearings are degrees in the wearer's frame (0 ahead, +90 right); distances are metres.
 

@@ -17,21 +17,6 @@ from earpiece.client import EarpieceClient
 from earpiece.config import Cfg
 
 
-@pytest.fixture
-def app(offline_speech):
-    cfg = Cfg()
-    cfg.speech.cache_dir = offline_speech / "cache"
-    cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
-    logs = []
-    from earpiece.memory import MemoryStore
-    mem = MemoryStore(project_id="", project_key="", store=offline_speech / "memory.json", log=logs.append)
-    a = Earpiece(cfg, output="null", record=True, log=logs.append, memory=mem)
-    a.logs = logs
-    a.start(prewarm=False, announce=False)
-    yield a
-    a.stop()
-
-
 def client(app, source="webcam"):
     return EarpieceClient("127.0.0.1", app.cfg.net.udp_port, source=source)
 
@@ -231,7 +216,7 @@ def test_personal_destination_is_resolved_from_memory(app):
             if m["type"] == "voice_request":
                 req = m
                 break
-    assert req["resolved"] == "Blue Bottle Coffee" and req["lat"] is not None
+    assert req["name"] == "Blue Bottle Coffee" and req["target_type"] == "memory" and req["lat"] is not None
     assert wait_for(lambda: "Okay, heading to Blue Bottle Coffee." in spoken(app), 3)
 
 
