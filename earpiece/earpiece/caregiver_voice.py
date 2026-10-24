@@ -3,6 +3,9 @@
     python -m earpiece caregiver                # speak and listen (laptop mic and speakers)
     python -m earpiece caregiver --text         # type instead of talking (no mic needed)
     python -m earpiece caregiver --dry-run      # no Grok: print the tools' answers and exit
+    python -m earpiece caregiver --input-wav q1.wav --input-wav q2.wav --output-wav reply.wav
+                                                # headless: recorded questions in, Grok's voice to
+                                                # files; no mic, no speaker
 
 The caregiver's laptop opens one realtime speech-to-speech session (wss://api.x.ai/v1/realtime)
 and gives Grok three tools over the shared SpacetimeDB state:
@@ -609,6 +612,8 @@ class Session:
         self.idle.set()
         self.closed = asyncio.Event()
         self._outputs_pending = 0
+        self.responses = 0                     # response.created count (a recorded turn waits on it)
+        self.tool_log: list[dict] = []         # every function call with its result (--transcript)
         self._said = ""
         self._heard = ""
         self._notices: list[str] = []
@@ -718,6 +723,7 @@ class Session:
                 self.audio.clear()
         elif kind == "response.created":
             self._flush_heard()
+            self.responses += 1
             self.idle.clear()
         elif kind == "response.function_call_arguments.done":
             await self._function_call(ev)
@@ -754,6 +760,7 @@ class Session:
         args = ev.get("arguments") or "{}"
         self.log(f"[tool]  {name}({args if len(str(args)) < 200 else str(args)[:200] + '...'})")
         result = await asyncio.to_thread(self.tools.call, name, args)
+        self.tool_log.append({"t": round(time.time(), 3), "name": name, "arguments": args, "result": result})
         if self.debug:
             self.log(f"[tool]  -> {result[:400]}")
         await self.send({"type": "conversation.item.create",
@@ -813,6 +820,18 @@ async def run_line(a, log=_log) -> int:
         print("walk_status:", tools.call("walk_status", "{}"))
         print("recent_alerts:", tools.call("recent_alerts", "{}"))
         return 0
+    if a.input_wav and a.text:
+        log("[caregiver-line] --input-wav is the voice path; leave out --text.")
+        return 2
+    if a.output_wav and not (a.input_wav or a.text):
+        log("[caregiver-line] --output-wav never opens the mic: give --input-wav files or use --text.")
+        return 2
+    for path in a.input_wav or []:
+        try:
+            read_wav_pcm16(path, RATE)
+        except Exception as e:                           # OSError, EOFError, wave.Error, ValueError
+            log(f"[caregiver-line] cannot read {path}: {type(e).__name__}: {e}")
+            return 2
     key = _xai_key()
     if not key:
         log("[caregiver-line] XAI_API_KEY is not set (repo-root .env). Use --dry-run to test the tools.")
@@ -825,13 +844,18 @@ async def run_line(a, log=_log) -> int:
         log(f"[caregiver-line] could not open the Grok session: {type(e).__name__}: {str(e)[:200]}")
         return 1
     del key
-    audio = None if (a.text and a.mute) else Audio(mic=a.mic or "", output=a.output or "", barge_in=a.barge_in, log=log)
-    rec: list | None = [] if a.record else None
+    # Headless (recorded input, or Grok's voice to a file): no sound device is opened at all.
+    headless = bool(a.input_wav or a.output_wav)
+    audio = None if headless or (a.text and a.mute) else Audio(mic=a.mic or "", output=a.output or "",
+                                                               barge_in=a.barge_in, log=log)
+    rec: list | None = [] if (a.record or a.output_wav) else None
+    turns: list[dict] = []
     s = Session(ws, tools, voice=a.voice, instructions=instructions, text_mode=a.text, audio=audio,
                 log=log, debug=a.debug, record=rec)
     reader = asyncio.create_task(s.run())
     loop = asyncio.get_running_loop()
     tasks = [reader]
+    status = 0
     try:
         await s.configure()
         await asyncio.wait_for(s.ready.wait(), 10)
@@ -874,6 +898,31 @@ async def run_line(a, log=_log) -> int:
                 await asyncio.wait_for(s.idle.wait(), 60)
                 if audio:
                     await audio.drained(30)
+        elif a.input_wav:
+            rate_in = int(s.in_format.get("rate") or RATE)
+            if not a.no_greeting:
+                s.idle.clear()
+                await s.send({"type": "response.create", "response": {"instructions": GREETING}})
+                await asyncio.wait_for(s.idle.wait(), 60)
+            for path in a.input_wav:
+                if s.closed.is_set():
+                    break
+                turn = {"input": path, "said": len(s.transcript), "audio": len(rec or []),
+                        "tools": len(s.tool_log), "t": time.time()}
+                turns.append(turn)
+                log(f"[caregiver-line] playing {path} as the microphone")
+                try:
+                    await send_recorded_turn(s, read_wav_pcm16(path, rate_in), rate_in, log=log)
+                    replied = time.monotonic()
+                    await asyncio.wait_for(s.idle.wait(), 60)
+                    # Grok streams faster than real time; a caregiver hears the answer out before
+                    # speaking again, so the next turn waits as long as this reply would play.
+                    heard = sum(len(c) for c in (rec or [])[turn["audio"]:]) / 2 / int(s.out_format.get("rate") or RATE)
+                    await asyncio.sleep(max(0.0, min(30.0, replied + heard - time.monotonic())))
+                finally:                         # a timed-out turn still keeps what it got
+                    for k, v in (("said", s.transcript), ("audio", rec or []), ("tools", s.tool_log)):
+                        turn[k] = v[turn[k]:]
+                    turn["seconds"] = round(time.time() - turn.pop("t"), 2)
         else:
             if not a.no_greeting:
                 s.idle.clear()
@@ -887,6 +936,7 @@ async def run_line(a, log=_log) -> int:
         pass
     except TimeoutError:
         log("[caregiver-line] Grok did not answer in time.")
+        status = 1
     finally:
         for t in tasks[1:]:
             t.cancel()
@@ -894,13 +944,25 @@ async def run_line(a, log=_log) -> int:
         reader.cancel()
         if audio:
             audio.stop()
-        if rec is not None and a.record:
-            _write_wav(a.record, b"".join(rec), int(s.out_format.get("rate") or RATE))
-            log(f"[caregiver-line] wrote {a.record}")
+        rate_out = int(s.out_format.get("rate") or RATE)
+        for path in filter(None, (a.record, a.output_wav)):
+            _write_wav(path, b"".join(rec or []), rate_out)
+            log(f"[caregiver-line] wrote {path}")
+        if a.output_wav and turns:
+            for i, turn in enumerate(turns, 1):
+                turn["audio_file"] = turn_wav_path(a.output_wav, i)
+                chunks = turn.pop("audio") if isinstance(turn.get("audio"), list) else []
+                turn["audio_seconds"] = round(sum(len(c) for c in chunks) / 2 / rate_out, 2)
+                _write_wav(turn["audio_file"], b"".join(chunks), rate_out)
+        for turn in turns:
+            turn.pop("audio", None)
+        if a.transcript:
+            _write_transcript(a.transcript, s, turns)
+            log(f"[caregiver-line] wrote {a.transcript}")
         seen = ", ".join(f"{k} x{v}" for k, v in sorted(s.events_seen.items()))
         log(f"[caregiver-line] closed. Events: {seen}. Spacetime reads {link.stats['reads']}, "
             f"messages sent {link.stats['pushes']}.")
-    return 0
+    return status
 
 
 def _offer(q: asyncio.Queue, item) -> None:
@@ -935,6 +997,85 @@ def _write_wav(path: str, pcm: bytes, rate: int) -> None:
         w.writeframes(pcm)
 
 
+# ======================================================================== recorded turns (headless)
+
+def read_wav_pcm16(path: str, rate: int = RATE) -> bytes:
+    """A 16-bit WAV as PCM16 mono at `rate`: channels are averaged, other rates resampled."""
+    import wave
+
+    import numpy as np
+    with wave.open(path, "rb") as w:
+        ch, width, sr = w.getnchannels(), w.getsampwidth(), w.getframerate()
+        raw = w.readframes(w.getnframes())
+    if width != 2:
+        raise ValueError(f"need 16-bit PCM, got {8 * width}-bit")
+    x = np.frombuffer(raw, dtype="<i2").astype(np.float32)
+    if ch > 1:
+        x = x[: x.size - x.size % ch].reshape(-1, ch).mean(axis=1)
+    if sr != rate and x.size:
+        n = int(round(x.size * rate / sr))
+        x = np.interp(np.arange(n) * (sr / rate), np.arange(x.size), x)
+    if not x.size:
+        raise ValueError("no audio")
+    return np.clip(np.round(x), -32768, 32767).astype("<i2").tobytes()
+
+
+async def send_recorded_turn(s: Session, pcm: bytes, rate: int = RATE, *, chunk_s: float = 0.1,
+                             tail_s: float = 1.2, pace: float = 1.0, start_timeout_s: float = 6.0,
+                             log=_log) -> bool:
+    """One caregiver turn from a recording, sent exactly as the microphone path sends it.
+
+    The audio goes out as input_audio_buffer.append in 100 ms chunks at real-time pace (pace=0
+    sends as fast as possible), followed by tail_s of silence so server VAD hears the end of
+    the turn. If no response starts within start_timeout_s, the turn is committed by hand.
+    Returns True when a response started for this turn."""
+    await s.idle.wait()
+    before = s.responses
+    data = pcm + b"\x00" * (int(rate * tail_s) * 2)
+    step = max(2, int(rate * chunk_s) * 2)
+    t0 = time.monotonic()
+    for i in range(0, len(data), step):
+        if s.closed.is_set():
+            return False
+        await s.send({"type": "input_audio_buffer.append", "audio": base64.b64encode(data[i:i + step]).decode()})
+        if pace > 0:
+            ahead = t0 + (i + step) / 2 / rate / pace - time.monotonic()
+            if ahead > 0:
+                await asyncio.sleep(ahead)
+    t_end = time.monotonic() + start_timeout_s
+    while s.responses == before and not s.closed.is_set() and time.monotonic() < t_end:
+        await asyncio.sleep(0.05)
+    if s.responses == before and not s.closed.is_set():
+        log("[caregiver-line] turn detection did not answer; committing the turn by hand")
+        s.idle.clear()
+        await s.send({"type": "input_audio_buffer.commit"})
+        await s.send({"type": "response.create"})
+        return False
+    return s.responses > before
+
+
+def turn_wav_path(path: str, n: int) -> str:
+    base, ext = os.path.splitext(path)
+    return f"{base}.turn{n}{ext or '.wav'}"
+
+
+def _write_transcript(path: str, s: Session, turns: list[dict]) -> None:
+    def tool(c: dict) -> dict:
+        try:
+            result = json.loads(c["result"])
+        except (TypeError, ValueError):
+            result = c["result"]
+        return {**c, "result": result}
+
+    out = {"transcript": [{"who": who, "text": text} for who, text in s.transcript],
+           "turns": [{**t, "said": [{"who": w, "text": x} for w, x in t.get("said", [])],
+                      "tools": [tool(c) for c in t.get("tools", [])]} for t in turns],
+           "tools": [tool(c) for c in s.tool_log],
+           "events_seen": s.events_seen}
+    with open(path, "w") as fh:
+        json.dump(out, fh, indent=1, ensure_ascii=False)
+
+
 def add_parser(sub) -> None:
     c = sub.add_parser("caregiver", help="the caregiver's hands-free voice line to Kite (Grok Voice)")
     c.add_argument("--voice", default=DEFAULT_VOICE, help="Grok voice (default eve)")
@@ -953,6 +1094,13 @@ def add_parser(sub) -> None:
                    help="seconds between checks for new walker alerts (0 = off)")
     c.add_argument("--max-minutes", type=float, default=30, help="hang up after this long (credits)")
     c.add_argument("--record", help="also write Grok's audio to this WAV file")
+    c.add_argument("--input-wav", action="append", metavar="WAV",
+                   help="use this recording as the microphone, one caregiver turn per file (repeatable); "
+                        "headless: no mic and no speaker are opened")
+    c.add_argument("--output-wav", metavar="WAV", help="write Grok's voice here (and WAV.turnN.wav per "
+                   "--input-wav turn) instead of playing it; the speaker is never opened")
+    c.add_argument("--transcript", metavar="JSON", help="write the transcript, every tool call with its "
+                   "result, and each turn's timing to this file")
     c.add_argument("--debug", action="store_true", help="log every server event type and tool result")
 
 

@@ -193,7 +193,7 @@ def cmd_caregiver(a) -> int:
     return run(a)
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="kite-earpiece", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd")
@@ -223,6 +223,11 @@ def main(argv=None) -> int:
     t.add_argument("--silent", action="store_true", help="do not play sound")
     from .caregiver_voice import add_parser as add_caregiver
     add_caregiver(sub)
+    return p
+
+
+def main(argv=None) -> int:
+    p = build_parser()
     a = p.parse_args(argv)
     if a.cmd is None:
         a = p.parse_args(["run", *(argv or sys.argv[1:])])
