@@ -11,9 +11,9 @@ Kite is a guide dog you don't wait two years for. A DJI Tello flies about 30 cm 
 
 The guide dog comparison shapes the features. A guide dog leads around obstacles, stops at curbs and crossings, watches overhead clearance, and refuses "forward" when a car is coming (intelligent disobedience). Each Kite cue should map to one of those jobs.
 
-Why it matters: commonly cited figures put a trained guide dog at around $50,000 with waitlists of years, and only about 2% of blind people work with one. Rex verifies these before they go on a slide.
+Why it matters: Guiding Eyes for the Blind puts the cost of raising and training one guide dog at $50,000 (donors pay it, not the blind person), and fewer than 10,000 guide dogs work in the US against about 1 million Americans who are blind. Drop the old "2%" figure: its only traceable source is from about 1990. Sources and caveats are in `docs/research/facts.md`; Rex signs off before they go on a slide.
 
-Prior art: Flying Guide Dog (Tan et al., KIT, IEEE ROBIO 2021, arXiv 2108.07007, code at github.com/EckoTan0804/flying-guide-dog) also used a DJI Tello. It flew ahead of the user, led them on a leash, found walkable ground with semantic segmentation and read pedestrian lights, and its user study found drone guidance faster than the alternatives it tested. A judge or another hacker can find it in one search, so we name it first. What Kite changes: no leash (everything reaches the walker as spatial sound and voice), the drone flies behind and above instead of in front, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live. We don't copy its code (Cal Hacks rules).
+Prior art: Flying Guide Dog (Tan et al., KIT, IEEE ROBIO 2021, arXiv 2108.07007, code at github.com/EckoTan0804/flying-guide-dog) also used a DJI Tello. It flew ahead of the user, led them on a leash, found walkable ground with semantic segmentation and read pedestrian lights. Its user study had six sighted people under blindfolds and a questionnaire, with no comparison condition; the "drone guidance is faster" result it cites comes from an earlier paper, DroneNavigator (ASSETS 2017). A judge or another hacker can find it in one search, so we name it first. What Kite changes: no leash (everything reaches the walker as spatial sound and voice), the drone flies behind and above instead of in front, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live. We don't copy its code (Cal Hacks rules).
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -73,7 +73,7 @@ The two-minute pitch, demo first (also the Cartesia track's format):
 5. 1:35 to 1:50. The interview quote and one measured number (collisions with and without Kite in the sim).
 6. 1:50 to 2:00. The prior-art line and what's real, then questions.
 
-The prior-art line, roughly: "In 2021, researchers at KIT showed a Tello could lead a blind walker on a leash, and users found it faster. Kite drops the leash: the drone flies behind you, and everything reaches you as sound."
+The prior-art line, roughly: "In 2021, researchers at KIT flew a Tello in front of blindfolded walkers on a leash, and it kept them on the sidewalk. Kite drops the leash: the drone flies behind you, and everything reaches you as sound."
 
 The sim walk is the backup. If the chest camera path fails at the table, the judge walks the sim corner with the screen black, guided by the same earpiece.
 
