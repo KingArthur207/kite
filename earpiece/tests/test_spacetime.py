@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import httpx
 import pytest
 
-from conftest import free_port, wait_for
+from conftest import wait_for
 from earpiece import spacetime
 from earpiece.config import Cfg
 from earpiece.events import parse
@@ -305,7 +305,7 @@ def test_earpiece_mirrors_inbound_and_spoken_events_through_the_bridge(fake, off
     from earpiece.memory import MemoryStore
     cfg = Cfg()
     cfg.speech.cache_dir = offline_speech / "cache"
-    cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
+    cfg.net.udp_port, cfg.net.ws_port = 0, 0
     mem = MemoryStore(project_id="", project_key="", store=offline_speech / "memory.json", log=lambda *_: None)
     a = Earpiece(cfg, output="null", record=True, log=lambda *_: None, memory=mem)
     b = SpacetimeBridge(fake.host, DB, source="earpiece", log=lambda *_: None)   # as `run --spacetime`

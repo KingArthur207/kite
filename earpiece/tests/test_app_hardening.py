@@ -96,7 +96,6 @@ def test_perception_source_set_is_bounded(app):
 def test_stop_ends_every_thread_the_app_started(offline_speech):
     """brain, vision and gestures each ran a thread with no way to end it, so every Earpiece
     (each test, selftest) left three behind; the transport left a thread and two ports."""
-    from conftest import free_port
     from earpiece.app import Earpiece
     from earpiece.config import Cfg
     from earpiece.memory import MemoryStore
@@ -105,7 +104,7 @@ def test_stop_ends_every_thread_the_app_started(offline_speech):
     for _ in range(3):
         cfg = Cfg()
         cfg.speech.cache_dir = offline_speech / "cache"
-        cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
+        cfg.net.udp_port, cfg.net.ws_port = 0, 0
         mem = MemoryStore(project_id="", project_key="", store=offline_speech / "m.json", log=lambda *_: None)
         a = Earpiece(cfg, output="null", log=lambda *_: None, memory=mem)
         a.start(prewarm=False, announce=False)

@@ -19,7 +19,7 @@ from earpiece.transport import MAX_BUCKETS, Transport, origin_allowed
 def net():
     got: list = []
     logs: list = []
-    t = Transport(got.append, "127.0.0.1", free_port(), free_port(), log=logs.append,
+    t = Transport(got.append, "127.0.0.1", 0, 0, log=logs.append,
                   allow_origins=("http://192.168.1.5:5173/",))
     t.state_provider = lambda: {"ok": True}
     t.start()
@@ -113,7 +113,7 @@ def test_handler_exceptions_are_contained():
     def boom(msg):
         raise RuntimeError("handler bug")
     logs: list = []
-    t = Transport(boom, "127.0.0.1", free_port(), free_port(), log=logs.append)
+    t = Transport(boom, "127.0.0.1", 0, 0, log=logs.append)
     t.start()
     try:
         for _ in range(3):
@@ -257,7 +257,7 @@ def test_app_stop_leaks_no_network_threads(offline_speech):
     for _ in range(3):
         cfg = Cfg()
         cfg.speech.cache_dir = offline_speech / "cache"
-        cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
+        cfg.net.udp_port, cfg.net.ws_port = 0, 0
         mem = MemoryStore(project_id="", project_key="", store=offline_speech / "m.json", log=lambda *_: None)
         a = Earpiece(cfg, output="null", log=lambda *_: None, memory=mem)
         a.start(prewarm=False, announce=False)

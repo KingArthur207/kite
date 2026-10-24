@@ -141,6 +141,8 @@ class Earpiece:
             threading.Thread(target=self.prewarm_cues, name="cue-prewarm", daemon=True).start()
         if self.transport is not None:
             self.transport.start()
+            # with port 0 the OS picked free ports: publish them where every caller looks
+            self.cfg.net.udp_port, self.cfg.net.ws_port = self.transport.udp_port, self.transport.ws_port
         self.memory.start()
         threading.Thread(target=self._control_loop, name="control", daemon=True).start()
         if isinstance(self.output, (DeviceOutput, RustDeviceOutput)):

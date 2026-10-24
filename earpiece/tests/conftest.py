@@ -60,7 +60,7 @@ def wait_for(pred, timeout=5.0, step=0.02):
 def app(offline_speech):
     cfg = Cfg()
     cfg.speech.cache_dir = offline_speech / "cache"
-    cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
+    cfg.net.udp_port, cfg.net.ws_port = 0, 0       # the OS picks free ports; start() reports them
     logs = []
     from earpiece.memory import MemoryStore
     mem = MemoryStore(project_id="", project_key="", store=offline_speech / "memory.json", log=logs.append)

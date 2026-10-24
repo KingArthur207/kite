@@ -137,9 +137,12 @@ class Transport:
         loop = asyncio.get_running_loop()
         udp, _ = await loop.create_datagram_endpoint(lambda: _Udp(self), local_addr=(self.host, self.udp_port))
         self._servers.append(udp)
-        self._servers.append(await websockets.serve(
-            self._ws_handler, self.host, self.ws_port, max_size=256 * 1024, ping_interval=20,
-            ping_timeout=20, process_request=self._check_origin))
+        srv = await websockets.serve(self._ws_handler, self.host, self.ws_port, max_size=256 * 1024,
+                                     ping_interval=20, ping_timeout=20, process_request=self._check_origin)
+        self._servers.append(srv)
+        # port 0 = any free port (tests, parallel runs): report the ones the OS picked
+        self.udp_port = udp.get_extra_info("sockname")[1]
+        self.ws_port = srv.sockets[0].getsockname()[1]
         loop.create_task(self._state_pump())
         self.log(f"[net] listening: udp://{self.host}:{self.udp_port}  ws://{self.host}:{self.ws_port}")
 

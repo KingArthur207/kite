@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import json
 import socket
-import threading
 import time
 
 import numpy as np
@@ -232,8 +231,7 @@ def run(play: bool = True, log=print) -> int:
     try:
         from .transport import Transport
         got_msgs = []
-        tr = Transport(lambda m: got_msgs.append(m.type), "127.0.0.1", 0, 0, log=lambda *_: None)
-        tr.udp_port, tr.ws_port = _free_port(), _free_port()
+        tr = Transport(lambda m: got_msgs.append(m.type), "127.0.0.1", 0, 0, log=lambda *_: None)   # any free ports
         tr.start()
         socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(
             json.dumps({"type": "heartbeat", "source": "selftest"}).encode(), ("127.0.0.1", tr.udp_port))
@@ -252,11 +250,3 @@ def run(play: bool = True, log=print) -> int:
     warns = [r for r in results if r[1] == "WARN"]
     log(f"[selftest] {len(results) - len(fails) - len(warns)} pass, {len(warns)} warn, {len(fails)} fail")
     return 1 if fails else 0
-
-
-def _free_port() -> int:
-    s = socket.socket()
-    s.bind(("127.0.0.1", 0))
-    p = s.getsockname()[1]
-    s.close()
-    return p
