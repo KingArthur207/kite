@@ -1,27 +1,25 @@
 # Kite notes 02: the drone, the code we have, and what it means for the build
 
-Written 2026-10-24, about 7 hours into the 36 h hackathon. Arthur and Claude wrote it after studying
-[djitellopy](https://github.com/damiafuentes/djitellopy), the team's previous project
-[vigil / ReachGlass](https://github.com/parthm667/vigil) and its saved flight logs, and the kite repo as it stood.
+Written 2026-10-24, about 7 hours into the 36 h hackathon. Arthur and Claude wrote it after studying the DJI
+Tello, the [djitellopy](https://github.com/damiafuentes/djitellopy) library and the kite repo.
 
-Each number says where it came from. **Measured** means vigil's real flight on 2026-09-26 (standard Tello, 87 %
-battery, stick 30). **Spec / docs** means the SDK or a library docstring. **Estimate** means not verified on our
-drone.
+Each fact says where it came from:
+- **source** means djitellopy's code (pip 2.5.0 / GitHub master);
+- **spec / docs** means DJI's Tello SDK documentation as reflected in djitellopy;
+- **kite** means this repo;
+- **to measure** means we haven't checked it on our drone yet.
 
 ---
 
 ## 0. TL;DR
 
-- The Tello is **its own Wi-Fi network**. The computer that flies it gets **no internet** on that adapter. It
-  takes text commands on UDP 8889, sends state at ~10 Hz on UDP 8890 and sends H.264 video to UDP 11111.
-- **It reacts slowly.** Forward/sideways motion starts about **0.5 s** after a stick command and takes another
-  ~0.45 s to reach speed. Video adds ~0.25 s. Treat the drone as a look-ahead scout (crowds, crossings,
-  route), not a reflex sensor. The body-worn webcam handles sudden obstacles.
-- **Its top speed is about walking speed.** Stick 100 is about **1 m/s** forward, extrapolated from stick 30
-  and never measured above it. People walk at 1.2–1.4 m/s. Measure stick 60 and 100 before planning around
-  following at full walking speed.
-- **Batteries are short.** One pack lasts about **6–8 min of flight** (measured ~9–11 %/min).
-- **The camera is narrow and fixed.** It can't tilt and sees ~48°×37° (measured fx ≈ 1077 px at 960×720).
+- **Network.** The Tello is **its own Wi-Fi network** (standard model, not EDU). The computer that flies it gets
+  **no internet** on that adapter. It takes text commands on UDP 8889, sends state on UDP 8890 and sends
+  H.264 video to UDP 11111.
+- **Two ways to move, never mixed:**
+  - continuous `rc` stick values, which we stream at 10–20 Hz;
+  - discrete moves (`forward 100`, `cw 90`) that the drone flies itself, answering `ok` when done.
+- **Auto-land.** The drone lands by itself **15 s after the last command it hears**. Streaming `rc` counts.
 - **djitellopy has traps:**
   - replies aren't matched to the commands they answer;
   - timed-out commands retry 3×, so a move can be flown twice;
@@ -29,9 +27,12 @@ drone.
   - its frames are RGB;
   - its video reader lags more and more over a flight.
 
-  Use kite's ported drone layer instead (§9).
-- **Not pushed yet.** The drone layer is ported from vigil into `kite/` with 35 passing tests, but only in
-  Arthur's local checkout. It isn't committed (§2).
+  Kite's drone layer (§6) avoids all of them. Use it instead of calling djitellopy directly.
+- **Still unknown for our drone.** How fast it reacts to the sticks, its top `rc` speed, video lag, the
+  camera's focal length and real battery time. These decide whether following at walking pace works.
+  Measure them first with `tests/drone_test.py` (§6).
+- **Not pushed yet.** The drone layer is in `kite/` with 35 passing tests, but only in Arthur's local
+  checkout. It isn't committed (§2).
 
 ---
 
@@ -48,9 +49,9 @@ A webcam worn by the person runs object detection for sudden, close obstacles.
 | Item | Notes |
 |---|---|
 | DJI Tello, **standard model (not EDU)** | The only drone we have. 80 g, prop guards. Has no GPS; holds position with a downward camera and a ToF (time-of-flight) range sensor. |
-| Tello batteries | Each one lasts ~6–8 min of flight. Charging takes much longer than a flight, so rotate packs. |
+| Tello batteries | DJI lists ~13 min of flight; with video and real manoeuvres it will be less (**to measure**). Charging takes much longer than a flight, so rotate packs. |
 | Laptops | Arthur's Mac (macOS 26, Apple Silicon). The dashboard README describes a **drone laptop** and a **wearable laptop**. |
-| AirPods | Audio out. The earpiece module prefers the MacBook mic, because an open AirPods mic forces mono "call" quality. |
+| AirPods | Audio out. The earpiece config recommends the MacBook mic, because an open AirPods mic forces mono "call" quality. |
 | Webcam | Worn by the person, plugged into the wearable laptop. |
 
 **APIs planned** (`.env.example` on main, copy to `.env`, never commit it):
@@ -78,21 +79,21 @@ A webcam worn by the person runs object detection for sudden, close obstacles.
     `https://maincloud.spacetimedb.com/v1/database/kite-sync-pl6rp/call/<reducer>` with a bearer token
     (see `dashboard/README.md`).
 - `.env.example` and `.gitignore` (ignores `.env` and `.env.*`).
+- `kite-notes-02.md` (this file).
 
 **Branch `feat/airpods-audio`** (Karthik, work in progress). `earpiece/` holds the audio core: binaural
 rendering (Brown–Duda spherical-head model), a real-time mixer with cue, alert and speech buses, synthesised
-cue sounds, and the JSON event contract. Summary in §10.
+cue sounds, and the JSON event contract. Summary in §7.
 
-**Arthur's local checkout, uncommitted** (done in this session, not pushed):
+**Arthur's local checkout, uncommitted:**
 - `.venv/`: Python 3.12.14 (made with `uv`), djitellopy 2.5.0, PyAV 19.0.2, opencv-python 5.0, numpy 2.5, pytest.
 - `pyproject.toml`: install with `pip install -e ".[dev]"`. Pytest only collects `test_*.py`, so
   `drone_test.py` (a flight script) is never run as a test.
-- `kite/`: the drone layer and video readers ported from vigil (§9).
+- `kite/`: the drone layer and video readers (§6).
 - `tests/test_drone.py` and `tests/test_sources.py`: 35 tests, all passing.
 - `tests/drone_test.py`: now imports `kite.sources.video_stream` and stops before takeoff if it can't. Its
   docstring now shows the right run commands.
-- `README.md` with setup steps, and a local `.gitignore`. That `.gitignore` will **conflict** with main's when
-  pulling: merge the two by hand.
+- `README.md` with setup steps, and `.gitignore` with the Python ignores added under main's `.env` rules.
 
 ---
 
@@ -113,9 +114,9 @@ cue sounds, and the JSON event contract. Summary in §10.
 
 Two things to settle early:
 1. **Internet for the drone laptop.** Its Wi-Fi belongs to the Tello, so SpacetimeDB, Gemini and Claude are
-   unreachable from it unless it gets a second link: iPhone USB tethering, Ethernet, or a USB Wi-Fi dongle
-   (vigil used a dongle). Alternatively, the drone laptop only streams to the wearable laptop over a second
-   link, and that laptop does the cloud calls.
+   unreachable from it unless it gets a second link: iPhone USB tethering, Ethernet, or a USB Wi-Fi dongle.
+   Alternatively, the drone laptop only streams to the wearable laptop over a second link, and that laptop
+   does the cloud calls.
 2. **The earpiece binds to `127.0.0.1`** (`NetCfg.bind_host`). Only processes on the wearable laptop can send
    it UDP or WebSocket events. Drone events must come through SpacetimeDB, a relay on the wearable laptop, or a
    changed bind host.
@@ -125,41 +126,37 @@ Two things to settle early:
 ## 4. The Tello: how it works
 
 ### 4.1 Network
-- **Network.** The standard Tello is always an access point (`TELLO-xxxxxx`), drone at `192.168.10.1`,
-  laptop gets an address like `192.168.10.2`. It **cannot join another network**: `ap` (station mode) is
-  EDU-only.
+- **Network.** The standard Tello is always an access point (`TELLO-xxxxxx`), drone at `192.168.10.1`.
+  It **cannot join another network**: `ap` (station mode) is EDU-only.
 - **One controller.** Only one controller works at a time. **Close the Tello phone app and take the phone off
   the drone's Wi-Fi.** While the app is connected, the drone streams video to the phone and our code gets
   none.
 - **UDP ports, all on the laptop side, plain-text protocol:**
   - **8889:** we send commands from it. The drone replies to the same port with `ok`, `error …`, a value
     (`87`, `801mm`) or `out of range`.
-  - **8890:** we receive the state stream: one ASCII line per packet, `key:value;` pairs, ~10 Hz.
+  - **8890:** we receive the state stream: one ASCII line per packet, `key:value;` pairs.
   - **11111:** we receive raw H.264 (Annex-B) after `streamon`. 960×720 at ~30 fps.
-- **Range.** Wi-Fi range is on the order of tens of metres in practice (spec claims ~100 m in open air).
-  Stay close: video lag grows with a weak link (fruitfly checklist: keep the laptop within ~5 m, away from
-  other 2.4 GHz networks).
+- **Range.** DJI's spec says ~100 m in open air; expect much less in practice. Keep the laptop close and away
+  from other 2.4 GHz networks: video lag grows on a weak link.
 
 ### 4.2 Commands (text, UDP 8889)
 **SDK mode and power**
 - `command`: enter SDK mode (`connect()` sends it).
-- `takeoff`: climbs to ~0.8–1.0 m. Measured: `ok` arrives **8.7 s** after sending.
-- `land`: measured `ok` after 2.8 s.
+- `takeoff`: can take many seconds to answer `ok`. djitellopy allows 20 s.
+- `land`.
 - `emergency`: motors off immediately, the drone falls.
 
 **Video:** `streamon` / `streamoff`.
 
 **Discrete moves** (the drone flies them itself on its optical-flow hold and answers `ok` only when done):
 - `forward|back|left|right|up|down <20–500 cm>`.
-  - Measured: a 50 cm move answers after **2.25 s**, and motion starts ~0.2–0.25 s after the command.
 - `cw|ccw <1–360 °>`.
 - `go x y z speed`: each of x, y, z in −500..500 cm, speed 10–100 cm/s. x, y and z can't all be inside −20..20.
 - `curve x1 y1 z1 x2 y2 z2 speed`: speed 10–60, arc radius 0.5–10 m.
 - `flip l|r|f|b`.
-- `speed <10–100>`: speed for discrete moves (vigil used 50).
-- `stop`: hover now and cancel a running move. vigil relies on it. Pip djitellopy 2.5.0 has no `tello.stop()`
-  method, so send the raw `"stop"` instead.
-- Accuracy estimate from vigil's plan, unmeasured: ±10 cm per metre and ±3–5° per turn on a textured floor.
+- `speed <10–100>`: speed for discrete moves.
+- `stop`: hover now and cancel a running move. Pip djitellopy 2.5.0 has no `tello.stop()` method, so send the
+  raw `"stop"` instead.
 
 **Continuous control:** `rc lr fb ud yaw`, each −100..100. Positive means right / forward / up / clockwise.
 - No reply. Send it at 10–20 Hz.
@@ -179,21 +176,21 @@ Two things to settle early:
   If the laptop crashes, the drone lands by itself.
 - **Commands sent closer than ~100 ms apart get dropped** (`TIME_BTW_COMMANDS = 0.1`).
 - **Replies carry no ID.** You can't tell which command a reply answers.
-- **Flying over a table makes it climb by the table height**, because the downward range sensor reads the
-  tabletop. vigil treated tables as obstacles.
-- **Position hold needs light and a textured floor.** Glossy, uniform or dark floors make it drift; bring a
-  patterned mat for takeoff. Outdoors, the 80 g airframe is pushed around by wind.
+- **Height comes from the downward range sensor.** Flying over a table or bench, it will rise by that object's
+  height (**to confirm**). Keep away from furniture.
+- **Position hold needs light and a textured floor.** Glossy, uniform or dark floors make it drift. Outdoors,
+  the 80 g airframe is pushed around by wind.
 
-### 4.3 State stream (UDP 8890), units as we actually see them
+### 4.3 State stream (UDP 8890)
 
-| Field | Unit / meaning | Notes |
+| Field | Meaning | Notes |
 |---|---|---|
-| `pitch`, `roll`, `yaw` | degrees, integers | yaw grows with `cw` (vigil checks the sign on the first 20–135° turn) |
-| `vgx`, `vgy`, `vgz` | **dm/s** (not cm/s), integers | in vigil's log, moving forward read as **negative** `vgx`. Steps of 0.1 m/s, so slow speeds round to 0 |
-| `h` | cm above the **takeoff point**, in 10 cm steps | 0 on the ground, ~100 after takeoff |
-| `tof` | cm to whatever is **below** | 10 on the ground, **6553 = out of range**, hover noise ~2.4 cm |
-| `bat` | % | drains ~9–11 %/min in flight |
-| `templ`, `temph` | °C | heats up on the ground with video on; fruitfly refused takeoff at `temph` ≥ 90 |
+| `pitch`, `roll`, `yaw` | degrees, integers | check which way yaw grows with `cw` (**to measure**) |
+| `vgx`, `vgy`, `vgz` | speeds, integers | commonly reported as **dm/s**, not cm/s; sign convention **to measure** |
+| `h` | cm above the **takeoff point** | take off from the floor, so this is height above the floor |
+| `tof` | cm to whatever is **below** | very small on the ground; a huge value (e.g. 6553) means out of range |
+| `bat` | % | |
+| `templ`, `temph` | °C | the drone warms up on the ground with video on |
 | `baro` | m (float) | absolute, drifts |
 | `agx`, `agy`, `agz` | acceleration, ≈ milli-g | |
 | `time` | s the motors have run | |
@@ -237,8 +234,8 @@ Source read: `djitellopy/tello.py` (1129 lines) and `enforce_types.py`.
   "Did not receive a state packet". That error usually means the firewall is blocking inbound UDP 8890.
 - **`get_frame_read()` → `BackgroundFrameRead`:**
   - opens `udp://@0.0.0.0:11111` with PyAV (5 s timeout) and decodes every frame;
-  - frames come out as **RGB** (via `frame.to_image()`), not BGR. vigil's blue-bottle colour check silently
-    failed because of this;
+  - frames come out as **RGB** (via `frame.to_image()`), not the BGR OpenCV expects, so colours are swapped
+    and colour checks silently fail;
   - frames have no timestamps and old ones are never dropped, so **latency grows over a flight**;
   - a decode error kills the thread silently;
   - `with_queue=True` gives a 32-frame deque.
@@ -248,188 +245,36 @@ Source read: `djitellopy/tello.py` (1129 lines) and `enforce_types.py`.
 - **pip vs GitHub.** pip 2.5.0 is from 2023-06. GitHub master adds `stop()`, `received_at` and a fix for
   changing the video port. Those 2024 changes were never released.
 
-**What kite does instead** (vigil's fixes, now in `kite/drone/tello.py`):
-- sends everything with `send_command_without_return` and reads the reply list itself, never blocking;
-- clears the reply list before each discrete command, and ignores replies for 1 s after `stop`;
-- spaces sends at least 0.1 s apart;
-- times out each command itself, never retrying;
-- casts every `rc` value to a plain `int`;
-- stamps state packets on arrival;
-- reads video with its own newest-frame BGR readers.
-
 ---
 
-## 6. Measured numbers (vigil, 2026-09-26, standard Tello, stick 30)
-
-Sources:
-- vigil's `integration/fruitfly-training/archive/rl-pipeline/data/lag_test/`: `drone_fulllogs_…json` (raw),
-  `dronetestresults_…json`, `fit_…json` (dead time + first-order fit);
-- the fruitfly docs (`drone_io_sim_r0.md`, `configs/env.yaml`).
-
-`tests/drone_test.py --analyze` on the raw log reproduces the report.
-
-| Quantity | Value |
-|---|---|
-| Read-command round trip (`battery?`, 1 ms polling) | **52 ± 2 ms** (48–55) |
-| `takeoff` → `ok` / `land` → `ok` | **8.7 s** / 2.8 s |
-| State stream | **9.8 Hz** (102 ms), jitter 18 ms, worst gap 299 ms |
-| Video stream | **30.3 fps**, jitter 10 ms, worst gap 148 ms |
-| **Yaw** | dead time 0.12–0.20 s, time constant ~0.02 s, 16.5°/s at stick 30, **~55°/s per 100**; ~0.3 s to stop |
-| **Forward/back** | dead time **0.44–0.54 s**, time constant **0.39–0.47 s**, 0.29 m/s at 30, **~0.96 m/s per 100**; **~1.2 s** to drop below 10 % after rc 0 |
-| **Sideways** | dead time 0.44–0.54 s, time constant 0.40–0.50 s, **~0.97 m/s per 100**; ~1.2 s to stop |
-| **Vertical** | dead time 0.37–0.45 s, ~0.1 m/s at 30, **~0.32 m/s per 100** (±20 %: speed steps are 0.1 m/s) |
-| Discrete `forward 50` | `ok` after 2.25 s; motion starts 0.2–0.25 s after the command |
-| First visible change in video after a command (median) | yaw 0.39 s, vertical 0.61 s, sideways 0.82 s, forward 1.17 s (includes the motion dead time) |
-| Video behind telemetry | ~0–60 ms for yaw and moves (worst ~85 ms) |
-| Camera → decoded frame on the laptop | 0.15–0.45 s (fruitfly range); vigil used `video_lag_s: 0.25` |
-| Battery | 87 → 67 % in a 135 s session; sim model 0.18 %/s, so **~6–8 min of flight per pack** |
-
-**Caveats**
-- Only **stick 30** was measured; everything "per 100" is linear extrapolation. The Tello's stick response may
-  not be linear. Fruitfly's `flyfollow.tools.stick_response --send --axes yaw,fb --sticks 30,60,100` measures
-  it in one ~3 min flight.
-- The pitch/roll "lag" lines in `drone_test.py`'s report (~1.5–2.3 s) are a measurement artefact: it waits
-  for a 2° angle change, and the angles are reported as whole degrees. Trust the fit (dead time ≈ 0.47 s).
-
-**What this means for control.** From a stick command to seeing the result in video is ~0.7–1.2 s. vigil
-coped by:
-- keeping gains low and using deadbands;
-- adding feed-forward (backing away at the walker's speed as soon as the measured range starts closing);
-- using discrete moves plus a wait for the video to catch up before trusting frames
-  (`video_lag_s` + 0.5–0.8 s of settle time).
-
----
-
-## 7. Camera and geometry
-
-- **Stream.** 960×720 H.264, ~30 fps. Forward camera, **fixed to the body, no tilt**. When the drone pitches
-  nose-down to accelerate, the image tilts with it, so correct vertical angles with telemetry pitch (vigil's
-  `pitch_sign` config).
-- **Focal length:**
-  - **measured on site by vigil: fx = fy ≈ 1077 px**, i.e. HFOV ≈ 48°, VFOV ≈ 37°;
-  - published stream calibrations (tello_ros): fx ≈ 920 px, i.e. ~55°×43° (vigil's default);
-  - the 82.6° diagonal spec is for stills and doesn't apply to the stream;
-  - vigil's early plan guessed 680 px, which is wrong;
-  - re-measure ours: an object of known height H at a taped distance d gives f = pixel_height · d / H.
-- **Formulas:**
-  - bearing = atan((x − 480) / fx), positive to the right;
-  - elevation = −atan((y − 360) / fy);
-  - range from a known height = fy · H / pixel_height (divide by cos(bearing) for off-axis objects);
-  - ground distance of an image row from height h: d = h / tan(depression angle).
-- **Pixel sizes at fx ≈ 1077:**
-
-  | Object | Height in pixels |
-  |---|---|
-  | 1.7 m person at 20 m | ~92 px (fine for YOLO) |
-  | 1.7 m person at 50 m | ~37 px |
-  | 0.3 m pedestrian-signal head at 20 m | **~16 px** (reading its state from across a street is marginal) |
-
-  Fly closer, or let the webcam and Maps data say where the crossing is.
-- **Following from behind and above** (vigil): at 2.0 m high and 1.0 m behind, only the person's **head** is in
-  frame (shoulders are 29° below the camera axis). Shoulders appear from ~1.6 m behind. vigil flew
-  `follow: altitude 1.9 m, distance 1.8 m` and refused any altitude below the person's height + 0.2 m.
-- **The camera can't see the ground right under or in front of the drone**, which is another reason sudden
-  obstacles belong to the webcam.
-
----
-
-## 8. vigil / ReachGlass (the team's previous Tello project)
-
-**What it was**
-- HackGT 13, Sept 2026, **3rd overall of 268** (demo: https://youtu.be/AqV3zwgGGPI).
-- A standard Tello hovers behind and above the wearer. On "find my water bottle" it:
-  - descends to 1.3 m;
-  - explores (8 × 45° scans, scores directions, hops ≤ 1.5 m);
-  - finds the bottle with YOLO-World ("blue water bottle" plus a blue-colour check);
-  - flies to it;
-  - guides the wearer there with spoken cues and haptic pads on glasses.
-- It also ran "find arthur" with face ID (insightface).
-- It ran on a **Windows** laptop.
-
-**Architecture.** One 20 Hz loop, `reachglass/app.py`:
-1. `sense()` reads the newest frame and telemetry and runs perception;
-2. `SafetyGovernor.check()`;
-3. inbox queries;
-4. `mission.step()`, which runs the current behaviour;
-5. the dashboard.
-
-| Module | Role |
-|---|---|
-| `drone/` | `TelloDrone`, `SafetyGovernor`, `Drone` interface (**ported to kite**) |
-| `sources/` | newest-frame video readers, webcam, file replay (**ported to kite**) |
-| `types.py`, `geometry.py` | Frame/Detection/PersonObs/Pose2D, pinhole `CameraModel` (types partly ported) |
-| `detect/`, `track/`, `person/`, `perception.py` | YOLO / YOLO-World / pose detectors, IoU tracker + target lock, person range (head elevation / height / shoulders / width fusion) and facing; detectors run every Nth frame depending on mode |
-| `behaviors/` | `FollowBehind` (rc servo), `Scan`, `Explore`, `Approach`, `Guide`, `ReacquirePerson`, `Discrete` (one move + odometry update) |
-| `mapping/` | odometry (IMU yaw + commanded moves), coverage/obstacle grid, semantic memory, `walkpath.py` (Dijkstra walking path) |
-| `mission/` | state machine IDLE → TAKEOFF → FOLLOW → DESCEND → EXPLORE → APPROACH → ARRIVED → GUIDE → DONE/LANDED (+HOLD), guidance relative to the wearer |
-| `voice/` | AirPods push-to-talk / hands-free (faster-whisper STT, edge-tts/SAPI) — **Windows only** (stem presses via Windows media session); UDP 5005 queries in, 5006 announcements out |
-| `firmware/` | glasses: ESP32-CAM AP "rover" with MJPEG; Nano ESP32 at 192.168.4.50 UDP 4210 drives 2 ToF + 2 servo haptic pads (**sides crossed**: +1 = right presses the LEFT pad) |
-| `integration/fruitfly-training/` | 1,446-neuron fruit-fly connectome yaw controller, RL/CMA training, `tello_io.py` runtime, R0 measurement tools (`stick_response`, `latency_test`, camera calibration), the lag-test data |
-| `tools/` | `tello_latency_test.py` (= our `drone_test.py` minus the OpenCV reader), `tello_video_diag.py` (finds where the camera chain breaks: ports, firewall, link, state, raw packets, each decoder) |
-
-**FollowBehind control law** (`behaviors/follow.py`, defaults):
-- **Yaw:** 1.2 × bearing error, 4° deadband, max 40.
-- **Forward:** 40 × (range − set distance), 0.1 m deadband, max 35 (~0.35 m/s, "a slow walk").
-  - It only moves *toward* the person if even the most conservative range estimate is above 0.55 m and the
-    person's box is narrower than 75 % of the frame.
-  - Feed-forward: if the range is closing faster than 0.2 m/s (after subtracting our own commanded speed), it
-    backs off at the person's speed, up to stick 50.
-- **Altitude:** 60 × height error, 5 cm deadband, max 30.
-- **Orbit-behind:** sideways motion from the person's facing. It was **switched off** for the demo
-  (`orbit_gain 0`) because noisy facing estimates made the drone drift sideways.
-- **Losing the person:**
-  - keeps the last command for 0.35 s, then holds;
-  - after 1 s, turns toward where the person was last seen (yaw 20), for up to 20 s;
-  - if lost while close, backs off sideways and climbs, because the person is probably walking under the drone.
-
-**Lessons learned** (from vigil's code, docs and a review of its follow/tracking code):
-1. The person lock picks the **largest** box (`track/lock.py`). From above, a bystander 3 m away can beat the
-   wearer's head-only box. The unmerged follow-avoid patch switched to nearest-by-range and a
-   "not the person" list.
-2. The mission's "person lost for 20 s" rule (`mission/mission.py`) fires within a few seconds of a loss once
-   FOLLOW has run 20 s, not after 20 s: releasing the lock makes `person_unseen_s` infinite. This comes from a
-   separate review of vigil and wasn't re-checked here.
-3. Frames must be **BGR**; djitellopy's are RGB.
-4. **Video reader:**
-   - djitellopy's PyAV reader lags more and more;
-   - the team's OpenCV reader uses FFmpeg's `nobuffer|low_delay|framedrop` and grabs and discards frames to
-     stay current;
-   - its rate cap must be **60**, because a cap of 30 drops ~40 % of frames from timing jitter;
-   - open and read timeouts must be ~15 s, because the Tello sends keyframes seconds apart and nothing decodes
-     before one;
-   - never release the capture while `grab()` is blocked, or the process segfaults.
-5. **`streamon` sometimes needs re-sending** before video packets arrive. "Answers commands but no video" almost
-   always means the phone app or the firewall.
-6. **Land replies get lost.** Re-send `land` every 2 s until it's down. A lost or `error` reply with `h` ≤ 0.2 m
-   counts as landed. Never `stop` during takeoff or landing: the drone would hover while the code thinks it
-   landed.
-7. **Take off from the floor.** The altitude limits use `h`, which is measured from the takeoff surface.
-8. **Fruit-fly steering:** only yaw is trained. `fly.forward` must stay false: the untrained forward control
-   held 8–10 m and surged in flight. The plain PID steers as well.
-9. **Looming detection** (optic-flow expansion) is blind on blank walls and dark rooms and over-reads on door
-   frames. It was only validated in simulation. Obstacle avoidance while following exists only as an unmerged
-   patch (`integration/fruitfly-training/docs/integration/reachglass_follow_avoid.patch` + `FOLLOW_AVOID.md`).
-10. **Simulator and tests:** vigil's sim is self-declared broken, and 3 of its tests were already failing at the
-   end (follow distance, full mission, floor bottle).
-11. **Ports on a shared laptop:** on one team Mac an unrelated process (`gs-stand`) held UDP 8889. Always run
-    `lsof` before a flight.
-
----
-
-## 9. kite's drone layer (ported from vigil, local and uncommitted on 2026-10-24)
+## 6. kite's drone layer (local and uncommitted on 2026-10-24)
 
 ```
 kite/
   config.py            DroneCfg, SafetyCfg, Config (plain dataclasses, no YAML loader yet)
   types.py             Frame (BGR, read-only, t = arrival time, seq), Telemetry (SI units), wrap_deg
   drone/base.py        Drone interface, check_move (20-500 cm), check_rotate (1-360), clamp_rc
-  drone/tello.py       TelloDrone (vigil code; logger "kite.tello", macOS hint in the no-video error)
-  drone/safety.py      SafetyGovernor (vigil code, unchanged)
+  drone/tello.py       TelloDrone: djitellopy for the sockets, but kite's own command handling
+  drone/safety.py      SafetyGovernor: limits that always win over the mission
   drone/__init__.py    make_tello(cfg, dry_run=False)
   sources/             FrameSource; TelloVideoSource (backend "pyav" default or "opencv"), WebcamSource,
                        VideoFileSource, SteppedVideoSource, StaticImageSource; video_stream.VideoStream
-                       (the team's OpenCV reader), pyav_stream.PyAVStream
+                       (OpenCV/FFmpeg low-latency reader), pyav_stream.PyAVStream
 ```
+
+**How it avoids the djitellopy traps:**
+- sends everything with `send_command_without_return` and reads the reply list itself, never blocking;
+- clears the reply list before each discrete command, and ignores replies for 1 s after `stop`;
+- spaces sends at least 0.1 s apart;
+- times out each command itself, never retrying;
+- casts every `rc` value to a plain `int`;
+- stamps state packets on arrival;
+- reads video with its own newest-frame BGR readers:
+  - FFmpeg `nobuffer|low_delay|framedrop`, grabbing and discarding frames to stay current;
+  - a rate cap of 60, above the 30 fps stream;
+  - 15 s open and read timeouts, because nothing decodes before a keyframe;
+  - auto-reopen after a stall;
+  - never releases a capture while it's blocked reading.
 
 **Usage**
 ```python
@@ -467,9 +312,13 @@ drone.close()                       # lands if flying, stops video, ends djitell
   - calling it twice does nothing the second time;
   - during takeoff it lands straight away;
   - during a move it sends `stop` first;
-  - `stop()` never interrupts a takeoff or a landing.
+  - a lost or `error` land reply while `h` ≤ 0.2 m counts as landed;
+  - `stop()` never interrupts a takeoff or a landing, because the drone would hover while the code thinks it
+    landed.
+- **`streamon`** is re-sent up to 4 times until video packets arrive. If none do, the error explains the
+  likely causes: phone app, firewall, or the macOS Local Network permission.
 - **Telemetry:**
-  - speeds = dm/s × 0.1, giving m/s;
+  - speeds = raw × 0.1, assuming dm/s;
   - `tof` outside 0.1–8 m becomes `None`;
   - yaw is multiplied by `yaw_sign`;
   - `t` is when the packet was first seen, so a frozen state stream shows up as stale.
@@ -477,7 +326,8 @@ drone.close()                       # lands if flying, stops video, ends djitell
   They "complete" after the time they'd normally take.
 
 **`SafetyGovernor` defaults** (`SafetyCfg`):
-- **Sticks:** every rc channel clamped to **±50** (~0.5 m/s forward). **Raise it to follow at walking speed.**
+- **Sticks:** every rc channel clamped to **±50**. Raise it if measurements show the drone can't keep up with
+  a walk.
 - **Altitude band 0.5–2.3 m:**
   - climbing slows to zero over the 0.4 m below the ceiling;
   - above the ceiling it's pushed down at stick −20;
@@ -486,7 +336,8 @@ drone.close()                       # lands if flying, stops video, ends djitell
 - **Battery and flight time:** lands below 20 % battery or after 420 s of flight, re-sending `land` every 2 s if
   needed.
 - **Stale data:** hovers (rc 0) if no new frame for 1 s, or no new telemetry for 1 s.
-- `DroneCfg` defaults: `move_speed_cm_s 50`, `video_fps 60`, `video_backend "pyav"`, `video_lag_s 0.25`.
+- `DroneCfg` defaults: `move_speed_cm_s 50`, `video_fps 60`, `video_backend "pyav"`, `video_lag_s 0.25` (a
+  placeholder until we measure ours).
 
 **Setup and tests**
 ```bash
@@ -501,7 +352,7 @@ python -m pytest                    # + 4 slow tests (ffmpeg as a fake Tello), ~
   - includes a check that `rc` values reach djitellopy as plain `int`.
 - **`tests/test_sources.py` (11 tests):** file sources and read-only frames. Four slow tests run ffmpeg as a
   stand-in Tello, streaming H.264 at 960×720 / 30 fps over local UDP, with djitellopy imported first as in the
-  real app. Results, for both the PyAV and OpenCV backends:
+  real app. Results on Arthur's Mac, for both the PyAV and OpenCV backends:
   - ~31 fps delivered;
   - ~15 ms frame age when read;
   - recovers after a 5 s outage without reopening the stream;
@@ -510,10 +361,10 @@ python -m pytest                    # + 4 slow tests (ffmpeg as a fake Tello), ~
 - **Known noise:** every run prints macOS `objc: Class AVF… is implemented in both …cv2… and …av…` warnings,
   because OpenCV 5.0 and PyAV each bundle their own FFmpeg. Nothing broke in the tests. If an app crashes with
   a webcam open, suspect this first.
-- **Not done yet:** nothing in kite has run against the real drone. First check:
+- **Not done yet:** nothing has run against the real drone. First check:
   `python tests/drone_test.py --ground --preview` on the Tello's Wi-Fi.
 
-**`tests/drone_test.py` (the flight script)**
+**`tests/drone_test.py` (the flight script): this is how we get our numbers.**
 - **Ground mode (`--ground`):**
   - 10 × `battery?` round trips;
   - state and video stream rates;
@@ -528,10 +379,17 @@ python -m pytest                    # + 4 slow tests (ffmpeg as a fake Tello), ~
   analysis.
 - **Argument limits** (`check_args`): mag 10–100, duration 0.5–3 s, mag × duration ≤ 90, forward 20–500 cm.
 - **Ctrl+C lands,** retried 4 times; if it never lands, the 15 s auto-land takes over.
+- **Caveat:** pitch and roll come in whole degrees, so their "lag" is coarse. The speed channels
+  (`vgx`/`vgy`) and the video onset are the better measures for forward and sideways motion.
+- **Still to measure with it:**
+  - stick response at 30, then 60 and 100 (top speed decides whether following at walking pace works);
+  - video lag (put the result in `DroneCfg.video_lag_s`);
+  - yaw and `vgx` signs;
+  - battery drain per minute.
 
 ---
 
-## 10. Earpiece event contract (branch `feat/airpods-audio`, WIP, Karthik)
+## 7. Earpiece event contract (branch `feat/airpods-audio`, WIP, Karthik)
 
 **Transport:** JSON on **UDP 5010** (fire-and-forget) or **WebSocket 5011** (both ways), bound to `127.0.0.1`.
 Optional SpacetimeDB link (`spacetime_enabled: false` by default).
@@ -573,18 +431,46 @@ Optional SpacetimeDB link (`spacetime_enabled: false` by default).
 
 ---
 
-## 11. Risks for kite and what to do about them
+## 8. Camera and geometry
+
+- **Stream.** 960×720 H.264, ~30 fps. Forward camera, **fixed to the body, no tilt**. When the drone pitches
+  nose-down to accelerate, the image tilts with it, so correct vertical angles with telemetry pitch.
+- **Focal length:**
+  - DJI's 82.6° diagonal field of view is for still photos; the video stream is cropped;
+  - published stream calibrations (tello_ros) give fx ≈ 920 px, i.e. ~55°×43°;
+  - **measure ours**: an object of known height H at a taped distance d gives f = pixel_height · d / H.
+- **Formulas:**
+  - bearing = atan((x − 480) / fx), positive to the right;
+  - elevation = −atan((y − 360) / fy);
+  - range from a known height = fy · H / pixel_height (divide by cos(bearing) for off-axis objects);
+  - ground distance of an image row from height h: d = h / tan(depression angle).
+- **Pixel sizes at fx ≈ 920:**
+
+  | Object | Height in pixels |
+  |---|---|
+  | 1.7 m person at 20 m | ~78 px (fine for person detection) |
+  | 1.7 m person at 50 m | ~31 px |
+  | 0.3 m pedestrian-signal head at 20 m | **~14 px** (reading its state from across a street is marginal) |
+
+  Fly closer, or let the webcam and Maps data say where the crossing is.
+- **The camera can't see the ground right under or in front of the drone**, which is another reason sudden
+  obstacles belong to the webcam. From above and behind a person, the narrow vertical view means only part of
+  the body may be in frame. Choose follow height and distance by testing.
+
+---
+
+## 9. Risks for kite and what to do about them
 
 | Risk | Why | Mitigation |
 |---|---|---|
-| Drone can't keep up with a walk | ~1 m/s at stick 100 (extrapolated), vigil capped forward at 35 and the governor at 50 | measure sticks 60 and 100 (`stick_response`); raise `SafetyCfg.max_rc`; fly ahead/above along the planned route rather than chasing; have the walker go slowly in the demo |
-| Control loop lag ~0.7–1.2 s | dead time 0.5 s + rise 0.45 s + video 0.25 s | low gains, deadbands, feed-forward on range rate; drone = look-ahead, webcam = reflexes |
+| Drone can't keep up with a walk | top speed in `rc` mode unknown; people walk ~1.2–1.4 m/s | measure the stick response at 30/60/100 first; raise `SafetyCfg.max_rc`; fly ahead/above along the planned route rather than chasing; have the walker go slowly in the demo |
+| Control and video lag | the drone needs time to respond; video adds more | measure it; low gains, deadbands, feed-forward; drone = look-ahead, webcam = reflexes |
 | No internet on the drone laptop | Tello AP only | iPhone USB tethering / Ethernet / USB Wi-Fi dongle on the drone laptop, or route everything through the wearable laptop |
 | Earpiece only listens on localhost | `bind_host 127.0.0.1` | send drone events via SpacetimeDB or a relay on the wearable laptop, or change the bind host |
 | Outdoors | 80 g, no GPS, downward position hold needs texture + light, wind | test outside early; have an indoor / hallway / campus-path fallback demo |
-| Battery | 6–8 min per pack | short scripted demo runs, a battery log, start each run ≥ 50 %, land at 20–30 % |
+| Battery | ~13 min spec, less in practice | measure drain; short scripted demo runs; start each run ≥ 50 %, land at 20–30 % |
 | Wi-Fi range / interference | 2.4 GHz, lag grows with distance | laptop near the drone (carried by the walker or a teammate), few nearby networks |
-| Narrow fixed camera | ~48°×37°, no tilt | yaw to scan; distant signal heads are only ~16 px at 20 m |
+| Narrow fixed camera | no tilt, ~55° wide | yaw to scan; distant signal heads are only ~14 px at 20 m |
 | djitellopy traps | §5 | always go through `kite.drone` (never raw djitellopy calls in app code) |
 | macOS networking | firewall + Local Network privacy | allow Python incoming connections; if sends fail with `Errno 65 No route to host`, allow the terminal / IDE under System Settings → Privacy & Security → Local Network |
 | Port clashes | one process per port | `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` before every run; quit other Tello tools |
@@ -592,7 +478,7 @@ Optional SpacetimeDB link (`spacetime_enabled: false` by default).
 
 ---
 
-## 12. Before every flight
+## 10. Before every flight
 
 1. **Install while you still have normal internet.** pip and npm downloads won't work once you're on the
    Tello's Wi-Fi.
@@ -600,34 +486,33 @@ Optional SpacetimeDB link (`spacetime_enabled: false` by default).
 3. **Phone app closed**, phone off the Tello Wi-Fi. The laptop joins `TELLO-xxxxxx`.
 4. `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` prints nothing.
 5. `python tests/drone_test.py --ground --preview`. Pass if:
-   - state is ~10 Hz;
+   - state packets arrive steadily;
    - video is ~30 fps;
    - frame age stays low and doesn't grow.
 6. **Space:**
-   - at least 3 × 3 m for the latency test, 6 × 4 m for following;
+   - at least 3 × 3 m for the latency test, more for following;
    - ceiling above 2.5 m;
    - textured floor;
    - take off **from the floor**.
-7. Roles: operator at the laptop, spotter watching only the drone, the walker. Ctrl+C / `l` lands, `e` is the
-   emergency motor stop (the drone falls).
+7. Roles: operator at the laptop, spotter watching only the drone, the walker. Ctrl+C lands; `emergency` stops
+   the motors (the drone falls).
 8. **First run of any new behaviour in dry-run** (`make_tello(cfg, dry_run=True)`), with the drone held by hand.
 
 ---
 
-## 13. Open questions and next steps
+## 11. Open questions and next steps
 
-- [ ] Commit and push the local drone layer (`kite/`, `pyproject.toml`, tests, README, merged `.gitignore`).
-- [ ] First real check on our drone: `drone_test.py --ground`, then a flight run. Update `video_lag_s` and
-      confirm yaw and `vgx` signs.
-- [ ] Measure stick 60 and 100 forward/yaw response (fruitfly `stick_response`) to see whether following at
-      walking speed is possible.
+- [ ] Commit and push the local drone layer (`kite/`, `pyproject.toml`, tests, README, `.gitignore`).
+- [ ] First real check on our drone: `drone_test.py --ground`, then a flight run. Record the lag, speeds,
+      video delay, yaw and `vgx` signs and battery drain. Put the video lag into `DroneCfg.video_lag_s`.
+- [ ] Measure stick 60 and 100 forward/yaw response to see whether following at walking speed is possible.
 - [ ] Calibrate fx on our Tello (known object at 1.5 / 2 / 3 m).
 - [ ] Decide the network layout: which laptop flies, how it gets internet, how drone events reach the earpiece.
 - [ ] Define drone → earpiece messages: `hazard` (crosswalk / crowd), `status`, `scene`. Bearings must be in
-      the wearer's frame, so the drone needs the wearer's position relative to itself (person detection +
-      range from vigil's person estimator).
-- [ ] Port what we need from vigil's perception: YOLO person detection, tracker + lock (fix the
-      largest-box choice), person range and facing, `geometry.py` (`CameraModel`), and `FollowBehind`.
+      the wearer's frame, so the drone needs the wearer's position relative to itself.
+- [ ] Build drone perception: person detection, tracking the wearer (not the biggest box: a bystander can
+      look bigger), range and bearing, crowd density, crossing-signal state.
+- [ ] Build the follow controller on `rc`, on top of the `SafetyGovernor`.
 - [ ] SpacetimeDB schema for kite (replace the starter `person` table): drone status, hazards, route, wearer
       position.
 - [ ] Outdoor test of position hold and wind tolerance at the demo site.
