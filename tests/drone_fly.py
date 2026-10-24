@@ -119,7 +119,7 @@ class Pilot:
         elif key in ("-", "_"):
             self.speed = max(10, self.speed - 10)
             self.say(f"speed {self.speed}")
-        elif key in MOVES:
+        elif key in MOVES and self.action == "ok":  # during a safety hover a key press must not re-arm a stick
             i, sign = MOVES[key]
             self.hold[i] = sign * self.speed
             self.until[i] = now + self.pulse_s

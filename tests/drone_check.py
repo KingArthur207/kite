@@ -169,9 +169,12 @@ class Check:
                 detail = f"height {delta:+.2f} m"
             else:
                 ok = abs(peak) > 2.0
-                agrees = peak * sign > 0
-                detail = (f"peak {field} {peak:+.0f} deg, " + ("sign as kite expects" if agrees else
-                          "sign OPPOSITE to kite's convention: check the drone really moved " + name))
+                if not ok:
+                    detail = f"no {field} tilt seen (peak {peak:+.1f} deg): did it move {name}?"
+                elif peak * sign > 0:
+                    detail = f"peak {field} {peak:+.0f} deg, sign as kite expects"
+                else:
+                    detail = f"peak {field} {peak:+.0f} deg, sign OPPOSITE to kite's convention: check it moved {name}"
             self.record(f"rc {name}", ok, detail)
 
     def moves(self) -> None:
@@ -227,6 +230,7 @@ class Check:
                     self.moves()
         except Abort as e:
             print(f"  stopping: {e}", flush=True)
+            self.record("sequence", False, f"stopped before the end: {e}")  # an interrupted test never reads as passed
         except Exception as e:  # a bug here must still land the drone
             print(f"  error: {e!r}", flush=True)
             self.record("sequence", False, repr(e))

@@ -510,3 +510,23 @@ def test_a_refused_takeoff_on_the_ground_stays_on_the_ground():
     d.takeoff()
     d._complete("error: battery low")
     assert d.last_result() == "error: battery low" and not d.flying
+
+
+def test_an_rc_that_djitellopy_would_throttle_is_not_taken_as_news_about_the_link():
+    class Throttling(_LinkFake):
+        TIME_BTW_RC_CONTROL_COMMANDS = 0.5
+        last_rc_control_timestamp = 0.0
+
+        def send_rc_control(self, *v):
+            if time.time() - self.last_rc_control_timestamp > self.TIME_BTW_RC_CONTROL_COMMANDS:
+                self.last_rc_control_timestamp = time.time()
+                self.send_command_without_return("rc {} {} {} {}".format(*v))
+
+    fake = Throttling()
+    d = TelloDrone(tello=fake, video=False)
+    fake.down = True
+    d.rc(0, 10, 0, 0)  # sent, fails: the link is down
+    assert d.link_error is not None
+    fake.last_rc_control_timestamp = time.time()
+    d.rc(0, 10, 0, 0)  # djitellopy would drop it unsent: still down, not "works again"
+    assert d.link_error is not None

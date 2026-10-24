@@ -234,8 +234,11 @@ class TelloDrone(Drone):
             if any(vals):
                 self.log.append((time.time(), "rc {} {} {} {}".format(*vals)))
             return
-        if getattr(self._tello, "last_rc_control_timestamp", 0.0) > time.time():
-            self._tello.last_rc_control_timestamp = 0.0  # wall clock stepped back: djitellopy would drop every rc
+        last = getattr(self._tello, "last_rc_control_timestamp", 0.0)
+        if last > time.time():
+            self._tello.last_rc_control_timestamp = last = 0.0  # wall clock stepped back: djitellopy would drop every rc
+        if time.time() - last <= getattr(self._tello, "TIME_BTW_RC_CONTROL_COMMANDS", 0.0):
+            return  # kite: djitellopy drops an rc this soon after the last one without sending: not news about the link
         self._udp(self._tello.send_rc_control, *vals)
 
     def move(self, direction: str, cm: int) -> None:
