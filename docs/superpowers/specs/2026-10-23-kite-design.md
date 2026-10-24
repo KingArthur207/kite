@@ -13,14 +13,13 @@ The guide dog comparison shapes the features. A guide dog leads around obstacles
 
 Why it matters: commonly cited figures put a trained guide dog at around $50,000 with waitlists of years, and only about 2% of blind people work with one. Rex verifies these before they go on a slide.
 
-Prior art: Flying Guide Dog (Tan et al., KIT, IEEE ROBIO 2021, arXiv 2108.07007, code at github.com/EckoTan0804/flying-guide-dog) also used a DJI Tello. It flew ahead of the user, led them on a leash, found walkable ground with semantic segmentation and read pedestrian lights, and its user study found drone guidance faster than the alternatives it tested. A judge or another hacker can find it in one search, so we name it first. What Kite changes: no leash (everything reaches the walker as spatial sound and voice), the drone flies behind and above instead of in front, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live. We don't copy its code (Cal Hacks rules).
+What makes Kite's approach its own: no leash (everything reaches the walker as spatial sound and voice), the drone flies behind and above instead of in front, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
 
 ## 2. Goals, non-goals, anti-goals
 
 Goals
 - A judge wears Kite (sleep mask, headphones, a phone as the chest camera) and walks a few meters at our table. When a teammate steps into their path, Kite stops them, then tells them to go on. Then they see what Kite saw.
 - The same detection code runs on real Tello footage, on the sim's cameras, and on the live chest camera. That is our main honesty claim.
-- We name Flying Guide Dog in the pitch before a judge does, and say what Kite changes.
 - Real Tello footage of a walker on that corner, with Kite's cues overlaid, in the demo video.
 - One real conversation with a blind person or an orientation and mobility instructor, quoted in the pitch.
 
@@ -276,7 +275,7 @@ Also made by the team (Oct 23, 11:50 PM): sim hazards come from the real detecto
 
 Also made by the team (Oct 24, 12:55 AM meeting): no Gaussian splat; the real Tello footage of the corner is what makes the demo look real, and the sim uses the OpenStreetMap model of Moss and Howard with glTF cars and people. The judge's live demo is wearing Kite blindfolded at the table, then seeing what it saw. The drone flies behind the walker. Filming is on Moss St, ending with the left turn across the zebra crossing. Every code change goes through a PR.
 
-Made in this spec, change them by editing it: webcam `obstacles` go to the earpiece over localhost, not through the cloud. Venue Wi-Fi is the primary link, with offline fallbacks. Karthik's earpiece events are the contract. Spacetime as the cross-machine transport with an `event` table. Claude instead of Gemini for scene description (Gemini Vision came up in the meeting; one model vendor keeps the Anthropic story clean). Signal reading demoted. The owner split in section 7. Naming Flying Guide Dog in the pitch. Microsoft in, Anthropic ticked only. Caregiver messages as the one path from Spacetime into the earpiece. Recording at the shoot instead of running live.
+Made in this spec, change them by editing it: webcam `obstacles` go to the earpiece over localhost, not through the cloud. Venue Wi-Fi is the primary link, with offline fallbacks. Karthik's earpiece events are the contract. Spacetime as the cross-machine transport with an `event` table. Claude instead of Gemini for scene description (Gemini Vision came up in the meeting; one model vendor keeps the Anthropic story clean). Signal reading demoted. The owner split in section 7. Microsoft in, Anthropic ticked only. Caregiver messages as the one path from Spacetime into the earpiece. Recording at the shoot instead of running live.
 
 ## 12. Left to each owner
 
