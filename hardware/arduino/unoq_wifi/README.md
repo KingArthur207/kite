@@ -1,5 +1,8 @@
 # UNO Q: hello over Wi-Fi, from a battery (works on eduroam)
 
+> Superseded by [`../unoq_link/`](../unoq_link/README.md): one-line install, text both ways and video. Its
+> installer turns this `kite-hello` service off and sends the same heartbeat, so `listen.py` keeps working.
+
 The UNO Q's Linux side sends `hello 1`, `hello 2`, ... once a second **through the internet**: it pushes each
 hello to Kite's SpacetimeDB database, and `listen.py` on any computer with internet prints it. That works on
 eduroam, venue Wi-Fi or a phone hotspot, because campus Wi-Fi usually stops devices from reaching each other
