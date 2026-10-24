@@ -152,14 +152,20 @@ Every task below can be done by one person driving Claude (or Cursor) agents on 
 
 | Seam | Stand-in while building | Real hardware | How it switches |
 |---|---|---|---|
-| Frames | Video files: the phone clips from tonight (below), sim frames, any street video | Tello stream, body webcam | `FrameSource`: `VideoFileSource` vs `TelloVideoSource` / `WebcamSource` (already in `kite/sources/`) |
+| Frames | Video files: daytime stock street clips (below), then sim frames and the 7am footage | Tello stream, body webcam | `FrameSource`: `VideoFileSource` vs `TelloVideoSource` / `WebcamSource` (already in `kite/sources/`) |
 | Drone commands | `make_tello(cfg, dry_run=True)`: connects, streams, logs motion instead of sending it | Tello | `dry_run=False` |
 | Events | The earpiece's scripted scenarios (`python -m earpiece run --sim walk`) or a JSONL file replayed through `EarpieceClient` | Live producers | Same `EarpieceClient` calls; `replay` is a 20-line script |
 | Network | Everything on one laptop, `127.0.0.1` and Maincloud | Two laptops over the Thunderbolt bridge | Host addresses in `.env` (`KITE_EARPIECE_HOST`, `SPACETIME_HOST`), never hardcoded |
 | Audio | Laptop speakers or any headphones | AirPods | Earpiece output device setting (it already matches "AirPods" by name) |
 | Position | Sim pose, or a GPS track replayed from a file | Walker's phone GPS | Same `position` event either way |
 
-Test data to make tonight (10 minutes, no drone): one teammate walks the block outside while another films from behind with a phone held overhead at about 2 m, at walking pace, for two or three minutes. Add a second clip from chest height. That's the stand-in for both the drone and the chest camera until real footage exists, and everyone develops against it.
+Test data, since it's night and our own footage waits for the 7am shoot:
+- Daytime street video from a free stock site (Pexels or Pixabay, search "walking sidewalk POV" or "crosswalk pedestrians"). Their licenses allow free use; credit them in the README. Pick one clip filmed from above head height and one from chest height. Don't rip YouTube walking tours (against its terms).
+- The sim's own frames once Eddy's placeholder world runs.
+- The earpiece's scripted scenarios for anything audio-side (no video needed).
+- For the splat pipeline: a public sample scene (the Mip-NeRF 360 "garden" or "bicycle" images) to prove the tool and settings tonight.
+- A quick night clip of the block is still fine for plumbing checks (does the pipeline run end to end), just not for judging quality.
+The real corner footage and splat capture come from the 7am shoot and replace all of this.
 
 Each owner's done check below runs without hardware.
 
@@ -169,8 +175,8 @@ Each person owns a deliverable, not a layer. One owner per job.
 
 | Owner | Owns | Build with Claude, no hardware (done check) | Plug in hardware afterward |
 |---|---|---|---|
-| Arthur | The drone and the 3D world: flight, recording, splat | Push the drone layer (`kite/`, `pyproject.toml`, tests) to `main`. A `record` command that saves video and telemetry to disk, tested in dry run against a video file. Splat pipeline run on tonight's overhead phone clip, so the tool and settings are proven before the real capture. | The 7am shoot on the one battery (section 8). Then the splat from the real capture. Camera fx calibration if time allows (the sim starts at 1000). |
-| Rex | Perception: `streetseg` | Move `streetseg` from `rexheng/videotesting` into this repo (rewritten or re-committed by Rex, per the rules), emitting earpiece events instead of the glasses' `turn`. Done check: `python -m streetseg --source <phone clip>` writes `hazard`, `scene` and `obstacles` events to a JSONL file and an overlay video that looks like a Waymo demo. | Point the source at Tello footage, the live webcam, and sim frames. Same command, different `--source`. |
+| Arthur | The drone and the 3D world: flight, recording, splat | Push the drone layer (`kite/`, `pyproject.toml`, tests) to `main`. A `record` command that saves video and telemetry to disk, tested in dry run against a video file. Splat pipeline run on a public sample scene, so the tool and settings are proven before the 7am capture. | The 7am shoot on the one battery (section 8). Then the splat from the real capture. Camera fx calibration if time allows (the sim starts at 1000). |
+| Rex | Perception: `streetseg` | Move `streetseg` from `rexheng/videotesting` into this repo (rewritten or re-committed by Rex, per the rules), emitting earpiece events instead of the glasses' `turn`. Done check: `python -m streetseg --source <stock clip>` writes `hazard`, `scene` and `obstacles` events to a JSONL file and an overlay video that looks like a Waymo demo. | Point the source at Tello footage, the live webcam, and sim frames. Same command, different `--source`. |
 | Karthik | The voice: earpiece, Google Maps directions, Cartesia, Claude | Earpiece and destinations are merged (PRs #2 and #3). Done check: `python -m earpiece run --sim walk` and a replayed JSONL from Rex both play the right beeps and speech on laptop speakers, with the Claude judgment layer and cached phrases in, and every event mirrored to Spacetime. | AirPods as the output device. Walker's phone GPS as the `position` source. |
 | Eddy | Infrastructure, then the sim, the video and the submission | Replace the starter `person` table with the event tables; dashboard reads them. The `replay` script. `KITE_EARPIECE_HOST` in `.env`. Done check: a JSONL replayed from a second process plays in the earpiece and shows on the dashboard, on one laptop. Then the sim (section 5.4) with an arrow-key walker, the virtual drone and chest cameras, a placeholder world, frames to `streetseg`. | The Thunderbolt bridge: earpiece with `--bind 0.0.0.0`, `KITE_EARPIECE_HOST` set to the bridge address on the drone laptop, rerun the same check across two laptops. Splat into the sim once Arthur has it. |
 
@@ -182,8 +188,8 @@ Also owned: Rex runs the interview and verifies the guide dog figures. Eddy owns
 
 Each owner pulls `main` and starts their agent with one of these. They assume the agent can read the repo.
 
-- Arthur: "Read docs/superpowers/specs/2026-10-23-kite-design.md sections 6 to 8 and kite-notes-02.md. Commit the drone layer in kite/ with pyproject.toml and its tests. Add `python -m kite.record --source <file|tello> --out <dir>` that saves BGR video and timestamped telemetry, working in dry run against a video file. Then set up a splat pipeline that runs on Apple Silicon and test it on our overhead phone clip."
-- Rex: "Read the spec sections 5.1, 5.3, 6 and 7, and earpiece/earpiece/events.py. Bring streetseg into this repo as a top-level package. Replace its glasses `turn` output with earpiece events sent through earpiece.client.EarpieceClient, plus a `--jsonl` option that writes the same events to a file. Done when `python -m streetseg --source <phone clip> --jsonl out.jsonl --overlay out.mp4` works."
+- Arthur: "Read docs/superpowers/specs/2026-10-23-kite-design.md sections 6 to 8 and kite-notes-02.md. Commit the drone layer in kite/ with pyproject.toml and its tests. Add `python -m kite.record --source <file|tello> --out <dir>` that saves BGR video and timestamped telemetry, working in dry run against a video file. Then set up a splat pipeline that runs on Apple Silicon and test it on a public sample scene (Mip-NeRF 360 garden or bicycle)."
+- Rex: "Read the spec sections 5.1, 5.3, 6 and 7, and earpiece/earpiece/events.py. Bring streetseg into this repo as a top-level package. Replace its glasses `turn` output with earpiece events sent through earpiece.client.EarpieceClient, plus a `--jsonl` option that writes the same events to a file. Done when `python -m streetseg --source <stock clip> --jsonl out.jsonl --overlay out.mp4` works."
 - Karthik: "Read the spec sections 5.1, 5.2, 5.6 and 7. Add the Claude judgment layer to the earpiece under the safety rule in 5.6, cache the fixed Cartesia phrases, and mirror every received and spoken event to SpacetimeDB through the existing bridge hook. Done when `python -m earpiece run --sim walk` and a replayed JSONL both sound right on laptop speakers."
 - Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
 
