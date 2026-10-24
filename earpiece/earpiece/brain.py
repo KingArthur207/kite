@@ -69,6 +69,10 @@ class Actions:
     ear_check: Callable[[], None]
     remember: Callable[[str, str], str | None] = lambda kind, text: None
     recall: Callable[[str], list] = lambda query: []
+    forget: Callable[[str], str | None] = lambda what: None
+    rename: Callable[[str, str], str | None] = lambda old, new: None
+    undo: Callable[[], str | None] = lambda: None
+    clarify: Callable[[str], str | None] = lambda text: None    # answers a pending "which one?"
     describe_front: Callable[[], str | None] = lambda: None   # Claude on the chest camera frame
     read_text: Callable[[], str | None] = lambda: None        # OCR: read a menu / sign / screen aloud
 
@@ -92,6 +96,12 @@ _LOCAL = [
 _REMEMBER_PLACE = re.compile(r"(?i)^(?:please\s+)?(?:remember|save|mark|bookmark)\s+(?:this place|this spot|"
                              r"this location|where i am|my location|this|here)\s*(?:as|is|called)?\s+(?P<name>.+?)[.!?]*$")
 _REMEMBER_NOTE = re.compile(r"(?i)^(?:please\s+)?(?:remember|note|keep in mind|make a note)\s+(?:that\s+)?(?P<text>.+?)[.!?]*$")
+_NOT_MEMORY = r"(?:it|that|this|everything|the (?:beacon|route|directions|navigation|sonar|beeps?|sounds?))"
+_FORGET = re.compile(r"(?i)^(?:please\s+)?(?:forget|delete|remove|erase)\s+(?:about\s+)?(?:the memory (?:of|about)\s+|"
+                     r"my memory of\s+)?(?!" + _NOT_MEMORY + r"[.!?]*$)(?P<what>.+?)[.!?]*$")
+_RENAME = re.compile(r"(?i)^(?:please\s+)?(?:rename|change the name of)\s+(?P<old>.+?)\s+(?:to|as)\s+(?P<new>.+?)[.!?]*$")
+_UNDO = re.compile(r"(?i)^(?:undo|undo that|bring (?:it|that) back|i didn'?t mean (?:it|that))[.!?]*$")
+_HOME = re.compile(r"\b(?:take|bring|walk|guide|get|lead) me home\b|^(?:go|head|navigate|directions) home\b")
 _READ = re.compile(r"\bread (?:this|that|it|me|the|out|aloud|what)\b|\bread\s*$|\bwhat does (?:this|that|it|the \w+) say\b"
                    r"|\bwhat(?:'s| is) (?:written|on (?:the|this|that) (?:sign|menu|screen|label|page|board))\b")
 _RECALL = re.compile(r"\bwhat do you (?:remember|know) about\b|\bdo you remember\b")
@@ -165,6 +175,11 @@ class Brain:
         if not text:
             return "empty"
         low = text.lower().strip(" .!?")
+        answer = self.actions.clarify(text)          # "the park one", after "which bench?"
+        if answer:
+            self.stats["local"] += 1
+            self.speak(answer, "answer", ttl=15)
+            return "local:clarify"
         kind = self.local_intent(low, text.strip(" .!?"))
         if kind is not None:
             self.stats["local"] += 1
@@ -191,6 +206,16 @@ class Brain:
         m = _REMEMBER_NOTE.search(o)
         if m and not re.match(r"(?i)^remember (?:this|here)\b", o):
             return ("remember_note", m.group("text").strip())
+        m = _RENAME.search(o)
+        if m:
+            return ("rename", m.group("old").strip() + "\n" + m.group("new").strip())
+        m = _FORGET.search(o)
+        if m:
+            return ("forget", m.group("what").strip())
+        if _UNDO.search(o):
+            return ("undo", None)
+        if _HOME.search(low):
+            return ("navigate", "home")
         if _READ.search(low):
             return ("read", None)
         if _RECALL.search(low):
@@ -220,6 +245,11 @@ class Brain:
         elif name == "remember_note":
             kind = "hazard" if _HAZARD_WORDS.search(arg or "") else "note"
             msg = self.actions.remember(kind, arg or "")
+            if msg:
+                self.speak(msg, "answer", ttl=15)
+        elif name in ("forget", "rename", "undo"):
+            msg = (self.actions.forget(arg or "") if name == "forget" else
+                   self.actions.rename(*(arg or "\n").split("\n", 1)) if name == "rename" else self.actions.undo())
             if msg:
                 self.speak(msg, "answer", ttl=15)
         elif name == "recall":
