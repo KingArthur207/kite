@@ -5,6 +5,43 @@ Submission deadline Sun Oct 25 9:00 AM PT. Live table judging 10:30 AM to 12:30 
 
 This is the shared contract for all four of us and our Claude sessions. If your work disagrees with it, change the spec in a commit first, then the code.
 
+## 0. Where we are (Sat Oct 24, 4:15 AM) and what we're aiming for
+
+Detail lives in [STATUS](../../STATUS.md), [the shoot pack](../../shoot-day.md), [the pitch](../../pitch.md) and [the demo runbook](../../demo-runbook.md).
+
+**The target at judging (Sun 10:30 AM).**
+- The judge wears Kite (phone chest camera, headphones, sleep mask) and walks 3 to 4 m. A teammate steps in. Kite says "Stop. Person ahead." and later "Path is clear. You can continue."
+- The reveal shows what the camera saw, next to the caregiver map.
+- Then the real Tello footage of Moss St with the segmentation overlay and Kite's cues, to show it is the same detector.
+- Then one measured number, collisions with and without Kite in the sim, and the honest research line.
+- Devpost is submitted with the demo video.
+- Backup: the sim walk, if the live walk isn't reliable at the 3 PM cut.
+
+**Status by area.**
+
+| Area | State |
+|---|---|
+| Earpiece and voice | Done |
+| Claude judgment and vision | Done, including judgment tuning (#56: 23 of 24 scenarios, p95 1.65 s) |
+| Spacetime and dashboard | Done |
+| Live walk | Built and tested on recorded clips only. Never run on a live camera or a real phone. |
+| Detector | Stand-in done. Rex's `streetseg` not in this repo yet. |
+| Drone hardware | Not tested. The Tello is still in the box. |
+| Follow mode | Code merged. Never flown. Path prediction in progress (agent). |
+| Shoot footage | Not started. No real footage yet. |
+| Demo video | Tools done. Edit not started. |
+| 3D sim realism | In progress. The sim is not yet close to the real street. Blender real facades (local only) and a splat from the phone walkthrough (planned). |
+| Collision number | In progress (agent): Kite-mode number and a 40-walk bench. Blind baseline is 3.05 per walk. |
+| Docs and Devpost | Drafts done. Final Devpost not started. |
+| Rehearsal | Not started. |
+
+**Next, in order.**
+- Eddy (role changed Sat 4:30 AM; Arthur takes all physical drone work): the live walk on the iPhone (first real-camera test), then demo, pitch and submission lead: record the non-drone video segments (live walk, reveal, dashboard, sim), judge sim accuracy against the real street, Devpost and pitch rehearsal, the table kit (Target: chest clip, sleep masks, wipes; over-ear headphones). At the shoot (when Arthur runs it): side-angle video. 3 PM cut. 6 PM rehearsal. 8 PM freeze. Devpost draft Sat night. Sun 8 AM audit, 9 AM submit.
+- Arthur (owns everything physical about the drone, on his own laptop, on his schedule): ground check and camera calibration (`docs/shoot-flight.md`; no flying), the shoot (`docs/shoot-day.md`; after the 7:27 sunrise), follow-mode tests (first in the 3D sim, then a real flight in an open area away from cars and the venue), and the Gaussian splat of Moss St from the phone walkthrough (pipeline paused on Eddy's laptop for RAM; branch `worktree-agent-acf911a6a9b755945` has partial work). Owner tasks: Actions off in Settings, repo visibility with Eddy. Kickoff prompt in 7.1.
+- Rex: bring `streetseg` in as an upgrade, sign off on `docs/research/facts.md`, run shoot logistics.
+- Karthik: review #8 and #56, decide the Moss track row in the README with Eddy.
+- Agents on Eddy's laptop now: Kite-mode collision number, 40-walk live-walk bench, precise Moss St from SF open data (Blender), Tello camera model for sim frames, follow-mode path prediction, earpiece safety fixes from the overnight review (for Karthik). Paused and handed to Arthur: the splat pipeline and flying follow mode against the sim.
+
 ## 1. What Kite is
 
 Kite is a guide dog you don't wait two years for. A DJI Tello flies about 30 cm above and behind a blind walker's head. From there it sees what the walker can't: the route ahead, crowds, crossings and obstacles farther out. A webcam worn by the walker covers the ground near their feet, which the drone's camera can't see, and catches anything sudden. Everything reaches the walker through AirPods: directional beeps whose pitch rises as something gets closer, plus Cartesia voice for directions.
@@ -199,10 +236,10 @@ Each person owns a deliverable, not a layer. One owner per job.
 
 | Owner | Owns | Now (done check runs without hardware where it can) | With hardware |
 |---|---|---|---|
-| Arthur | The drone: flight, recording, footage | The drone layer is on `main` (PR #4). `python -m kite.record` works in dry run against a video file. | The 7 AM shoot (section 8). Footage to Rex for the overlay by noon. Follow mode only after the footage is safe. Camera fx if battery allows. |
-| Rex | Perception (`streetseg`) | Move `streetseg` into this repo emitting earpiece events. Chest camera first, because the live walk depends on it: `critical` obstacles for anything large and close, by Sat 3 PM. Then the segmentation overlay on the drone footage for the video, by Sat 6 PM. Until then, `sim/standin_detect.py` is the detector. | Point it at the phone chest camera and the Tello footage. Verify the guide dog figures. |
-| Karthik | The voice: earpiece, Maps, Cartesia, Claude | Done (Karthik): the Claude judgment layer (5.6); camera descriptions ("what's in front of me?" from the chest camera, and reading text aloud); the cached safety phrases; stop and wait; walking routes; SpacetimeDB mirroring. Still to fix: the `brain.py` system prompt, which says the drone "flies ahead". | Headphones as the output: any stereo Bluetooth pair works (Karthik). |
-| Eddy | Infrastructure, sim, the live-walk kit, the video, the submission | Done: event tables, dashboard with live map, replay, `netcheck` and `offline.sh`, the sim with the Moss world, glTF cars and people, metrics mode and the stand-in detector. Next: caregiver messages through Spacetime (5.2); a reveal screen with the chest camera and its boxes; the stand-in detector on the phone camera; the collision number with the real detector. | Buy the kit at 8 AM (section 13). Run the 40-walk rehearsal at 6 PM. |
+| Arthur | The drone, all physical work: flight, recording, footage, calibration, follow tests, the Moss St splat | Merged: the drone layer, calibration, recording replay, preflight, GPS alignment, follow mode behind `--follow` (never flown). In progress on Eddy's laptop: follow-mode path prediction. Handed to Arthur: the splat pipeline (partial branch `worktree-agent-acf911a6a9b755945`) and a sim drone that the real follow code can fly (partial branch `worktree-agent-a1a531857b01ba419`). | Ground check and calibration, the shoot, follow tests (sim, then real in an open area), the splat from the phone walkthrough. |
+| Rex | Perception (`streetseg`) | `streetseg` is still in his personal repo, and stand-ins cover his deadlines. `sim/standin_detect.py` with `sim/live_walk.py` is the chest camera detector (merged). `sim/seg_standin.py` draws the walkable-ground overlay on the drone video (#59). It uses ADE20K, because Cityscapes labelled sidewalks as road 91 to 95 percent of the time at walker height. Left: bring `streetseg` in as an upgrade, sign off on `docs/research/facts.md`, run shoot logistics. No interviews (decided). | Point it at the phone chest camera and the Tello footage. Verify the guide dog figures. |
+| Karthik | The voice: earpiece, Maps, Cartesia, Claude | All his items are done, including the `brain.py` fix so it no longer says the drone "flies ahead" (#7). Left: review #8 (caregiver messages) and #56 (judgment tuning), which were built while he slept, and decide with Eddy on the README's Moss track row, since the spec skips Moss. | Headphones as the output: any stereo Bluetooth pair works (Karthik). |
+| Eddy | Demo, pitch and submission lead; infrastructure; sim accuracy review | Done: event tables, dashboard (map, timeline, presentation mode), replay, netcheck/offline, demo.sh, the sims, metrics mode, stand-in detector, live walk and reveal, caregiver messages, video tools, segmentation overlay, docs (Devpost, pitch, shoot pack). | Live walk on the iPhone, non-drone video segments, sim accuracy review, Devpost, rehearsal, table kit, submission. |
 
 Eddy decides by hand when the repo goes public (team decision, Oct 24, 1:30 AM); no gate forces it. Every code change goes through a pull request (team decision, Oct 24 meeting). Keep PRs small and merge them within the hour; if nobody else is awake, the author merges their own once the change is tested (spec author's call). Everyone works in this repo; nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
 
@@ -212,7 +249,7 @@ Also owned: Rex verifies the guide dog figures. Eddy owns the clock, the demo vi
 
 These were the kickoff prompts on Friday night. The owner table above is current.
 
-- Arthur: "Read docs/superpowers/specs/2026-10-23-kite-design.md sections 6 to 8 and kite-notes-02.md. Commit the drone layer in kite/ with pyproject.toml and its tests. Add `python -m kite.record --source <file|tello> --out <dir>` that saves BGR video and timestamped telemetry, working in dry run against a video file."
+- Arthur (current, Sat): "git pull. Read docs/superpowers/specs/2026-10-23-kite-design.md sections 0, 7, 8, docs/shoot-flight.md and docs/shoot-day.md. You own everything physical about the drone on this laptop. 1) Ground check and camera calibration with the drone on the table, no flying (`python -m kite.calibrate --board-png board.png`, then `python -m kite.calibrate --source tello`, then `python -m kite.record --source tello --out recordings --fly --dry-run --max-s 30`); commit data/tello_camera.json in a PR and share the recording folder with Eddy. 2) Before flying follow mode for real, test it against the 3D sim (continue branch worktree-agent-a1a531857b01ba419: a sim drone with Tello-like dynamics flown by the unmodified kite.follow code). 3) The shoot per docs/shoot-day.md. 4) The Gaussian splat of Moss St from the phone walkthrough (continue branch worktree-agent-acf911a6a9b755945; trainer that runs on Apple Silicon, loader `?world=splat`, landmark alignment). Every code change via a PR; no GitHub Actions."
 - Rex: "Read the spec sections 5.1, 5.3, 6 and 7, and earpiece/earpiece/events.py. Bring streetseg into this repo as a top-level package. Replace its glasses `turn` output with earpiece events sent through earpiece.client.EarpieceClient, plus a `--jsonl` option that writes the same events to a file. Done when `python -m streetseg --source <stock clip> --jsonl out.jsonl --overlay out.mp4` works."
 - Karthik: "Read the spec sections 5.1, 5.2, 5.6 and 7. Add the Claude judgment layer to the earpiece under the safety rule in 5.6, cache the fixed Cartesia phrases, and mirror every received and spoken event to SpacetimeDB through the existing bridge hook. Done when `python -m earpiece run --sim walk` and a replayed JSONL both sound right on laptop speakers."
 - Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
@@ -290,9 +327,9 @@ Made in this spec, change them by editing it: webcam `obstacles` go to the earpi
 
 ## 13. Open items
 
-- Rex: `streetseg` into this repo, chest camera obstacles first (by Sat 3 PM).
-- Eddy asks in #0-ask-directors: may a powered-on Tello, motors off, stream video at our table? It is a Wi-Fi access point.
-- Buy at about 8 AM (Target): a USB-C to Micro-USB cable if Karthik doesn't bring one, a phone chest mount or clip, two sleep masks, wipes. Eddy brings over-ear Bluetooth headphones.
-- Who walks at the shoot, and whether we can reach the corner and our gear at 7 AM without Aneesh.
-- fx for our Tello (Arthur, if battery allows). The sim uses 1000 until then.
+- Eddy asks in #0-ask-directors (optional): may a powered-on Tello, motors off, stream video at our table? It is a Wi-Fi access point.
+- Target kit, if needed: a USB-C to Micro-USB cable if Rex doesn't bring one (he said he would), a phone chest mount or clip, two sleep masks, wipes. Eddy brings over-ear Bluetooth headphones.
+- fx calibration for our Tello (Arthur, if battery allows). The sim uses 1000 until then.
 - Tape the width of the Moss crossing on site; the sim assumes 6.1 m.
+- Fill in the Google rep name in `docs/google-permission.md`.
+- Who walks at the shoot, and whether the crew can reach the corner and the gear at 7 AM without Aneesh.

@@ -7,3 +7,9 @@
 - Shared live state across devices and the caregiver dashboard: SpacetimeDB
 - Memory of personal places and hazards: Moss (3-12 ms lookups)
 - Routing and nearby places: Google Routes API v2 and Places API (New)
+
+## Pages
+
+- [Hear it](https://trykite.pages.dev/): the 41-second walk, who Kite is for, and the four parts it is built from
+- [How it works](https://trykite.pages.dev/how): every sound, the beep rate, indoor and outdoor modes, the voice
+- [For judges](https://trykite.pages.dev/judges): each Cal Hacks 13.0 track Kite enters, answered against its judging criteria

@@ -7,5 +7,6 @@ Representative: [TODO: name and role]. Written confirmation: [TODO: email or Sla
 How we keep to it:
 - The sim requests and renders 3D Tiles only inside a geofence around that block, and keeps the walker and cameras inside it.
 - `kite/sources/streetview.py` fetches only along the planned route on that block.
-- No Google imagery is stored, cached beyond the browser's normal cache, committed, or used to train a model. Google's attribution is shown on screen.
+- The Blender street (`?world=real`) uses facade textures made from Street View images of this block. They and the exported model live only on Eddy's laptop in `sim/public/local/`, which git ignores; they are never committed, published or used to train a model, and we delete them after the hackathon. A `npm run build` made on that laptop must not be published.
+- No other Google imagery is stored or cached beyond the browser's normal cache. Google's attribution is shown on screen.
 - Without this permission, the sim's detector cameras render the OpenStreetMap world instead (the hybrid path).

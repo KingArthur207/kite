@@ -4,7 +4,7 @@ A browser street corner with an arrow-key walker and two virtual cameras. A dron
 
 ## World
 
-The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`, the default when a key is set; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world.
+The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world. Locally, a Blender-built street with Street View facades replaces the OSM look when its file exists (`?world=real`, see Real facades below).
 
 - `scripts/osm_corner.py` fetches OSM and writes `public/osm/moss.json` in metres (x east, y north), with the origin at the Moss zebra, OSM node 12144593726. Run it again to refresh. `python scripts/osm_corner.py raw.json` reuses a saved Overpass response.
 - `moss.json` also has `lanes`: car lane polylines in travel order with `speed_mps`. Moss flows SE (Howard to Folsom) and Howard flows SW. `src/osmWorld.ts` exports them as `lanes`, and the traffic drives on them (see Cars and people).
@@ -36,6 +36,26 @@ Cars are found more often. People past 20 m are found less: in front of textured
 #### Mapillary facades (not done)
 
 The plan was to texture each street-facing wall with a rectified Mapillary photo (CC BY-SA 4.0). There was no `MAPILLARY_TOKEN` in `.env`, so only the geometry exists: `scripts/facade_rectify.py` projects a wall into a Mapillary camera (position, compass angle, focal from `camera_parameters`) and warps it into a texture with a homography. `uv run --no-project --with numpy python scripts/facade_rectify.py` runs its self-check, which renders a synthetic wall through a known camera and rectifies it back. The docstring has the Graph API query and the image selection rule for when a token exists.
+
+### Real facades (`?world=real`, local only)
+
+`?world=real` is the default when `public/local/moss_real.glb` exists. It is Moss St built in Blender, with each street-facing wall textured from Google Street View (our permission covers this one street, see `docs/google-permission.md`). The GLB is only the look: collisions, lanes, the route, the spawn and the traffic still come from `moss.json`, and both the screen and capture renderers draw it. Without the file the sim logs a warning and shows the textured OSM street. `?world=moss` forces the OSM street.
+
+Street View-derived pixels are never committed or published. The textures, the GLB and any screenshots of it live in `public/local/`, which is gitignored. `npm run build` copies `public/` into `dist/`, so don't publish a build made on a machine that has `public/local/`.
+
+To rebuild (Moss and the Howard corner: 27 Google panoramas, about 90 billed Static images on the first run):
+
+```
+set -a; . ./.env; set +a           # from the repo root: GOOGLE_MAPS_API_KEY (in a worktree, source the main checkout's)
+uv run --no-project --with numpy --with opencv-python-headless python scripts/streetview_facades.py
+/Applications/Blender.app/Contents/MacOS/Blender -b -P sim/blender/build_real_moss.py -- --export
+rm -rf /tmp/kite_sv                # raw Street View responses cached for reruns
+```
+
+- `scripts/streetview_facades.py` picks the OSM footprint edges that face Moss (Folsom to Howard) or Howard within the corner, bay faces included (72 walls). It asks the metadata endpoint for Google panoramas every 4 m along those roads, inside the `kite/sources/streetview.py` SCOPE, then fetches one 640x640 view per panorama per group of walls within 15 m, aimed square at them and pitched up to mid-wall. Each wall texel (40 px/m) is projected into every view with `scripts/facade_rectify.py` (camera 2.5 m up at the panorama, now with pitch) and blended by how square and close each view is. Views where another footprint is in the way are skipped. It then finds window and door rectangles in each texture (closed Canny contours) and writes `public/local/facades/*.jpg` plus `facades.json`. `--openings-only` redoes the detection without fetching.
+- `sim/blender/build_real_moss.py` extrudes every footprint and maps the photos onto the street walls (u along the wall, v up). Detected windows are recessed 12 cm with glossier glass, and doors and garages 25 to 30 cm, with a step in front of each door. Each photographed wall gets a cornice in the colour of the top of its photo. Side and back walls of photographed buildings are plain stucco in that colour. Other buildings get the Poly Haven materials and a plain window grid. The street side has asphalt, 15 cm sidewalks and curbs, zebras, lane lines, the OSM furniture, wooden poles with three wires along Moss, and steel streetlights and simple trees along Howard. It also runs inside a live Blender (`exec(open(...).read(), {"KITE_ROOT": "<repo>", "__name__": "x"})`, then `build()` and `export(*build())`), which adds cameras at the drone spawn, chest corner and Howard viewpoints.
+- Oct 24 run: 72 of 72 walls textured, 18 MB GLB, 60 fps in headless Chromium with Metal (vsync cap) with the capture renderer running. YOLO (yolo11n, same script and session, traffic differs between runs): `?world=real` drone car 71%, person 39%, chest car 74%, person 36%; `?world=moss` drone car 68%, person 26%, chest car 69%, person 30%. Person recall was lower for both worlds in this session than in the table above, so compare within a session.
+- Still off: parked cars, street trees and wires are baked into the lower walls; close walls are soft (about 50 px/m at the source); OSM heights don't always match the real rooflines, so some walls show sky at the top; window detection finds about half the windows and some false ones on murals and trees; the Howard trees and streetlights are placed every 18 m and 36 m, not where the real ones stand; buildings outside the corner have no photos.
 
 ### Google 3D tiles (`?world=tiles`)
 
@@ -173,7 +193,7 @@ The sim emits no hazards from its own object list. Hazards come from the real de
 
 To the relay (`ws://127.0.0.1:5020/pub`):
 - Binary frames, 8 fps per camera: 1 byte camera id (0 drone, 1 chest), then JPEG bytes.
-- Pose as JSON text at 5 Hz, once per camera: `{"type":"pose","camera":"drone","x":..,"y":..,"heading":..,"cam_height":..,"pitch":0}`.
+- Pose as JSON text at 5 Hz, once per camera: `{"type":"pose","camera":"drone","x":..,"y":..,"heading":..,"cam_height":..,"pitch":0,"cam_model":"tello"}`. `cam_model` is `raw` when the page has `?cam=raw`.
 
 Subscribers on `/sub` get the same messages. On connect they first get the latest frame and pose for each camera.
 
@@ -189,6 +209,57 @@ pose = src.pose                    # latest pose for this camera, or None
 ```
 
 Needs `websockets`, `numpy` and `opencv-python`.
+
+## Tello camera model
+
+The capture renderer draws clean, sharp, perfectly exposed frames, and a Tello doesn't. `SimFrameSource("drone")` now runs every drone frame through `tello_cam.py` before handing it over: lens distortion, motion blur from the turn rate, a soft lens, vignetting, auto-exposure that adapts over about 1.5 s, shot and read noise, a washed-out, slightly green colour response, and one JPEG pass at quality 40 for the 8x8 blockiness of the Tello's H.264. The link is modelled too: frames arrive 100 to 200 ms late, about 3% are dropped and 2% repeat the previous frame. `.pose` is not delayed, the same way the Tello's state stream runs ahead of its video. Rolling-shutter skew is in the model but off by default.
+
+The screen view is never modelled, and neither is the chest camera (it isn't a Tello). `?cam=raw` on the sim URL turns the model off; the flag travels in the pose messages. `SimFrameSource(..., raw=True)` does the same from Python. The detector code doesn't change.
+
+All parameters are in `public/tello_camera_model.json`. Lens distortion comes from `data/tello_camera.json` once `kite.calibrate` has written one with `dist`. Until then it uses the community Tello calibration (fx 921, k1 -0.033, k2 0.105) that circulates in Tello ArUco projects, which we haven't verified. The distortion is applied around the sim's own focal length (`config.ts` FX = 1000) so the field of view stays the same; set FX from the calibration separately. Every other number is a guess until it is fitted to real footage (below). `python sim/tello_cam.py` runs its self-check.
+
+### YOLO with the model off and on
+
+`yolo_check.py --cam both` scores the same grab twice, so both columns see identical scenes. Moss world, yolo11n, Oct 24, 657 frames (drone 328, chest 329), recall of visible instances:
+
+| drone camera | model off | model on |
+|---|---|---|
+| car | 130/212 = 61%, mean conf 0.74 | 133/212 = 63%, mean conf 0.76 |
+| person | 103/403 = 26%, mean conf 0.55 | 111/403 = 28%, mean conf 0.54 |
+| car < 10 m | 11/19 | 17/19 |
+| person > 20 m | 83/382 | 90/382 |
+
+The chest camera is unmodelled, so its numbers are identical in both columns (car 63%, person 31%). Detection went up slightly instead of down. The likely reason is that the raw renders are aliased and over-sharp, and the softness and the exposure gain bring the low-poly people and cars closer to what YOLO was trained on. So the current guesses don't make the sim harder for the detector. Whether the real Tello does is the open question, and only a real recording can answer it.
+
+## Sim-to-real gap (`scripts/sim_real_gap.py`)
+
+```
+# raw sim drone frames (the tool applies the camera model itself)
+uv run --no-project --with playwright --with ultralytics --with opencv-python-headless \
+    python sim/yolo_check.py --url "http://localhost:5199/?cam=raw" --frames out/sim_raw --out out
+# real vs sim raw vs sim + model: image stats and YOLO confidence by estimated distance
+uv run --no-project --with ultralytics --with opencv-python-headless \
+    python scripts/sim_real_gap.py --real recordings/<take> --sim out/sim_raw
+# tune the model JSON to the real stats
+... python scripts/sim_real_gap.py --real recordings/<take> --sim out/sim_raw --fit
+```
+
+It reports sharpness (Laplacian variance), noise (Immerkaer estimate), brightness, contrast, saturation, R/G and B/G, vignetting (corner/centre), blockiness (step across 8 px block edges / step elsewhere) and the colour-histogram distance to the real frames. It also runs YOLO person/car on both sides, binned by a distance estimated from box height, since real footage has no ground truth. `--fit` runs coordinate descent over 11 parameters (exposure target, contrast, black level, saturation, R and B gains, softness, read and shot noise, JPEG quality, vignette) and writes the JSON (`--fit-out` to write somewhere else).
+
+No Tello recording exists yet, so it was tried on a stock clip standing in for real footage (Mixkit 134, "A man being followed walking in a city", 1280x720 cropped to 960x720, in the gitignored `clips/`). Medians over 40 frames each:
+
+| stat | stock clip | sim raw | sim + model | sim + fitted |
+|---|---|---|---|---|
+| brightness | 75.7 | 84.9 | 114.2 | 102.9 |
+| sharpness | 17.4 | 689.9 | 96.2 | 58.6 |
+| noise | 0.43 | 1.47 | 0.45 | 0.27 |
+| blockiness | 1.08 | 1.22 | 1.88 | 1.52 |
+| saturation | 95.5 | 65.0 | 37.1 | 75.0 |
+| R/G | 0.77 | 1.07 | 1.00 | 0.93 |
+| colour hist distance | 0 | 0.36 | 0.46 | 0.33 |
+| gap score (fit objective) | 0 | 395 | 442 | 156 |
+
+The stock clip is a warm, saturated, smooth H.264 phone video and doesn't look like a Tello. The hand-set model moves the sim away from it on colour, and the fit pulls it back. That shows the tool works. It doesn't show the model is right. The stats also depend on the scene, so the fit means the most on Tello footage of a street like Moss. **Re-run `sim_real_gap.py --fit` on the first Tello recording** (a `kite.record` take works as `--real` directly), commit the fitted `public/tello_camera_model.json`, then re-run `yolo_check.py --cam both`.
 
 ## Scene descriptions (Claude)
 
