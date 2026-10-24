@@ -66,6 +66,18 @@ class SafetyCfg:
     max_flight_s: float = 420.0
     frame_timeout_s: float = 1.0  # hover if no new frame for this long
     telemetry_timeout_s: float = 1.0
+    # escalation: a hover on stale data does not last for ever (the rc 0 keep-alive stops the Tello's own 15 s
+    # auto-land, so without these it would hover blind until max_flight_s)
+    telemetry_land_s: float = 5.0  # no state packet this long -> land (battery, height and temperature unknown)
+    video_land_s: float = 15.0  # no frame this long -> land
+    max_temp_c: float = 90.0  # 'temph' at or above this -> land (idle Tellos report 90-96 C before shutting down)
+    land_retry_s: float = 2.0  # a land asked for that has not happened is re-sent this often
+    # geofence: horizontal distance from the takeoff point, dead-reckoned from the state stream's vgx / vgy, above
+    # which the governor lands. The magnitude of the integrated velocity does not depend on the (unverified) axis
+    # signs; readings within geofence_db_m_s of 0 are ignored so hover noise does not add up. The Moss St route is
+    # ~75 m from its start at most and the Tello's rated range is 100 m. None: off.
+    geofence_m: float | None = 100.0
+    geofence_db_m_s: float = 0.11
 
 
 @dataclass

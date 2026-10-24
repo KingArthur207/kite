@@ -8,7 +8,9 @@ A fake drone and a fake clock, no sleeps. The invariants are the ones the module
     once, and re-sent every 2 s while it still flies and is not busy (never more often)
   * no new frame for frame_timeout_s, or stale telemetry -> 'hover' with rc 0, and the mission's rc is held back
     until a check says 'ok' again; NaN or far-future stamps count as stale
-  * while landing, the mission's rc / moves / rotations never reach the drone
+  * while landing, the mission's rc / moves / rotations never reach the drone; during a safety hover neither do
+    moves / rotations
+  * still stale after telemetry_land_s (telemetry) / video_land_s (video) -> 'land'
 Telemetry may be None (unknown), NaN, +-inf, huge or negative: the governor must never raise on it.
 """
 
@@ -129,6 +131,7 @@ class GovernorMachine(RuleBasedStateMachine):
         self.hovering = False
         self.last_land_t: float | None = None  # when the last land reached the drone
         self.takeoff_t: float | None = None
+        self.stale_since: dict[str, float] = {}  # video / telemetry: since when it has been stale while flying
 
     # ------------------------------------------------------------------ world
     @rule(flying=st.booleans())
@@ -155,6 +158,7 @@ class GovernorMachine(RuleBasedStateMachine):
         if not d.flying:
             self.takeoff_t = None
             self.hovering = False
+            self.stale_since = {}
             assert action == "ok", "the governor must not land / hover a drone that is not flying"
             assert len(d.rcs) == n_rc and d.lands == n_land
             return
@@ -163,6 +167,16 @@ class GovernorMachine(RuleBasedStateMachine):
         bat = d.tel.battery_pct
         must_land = ((bat is not None and bat < c.min_battery_pct) or self.t - self.takeoff_t > c.max_flight_s
                      or self.land_requested)
+        flags = {"video": stale(self.t, frame_t, c.frame_timeout_s),
+                 "telemetry": stale(self.t, d.tel.t, c.telemetry_timeout_s)}
+        if not must_land:  # (the governor only looks at staleness once nothing else lands it)
+            for k, s in flags.items():
+                if s:
+                    self.stale_since.setdefault(k, self.t)
+                else:
+                    self.stale_since.pop(k, None)
+            limits = {"video": c.video_land_s, "telemetry": c.telemetry_land_s}
+            must_land = any(self.t - t0 >= limits[k] for k, t0 in self.stale_since.items())  # (hover flag kept)
         if must_land:
             assert action == "land"
             assert self.gov.land_requested
@@ -242,7 +256,7 @@ class GovernorMachine(RuleBasedStateMachine):
         n = len(d.moves)
         self.gov.move(direction, cm)
         high, clear = d.tel.floor_altitude_m(), d.tel.altitude_m()
-        refuse = self.land_requested
+        refuse = self.land_requested or self.hovering
         if direction == "up" and known(high) and high + cm / 100.0 > c.max_altitude_m:
             refuse = True
         if direction == "down" and known(clear) and clear - cm / 100.0 < c.min_altitude_m:
@@ -263,7 +277,7 @@ class GovernorMachine(RuleBasedStateMachine):
     def rotate(self, deg):
         n = len(self.drone.moves)
         self.gov.rotate(deg)
-        if self.land_requested:
+        if self.land_requested or self.hovering:
             assert len(self.drone.moves) == n and self.gov.last_result().startswith("error: safety")
         else:
             assert self.drone.moves[n:] == [("rotate", deg)]
