@@ -7,27 +7,38 @@ export type Ev = { id: string; type: string; source: string; priority: string; t
 
 // Who acted: Kite's deterministic code, Claude (judgment, answers, scene text) or the caregiver.
 export type Who = 'kite' | 'claude' | 'caregiver';
-export type Kind = 'stop' | 'hazard' | 'judgment' | 'answer' | 'scene' | 'caregiver' | 'guidance';
+export type Kind = 'stop' | 'help' | 'hazard' | 'judgment' | 'answer' | 'scene' | 'caregiver' | 'guidance';
 export type Moment = { id: string; t: number; kind: Kind; who: Who; text: string; detail: string; source: string; pos?: LatLng };
 
 export const WHO_LABEL: Record<Who, string> = { kite: 'Kite', claude: 'Claude', caregiver: 'Caregiver' };
 export const KIND_LABEL: Record<Kind, string> = {
-  stop: 'Stop', hazard: 'Hazard', judgment: 'Judgment', answer: 'Answer', scene: 'Scene', caregiver: 'Message', guidance: 'Guidance',
+  stop: 'Stop', help: 'Help request', hazard: 'Hazard', judgment: 'Judgment', answer: 'Answer', scene: 'Scene', caregiver: 'Message', guidance: 'Guidance',
 };
 
 const WALK_GAP_MS = 45_000;     // a quiet gap this long starts a new walk
 const REPEAT_MS = 15_000;       // the same hazard/scene/guidance again inside this window is one moment
 const POS_MATCH_MS = 10_000;    // a moment gets the walker's position only if one is this close in time
-const CAREGIVER_PREFIX = 'Message from your caregiver:';
+const MAX_MOMENTS = 200;        // the event table keeps 500 rows; this bounds the strip and the map pins
+export const CAREGIVER_PREFIX = 'Message from your caregiver:';   // earpiece/earpiece/spacetime.py
+export const MAX_TEXT = 280;    // longest payload text shown anywhere; the module allows 16 KB payloads
 
 export const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
-export const str = (v: unknown): string => (v == null ? '' : String(v));
-const norm = (s: string) => s.trim().toLowerCase();
+/** A payload field as text: strings, finite numbers and booleans only, so an object never shows as
+ *  "[object Object]". React renders it as text, never as HTML. */
+export const str = (v: unknown): string =>
+  typeof v === 'string' ? v : (typeof v === 'number' && Number.isFinite(v)) || typeof v === 'boolean' ? String(v) : '';
+/** str(), on one line, clipped to `max` characters. */
+export function clip(v: unknown, max = MAX_TEXT): string {
+  const s = str(v).replace(/\s+/g, ' ').trim();
+  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+}
+export const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 
+/** A row's payload: always a plain object, whatever the row holds (bad JSON, null, an array, a string). */
 export function parse(json: string): Payload {
   try {
-    const v = JSON.parse(json);
-    return v && typeof v === 'object' ? v : {};
+    const v: unknown = JSON.parse(json);
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Payload) : {};
   } catch {
     return {};
   }
@@ -53,25 +64,25 @@ export const happenedAt = (e: Ev): number => {
   return t != null && t > 1e9 && Math.abs(t * 1000 - e.t) < SOURCE_CLOCK_MS ? t * 1000 : e.t;
 };
 
-const isStopText = (s: string) => /^stop\b/i.test(s.trim());
+export const isStopText = (s: string) => /^stop\b/i.test(s.trim());
 
 function hazardText(p: Payload): string {
   const kind = str(p.kind) || str(p.key).split(':').pop() || 'hazard';
   const state = str(p.state) === 'dont_walk' ? "don't walk" : str(p.state).replace(/_/g, ' ');
-  return str(p.text) || [kind.replace(/_/g, ' '), state].filter(Boolean).join(' · ');
+  return clip(p.text) || clip([kind.replace(/_/g, ' '), state].filter(Boolean).join(' · '), 80);
 }
 
 /** One event -> a timeline moment, or undefined if it is not a key moment. Dedupe happens in moments(). */
 function toMoment(e: Ev): Omit<Moment, 'pos'> | undefined {
   const { p } = e;
-  const text = str(p.text).trim();
+  const text = clip(p.text);
   const base = { id: e.id, t: happenedAt(e), source: e.source };
   switch (e.type) {
     case 'say':
       if (e.source === 'caregiver') return text ? { ...base, kind: 'caregiver', who: 'caregiver', text, detail: 'sent from this dashboard' } : undefined;
       if (e.source === 'judgment') {
         const up = p.upgrade as Payload | null | undefined;
-        const upText = up ? `raised ${str(up.key)} to ${str(up.priority)}` : '';
+        const upText = up && typeof up === 'object' ? clip(`raised ${str(up.key)} to ${str(up.priority)}`, 80) : '';
         const lat = num(p.latency_ms);
         return text || upText ? {
           ...base, kind: 'judgment', who: 'claude', text: text || upText,
@@ -99,6 +110,9 @@ function toMoment(e: Ev): Omit<Moment, 'pos'> | undefined {
       return e.source.startsWith('scene-') && text ? { ...base, kind: 'scene', who: 'claude', text, detail: `sees (${e.source.slice(6)})` } : undefined;
     case 'guidance':
       return text ? { ...base, kind: 'guidance', who: 'kite', text, detail: 'route' } : undefined;
+    case 'caregiver_alert':
+      // The walker asked Kite to tell their caregiver; Claude made the call (alert_caregiver tool).
+      return { ...base, kind: 'help', who: 'claude', text: clip(p.message) || 'The walker asked for help.', detail: 'the walker asked Kite to tell you' };
     default:
       return undefined;
   }
@@ -121,7 +135,8 @@ export function moments(walk: readonly Ev[], walkerSource: string | undefined): 
     if (!m) continue;
     // Hazards repeat every frame and the earpiece re-mirrors them with rendered text; collapse the same
     // hazard (kind + state) or the same line inside REPEAT_MS, and guidance by text for the whole walk.
-    const key = e.type === 'hazard' && m.kind !== 'judgment'
+    // A critical hazard and the "Stop." the earpiece speaks for it are one stop, so stops share a key.
+    const key = m.kind === 'stop' ? 'stop' : e.type === 'hazard' && m.kind !== 'judgment'
       ? `hazard:${str(e.p.kind) || str(e.p.key).split(':').pop()}:${str(e.p.state)}`
       : `${m.kind}:${norm(m.text)}`;
     const prev = lastSeen.get(key);
@@ -129,13 +144,15 @@ export function moments(walk: readonly Ev[], walkerSource: string | undefined): 
       const hasText = !!str(e.p.text);
       lastSeen.set(key, { ...prev, t: m.t, hadText: prev.hadText || hasText });
       // Keep the first time, but prefer the earpiece's rendered words when the first copy had none.
-      if (hasText && !prev.hadText) out[prev.i] = { ...out[prev.i], text: m.text };
+      // For a stop, the words the walker actually heard win.
+      if (m.kind === 'stop' && e.type === 'spoken') out[prev.i] = { ...out[prev.i], text: m.text, detail: m.detail };
+      else if (hasText && !prev.hadText) out[prev.i] = { ...out[prev.i], text: m.text };
       continue;
     }
     lastSeen.set(key, { t: m.t, i: out.length, hadText: !!str(e.p.text) });
     out.push({ ...m, pos: posAt(m.t) });
   }
-  return out;
+  return out.slice(-MAX_MOMENTS);
 }
 
 export type SourceStat = { source: string; ageS: number; perMin: number; buckets: number[] };

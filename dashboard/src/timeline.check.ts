@@ -38,6 +38,13 @@ eq(ms[1].text, "Don't walk.", 'hazard keeps the earpiece wording');
 eq(ms[2].detail, '812 ms', 'judgment latency');
 eq(ms[3].pos, [37.81, -122.41], 'stop placed at the nearest position');
 
+// A critical hazard and the spoken "Stop." for it are one stop, worded as the walker heard it.
+const stopPair = moments([
+  ev(T, 'hazard', 'chest', { kind: 'person', text: 'Person stepping out ahead.', priority: 'critical' }, 'critical'),
+  ev(T + 300, 'spoken', 'earpiece', { text: 'Stop. Person ahead.', priority: 'critical' }, 'critical'),
+], undefined);
+eq(stopPair.map(m => [m.kind, m.text]), [['stop', 'Stop. Person ahead.']], 'one stop per critical hazard');
+
 const desc = [...walk].reverse();
 eq(speakerOf(walk[7], desc), 'claude', 'spoken judgment line is Claude');
 eq(speakerOf(walk[9], desc), 'kite', 'spoken stop is Kite');
