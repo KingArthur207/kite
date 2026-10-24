@@ -99,8 +99,8 @@ function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
 }
 
 /** actors: false leaves the street empty (metrics mode). walkers: people the cars must yield to.
- *  meshes: false keeps only the colliders, lanes and actors (the tiles world draws the street). */
-export function buildOsmWorld(opts: { actors?: boolean; meshes?: boolean; walkers?: () => { x: number; n: number }[] } = {}) {
+ *  osmMeshes is the drawn street (ground, roads, buildings); the tiles world shows it to the capture cameras only. */
+export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: number; n: number }[] } = {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x9ec9ff);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x666655, 1.6));
@@ -109,7 +109,6 @@ export function buildOsmWorld(opts: { actors?: boolean; meshes?: boolean; walker
   scene.add(sun);
 
   const visible = new THREE.Group();
-  visible.visible = opts.meshes !== false;
   scene.add(visible);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), mat(0x8a8780));
   ground.rotation.x = -Math.PI / 2;
@@ -146,5 +145,5 @@ export function buildOsmWorld(opts: { actors?: boolean; meshes?: boolean; walker
     place: "Moss St at Howard St",
   };
   const actors = opts.actors === false ? null : spawnMossActors(scene, opts.walkers ?? (() => []));
-  return { scene, update: (dt: number) => actors?.update(dt), solids: () => actors?.solids() ?? [], ...extras };
+  return { scene, osmMeshes: visible, update: (dt: number) => actors?.update(dt), solids: () => actors?.solids() ?? [], ...extras };
 }

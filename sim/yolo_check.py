@@ -8,7 +8,10 @@ Opens the sim in headless Chromium with its clock frozen, mocks the relay and ea
 (so it never touches a shared relay), walks the walker in steps and grabs drone + chest frames.
 On Moss it walks up Moss's NE sidewalk to Howard and watches the zebra; `?world=placeholder`
 in --url keeps the old walk north. The default world is Google 3D tiles when sim/.env.local has a
-key (`?world=moss` for the OSM boxes); it waits for tiles to load at every stop. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
+key, and the capture frames show tiles; `?detector=osm` keeps them on OSM Moss (tiles on screen
+only) and `?world=moss` is OSM everywhere. It waits for tiles to load at every stop, and fails if
+the sim requested a tile outside the Moss geofence or (with ?detector=osm) drew a tile into a
+capture frame. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
 with the camera model from config.ts. Prints per-camera, per-class recall of visible instances.
 """
 
@@ -91,7 +94,7 @@ def cover(a, b):  # fraction of a covered by b
     return ix * iy / ((a[2] - a[0]) * (a[3] - a[1]) + 1e-9)
 
 
-OCCLUDED = defaultdict(int)  # kind -> in frame but behind tile geometry (tiles world only)
+OCCLUDED = defaultdict(int)  # kind -> in frame but behind tile geometry (tiles in capture only)
 
 
 def visible(actors, pose, cam):
@@ -171,6 +174,11 @@ def grab(url: str, per_cam: int):
                 page.clock.run_for(130)
                 page.wait_for_timeout(120)              # toBlob is real-time async
             page.wait_for_timeout(300)
+        if page.evaluate("!!window.__kiteTiles"):
+            st = page.evaluate("window.__kiteTiles.tilesStats()")
+            print(f"tiles: {st['requests']} requests, fence violations {st['fenceViolations']}, capture leaks {st['captureLeaks']}")
+            assert st["fenceViolations"] == 0, "requested a Google tile outside the Moss geofence"
+            assert st["captureLeaks"] == 0, "?detector=osm drew a Google tile into a capture frame"
         b.close()
     return frames
 

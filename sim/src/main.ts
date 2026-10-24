@@ -8,9 +8,13 @@ import { buildOsmWorld, type WorldExtras } from "./osmWorld";
 import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
+import { clampToFence } from "./fence";
 
-// ?world=tiles (default when VITE_GOOGLE_MAPS_API_KEY is set): Google Photorealistic 3D Tiles over
-// the Moss colliders and traffic. ?world=moss: Moss St from OSM boxes. ?world=placeholder: the old box world.
+// ?world=tiles (default when VITE_GOOGLE_MAPS_API_KEY is set): Google Photorealistic 3D Tiles over the
+// Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
+// tilesWorld.ts and docs/google-permission.md). The capture cameras see the tiles too; ?detector=osm
+// keeps them on OSM Moss and shows tiles on screen only. ?world=moss: Moss St from OSM boxes
+// everywhere. ?world=placeholder: the old box world.
 // Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
 // ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
@@ -19,10 +23,25 @@ const aspect = CAM_W / CAM_H;
 const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
 const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
 const cams = [droneCam, chestCam]; // index = camera id on the wire
-// ?debug=1: T swaps the on-screen drone view for a north-up view from 150 m over the walker.
+// ?debug=1: T swaps the on-screen drone view for a north-up view from TOP_VIEW_M over the walker,
+// low enough that its footprint (about 110 x 150 m) stays inside the tiles geofence.
+const TOP_VIEW_M = 120;
 const debug = query.get("debug") === "1";
 const topCam = new THREE.PerspectiveCamera(50, aspect, 1, 1000);
 let topView = false;
+// Tiles world: the big view is a chase camera above and behind the walker. At drone height the
+// photogrammetry in Moss's narrow alley is melted blobs; from up here it reads as a street.
+// Screen only: it is never a capture camera.
+const chaseCam = new THREE.PerspectiveCamera(55, aspect, 0.1, 1500);
+// ?chase=behind,up,ahead (metres) tunes it.
+const [CHASE_BEHIND, CHASE_UP, CHASE_AHEAD] = (query.get("chase") ?? "4,3,10").split(",").map(Number);
+const FENCE_INSET_M = 10;   // walker stays this far inside the tiles geofence, so every camera is inside too
+
+// --- capture renderer: exact 960x720 frames for perception
+// ponytail: second WebGL context; switch to a render target + readRenderTargetPixels if the splat renderer needs a single context
+const capture = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+capture.setPixelRatio(1);
+capture.setSize(CAM_W, CAM_H, false);
 
 let worldName = metricsOn ? "moss" : query.get("world") ?? "tiles";
 if (worldName === "tiles" && !TILES_KEY) {
@@ -30,15 +49,19 @@ if (worldName === "tiles" && !TILES_KEY) {
   worldName = "moss";
 }
 const walkers = () => [walker];                                       // cars yield to the walker too
-const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () => void } =
+const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () => void; view?: (m: "screen" | "capture") => void } =
   worldName === "placeholder" ? buildWorld()
-  : worldName === "tiles" ? buildTilesWorld({ walkers, cameras: debug ? [...cams, topCam] : cams, debug })
+  : worldName === "tiles" ? buildTilesWorld({
+    walkers, cameras: [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
+    detector: query.get("detector") === "osm" ? "osm" : "tiles",
+  })
   : buildOsmWorld({ actors: !metricsOn, walkers });
 if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
 const { scene } = world;
 
 // Walker: (x east, n north), heading in compass degrees (0 = north, 90 = east).
 const walker = { x: 0, n: 0, heading: 0, ...world.spawn };
+(window as unknown as { __kiteWalker: unknown }).__kiteWalker = walker;   // dev checks (screenshots) move it
 const body = new THREE.Mesh(
   new THREE.CapsuleGeometry(0.25, HEAD_TOP - 0.5, 4, 8),
   new THREE.MeshLambertMaterial({ color: 0x4a6fa5 }),
@@ -52,6 +75,7 @@ function forward() {
 }
 
 function placeCameras() {
+  if (worldName === "tiles") Object.assign(walker, clampToFence(walker.x, walker.n, FENCE_INSET_M));
   const f = forward();
   const wx = walker.x, wz = -walker.n;
   body.position.set(wx, HEAD_TOP / 2, wz);
@@ -61,7 +85,9 @@ function placeCameras() {
   const chestOut = 0.3; // just in front of the body capsule
   chestCam.position.set(wx + f.x * chestOut, CHEST_HEIGHT, wz + f.z * chestOut);
   chestCam.lookAt(chestCam.position.x + f.x, CHEST_HEIGHT, chestCam.position.z + f.z);
-  topCam.position.set(wx, 150, wz);
+  chaseCam.position.set(wx - f.x * CHASE_BEHIND, CHASE_UP, wz - f.z * CHASE_BEHIND);
+  chaseCam.lookAt(wx + f.x * CHASE_AHEAD, 0.5, wz + f.z * CHASE_AHEAD);
+  topCam.position.set(wx, TOP_VIEW_M, wz);
   topCam.up.set(0, 0, -1);                  // north up
   topCam.lookAt(wx, 0, wz);
 }
@@ -77,12 +103,6 @@ const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
 window.addEventListener("resize", resize);
 resize();
 
-// --- capture renderer: exact 960x720 frames for perception
-// ponytail: second WebGL context; switch to a render target + readRenderTargetPixels if the splat renderer needs a single context
-const capture = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-capture.setPixelRatio(1);
-capture.setSize(CAM_W, CAM_H, false);
-
 function drawScreen() {
   const W = window.innerWidth, H = window.innerHeight;
   renderer.setScissor(0, 0, W, H);
@@ -92,8 +112,9 @@ function drawScreen() {
   const x = (W - w) / 2, y = (H - h) / 2;
   renderer.setViewport(x, y, w, h);
   renderer.setScissor(x, y, w, h);
+  world.view?.("screen");                          // tiles on (they may be off for ?detector=osm capture)
   if (world.overlay) world.overlay.visible = true; // screen only, never in camera frames
-  renderer.render(scene, topView ? topCam : droneCam);
+  renderer.render(scene, topView ? topCam : worldName === "tiles" ? chaseCam : droneCam);
   const iw = w * 0.25, ih = iw / aspect, pad = 10;
   renderer.setViewport(x + w - iw - pad, y + pad, iw, ih);
   renderer.setScissor(x + w - iw - pad, y + pad, iw, ih);
@@ -112,7 +133,9 @@ setInterval(() => {
   if (!relay.open || relay.buffered > 2_000_000) return; // skip rather than queue stale frames
   const id = nextCam;
   nextCam = 1 - nextCam;
+  world.view?.("capture");     // ?detector=osm: no Google tile pixels in frames for the detector
   capture.render(scene, cams[id]);
+  world.view?.("screen");
   capture.domElement.toBlob(async (blob) => {
     if (!blob) return;
     const jpeg = new Uint8Array(await blob.arrayBuffer());
