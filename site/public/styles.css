@@ -456,3 +456,14 @@ mark { background: none; color: inherit; padding: 0 2px;
 .hand, .label, .group-title, .brief dt, .caption .who.critical { color: var(--verm-ink); }
 .sketch .note, .sketch .beep { fill: var(--verm-ink); }
 .sketch .note.blue-ink { fill: var(--indigo); }
+
+/* ------------------------------------------------------------ plain reading pages (about, contact, privacy, 404) */
+.prose > * { max-width: 760px; }
+.prose h2 { font-size: clamp(26px, 3vw, 34px); margin: 40px 0 12px; }
+.prose h2:first-child { margin-top: 0; }
+.prose p, .prose li { color: var(--muted); font-size: 17.5px; }
+.prose ul { padding-left: 20px; display: grid; gap: 10px; }
+.prose b { color: var(--ink); }
+.prose a { color: var(--indigo); }
+.prose code { font: 400 14.5px var(--mono); background: var(--sky); padding: 1px 5px; border-radius: 4px; color: var(--ink); }
+.page-head + .section.prose { padding-top: 48px; }
