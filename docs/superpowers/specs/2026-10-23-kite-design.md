@@ -219,6 +219,8 @@ These were the kickoff prompts on Friday night. The owner table above is current
 
 ## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
 
+The run sheet for the morning is `docs/shoot-day.md`: the timeline, positions, who records what, props, backups and the commands for after the take.
+
 Location: Moss Street at Howard Street, SoMa (OSM way 8916291). Moss is a one-way alley, 192 m from Folsom to Howard, with sidewalks on both sides. Where Moss meets Howard there is a marked zebra crosswalk across Moss with no signal and tactile paving (OSM node at 37.778352, -122.408768); cars turn into Moss from Howard across it. Howard is three lanes one-way at 25 mph with a protected bike track.
 
 Route: the meeting said to start at the SE end of Moss. Start instead on the NE sidewalk of Moss about 70 m before Howard, walk NW to the corner, turn left, cross Moss on the zebra, and stop about 20 m along Howard's south sidewalk. We never cross Howard. The whole of Moss would take over 5 minutes at 0.6 m/s, which is the entire battery, so we skip the first two thirds. With a second charged battery, start at the SE end. The crossing is uncontrolled, so there is no signal to read: the drone's job there is spotting a car turning in from Howard, and Kite says to stop and wait. That fits section 4. The sim's origin is the zebra crossing node, so sim and real lat/lng line up.
