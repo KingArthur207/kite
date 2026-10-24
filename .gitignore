@@ -41,3 +41,7 @@ out/
 
 # scripts/demo.sh logs and pids
 logs/
+
+# Gaussian splat inputs and outputs (scripts/splat/), and the splat the sim loads
+data/splat/
+sim/public/local/

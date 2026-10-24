@@ -20,6 +20,7 @@ Light: sunrise is about 7:27, so at 7:00 it is still twilight, and Moss is a nar
 | 7:00 | The take, about 5 minutes with the beats in appendix C. Land at 20 to 30%, or as soon as Rex calls cut. | all |
 | 7:06 | Check the take and copy it to a second disk before anything else. Walker stops the GPS log and exports the GPX. | Arthur, walker |
 | 7:30 | Facade photos for the sim, about 5 minutes, after sunrise (appendix B). | Eddy |
+| 7:35 | Splat walkthrough for the sim, 6 to 8 minutes of slow phone video of the block (appendix F). | Eddy |
 | 7:40 | Buy a USB-C to Micro-USB cable if nobody brought one. | Rex |
 | 7:50 | Charge the battery in the drone (about 90 minutes). Run the after steps (appendix E). | Arthur, Eddy |
 | 8:30 | Hand-off done. A second take after charging only if the first one failed. | Rex |
@@ -198,11 +199,48 @@ ffprobe -v error -show_entries format=duration:stream=codec_type -of compact out
 
 The last line should list one video and one audio stream, as long as the take. To show the walk on the dashboard map, replay the GPS events: `earpiece/.venv/bin/python scripts/replay.py $TAKE/gps/positions.jsonl --spacetime`.
 
-Hand-off. Everything also goes into one `shoot/` folder on Eddy's laptop: the take folder, `eddy_side/`, `walk.gpx` and `facades/` (with `moss_ne/`, `moss_sw/` and `howard/` inside).
+Hand-off. Everything also goes into one `shoot/` folder on Eddy's laptop: the take folder, `eddy_side/`, `walk.gpx`, `facades/` (with `moss_ne/`, `moss_sw/` and `howard/` inside) and `splat/` (the walkthrough clips).
 
 | Who | Gets | Does |
 |---|---|---|
 | Arthur | The master take folder on his laptop. | Copies it to the USB stick and to Eddy, runs the summary, the mp4 and `kite.gps`. Writes down for the pitch: flown by hand, the battery at landing, anything that went wrong. |
 | Rex | A copy of the take folder. | Runs streetseg on `video.mkv` if it's ready. Its JSONL can replace `out/events.jsonl`. |
-| Eddy | The take folder with `gps/`, his side angle, `walk.gpx`, the facade photos. | Runs the detector, the render and the overlay, cuts the video to the runbook's shot list, and puts the facade photos into the sim. |
+| Eddy | The take folder with `gps/`, his side angle, `walk.gpx`, the facade photos, the splat clips. | Runs the detector, the render and the overlay, cuts the video to the runbook's shot list, puts the facade photos into the sim, and starts the splat pipeline (appendix F) as soon as the clips are on the laptop. |
 | Walker | Nothing to keep. | Sends `walk.gpx` to Arthur and Eddy, then deletes the log if they want. |
+
+## Appendix F: Splat walkthrough
+
+A slow phone video of the block that we train into a Gaussian splat, so the sim's walk looks like the real Moss St (`sim/README.md`, Splat). Eddy films it right after the facade photos, once the drone is down. It needs no drone and no walker, about 6 to 8 minutes in all.
+
+Phone settings, before the first clip:
+
+- Main 1x camera, landscape. No 0.5x, no zoom, no Cinematic mode, no Action mode. Stabilization on is fine.
+- 4K at 30 fps, or 1080p at 60 fps if storage is short. Turn HDR video off (iPhone: Settings > Camera > Record Video > HDR Video off), since HDR clips come out washed out after conversion.
+- Lock exposure and focus: on an iPhone, press and hold on a mid-grey wall at about 5 m until AE/AF LOCK shows, then drag the sun icon down a notch so the sky doesn't clip. On Android, use Pro mode with fixed ISO, shutter at 1/120 s or faster, and manual focus at about 5 m. The settings must stay the same for every clip, because the pipeline treats all frames as one camera.
+
+How to walk:
+
+- Hold the phone at 1.8 to 2 m: a raised arm, or both hands above your head. It should point forward along the sidewalk, turned about 20 degrees toward the buildings, level, not tilted down at your feet.
+- Walk slowly, about 0.5 m/s (one step a second, slower than you think). No sudden turns. Pan slowly at the corners. If you stop, keep the phone moving a little rather than holding a still shot.
+- Keep the sun behind you or to the side. Never point into it, and lean the phone away from lens flare.
+- People and cars that move through the shot come out as ghosts in the splat. Wait for gaps, and pause the clip while someone walks past close to the phone. Parked cars are fine; they stay put.
+
+The passes, each its own clip, filmed toward Howard and back so every stretch is seen from both directions:
+
+1. NE sidewalk of Moss, from about 70 m before Howard (the chalk start mark) to the NE corner of the zebra, then back to the start. About 2.5 minutes.
+2. SW sidewalk of Moss, the same stretch, from the start to the SW corner at 1077 Howard and back. About 2.5 minutes.
+3. The crossing: at the zebra, walk across Moss on the stripes and back three times, slowly turning the phone to see each corner, the curbs and the tactile paving. Then stand on each corner for 10 s and slowly pan from Moss to Howard and back. About 1.5 minutes. Stay on the sidewalk and the zebra; nobody walks into Howard.
+
+Overlap is what makes the reconstruction work: never cut away from the street mid-clip, keep each clip continuous, and start every clip where the previous one ended. Check each clip on the phone for blur before moving on. AirDrop the clips to Eddy's laptop and put them in `shoot/splat/`.
+
+On Eddy's laptop (an M-series Mac; first time: `brew install colmap`, and `train.sh` downloads Brush). Times are estimates from the sample run in `sim/README.md`:
+
+```bash
+S=data/splat/moss
+scripts/splat/video_to_frames.sh $S shoot/splat/*.MOV --frames 350    # 2 to 4 min
+scripts/splat/poses.sh $S                                             # COLMAP, about 20 to 30 min
+scripts/splat/train.sh $S --steps 30000                               # Brush, see the README for timing
+scripts/splat/export.sh $S/out/splat_30000.ply sim/public/local/moss.splat
+```
+
+Then line it up with the sim (README, Splat): collect three landmarks with `L`, write `sim/public/local/moss.align.json`, and reload. The sim opens the splat by default once `sim/public/local/moss.splat` exists.

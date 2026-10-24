@@ -9,6 +9,7 @@ import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
 import { clampToFence } from "./fence";
+import { buildSplatWorld } from "./splatWorld";
 
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
@@ -16,6 +17,8 @@ import { clampToFence } from "./fence";
 // frames is far lower) and tiles show on screen only; ?detector=tiles puts tiles in capture too. ?world=moss (default): Moss St from OSM with textured facades
 // everywhere. ?world=placeholder: the old box world.
 // Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
+// ?world=splat&src=<url>: a Gaussian splat of Moss over the OSM colliders and traffic (splatWorld.ts); entry.ts picks it
+// by default when public/local/moss.splat exists.
 // ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
 const metricsOn = query.get("metrics") === "1";
@@ -38,7 +41,7 @@ const [CHASE_BEHIND, CHASE_UP, CHASE_AHEAD] = (query.get("chase") ?? "4,3,10").s
 const FENCE_INSET_M = 10;   // walker stays this far inside the tiles geofence, so every camera is inside too
 
 // --- capture renderer: exact 960x720 frames for perception
-// ponytail: second WebGL context; switch to a render target + readRenderTargetPixels if the splat renderer needs a single context
+// ponytail: second WebGL context (unused by ?world=splat, which captures on the screen context, see captureOnScreen)
 const capture = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 capture.setPixelRatio(1);
 capture.setSize(CAM_W, CAM_H, false);
@@ -49,8 +52,12 @@ if (worldName === "tiles" && !TILES_KEY) {
   worldName = "moss";
 }
 const walkers = () => [walker];                                       // cars yield to the walker too
-const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () => void; view?: (m: "screen" | "capture") => void } =
+const world: ReturnType<typeof buildWorld> & WorldExtras & {
+  updateTiles?: () => void; view?: (m: "screen" | "capture") => void;
+  attach?: (r: THREE.WebGLRenderer) => void; pick?: (ndc: THREE.Vector2, cam: THREE.Camera) => void;
+} =
   worldName === "placeholder" ? buildWorld()
+  : worldName === "splat" ? buildSplatWorld({ walkers, src: query.get("src") ?? "/local/moss.splat", align: query.get("align") ?? undefined })
   : worldName === "tiles" ? buildTilesWorld({
     walkers, cameras: [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
     detector: query.get("detector") === "tiles" ? "tiles" : "osm",   // OSM capture by default: YOLO recall on tile frames is far lower (PR #41)
@@ -98,6 +105,7 @@ const view = document.getElementById("view")!;
 const hud = document.getElementById("hud")!;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 world.tune?.(renderer);
+world.attach?.(renderer);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setScissorTest(true);
 view.appendChild(renderer.domElement);
@@ -105,6 +113,7 @@ const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
 window.addEventListener("resize", resize);
 resize();
 
+const droneRect = { x: 0, y: 0, w: 1, h: 1 };   // CSS px, GL origin (bottom left), for picking under the cursor
 function drawScreen() {
   const W = window.innerWidth, H = window.innerHeight;
   renderer.setScissor(0, 0, W, H);
@@ -114,6 +123,7 @@ function drawScreen() {
   const x = (W - w) / 2, y = (H - h) / 2;
   renderer.setViewport(x, y, w, h);
   renderer.setScissor(x, y, w, h);
+  Object.assign(droneRect, { x, y, w, h });
   world.view?.("screen");                          // tiles on (they may be off for ?detector=osm capture)
   if (world.overlay) world.overlay.visible = true; // screen only, never in camera frames
   renderer.render(scene, topView ? topCam : worldName === "tiles" ? chaseCam : droneCam);
@@ -130,15 +140,43 @@ const relay = reconnectingSocket(metrics?.offline ? "" : query.get("relay") ?? R
 const ear = reconnectingSocket(metrics?.offline ? "" : query.get("ear") ?? EARPIECE_URL);
 
 // Frames: alternate cameras so each gets FRAME_FPS. Wire format: 1 byte camera id + JPEG.
+// Splat world: one WebGL context (Spark's sort and textures belong to the screen renderer), so frame()
+// draws the capture view in the screen canvas's bottom-left 960x720 device pixels, copies it out, then
+// draws the screen over it before the browser shows anything.
+const oneContext = worldName === "splat";
+const grab = document.createElement("canvas");
+grab.width = CAM_W;
+grab.height = CAM_H;
+const grabCtx = grab.getContext("2d")!;
+let grabCam = -1, grabWarned = false;
+function captureOnScreen(id: number) {
+  const buf = renderer.getDrawingBufferSize(new THREE.Vector2());
+  if (buf.x < CAM_W || buf.y < CAM_H) {
+    if (!grabWarned) console.warn(`[sim] window is ${buf.x}x${buf.y} device px, under ${CAM_W}x${CAM_H}: no splat frames for the detector`);
+    grabWarned = true;
+    return;
+  }
+  const pr = renderer.getPixelRatio();
+  renderer.setViewport(0, 0, CAM_W / pr, CAM_H / pr);
+  renderer.setScissor(0, 0, CAM_W / pr, CAM_H / pr);
+  renderer.render(scene, cams[id]);
+  grabCtx.drawImage(renderer.domElement, 0, buf.y - CAM_H, CAM_W, CAM_H, 0, 0, CAM_W, CAM_H);
+  sendFrame(grab, id);
+}
 let nextCam = 0;
 setInterval(() => {
   if (!relay.open || relay.buffered > 2_000_000) return; // skip rather than queue stale frames
   const id = nextCam;
   nextCam = 1 - nextCam;
+  if (oneContext) { grabCam = id; return; }   // frame() draws it
   world.view?.("capture");     // ?detector=osm: no Google tile pixels in frames for the detector
   capture.render(scene, cams[id]);
   world.view?.("screen");
-  capture.domElement.toBlob(async (blob) => {
+  sendFrame(capture.domElement, id);
+}, 1000 / (FRAME_FPS * 2));
+
+function sendFrame(canvas: HTMLCanvasElement, id: number) {
+  canvas.toBlob(async (blob) => {
     if (!blob) return;
     const jpeg = new Uint8Array(await blob.arrayBuffer());
     const msg = new Uint8Array(jpeg.length + 1);
@@ -146,7 +184,7 @@ setInterval(() => {
     msg.set(jpeg, 1);
     relay.send(msg.buffer);
   }, "image/jpeg", 0.85);
-}, 1000 / (FRAME_FPS * 2));
+}
 
 // Position (earpiece) and pose (perception) at POSITION_HZ.
 setInterval(() => {
@@ -169,6 +207,12 @@ window.addEventListener("keydown", (e) => {
   if (k === "b") black = true;
   if (k === "v") black = false;
   if (k === "t" && debug) topView = !topView;
+  if (k === "l" && debug && world.pick) {   // splat landmarks: log the splat and OSM points under the cursor
+    const r = view.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((mouse.x - r.left - droneRect.x) / droneRect.w) * 2 - 1,
+      ((r.bottom - mouse.y - droneRect.y) / droneRect.h) * 2 - 1);
+    world.pick(ndc, topView ? topCam : droneCam);
+  }
   if (k === "h" && !e.repeat) {
     // DEBUG ONLY (skeleton gate): real hazards come from the detector, never the sim's object list.
     ear.json({ type: "hazard", source: "sim", kind: "crowd", bearing: 0, distance: 5 });
@@ -176,6 +220,8 @@ window.addEventListener("keydown", (e) => {
   }
 });
 window.addEventListener("keyup", (e) => keys.delete(e.key));
+const mouse = { x: 0, y: 0 };
+window.addEventListener("mousemove", (e) => Object.assign(mouse, { x: e.clientX, y: e.clientY }));
 window.addEventListener("blur", () => keys.clear());
 
 // --- movement + collision (AABB on the ground plane)
@@ -237,6 +283,7 @@ function frame(now: number) {
   else { world.update(dt); step(dt); }
   placeCameras();
   world.updateTiles?.();
+  if (grabCam >= 0) { captureOnScreen(grabCam); grabCam = -1; }
   view.classList.toggle("hidden", black);
   if (!black) drawScreen();
   if (metrics) hud.textContent = metrics.hud(); else drawHud();
