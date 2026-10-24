@@ -494,6 +494,9 @@ mark { background: none; color: inherit; padding: 0 2px;
 .imagined figcaption { font: 600 18px var(--hand); color: var(--verm-ink, #C8287A); text-align: center; padding-top: 2px; }
 @media (max-width: 700px) { .imagined { grid-template-columns: 1fr; } .imagined figure { transform: none !important; } }
 
+/* sponsor logos: the official mark, small, above the sticker */
+.track-logo { display: block; max-width: 100%; height: auto; margin: 2px 0 14px; }
+
 /* evidence: real artifacts from the repo that back a card's claims */
 .track dd a { color: var(--indigo); font-weight: 600; }
 .evidence { grid-column: 1 / -1; margin: 6px 0 0; }

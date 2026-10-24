@@ -47,6 +47,20 @@ test("/judges cards run from most to least likely to win, and the contents list 
   assert.ok(judges.indexOf('id="spacexai"') < calhacks && calhacks < judges.indexOf('id="people"'));
 });
 
+test("every sponsor card carries its official logo: local, small, with alt text", () => {
+  for (const id of SPONSOR) {
+    const img = card(id).match(/<img class="track-logo" src="([^"]+)" alt="([^"]+)" width="\d+" height="\d+" \/>/);
+    assert.ok(img, `${id} logo`);
+    assert.match(img[1], /^\/assets\/logos\/[\w-]+\.(svg|png)$/);
+    assert.match(img[2], / logo$/);
+    const file = join(PUBLIC, img[1]);
+    assert.ok(existsSync(file), img[1]);
+    assert.ok(statSync(file).size < 20 * 1024, `${img[1]} is ${statSync(file).size} bytes`);
+    if (file.endsWith(".svg")) assert.doesNotMatch(readFileSync(file, "utf8"), /<script|<foreignObject|href="http/i);
+  }
+  for (const id of CALHACKS) assert.doesNotMatch(card(id), /track-logo/, `${id} has no sponsor logo`);
+});
+
 test("evidence images are real local files, at most 900 px wide, each with alt text", () => {
   const imgs = [...judges.matchAll(/<img src="(\/assets\/evidence\/[^"]+)" alt="([^"]{40,})" width="(\d+)" height="\d+" loading="lazy" \/>/g)];
   assert.deepEqual(imgs.map((m) => m[1]).sort(), ["/assets/evidence/caregiver-dashboard.jpg", "/assets/evidence/yolo-chest-view.jpg", "/assets/evidence/yolo-drone-view.jpg"]);
