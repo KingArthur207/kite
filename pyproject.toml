@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "scipy>=1.11", "cma>=3.3"]  # the kite.fly tests run in the not-slow suite
+dev = ["pytest>=8", "scipy>=1.11", "cma>=3.3", "hypothesis>=6.100"]  # kite.fly tests run in the not-slow suite; hypothesis: safety-governor property tests
 follow = ["ultralytics>=8.3"]  # kite.follow person detector (YOLO11n); weights: see kite/follow.py, never fetched at runtime
 fly = ["scipy>=1.11"]                              # kite.fly: the fly-brain yaw source (sparse LIF network)
 train = ["scipy>=1.11", "cma>=3.3", "modal>=1.0"]  # kite.fly.train: CMA-ES fine-tuning, locally or on Modal
