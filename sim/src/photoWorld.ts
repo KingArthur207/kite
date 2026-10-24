@@ -35,11 +35,13 @@ function valid(w: Partial<PhotoWall>): boolean {
 export async function loadPhotoManifests() {
   const lists = await Promise.all(PHOTO_DIRS.map(async (dir) => {
     const r = await fetch(dir + "manifest.json").catch(() => null);
-    // Vite answers a missing file with index.html, so anything that isn't JSON means "no manifest here".
-    if (!r?.ok || !(r.headers.get("content-type") ?? "").includes("json")) return [];
+    const text = r?.ok ? await r.text() : "";
+    // Vite answers a missing file with index.html (status 200), so HTML means "no manifest here".
+    if (!text || text.trimStart().startsWith("<")) return [];
     try {
-      const j = await r.json();
-      const all = (Array.isArray(j) ? j : j.walls ?? []) as Partial<PhotoWall>[];
+      const j = JSON.parse(text);
+      // texture null = the facade agent rejected that wall: it stays procedural.
+      const all = ((Array.isArray(j) ? j : j.walls ?? []) as Partial<PhotoWall>[]).filter((w) => w.texture != null);
       const ok = all.filter(valid);
       if (ok.length < all.length) console.warn(`[photoWorld] ${dir}manifest.json: ${all.length - ok.length} malformed walls skipped`);
       return ok.map((w) => ({ ...w, dir }) as PhotoWall);
@@ -122,7 +124,7 @@ function label(text: string, color: string) {
   x.fillStyle = "rgba(0,0,0,0.6)"; x.fillRect(0, 0, 256, 64);
   x.fillStyle = color; x.font = "bold 34px monospace"; x.textAlign = "center"; x.textBaseline = "middle";
   x.fillText(text, 128, 32);
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: false, fog: false }));
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), fog: false }));
   s.scale.set(2.4, 0.6, 1);
   s.renderOrder = 999;
   return s;
