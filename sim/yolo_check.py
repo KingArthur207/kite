@@ -140,6 +140,7 @@ def grab(url: str, per_cam: int):
         page.clock.install()
         page.goto(url)
         page.wait_for_function("window.__kiteActors && window.__kiteActors().length >= 12", timeout=30000)
+        page.wait_for_function("window.__kiteReal !== 'loading'", timeout=60000)   # ?world=real: the local GLB
         page.clock.run_for(3000)
 
         def settle(max_s: float = 15):

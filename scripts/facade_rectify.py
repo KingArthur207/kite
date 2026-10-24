@@ -14,9 +14,9 @@ plan is, per street-facing wall in sim/public/osm/moss.json:
      image keep the Poly Haven material.
 
 Camera model (Mapillary conventions): local metres x east, y north, z up; heading = compass angle,
-clockwise from north; focal = camera_parameters[0] as a fraction of max(width, height); no tilt, no
-roll. ponytail: ignores the k1/k2 radial distortion and camera pitch; undistort first and add pitch
-if rectified walls come out bowed or keystoned.
+clockwise from north; focal = camera_parameters[0] as a fraction of max(width, height); pitch optional
+(Street View Static, scripts/streetview_facades.py), no roll. ponytail: ignores radial distortion;
+undistort first if rectified walls come out bowed.
 """
 from __future__ import annotations
 
@@ -35,12 +35,15 @@ class Camera:
     focal: float      # fraction of max(width, height)
     width: int
     height: int
+    pitch: float = 0.0  # degrees, + = up (Street View Static's pitch); no roll
 
     def axes(self):
-        h = math.radians(self.heading)
-        fwd = np.array([math.sin(h), math.cos(h), 0.0])
+        h, p = math.radians(self.heading), math.radians(self.pitch)
+        level = np.array([math.sin(h), math.cos(h), 0.0])
+        up = np.array([0.0, 0.0, 1.0])
+        fwd = math.cos(p) * level + math.sin(p) * up
         right = np.array([math.cos(h), -math.sin(h), 0.0])
-        down = np.array([0.0, 0.0, -1.0])
+        down = math.sin(p) * level - math.cos(p) * up
         return fwd, right, down
 
     @property
@@ -146,6 +149,11 @@ def selftest():
     cam = Camera(x=-3.0, y=0.0, z=1.6, heading=25, focal=0.85, width=1600, height=1200)
     shot = _render_wall(tex, cam, a, b, wall_h)
     back, ok = rectify(shot, cam, a, b, wall_h, px_per_m=ppm)
+    tilted = Camera(x=-3.0, y=0.0, z=1.6, heading=25, focal=0.85, width=1600, height=1200, pitch=15)
+    back_t, ok_t = rectify(_render_wall(tex, tilted, a, b, wall_h), tilted, a, b, wall_h, px_per_m=ppm)
+    inner_t = ok_t.copy()
+    inner_t[:3], inner_t[-3:], inner_t[:, :3], inner_t[:, -3:] = False, False, False, False
+    assert np.abs(back_t[..., 0] - tex[..., 0])[inner_t].mean() < 5, "pitched camera misregisters"
     assert back.shape[:2] == tex.shape[:2] and ok.mean() > 0.95, (back.shape, ok.mean())
     inner = ok.copy()
     inner[:3], inner[-3:], inner[:, :3], inner[:, -3:] = False, False, False, False
