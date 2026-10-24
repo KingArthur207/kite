@@ -32,6 +32,9 @@ const spacetimedb = schema({ event, latest });
 export default spacetimedb;
 
 const KEEP_EVENTS = 500n;
+// Auto-increment ids have gaps (they jump after a server restart), so deleting `id - KEEP_EVENTS`
+// alone can miss rows and let the log grow forever; past this many extra rows a sweep drops the oldest.
+const SWEEP_SLACK = 50n;
 const MAX_PAYLOAD = 16 * 1024;
 const TYPES = new Set([
   'obstacles', 'hazard', 'guidance', 'beacon', 'position', 'status', 'scene', 'say',
@@ -56,6 +59,10 @@ export const push = spacetimedb.reducer(
 
     const row = ctx.db.event.insert({ id: 0n, type, source, priority, payload, t: ctx.timestamp });
     if (row.id > KEEP_EVENTS) ctx.db.event.id.delete(row.id - KEEP_EVENTS);
+    if (ctx.db.event.count() > KEEP_EVENTS + SWEEP_SLACK) {
+      const ids = [...ctx.db.event.iter()].map(r => r.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      for (const id of ids.slice(0, ids.length - Number(KEEP_EVENTS))) ctx.db.event.id.delete(id);
+    }
 
     const key = `${type}:${source}`;
     const next = { key, type, source, priority, payload, t: ctx.timestamp };
