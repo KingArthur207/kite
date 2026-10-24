@@ -43,6 +43,14 @@ def check(pub, sub) -> None:
     assert sub.recv(timeout=2) == bytes([0]) + jpeg
     print("relay pub -> sub OK")
 
+    cmd = {"type": "drone_cmd", "cmd": "rc", "lr": 0, "fb": 20, "ud": 0, "yaw": 0}
+    sub.send(json.dumps(cmd))
+    sub.send(json.dumps({"type": "pose", "camera": "drone"}))   # not upstream: dropped
+    sub.send(json.dumps({"type": "walker_cmd", "cmd": "go"}))
+    assert json.loads(pub.recv(timeout=2)) == cmd
+    assert json.loads(pub.recv(timeout=2))["type"] == "walker_cmd"
+    print("relay sub -> pub commands OK")
+
     if cv2 is None:
         print("cv2 not installed: skipped SimFrameSource check")
         return

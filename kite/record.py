@@ -5,6 +5,8 @@
     python -m kite.record --source tello --out recordings --fly --dry-run   # rehearse the keys, motion only logged
     python -m kite.record --source tello --out recordings --fly   # the shoot: fly with the keys and record
     python -m kite.record --source tello --out recordings --fly --follow   # g toggles follow mode (kite/follow.py)
+    python -m kite.record --source sim --out recordings --fly --follow     # the same, flying the 3D sim's drone
+                                                                           # (sim/README.md "Drone in the loop")
 
 Only one program can hold the Tello ports (UDP 8889/8890/11111), so the program that records from the Tello is also
 the only one that can fly it: --fly adds keyboard control in this same process, through kite's drone layer and
@@ -187,12 +189,13 @@ class TerminalKeys:
 
 
 def _raw_state_reader(drone):
-    """djitellopy's state dict getter behind any wrapper (SafetyGovernor.inner -> TelloDrone.tello), else None."""
+    """djitellopy's state dict getter behind any wrapper (SafetyGovernor.inner -> TelloDrone.tello, or the sim drone's
+    own get_current_state), else None."""
     d = drone
     while d is not None and hasattr(d, "inner"):
         d = d.inner
     tello = getattr(d, "tello", None)
-    return None if tello is None else tello.get_current_state
+    return getattr(d, "get_current_state", None) if tello is None else tello.get_current_state
 
 
 def _clean(v):
@@ -589,8 +592,9 @@ class Recorder:
 
 
 # ------------------------------------------------------------------ CLI
-def _make_follow(args, frames, cfg):
-    """FollowMode for --follow: the detector loads and tracks in its own thread from now on."""
+def _make_follow(args, frames, cfg, camera=None):
+    """FollowMode for --follow: the detector loads and tracks in its own thread from now on.
+    camera: the intrinsics of the video (default load_camera(), the Tello's; the sim passes its own)."""
     from .camera import load_camera
     from .follow import FollowCfg, FollowMode, YoloPersonDetector
 
@@ -598,15 +602,17 @@ def _make_follow(args, frames, cfg):
     if args.follow_behind:
         fcfg.behind_m = args.follow_behind
     print("follow: loading the person detector in the background ...", flush=True)
-    return FollowMode(frames, lambda: YoloPersonDetector(args.follow_weights), fcfg, load_camera(),
+    return FollowMode(frames, lambda: YoloPersonDetector(args.follow_weights), fcfg, camera or load_camera(),
                       max_rc=cfg.safety.max_rc).start_tracker()
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m kite.record", description="Record drone video + telemetry to disk.")
-    p.add_argument("--source", required=True, help="a video file (dry run, no drone) or 'tello'")
+    p.add_argument("--source", required=True, help="a video file (dry run, no drone), 'tello', or 'sim' "
+                   "(the browser sim's drone, ?drone=sim, through the relay)")
+    p.add_argument("--sim-url", default="ws://127.0.0.1:5020/sub", help="relay for --source sim")
     p.add_argument("--out", default="recordings", help="output folder; each run gets a timestamped subfolder")
-    p.add_argument("--fly", action="store_true", help="keyboard flight control in this process (tello only)")
+    p.add_argument("--fly", action="store_true", help="keyboard flight control in this process (tello or sim)")
     p.add_argument("--dry-run", action="store_true", help="with --fly: keys work but no motion is sent to the drone")
     p.add_argument("--speed", type=int, default=30, help="stick value for the move keys, 10-100 (clamped to "
                    "SafetyCfg.max_rc = 50; default 30)")
@@ -625,9 +631,10 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--speed must be 10-100")
     if not 0.2 <= args.pulse <= 2.0:
         p.error("--pulse must be 0.2-2.0 s")
-    tello = args.source.lower() == "tello"
+    sim = args.source.lower() == "sim"
+    tello = args.source.lower() == "tello" or sim  # the sim drone takes the Tello's path from here on
     if args.fly and not tello:
-        p.error("--fly needs --source tello")
+        p.error("--fly needs --source tello or sim")
     if args.fly and not sys.stdin.isatty():
         p.error("--fly needs an interactive terminal for the keys")
     if args.follow:
@@ -666,15 +673,24 @@ def main(argv: list[str] | None = None) -> int:
     from .drone import SafetyGovernor, make_tello
 
     dry = args.dry_run or not args.fly  # record-only never sends motion
-    meta.update(source_kind="tello", dry_run=dry)
-    drone = SafetyGovernor(make_tello(cfg, dry_run=dry), cfg.safety)
-    print(f"connecting to the Tello ({'DRY RUN: no motion is sent' if dry else 'LIVE: keys fly the drone'}) ...")
+    meta.update(source_kind="sim" if sim else "tello", dry_run=dry)
+    camera = None
+    if sim:
+        from .drone.sim import SIM_CAMERA, SimDrone
+
+        drone, camera = SafetyGovernor(SimDrone(args.sim_url, dry_run=dry), cfg.safety), SIM_CAMERA
+    else:
+        drone = SafetyGovernor(make_tello(cfg, dry_run=dry), cfg.safety)
+    print(f"connecting to the {'sim drone' if sim else 'Tello'} "
+          f"({'DRY RUN: no motion is sent' if dry else 'LIVE: keys fly the drone'}) ...")
     try:
         try:
             drone.connect()
         except Exception as e:
-            print(f"cannot connect: {e}\nJoin the TELLO-xxxxxx Wi-Fi, close the phone app, and check that "
-                  f"`lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` prints nothing.")
+            hint = ("Start sim/relay.py and open the sim with ?drone=sim." if sim else
+                    "Join the TELLO-xxxxxx Wi-Fi, close the phone app, and check that "
+                    "`lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` prints nothing.")
+            print(f"cannot connect: {e}\n{hint}")
             return 1
         frames = drone.frame_source()
         print("waiting for the first video frame ...", flush=True)
@@ -682,7 +698,7 @@ def main(argv: list[str] | None = None) -> int:
             print("WARNING: no video yet; recording anyway (the reader keeps retrying, takeoff waits for video)")
         meta["battery_start"] = drone.telemetry().battery_pct
         if args.fly:
-            follow = _make_follow(args, frames, cfg) if args.follow else None
+            follow = _make_follow(args, frames, cfg, camera) if args.follow else None
             try:
                 with TerminalKeys() as keys:
                     rec = Recorder(frames, drone, rcfg, meta, keys=keys, safety=cfg.safety, follow=follow)

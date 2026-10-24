@@ -10,6 +10,9 @@ import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
 import { clampToFence } from "./fence";
+import { makeSimDrone, type DroneCmd } from "./simDrone";
+import { makeRouteWalker } from "./routeWalker";
+import { loadPerson } from "./actors";
 
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
@@ -20,6 +23,18 @@ import { clampToFence } from "./fence";
 // ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
 const metricsOn = query.get("metrics") === "1";
+// ?drone=sim: the drone camera is a flying body driven by rc over the relay (simDrone.ts, kite/drone/sim.py).
+// ?walker=route: the walker walks the demo route by itself (routeWalker.ts). See README "Drone in the loop".
+const droneSimOn = query.get("drone") === "sim" && !metricsOn;
+const routeOn = query.get("walker") === "route" && !metricsOn;
+const DRONE_FPS = 15;          // sim drone frames per second (the Tello streams 30; the detector keeps up with ~15)
+const VIDEO_LAG_MS = Number(query.get("lag") ?? 150);   // Tello video latency, render to relay
+const DRONE_STATE_HZ = 20;
+// Headless runs (scripts/sim_follow.py): ?screen=0 skips the on-screen render and ?chest=0 the chest frames, so the
+// GPU spends its time on the drone frames and they arrive evenly.
+const screenOn = query.get("screen") !== "0";
+const chestOn = query.get("chest") !== "0";
+const DRONE_START_BEHIND = 1.2;   // m behind the walker's spawn, on the ground
 const aspect = CAM_W / CAM_H;
 const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
 const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
@@ -72,6 +87,17 @@ const body = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0x4a6fa5 }),
 );
 scene.add(body);
+// With the sim drone the walker is a glTF person, so the follow detector (YOLO) can find it like a real one.
+let figure: { obj: THREE.Object3D; mixer: THREE.AnimationMixer } | null = null;
+if (droneSimOn || routeOn) {
+  loadPerson("man", false).then((f) => { figure = f; scene.add(f.obj); body.visible = false; })
+    .catch((e) => console.error("[sim] walker model", e));
+}
+const route = routeOn ? makeRouteWalker(walker, query) : null;
+const h0 = THREE.MathUtils.degToRad(walker.heading);
+const sim = droneSimOn ? makeSimDrone({
+  x: walker.x - Math.sin(h0) * DRONE_START_BEHIND, n: walker.n - Math.cos(h0) * DRONE_START_BEHIND, heading: walker.heading,
+}, Number(query.get("seed")) || 1) : null;
 const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }) : null;
 
 function forward() {
@@ -84,9 +110,16 @@ function placeCameras() {
   const f = forward();
   const wx = walker.x, wz = -walker.n;
   body.position.set(wx, HEAD_TOP / 2, wz);
-  const droneY = HEAD_TOP + DRONE_ABOVE_HEAD;
-  droneCam.position.set(wx - f.x * DRONE_BEHIND, droneY, wz - f.z * DRONE_BEHIND);
-  droneCam.lookAt(droneCam.position.x + f.x, droneY, droneCam.position.z + f.z);
+  if (figure) {
+    figure.obj.position.set(wx, 0, wz);
+    figure.obj.rotation.y = Math.atan2(f.x, f.z);
+  }
+  if (sim) sim.placeCamera(droneCam);
+  else {
+    const droneY = HEAD_TOP + DRONE_ABOVE_HEAD;
+    droneCam.position.set(wx - f.x * DRONE_BEHIND, droneY, wz - f.z * DRONE_BEHIND);
+    droneCam.lookAt(droneCam.position.x + f.x, droneY, droneCam.position.z + f.z);
+  }
   const chestOut = 0.3; // just in front of the body capsule
   chestCam.position.set(wx + f.x * chestOut, CHEST_HEIGHT, wz + f.z * chestOut);
   chestCam.lookAt(chestCam.position.x + f.x, CHEST_HEIGHT, chestCam.position.z + f.z);
@@ -130,15 +163,20 @@ function drawScreen() {
 
 // --- sockets
 // Blind/oracle metrics stay offline so they never feed a shared earpiece or detector.
-const relay = reconnectingSocket(metrics?.offline ? "" : query.get("relay") ?? RELAY_URL, true);
+// Text from the relay: drone commands from kite/drone/sim.py, and "go" for the route walker.
+function onRelayText(text: string) {
+  let m: { type?: string; cmd?: string };
+  try { m = JSON.parse(text); } catch { return; }
+  if (m.type === "drone_cmd") sim?.command(m as DroneCmd);
+  else if (m.type === "walker_cmd" && m.cmd === "go") route?.go();
+}
+const relay = reconnectingSocket(metrics?.offline ? "" : query.get("relay") ?? RELAY_URL, true, onRelayText);
 const ear = reconnectingSocket(metrics?.offline ? "" : query.get("ear") ?? EARPIECE_URL);
 
-// Frames: alternate cameras so each gets FRAME_FPS. Wire format: 1 byte camera id + JPEG.
-let nextCam = 0;
-setInterval(() => {
+// Frames. Wire format: 1 byte camera id + JPEG. lagMs holds a frame back after rendering (sim drone video latency).
+function sendFrame(id: number, lagMs = 0) {
   if (!relay.open || relay.buffered > 2_000_000) return; // skip rather than queue stale frames
-  const id = nextCam;
-  nextCam = 1 - nextCam;
+  const t0 = performance.now();
   world.view?.("capture");     // ?detector=osm: no Google tile pixels in frames for the detector
   capture.render(scene, cams[id]);
   world.view?.("screen");
@@ -148,9 +186,22 @@ setInterval(() => {
     const msg = new Uint8Array(jpeg.length + 1);
     msg[0] = id;
     msg.set(jpeg, 1);
-    relay.send(msg.buffer);
+    setTimeout(() => relay.send(msg.buffer), Math.max(0, lagMs - (performance.now() - t0)));
   }, "image/jpeg", 0.85);
-}, 1000 / (FRAME_FPS * 2));
+}
+if (sim) {
+  setInterval(() => sendFrame(0, VIDEO_LAG_MS), 1000 / DRONE_FPS);
+  if (chestOn) setInterval(() => sendFrame(1), 1000 / FRAME_FPS);
+  // Drone state (Tello field names) plus the walker's true pose, for kite/drone/sim.py and the follow evaluation.
+  setInterval(() => relay.json({
+    type: "drone_state", ...sim.telemetry(), walker_x: +walker.x.toFixed(3), walker_y: +walker.n.toFixed(3),
+    walker_heading: +walker.heading.toFixed(1), walker_state: route?.state ?? "keys", walker_s: route ? +route.s.toFixed(2) : null,
+  }), 1000 / DRONE_STATE_HZ);
+} else {
+  // Alternate cameras so each gets FRAME_FPS.
+  let nextCam = 0;
+  setInterval(() => { sendFrame(nextCam); nextCam = 1 - nextCam; }, 1000 / (FRAME_FPS * 2));
+}
 
 // Position (earpiece) and pose (perception) at POSITION_HZ.
 setInterval(() => {
@@ -159,7 +210,10 @@ setInterval(() => {
              lat, lng, x: walker.x, y: walker.n });
   const camHeights = { drone: HEAD_TOP + DRONE_ABOVE_HEAD, chest: CHEST_HEIGHT };
   for (const [camera, cam_height] of Object.entries(camHeights)) {
-    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0 });
+    if (camera === "drone" && sim) {
+      const { d } = sim;
+      relay.json({ type: "pose", camera, x: d.x, y: d.n, heading: d.heading, cam_height: d.alt, pitch: d.pitch });
+    } else relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0 });
   }
 }, 1000 / POSITION_HZ);
 
@@ -230,6 +284,9 @@ function drawHud() {
     `lat/lng: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n` +
     `relay ${relay.open ? "on" : "off"}   earpiece ${ear.open ? "on" : "off"}   ${status}\n` +
     (black ? "BLACK SCREEN (V to reveal)\n" : "") +
+    (sim ? `drone ${sim.d.state}  h ${sim.d.alt.toFixed(2)} m  yaw ${sim.d.heading.toFixed(0)}°  ` +
+      `${Math.hypot(sim.d.x - walker.x, sim.d.n - walker.n).toFixed(2)} m from walker\n` : "") +
+    (route ? `route walker ${route.state}  ${route.s.toFixed(1)} m at ${route.speed} m/s\n` : "") +
     `\narrows walk/turn   B black screen   V reveal\nH  DEBUG: send one fake crowd hazard${dbg}`;
 }
 
@@ -238,11 +295,20 @@ function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   if (metrics) metrics.step(dt);
-  else { world.update(dt); step(dt); }
+  else {
+    world.update(dt);
+    if (route) {
+      route.step(dt);
+      const s = route.moving ? "walking" : "stopped";
+      if (s !== status) { status = s; ear.json({ type: "status", source: "sim", state: s }); }
+    } else step(dt);
+  }
+  sim?.step(dt);
+  figure?.mixer.update(route && !route.moving ? 0 : dt * (route?.speed ?? WALK_SPEED) / 1.3);
   placeCameras();
   world.updateTiles?.();
   view.classList.toggle("hidden", black);
-  if (!black) drawScreen();
+  if (!black && screenOn) drawScreen();
   if (metrics) hud.textContent = metrics.hud(); else drawHud();
   requestAnimationFrame(frame);
 }
