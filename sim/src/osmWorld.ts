@@ -8,6 +8,7 @@ import { buildFacades, capBays, type Building } from "./osmFacades";
 import { buildStreets, nearestOnRoads, ribbon, type StreetData } from "./osmStreet";
 import { buildStreetDressing } from "./streetDressing";
 import { look2, upgradeWorld } from "./look2";
+import { buildMossDetails, mossLaneClear } from "./mossDetails";
 
 type P = [number, number];
 type Quad = P[];
@@ -35,7 +36,8 @@ export interface WorldExtras {
   tune?: (r: THREE.WebGLRenderer) => void;   // renderer settings; main.ts applies them to both renderers
 }
 
-export const lanes: Lane[] = data.lanes;
+// ?look=2 parks cars on the NE curb in the NW half of Moss, so its lane moves over (mossDetails.ts).
+export const lanes: Lane[] = look2 ? mossLaneClear(data.lanes, data.roads.find((r) => r.name === "Moss Street")!) : data.lanes;
 export const route: P[] = data.route;
 export const crossings = data.crossings;
 
@@ -107,6 +109,7 @@ export function buildOsmWorld(opts: {
     for (let k = 0; k + 1 < g.length; k++) walls.push([...g[k], ...g[k + 1]] as Wall);
   }
   walls.push(...buildStreetDressing(visible, world, garages));   // parked cars, trees, poles, signs: they collide too
+  if (look2) walls.push(...buildMossDetails(visible, world));   // Street View details on Moss (signs, shrubs, FDC)
 
   // Planned demo walk, drawn faintly on screen only (main.ts hides it for camera frames).
   const overlay = new THREE.Group();

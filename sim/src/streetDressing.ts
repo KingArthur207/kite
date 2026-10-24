@@ -9,6 +9,7 @@ import * as THREE from "three";
 import { mergeGeometries, toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { loadCar, type CarName } from "./actors";
 import { WALKER_RADIUS } from "./config";
+import { look2 } from "./look2";
 import { pbr, seeded } from "./osmLook";
 import { inPoly, inQuad, segDist, type Garage } from "./osmFacades";
 import { along, curbOffsets, howardLightSpots, nearestOnRoads, offsetPts, type StreetData } from "./osmStreet";
@@ -36,7 +37,7 @@ const add = (a: P, b: P, k = 1): P => [a[0] + b[0] * k, a[1] + b[1] * k];
 const dist = (a: P, b: P) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 
 /** Arc length along a polyline of the point nearest p. */
-function sOn(pts: P[], p: P) {
+export function sOn(pts: P[], p: P) {
   let best = { d: Infinity, s: 0 }, s0 = 0;
   for (let i = 0; i + 1 < pts.length; i++) {
     const L = dist(pts[i], pts[i + 1]);
@@ -49,7 +50,7 @@ function sOn(pts: P[], p: P) {
 }
 
 /** Wall segments around an oriented rectangle: centre c, half sizes along u and across. */
-function boxSegs(c: P, u: P, halfL: number, halfW: number): Seg[] {
+export function boxSegs(c: P, u: P, halfL: number, halfW: number): Seg[] {
   const n: P = [-u[1], u[0]];
   const k = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, b]) => add(add(c, u, a * halfL), n, b * halfW));
   return k.map((p, i) => [...p, ...k[(i + 1) % 4]] as Seg);
@@ -287,9 +288,10 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   const signAt = (p: P, face: P, tex: THREE.Texture, w: number, h: number, top: number) => {
     const y = ys(p);
     batch.put(M.metal, signPostGeo().map((g) => place(g, p, y)));
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.45, side: THREE.DoubleSide }));
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.45 }));
+    m.add(new THREE.Mesh(m.geometry, M.metal).rotateY(Math.PI));   // plain metal back, not the face mirrored
     m.position.set(p[0], y + top - h / 2, -p[1]);
-    m.rotation.y = Math.atan2(face[0], face[1]);   // plane normal (+z) toward face
+    m.rotation.y = Math.atan2(face[0], -face[1]);   // plane normal (+z, south) toward face (east, north)
     m.castShadow = true;
     root.add(m);
     batch.segs.push(...boxSegs(p, [1, 0], 0.05, 0.05));
@@ -304,7 +306,7 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   {
     const at = spot(mossCurb(0, 0.35), zebraS + 4, 0.1);
     if (at) {
-      const nameMat = (t: THREE.Texture) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.4, side: THREE.DoubleSide });
+      const nameMat = (t: THREE.Texture) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.4 });
       signAt(at.p, [-at.u[1], at.u[0]], noParkingTexture(), 0.001, 0.001, 2.0);   // the post
       const y = ys(at.p);
       for (const [name, block, dir, up] of [["Moss St", "300", at.u, 2.85], ["Howard St", "1100", [at.u[1], -at.u[0]] as P, 3.05]] as const) {
@@ -313,7 +315,7 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
         sign.position.set(at.p[0], y + up, -at.p[1]);
         sign.rotation.y = Math.atan2(-dir[1], dir[0]) + Math.PI / 2;
         sign.castShadow = true;
-        root.add(sign);
+        root.add(sign, sign.clone().rotateY(Math.PI));   // two faces, so neither side reads mirrored
       }
     }
   }
@@ -366,7 +368,7 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   }
   const bulbs: THREE.BufferGeometry[] = [];
   const sw = mossCurb(0, 2.0), ne = mossCurb(1, 1.5);
-  for (let k = 0; k < STRING_LIGHTS; k++) {
+  for (let k = 0; k < (look2 ? 0 : STRING_LIGHTS); k++) {   // ?look=2: mossDetails.ts hangs lanterns instead
     const s = zebraS + STRING_FROM + k * STRING_STEP;
     const a = [...along(k % 2 ? ne : sw, s, 1e9)][0], b = [...along(k % 2 ? sw : ne, s + STRING_STEP, 1e9)][0];
     if (!a || !b) continue;
@@ -398,7 +400,7 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   root.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x202020 })));
 
   groundDetail(root, data, garages, moss, howard, { onRoad, onSidewalk, inArea });
-  const hydrantSW = hydrantAt && nearestOnRoads([moss], hydrantAt.p).side < 0 ? hydrantAt.p : null;
+  const hydrantSW = hydrantAt && (look2 || nearestOnRoads([moss], hydrantAt.p).side < 0) ? hydrantAt.p : null;
   parkCars(root, data, garages, moss, hydrantSW, batch.segs);
   return batch.segs;
 }
@@ -418,34 +420,45 @@ function crownRadius(species: string, h: number) {
 const PARKED: CarName[] = ["sedan", "suv", "sedan2", "sedan", "suv", "sedan2", "sedan"];
 const PAINT = [0xb9bcc0, 0xe9e8e4, 0x15171a, 0x4a4f56, 0x1d2a45, 0x6b1a1e, 0xa9a08c, 0x8d9499, 0xdcdcd8, 0x2a3a2f, 0x2b2d31];
 
-const MOTO_AHEAD = 13;   // m NW of the spawn
+const MOTO_AHEAD = look2 ? 16 : 13;   // m NW of the spawn
+// ?look=2, from Street View (2026-09): cars line the SW curb from Folsom to about 33 Moss, where the SW side turns
+// into warehouse doors (NO PARKING), then the NE curb from there to the corner. No empty spaces and no driveway gaps.
+export const PARK_SWAP_AT: P = [33, -33];
 function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: StreetData["roads"][number], hydrant: P | null, segs: Seg[]) {
-  const line = offsetPts(moss.pts, curbOffsets(moss, 0, -PARK_FROM_CURB));   // the surveyed curb, so cars stay in the parking lane
-  const len = line.slice(1).reduce((s, b, i) => s + dist(line[i], b), 0);
-  const blocked: [number, number][] = [];
-  for (const c of data.crossings) if (c.road === moss.id) { const s = sOn(line, [c.x, c.y]); blocked.push([s - 9, s + 7]); }
-  for (const g of garages) {
-    const near = nearestOnRoads([moss], [g.x, g.n]);
-    if (near.side >= 0 || near.road !== moss || Math.abs(near.side) + moss.curbs[0] > 8) continue;
-    const s = sOn(line, [g.x, g.n]);
-    blocked.push([s - g.w / 2 - 0.9, s + g.w / 2 + 0.9]);
-  }
-  if (hydrant) { const s = sOn(line, hydrant); blocked.push([s - 3, s + 3]); }
+  const sw = offsetPts(moss.pts, curbOffsets(moss, 0, -PARK_FROM_CURB));   // the surveyed curb, so cars stay in the parking lane
+  const ne = offsetPts(moss.pts, curbOffsets(moss, 1, -PARK_FROM_CURB));
+  const swap = sOn(sw, PARK_SWAP_AT);
+  const runs = look2 ? [{ line: sw, side: 0, from: swap, to: Infinity }, { line: ne, side: 1, from: 0, to: swap }]
+    : [{ line: sw, side: 0, from: 0, to: Infinity }];
   const rnd = seeded(2024);
-  const slots: { s: number; model: CarName | "moto"; len: number }[] = [];
   const LEN: Record<string, number> = { sedan: 4.6, sedan2: 4.3, suv: 4.8, moto: 1.6 };
-  const motoS = sOn(line, data.route[0]) - MOTO_AHEAD;
-  let s = 0, k = 0, moto = false;
-  while (s < len) {
-    const model = !moto && s + 2.5 > motoS ? "moto" : PARKED[k % PARKED.length], L = LEN[model];
-    const hit = blocked.find(([a, b]) => s < b && s + L > a);
-    if (hit) { s = hit[1] + 0.3; continue; }
-    if (model !== "moto" && rnd() < 0.12) { s += 5; continue; }       // an empty space now and then
-    slots.push({ s: s + L / 2, model, len: L });
-    s += L + 0.7 + rnd() * 1.4;
-    if (model === "moto") moto = true; else k++;
+  const slots: { line: P[]; s: number; model: CarName | "moto"; len: number }[] = [];
+  let k = 0, moto = false;
+  for (const { line, side, from, to } of runs) {
+    const len = line.slice(1).reduce((s, b, i) => s + dist(line[i], b), 0);
+    const blocked: [number, number][] = [];
+    for (const c of data.crossings) if (c.road === moss.id) { const s = sOn(line, [c.x, c.y]); blocked.push([s - 9, s + 7]); }
+    for (const g of look2 ? [] : garages) {   // ?look=2: Street View shows the curbs full, driveways or not
+      const near = nearestOnRoads([moss], [g.x, g.n]);
+      if (near.side >= 0 || near.road !== moss || Math.abs(near.side) + moss.curbs[0] > 8) continue;
+      const s = sOn(line, [g.x, g.n]);
+      blocked.push([s - g.w / 2 - 0.9, s + g.w / 2 + 0.9]);
+    }
+    if (hydrant && (nearestOnRoads([moss], hydrant).side > 0) === (side === 1)) { const s = sOn(line, hydrant); blocked.push([s - 3, s + 3]); }
+    const motoS = sOn(line, data.route[0]) - MOTO_AHEAD;
+    let s = from;
+    while (s < len) {
+      const model = !moto && s + 2.5 > motoS ? "moto" : PARKED[k % PARKED.length], L = LEN[model];
+      const hit = blocked.find(([a, b]) => s < b && s + L > a);
+      if (hit) { s = hit[1] + 0.3; continue; }
+      if (s + L > to) break;
+      if (model !== "moto" && !look2 && rnd() < 0.12) { s += 5; continue; }       // an empty space now and then
+      slots.push({ line, s: s + L / 2, model, len: L });
+      s += L + 0.7 + rnd() * 1.4;
+      if (model === "moto") moto = true; else k++;
+    }
   }
-  const at = (sv: number) => {
+  const at = (line: P[], sv: number) => {
     let s0 = 0;
     for (let i = 0; i + 1 < line.length; i++) {
       const L = dist(line[i], line[i + 1]);
@@ -456,7 +469,7 @@ function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: Str
   };
   const shadows = new Decals();
   slots.forEach((slot, i) => {
-    const pose = at(slot.s);
+    const pose = at(slot.line, slot.s);
     if (!pose) return;
     const r2 = seeded(i * 7 + 3);
     const yaw = (r2() - 0.5) * 0.03;
@@ -486,7 +499,7 @@ function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: Str
     }).catch((e) => console.error(`[streetDressing] parked ${model}`, e));
   });
   root.add(shadows.mesh(blobTexture()));
-  console.info(`[streetDressing] ${slots.length} parked vehicles along Moss's SW curb`);
+  console.info(`[streetDressing] ${slots.length} parked vehicles along Moss`);
 }
 
 // Low-poly bodies shade flat; creased normals round the panels and keep the hard edges.
