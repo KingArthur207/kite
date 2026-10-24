@@ -66,6 +66,29 @@ cross = vehicle_frames([(6.0, 7.0 - 0.4 * i) for i in range(10)])  # 4 m/s towar
 assert not cross[0] and cross[-1] and cross.index(True) <= 5       # flagged while still > 4 m to the side
 assert all(vehicle_frames([(5.0, 0.8)] * 3))                       # in the path: flagged from the first frame
 
+# (c) parked cars (Street View, the Moss/Howard corner): with the walker's pose, a car 1.2 m off the path that
+# stays put is never a hazard, while the walker stands or walks past it; the same offset while driving still counts
+from standin_detect import StillVehicles  # noqa: E402
+
+
+def walk_past(car_xy, walker_y, dt=0.2, tid=lambda i: "c"):
+    """Walker heading north along x = 0; `car_xy(i)` is the car's world position at frame i."""
+    rf, still, out = RangeFilter(), StillVehicles(), []
+    for i, wy in enumerate(walker_y):
+        cx, cy = car_xy(i)
+        o = drone_car(cy - wy, cx, tid(i))
+        out.append("vehicle" in drone_hazards([o], rf, i * dt, {"x": 0.0, "y": wy, "heading": 0.0}, still))
+    return out
+
+
+assert any(vehicle_frames([(6.0, 1.2)] * 10))                                    # no pose: flagged as before
+assert not any(walk_past(lambda i: (1.2, 8.0), [0.0] * 15))                      # standing, car parked
+assert not any(walk_past(lambda i: (1.2, 9.0), [0.25 * i for i in range(20)]))   # walking past it
+assert not any(walk_past(lambda i: (1.2, 8.0), [0.0] * 15, tid=lambda i: f"t{i // 4}"))  # tracks break
+moving = walk_past(lambda i: (1.2, 11.0 - 1.0 * i), [0.0] * 8)                   # oncoming at 5 m/s
+assert not moving[0] and moving[3] and all(moving[3:])                           # counted after STILL_S
+assert all(walk_past(lambda i: (0.5, 6.0), [0.0] * 5))                           # in the path: always
+
 # gate: 3-frame onset, refresh keeps the same text, clearing sends nothing
 g, cand = HazardGate(), {"crowd": {"bearing": 0.0, "distance": 6.0}}
 assert g.step(cand, 0.0) == [] and g.step(cand, 0.1) == []

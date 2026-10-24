@@ -57,6 +57,22 @@ YOLO (yolo11n, `python sim/yolo_check.py --url '<sim>/?world=...'`, same walk as
 
 The `detector=osm` row matches OSM Moss within run-to-run noise (the traffic differs between runs). These person numbers are higher than the 32 to 38% measured earlier with the same script and the same sim code; the yolo11n weights were downloaded fresh for these runs, so compare rows within this table. With tiles in the capture frames the tiles hid 168 car and 506 person instances, which are left out of that row. Recall drops further because trees and photogrammetry cars partly cover the rest, and people past 20 m are found 3% of the time.
 
+### Street View walk (`?world=streetview`)
+
+Real imagery instead of a 3D world. `src/streetviewWalk.ts` puts a Google Street View panorama (Maps JavaScript API) full screen and walks it along the demo route on Moss St. It starts at the route start facing NW. Up and Down step to the linked panorama nearest the view heading, or behind it. At the corner Moss's panoramas don't link to Howard's, so when no link points the way you face, it takes the nearest Google panorama 8 to 22 m ahead. Left and Right turn 20°, and B, V and H work as in the 3D sim. Google's logo, copyright and terms stay on screen. Every other control is hidden, and clicking the image does nothing.
+
+Scope: the page shows only Google's own panoramas (copyright "Google") inside the same box as `SCOPE` in `kite/sources/streetview.py`. If a panorama change lands anywhere else, the page puts the last good one back.
+
+Earpiece: `position` with the panorama's lat/lng, the view heading and `place: "Moss St"`, plus `status`, like the 3D sim, so the dashboard map follows the walk.
+
+Detector: the page sends `{type: "sv_view", pano, lat, lng, heading}` to the relay and no pixels. `sim/streetview_bridge.py` gets the panorama's metadata (free), checks that it is in `SCOPE` and is Google's, then fetches two Static API images through `kite/sources/streetview.py`. The drone image is at pitch 0 and the sim cameras' 51.3° FOV, and the chest image is at pitch -10 and 69°. It publishes both on the relay as the drone and chest frames at 5 fps, with a `pose` per camera that carries `fx` and `pitch`. The stand-in detector reads them like any sim frames. Images stay in memory (the last 32 views), and nothing is written to disk.
+
+```
+scripts/demo.sh streetview          # earpiece, relay, bridge, sim, dashboard, detector; opens the walk in a new Chrome window
+```
+
+Measured on Oct 24, walking the whole route in headless Chromium (10 panoramas, from the spawn to Howard's south side): the page loaded the Maps JavaScript API once and created one panorama, and made 14 `StreetViewService` lookups. The bridge made 10 metadata requests and 30 Static images (2 per view, 15 views counting the turns). Screenshots without imagery: `docs/streetview_walk_black_start.jpg` and `docs/streetview_walk_black_corner.jpg` (black screen and HUD).
+
 ## Run
 
 ```

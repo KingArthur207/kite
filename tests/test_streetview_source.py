@@ -160,3 +160,33 @@ def test_scope_is_moss_street_only():
     import pytest
     with pytest.raises(ValueError):
         _require_scope(37.7749, -122.4194)           # Civic Center
+
+
+def test_view_jpeg_checks_the_panorama_first(monkeypatch):
+    """The sim's Street View walk asks for a panorama by id: metadata first, in SCOPE and Google's, else no image."""
+    monkeypatch.setenv("GOOGLE_MAPS_API_KEY", KEY)
+    where = {"moss": (37.7779, -122.4082, "© 2026 Google"), "far": (37.7749, -122.4194, "© 2026 Google"),
+             "user": (37.7779, -122.4082, "© Someone")}
+    calls = []
+
+    def fake(url):
+        q = dict(urllib.parse.parse_qsl(url.partition("?")[2]))
+        calls.append(q)
+        if "/metadata" in url:
+            lat, lng, cr = where[q["pano"]]
+            return json.dumps({"status": "OK", "pano_id": q["pano"], "copyright": cr,
+                               "location": {"lat": lat, "lng": lng}}).encode()
+        return b"\xff\xd8jpeg"
+
+    monkeypatch.setattr(sv, "_http_get", fake)
+    src = sv.StreetViewSource(single=(37.7779, -122.4082, 0), pitch=-10, hfov_deg=69)
+    jpeg, meta = src.view_jpeg("moss", 375)
+    assert jpeg == b"\xff\xd8jpeg" and meta["pano_id"] == "moss"
+    assert calls[-1]["heading"] == "15.0" and calls[-1]["pitch"] == "-10" and calls[-1]["fov"] == "69"
+    src.view_jpeg("moss", 30)
+    assert src.requests == {"metadata": 1, "image": 2, "cached": 0}       # metadata once per panorama
+    with pytest.raises(ValueError, match="outside"):
+        src.view_jpeg("far", 0)
+    with pytest.raises(ValueError, match="not Google"):
+        src.view_jpeg("user", 0)
+    assert src.requests["image"] == 2
