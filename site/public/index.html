@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kite · a guide dog that flies</title>
+  <meta name="description" content="Kite is a drone and a chest camera that watch the street for a blind pedestrian and guide them through AirPods: beeps from the direction of what's ahead, and a calm voice that stops them before trouble." />
+  <link rel="canonical" href="https://trykite.pages.dev/" />
+  <meta name="theme-color" content="#F6F1E7" />
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Kite" />
+  <meta property="og:title" content="Kite · a guide dog that flies" />
+  <meta property="og:description" content="A drone and a chest camera watch the street; AirPods tell a blind walker what's coming, before they reach it." />
+  <meta property="og:url" content="https://trykite.pages.dev/" />
+  <meta property="og:image" content="https://trykite.pages.dev/assets/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Kite · a guide dog that flies" />
+  <meta name="twitter:description" content="A drone and a chest camera watch the street; AirPods tell a blind walker what's coming." />
+  <meta name="twitter:image" content="https://trykite.pages.dev/assets/og.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400;1,8..60,500&display=swap" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Kite","applicationCategory":"AccessibilityApplication","operatingSystem":"macOS","description":"A flying guide dog for blind pedestrians: a drone and a chest camera watch the street, and AirPods give directional beeps and voice guidance.","url":"https://trykite.pages.dev/"}
+  </script>
+</head>
+<body>
+  <a class="skip" href="#hear">Skip to the audio demo</a>
+
+  <header class="nav-wrap">
+    <nav class="nav" aria-label="Main">
+      <a class="brand" href="/" aria-label="Kite home">
+        <img src="/assets/logo.svg" alt="" width="30" height="30" /><span>kite</span>
+      </a>
+      <ul class="links">
+        <li><a class="pill-active" href="#hear">Hear it</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#safety">Safety</a></li>
+        <li><a href="#built">Built with</a></li>
+      </ul>
+      <span class="badge">Cal Hacks 13.0</span>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- ============================================================ hero -->
+    <section class="hero grid-bg">
+      <p class="hand kicker"><span class="hl-sky">a guide dog that flies</span>
+        <svg class="arrow a-down" viewBox="0 0 60 40" aria-hidden="true"><path d="M2 8 C 22 2, 40 6, 50 28" /><path d="M42 24 L50 29 L53 20" /></svg>
+      </p>
+      <h1>Hear the street<br /><em>before you reach it.</em></h1>
+      <p class="sub">The cane finds the pole when you hit it. Kite tells you first.</p>
+      <p class="lede">A small drone flies just above and behind a blind walker's head, where it can see the route, the crowds and the crossings ahead. A camera on their chest watches the ground at their feet. Kite turns all of it into sound in their AirPods: beeps that come from where things are, and a calm voice that stops them before trouble, then tells them when to go.</p>
+      <div class="cta-row">
+        <span class="hand note-left" aria-hidden="true">headphones on!
+          <svg class="arrow" viewBox="0 0 70 34"><path d="M2 6 C 20 30, 44 30, 64 18" /><path d="M56 14 L64 18 L58 25" /></svg>
+        </span>
+        <a class="btn primary" href="#hear"><span class="dot"></span>Hear a walk <span aria-hidden="true">→</span></a>
+        <a class="btn ghost" href="#how">How it works</a>
+      </div>
+
+      <dl class="compare" aria-label="Before and after Kite">
+        <div class="row"><dt>WHAT'S AHEAD</dt><dd class="old">found by the cane, one step at a time</dd><dd class="new">seen from above, half a block out</dd></div>
+        <div class="row"><dt>WHAT'S CLOSE</dt><dd class="old">the pole you walk into</dd><dd class="new">a beep that speeds up first</dd></div>
+        <div class="row"><dt>CROSSINGS</dt><dd class="old">guessed from traffic noise</dd><dd class="new"><span class="ul">"Stop." then "Walk signal is on."</span></dd>
+          <span class="hand note-right" aria-hidden="true"><svg class="arrow flip" viewBox="0 0 60 30"><path d="M58 15 C 40 8, 22 8, 4 15" /><path d="M12 9 L4 15 L12 21" /></svg>the whole idea</span></div>
+      </dl>
+    </section>
+
+    <!-- ============================================================ hear -->
+    <section id="hear" class="section">
+      <p class="hand kicker center"><span class="hl-sky">put this on in headphones, it's 41 seconds</span>
+        <svg class="arrow a-down" viewBox="0 0 60 40" aria-hidden="true"><path d="M2 8 C 22 2, 40 6, 50 28" /><path d="M42 24 L50 29 L53 20" /></svg>
+      </p>
+      <div class="player card" id="player">
+        <div class="player-head">
+          <div>
+            <p class="mono label">RECORDED FROM THE REAL EARPIECE · LYON STREET, SF (SIMULATED)</p>
+            <h2>One walk to the Palace of Fine Arts</h2>
+          </div>
+          <button class="play" id="play" aria-label="Play the walk" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path class="i-play" d="M8 5v14l11-7z" /><path class="i-pause" d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
+          </button>
+        </div>
+        <div class="wave-wrap">
+          <canvas id="wave" height="96" aria-hidden="true"></canvas>
+          <div id="marks" class="marks" aria-hidden="true"></div>
+        </div>
+        <p class="caption" id="caption" aria-live="polite">Press play. Every sound you hear came out of Kite's earpiece code, with the real Cartesia voice.</p>
+        <details class="transcript">
+          <summary>Transcript of what Kite says</summary>
+          <ol id="transcript"></ol>
+        </details>
+        <audio id="walk" src="/assets/audio/walk.m4a" preload="metadata"></audio>
+      </div>
+      <p class="hand aside right-aside" aria-hidden="true">no blind people were<br />walked into poles</p>
+    </section>
+
+    <!-- ============================================================ legend -->
+    <section class="section">
+      <div class="split">
+        <h2 class="display">Every sound <span class="hl">means one thing.</span></h2>
+        <p class="side">You learn Kite in a minute, the way you learn a turn signal. Where a sound comes from is where the thing is. What it sounds like is what it is. How fast it repeats is how soon you'd reach it.</p>
+      </div>
+      <div class="legend">
+        <div class="card">
+          <p class="mono label">WHERE</p>
+          <h3>Direction</h3>
+          <div class="chips">
+            <button class="chip" data-src="dir-left">On your left</button>
+            <button class="chip" data-src="dir-ahead">Ahead</button>
+            <button class="chip" data-src="dir-right">On your right</button>
+          </div>
+          <p class="fine">Rendered with a model of the human head, so each ear hears it a fraction of a millisecond apart.</p>
+        </div>
+        <div class="card">
+          <p class="mono label">WHAT</p>
+          <h3>A sound per thing</h3>
+          <div class="chips">
+            <button class="chip" data-src="kind-person">Person</button>
+            <button class="chip" data-src="kind-vehicle">Car</button>
+            <button class="chip" data-src="kind-pole">Pole</button>
+            <button class="chip" data-src="kind-curb">Curb</button>
+          </div>
+          <p class="fine">A soft knock, a rough buzz, a clean pip, a falling glide. Never more than two at once.</p>
+        </div>
+        <div class="card">
+          <p class="mono label">HOW SOON</p>
+          <h3>Getting closer</h3>
+          <div class="chips"><button class="chip wide" data-src="approach">Someone walking straight at you</button></div>
+          <p class="fine">Beeps start about three and a half seconds before you'd meet, then speed up and rise in pitch. At the last second Kite says "Stop."</p>
+        </div>
+        <div class="card">
+          <p class="mono label">WHICH WAY</p>
+          <h3>The beacon</h3>
+          <div class="chips">
+            <button class="chip" data-src="beacon-on">On course</button>
+            <button class="chip" data-src="beacon-side">Turn left</button>
+            <button class="chip" data-src="beacon-behind">Behind you</button>
+          </div>
+          <p class="fine">A tick from the direction of your next turn. Bright when you're facing it.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ how -->
+    <section id="how" class="section">
+      <div class="split">
+        <h2 class="display">Three ways of seeing.<br /><em>One voice.</em></h2>
+        <p class="side">A guide dog does a few jobs very well: it stops at curbs and crossings, leads around trouble, watches overhead, and refuses to go when a car is coming. Each part of Kite takes one of those jobs.</p>
+      </div>
+      <div class="three">
+        <article class="card topline">
+          <h3>The drone</h3>
+          <p class="mono label">LOOK-AHEAD</p>
+          <ul>
+            <li>Flies about <b>30 cm above and behind</b> the walker's head.</li>
+            <li>Sees what a cane can't: the crowd at the corner, the crossing, the car turning in.</li>
+          </ul>
+          <p class="without">Without it: you only learn about the street one cane-length at a time.</p>
+        </article>
+        <article class="card topline">
+          <h3>The chest camera</h3>
+          <p class="mono label">REFLEXES</p>
+          <ul>
+            <li>Watches the ground at the walker's feet, which the drone can't see.</li>
+            <li>Catches the sudden things: a cyclist, a sign at head height, a bin.</li>
+          </ul>
+          <p class="without">Without it: the closest metre, where collisions actually happen, goes unwatched.</p>
+        </article>
+        <article class="card topline">
+          <h3>The AirPods</h3>
+          <p class="mono label">ONE VOICE</p>
+          <ul>
+            <li>Beeps from the direction of each obstacle; a beacon toward the next turn.</li>
+            <li>Speech that knows what matters most and never says it late.</li>
+          </ul>
+          <p class="without">Without it: two cameras and nobody telling you anything.</p>
+        </article>
+      </div>
+      <p class="hand aside center-aside" aria-hidden="true">it stops and waits, it never drags you around things</p>
+    </section>
+
+    <!-- ============================================================ dark band -->
+    <section class="band">
+      <div class="band-inner">
+        <div>
+          <h2 class="display light">The beep is <br />the interface.</h2>
+          <p class="band-sub">Speech is slow. Two words take most of a second, and the person stepping off the curb doesn't have one. So Kite saves its voice for decisions and lets <span class="hl-dark">sound carry the distance.</span></p>
+          <p class="band-body">Each object gets a time-to-contact, worked out from how fast the gap is closing. The rate of the beeps follows it, from one a second at the edge of the warning zone to almost nine a second just before contact. Your ears read rhythm faster than any sentence.</p>
+          <hr />
+          <p class="band-big">Faster means closer. That's the whole manual.</p>
+        </div>
+        <figure class="chart card-dark" aria-label="Chart: beep interval falls as an obstacle approaches">
+          <svg viewBox="0 0 420 260" role="img" aria-labelledby="chart-t">
+            <title id="chart-t">Time between beeps falls from 1.0 seconds at 3.5 seconds to contact, to 0.11 seconds at contact</title>
+            <g class="axis">
+              <line x1="48" y1="20" x2="48" y2="210" /><line x1="48" y1="210" x2="400" y2="210" />
+              <text x="40" y="214" text-anchor="end">0</text><text x="40" y="117" text-anchor="end">0.5 s</text><text x="40" y="24" text-anchor="end">1 s</text>
+              <text x="48" y="232">3.5 s</text><text x="224" y="232" text-anchor="middle">time to contact</text><text x="400" y="232" text-anchor="end">0</text>
+            </g>
+            <path class="grid" d="M48 117 H400 M48 24 H400" />
+            <path class="curve" d="M48 24 C 150 40, 250 120, 330 176 S 380 196, 400 199" />
+            <circle class="pt" cx="400" cy="199" r="5" />
+            <text class="lab" x="392" y="186" text-anchor="end">"Stop."</text>
+          </svg>
+          <figcaption class="mono">Seconds between beeps, from the earpiece's sonar settings (1.0 s → 0.11 s).</figcaption>
+          <span class="hand chart-note" aria-hidden="true">faster = closer</span>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ voice -->
+    <section class="section">
+      <div class="split">
+        <h2 class="display">Just <span class="hl">say it.</span></h2>
+        <p class="side">Press an AirPod once and talk. Simple requests run on the laptop with no internet at all; everything else goes to Claude, which sees what Kite sees. These are real replies from the earpiece.</p>
+      </div>
+      <div class="chat">
+        <div class="msg you">Kite, take me to my usual coffee shop.</div>
+        <div class="msg kite">Okay, heading to Blue Bottle Coffee.</div>
+        <div class="msg you">Bring me to the end of the street.</div>
+        <div class="msg kite">Okay, I'll guide you to the end of the street.</div>
+        <div class="msg you">What's around me?</div>
+        <div class="msg kite">A person slightly left, 2 meters; a car at 2 o'clock, 8 meters.</div>
+        <div class="msg you">Remember this place as the bench.</div>
+        <div class="msg kite">Saved. I'll remember this place as the bench.</div>
+        <span class="hand chat-note" aria-hidden="true">the first two work<br />with no internet</span>
+      </div>
+    </section>
+
+    <!-- ============================================================ safety -->
+    <section id="safety" class="section">
+      <div class="split">
+        <h2 class="display">Built to fail <em>safe.</em></h2>
+        <p class="side">The person using this can't see the screen when something breaks. So every failure has a sound, and nothing smart is allowed to make Kite less careful.</p>
+      </div>
+      <div class="rules">
+        <div class="rule"><p class="mono label">01</p><h3>Safety never waits for AI</h3><p>Beeps, "Stop." and "Don't walk" come from plain code that runs first. Claude can tell you to wait. It can never clear a stop or send you on.</p></div>
+        <div class="rule"><p class="mono label">02</p><h3>Late is worse than silent</h3><p>Every instruction has an expiry. "Turn left now" said three seconds late is dropped, not spoken.</p></div>
+        <div class="rule"><p class="mono label">03</p><h3>"Walk" has to be sure</h3><p>"Don't walk" plays the instant it's seen. "Walk signal is on" waits until the signal holds steady, so one bad frame can't send you into traffic.</p></div>
+        <div class="rule"><p class="mono label">04</p><h3>Losing sight is announced</h3><p>If the camera stops sending, the beeps stop and Kite says "Obstacle detection paused." Stale beeps would be worse than none.</p></div>
+        <div class="rule"><p class="mono label">05</p><h3>Urgent goes first</h3><p>A stop warning cuts off anything less important mid-word, then the interrupted directions come back if they still apply.</p></div>
+        <div class="rule"><p class="mono label">06</p><h3>It keeps working offline</h3><p>Every safety phrase is recorded in advance. With no internet, Kite still beeps, still says "Stop.", and falls back to a built-in voice.</p></div>
+      </div>
+      <p class="hand aside right-aside" aria-hidden="true">the part we're<br />proudest of</p>
+    </section>
+
+    <!-- ============================================================ numbers -->
+    <section class="section numbers" aria-label="Measured numbers">
+      <div class="num"><b>~0.1 s</b><span>from decision to the first spoken word, streamed from Cartesia</span></div>
+      <div class="num"><b>3–12 ms</b><span>to look up a saved place or hazard in Moss</span></div>
+      <div class="num"><b>0</b><span>audio glitches with every CPU core saturated, thanks to a Rust audio engine</span></div>
+      <div class="num"><b>168</b><span>automated tests, including 20,000 malformed messages thrown at it</span></div>
+    </section>
+
+    <!-- ============================================================ built with -->
+    <section id="built" class="section">
+      <div class="split">
+        <h2 class="display">What each piece <span class="hl">actually does.</span></h2>
+        <p class="side">No logos for decoration. Pull any one of these out and something the walker relies on goes quiet.</p>
+      </div>
+      <div class="three">
+        <article class="card topline">
+          <h3>Cartesia</h3>
+          <p class="mono label">THE VOICE, BOTH WAYS</p>
+          <ul>
+            <li><b>Sonic</b> streams speech over one open connection: the first word arrives in about a tenth of a second.</li>
+            <li><b>Ink</b> transcribes the walker as they talk, ready the moment they stop.</li>
+          </ul>
+          <p class="without">Without it: a robot voice that arrives a second too late.</p>
+        </article>
+        <article class="card topline">
+          <h3>Claude</h3>
+          <p class="mono label">THE JUDGMENT</p>
+          <ul>
+            <li>Reads the scene and answers "what's around me?" from what Kite actually sees.</li>
+            <li>Makes the careful calls ("wait, the crossing is crowded") and is only allowed to make Kite <i>more</i> cautious.</li>
+          </ul>
+          <p class="without">Without it: beeps with no one to explain them.</p>
+        </article>
+        <article class="card topline">
+          <h3>SpacetimeDB</h3>
+          <p class="mono label">ONE LIVE WORLD</p>
+          <ul>
+            <li>Every device on the walk and the caregiver's dashboard share one live state.</li>
+            <li>The drone laptop, the earpiece and the dashboard stay in sync without talking to each other directly.</li>
+          </ul>
+          <p class="without">Without it: three machines, three versions of the truth.</p>
+        </article>
+      </div>
+      <div class="three two">
+        <article class="card topline">
+          <h3>Moss</h3>
+          <p class="mono label">MEMORY OF YOUR WORLD</p>
+          <ul>
+            <li>"My usual coffee shop" means something: saved places and hazards, searched in milliseconds.</li>
+            <li>Arrive at a corner you've marked and Kite reminds you the curb there is tall.</li>
+          </ul>
+          <p class="without">Without it: every walk starts from zero.</p>
+        </article>
+        <article class="card topline">
+          <h3>Google Maps</h3>
+          <p class="mono label">WHERE TO GO</p>
+          <ul>
+            <li>Walking routes become spoken turns and the beacon's direction.</li>
+            <li>"The nearest pharmacy" is found by distance from where you're standing.</li>
+          </ul>
+          <p class="without">Without it: you can avoid the street, but not get anywhere.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="foot-inner">
+      <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="26" height="26" /><span>kite</span></a>
+      <p>Built in 36 hours at Cal Hacks 13.0 by Arthur, Eddy, Karthik and Rex.</p>
+      <p class="mono fine">MIT licensed · the walk above is a simulation, rendered by the real earpiece</p>
+    </div>
+  </footer>
+  <script src="/app.js" defer></script>
+</body>
+</html>
