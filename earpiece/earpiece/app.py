@@ -124,6 +124,7 @@ class Earpiece:
         self.speaker.start()
         if prewarm:
             self.speaker.prewarm()
+            threading.Thread(target=self.prewarm_cues, name="cue-prewarm", daemon=True).start()
         if self.transport is not None:
             self.transport.start()
         self.memory.start()
@@ -136,6 +137,21 @@ class Earpiece:
             self.say("Kite is ready.", "system", ttl=20)
             if isinstance(self.output, (DeviceOutput, RustDeviceOutput)) and not self.output.is_airpods:
                 self.say("Headphones are not connected. Using the laptop speaker.", "system", ttl=20)
+
+    def prewarm_cues(self) -> int:
+        """Render the critical sonar cues and every beacon tick at all 5-degree bearings
+        ahead of time (batched in Rust when kite_audio is built), off the control loop."""
+        from . import beacon as beacon_mod, sonar as sonar_mod
+        t0 = time.perf_counter()
+        try:
+            n = sonar_mod.prewarm(self.cfg.sonar, self.engine.rate)
+            n += beacon_mod.prewarm(self.cfg.beacon, self.engine.rate)
+        except Exception as e:                 # a warm cache is an optimisation, never a failure
+            self.log(f"[audio] cue pre-warm failed: {e!r}")
+            return 0
+        self.log(f"[audio] pre-rendered {n} spatial cues in {(time.perf_counter() - t0) * 1e3:.0f} ms "
+                 f"({'rust' if spatial.NATIVE else 'python'} binaural)")
+        return n
 
     def run_forever(self) -> None:
         """Blocks the main thread (it pumps the macOS run loop for AirPods stem presses)."""

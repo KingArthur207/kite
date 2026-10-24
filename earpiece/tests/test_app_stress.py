@@ -269,3 +269,9 @@ def test_walk_signal_needs_to_hold_but_dont_walk_is_instant(app):
         time.sleep(0.1)
     assert wait_for(lambda: "Walk signal is on." in spoken(app), 3)
     assert spoken(app).count("Walk signal is on.") == 1
+
+
+def test_cue_prewarm_renders_sonar_and_beacon_cues(app):
+    n = app.prewarm_cues()
+    assert n > 6 * 73                                   # critical sonar cues + beacon ticks
+    assert any("pre-rendered" in line for line in app.logs)

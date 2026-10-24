@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from earpiece import events
+from earpiece import events, spatial
 from earpiece.beacon import Beacon
 from earpiece.config import BeaconCfg, SonarCfg
 from earpiece.events import BadMessage, Obstacle, clock_phrase, distance_phrase, parse
@@ -272,3 +272,49 @@ def test_sender_restart_resets_sequence():
     assert s.tracks["cam:p"].distance < 2.0
     s.update_frame("cam", [Obstacle("p", "person", 0, 3.0)], seq=1, now=2.0)    # after a pause
     assert s.stats["out_of_order"] == 0
+
+
+# ---------------------------------------------------------------- cue pre-warm
+def test_sonar_prewarm_covers_every_critical_cue_and_matches_lazy_render():
+    from earpiece import sonar as sonar_mod
+    cfg = SonarCfg()
+    n = sonar_mod.prewarm(cfg, 48000)
+    assert n == len(sonar_mod.PREWARM_KINDS) * len(spatial.BEARINGS_5DEG) == 6 * 73
+    pq = sonar_mod.critical_pitch_q(cfg)
+    assert pq == 1250
+    for kind in sonar_mod.PREWARM_KINDS:
+        for bq in (-180, -95, 0, 35, 180):
+            warm = sonar_mod._cue(kind, pq, bq, 48000)
+            assert warm is sonar_mod._WARM[(kind, pq, bq, 48000)]
+            assert np.array_equal(warm, sonar_mod._cue_render(kind, pq, bq, 48000))
+    assert sonar_mod.prewarm(cfg, 44100, kinds=("person",)) == 73     # resampled path
+
+
+def test_critical_beeps_play_from_the_warm_cache():
+    from earpiece import sonar as sonar_mod
+    sonar_mod.prewarm(SonarCfg(), 48000)
+    warm = {id(a) for a in sonar_mod._WARM.values()}
+    eng, s, _ = make()
+    alerts = []
+    orig = eng.play
+
+    def spy(st, at=None, bus="cue", gain=1.0, tag=None):
+        if bus == "alert":
+            alerts.append(id(st))
+        orig(st, at, bus, gain, tag)
+    eng.play = spy
+    run(s, eng, lambda t: [Obstacle("p", "person", 12, 0.5, 1.0, 1.0)], 1.0)
+    assert alerts and all(a in warm for a in alerts)
+
+
+def test_beacon_prewarm_covers_every_region_and_bearing_tick_can_ask_for():
+    from earpiece import beacon as beacon_mod
+    cfg = BeaconCfg()
+    n = beacon_mod.prewarm(cfg, 48000)
+    assert 73 <= n < 2 * 73
+    for b10 in range(-1800, 1801):
+        b = spatial.wrap_deg(b10 / 10)
+        key = (beacon_mod.region_of(b, cfg), int(round(b / 5.0) * 5), 48000)
+        assert key in beacon_mod._WARM, key
+    for key in [("on", 0, 48000), ("behind", 180, 48000), ("side", -90, 48000)]:
+        assert np.array_equal(beacon_mod._beacon_sound(*key), beacon_mod._beacon_render(*key))
