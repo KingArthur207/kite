@@ -5,6 +5,7 @@ closed-loop kinematic simulation of the Moss St walk (straight, stop at the curb
 kite.camera.Camera."""
 
 import csv
+import dataclasses
 import importlib.util
 import json
 import math
@@ -64,6 +65,11 @@ def controller(**kw):
     return c
 
 
+def p_only(**kw):
+    """The proportional part alone (no integral, lag / tilt compensation or time gap): for checking gains and signs."""
+    return controller(**{"k_i_fb": 0.0, "lag_comp": False, "tilt_comp": 0.0, "headway_s": 0.0, **kw})
+
+
 # ------------------------------------------------------------------ controller signs and magnitudes
 def test_walker_at_target_gives_no_command():
     cmd = settle(controller(ff=0.0), track(box_at(1.2)), tel(2.0))
@@ -81,8 +87,8 @@ def test_walker_drifts_right_yaws_right_and_left_yaws_left():
 
 
 def test_walker_small_and_high_in_frame_flies_forward_too_close_backs_off():
-    far = settle(controller(ff=0.0), track(box_at(2.0, half_w=40)), tel())  # head top higher, box smaller
-    close = settle(controller(ff=0.0), track(box_at(0.8, half_w=110)), tel())  # head top lower in the frame
+    far = settle(p_only(ff=0.0), track(box_at(2.0, half_w=40)), tel())  # head top higher, box smaller
+    close = settle(p_only(ff=0.0), track(box_at(0.8, half_w=110)), tel())  # head top lower in the frame
     assert far.fb > 0 and close.fb < 0
     assert far.fb == pytest.approx(35 * (2.0 - 1.2 - 0.1), abs=1)
     assert far.yaw == 0 and close.yaw == 0
@@ -99,7 +105,7 @@ def test_altitude_hold_from_telemetry():
 
 def test_feed_forward_from_a_receding_walker():
     """Walker starts walking away at 0.5 m/s: the range grows -> fb above what the distance error alone gives."""
-    ff, no_ff = controller(slew=1000.0), controller(slew=1000.0, ff=0.0)
+    ff, no_ff = controller(slew=1000.0), p_only(slew=1000.0, ff=0.0)
     for i in range(8):
         t = 10.0 + 0.1 * i
         a = ff.update(track(box_at(1.2 + 0.05 * i), t=t), tel(), t)
@@ -109,13 +115,13 @@ def test_feed_forward_from_a_receding_walker():
 
 
 def test_clamps_and_rate_limit():
-    ctrl = controller()
+    ctrl = controller(outpace_s=1e9)  # a walker that never comes closer would soon be 'outpaced' (hover)
     tr = track(box_at(4.0, 30))
     first = ctrl.update(tr, tel(1.0), 10.0)
     assert all(abs(v) <= 150 * 0.1 + 1 for v in first.rc)  # one 0.1 s tick: at most slew x dt from 0
     cmd = settle(ctrl, tr, tel(1.0), t0=10.1, n=40)
     assert cmd.fb == 50 and cmd.yaw == 40 and cmd.ud == 30 and cmd.lr == 20  # FollowCfg max_* (and max_rc 50)
-    small = FollowController(FollowCfg(), CAM, max_rc=25)
+    small = FollowController(FollowCfg(outpace_s=1e9), CAM, max_rc=25)
     small.reset(2.0)
     assert max(abs(v) for v in settle(small, tr, tel(1.0), n=40).rc) <= 25
 
@@ -672,10 +678,15 @@ def moss_route(radius=1.5):
     return np.array([[0.0, 0.0], [0.0, 12.0 + radius], [-radius - 8.0, 12.0 + radius]])
 
 
-def run_sim(speed=0.5, max_rc=50, cfg=None, seed=0, drop=0.1, blackout=(20.0, 20.4), video_lag_s=0.25,
+SIM_PLANT = {"stick_m_s": 0.01, "dead_s": 0.0, "response_s": 0.35, "tilt_comp": 0.0}  # SimTello's own numbers
+
+
+def run_sim(speed=0.4, max_rc=50, cfg=None, seed=0, drop=0.1, blackout=(20.0, 20.4), video_lag_s=0.25,
             dt=1 / 90, route=None, gps_noise_m=2.0):
-    """route: give the controller the route prior, with the walker's GPS = truth + a bias of gps_noise_m."""
-    cfg = cfg or FollowCfg()
+    """route: give the controller the route prior, with the walker's GPS = truth + a bias of gps_noise_m.
+    The controller's plant model is set to this kinematic SimTello (SIM_PLANT): a level camera that never tilts, no
+    dead time. tests/follow_sim.py flies the measured Tello plant (dead time, tilt, saturation, wind) instead."""
+    cfg = dataclasses.replace(cfg or FollowCfg(), **SIM_PLANT)
     rng = np.random.default_rng(seed)
     body = walker_points(1.70)
     sched = walker_schedule(speed)
@@ -754,50 +765,58 @@ def sim_metrics(log):
             "predict_frac": sum(r["planner"] == "predict" for r in run) / len(run)}
 
 
-def check_sim(log, cfg=FollowCfg(), tol_m=1.0):
+def check_sim(log, cfg=FollowCfg(), tol_m=1.0, speed=0.4):
+    """speed: the walker's walking speed; the reactive standoff grows by headway_s x speed while walking."""
     run = [r for r in log if r["t"] > 3.0]
     states = [r["state"] for r in run]
     dist = np.array([r["dist"] for r in run])
     assert "lost" not in states, "walker left the frame"
     assert states.count("following") / len(states) > 0.9
-    assert np.all(np.abs(dist - cfg.behind_m) < tol_m), (dist.min(), dist.max())
-    assert dist.min() > 0.6  # never on top of the walker (the stop at the curb, the stop at the end)
+    assert np.all(dist - cfg.behind_m < tol_m + cfg.headway_s * speed), (dist.min(), dist.max())
+    assert np.all(cfg.behind_m - dist < tol_m), (dist.min(), dist.max())
+    assert dist.min() > 0.85  # never on top of the walker (the stop at the curb, the stop at the end)
     assert max(abs(r["bearing"]) for r in run) < 25  # walker stays well inside the 55 deg wide frame
     assert all(abs(r["height"] - 2.0) < 0.15 for r in run)
     return dist
 
 
-def test_closed_loop_moss_walk_at_0_5_m_s_with_max_rc_50():
-    log = run_sim(speed=0.5, max_rc=50)
+def test_closed_loop_moss_walk_at_0_4_m_s_with_max_rc_50():
+    """Stick 50 is ~0.48 m/s (0.0096 m/s per unit): a 0.4 m/s walker leaves the drone some speed to catch up with.
+    (0.5 m/s at max_rc 50 is faster than the drone: follow would end up 'outpaced', hovering and warning.)"""
+    log = run_sim(speed=0.4, max_rc=50)
     check_sim(log)
     assert abs(log[-1]["dist"] - 1.2) < 0.3  # settles back behind the walker once they stop
     assert max(abs(r["rc"][1]) for r in log) <= 50
 
 
 def test_closed_loop_faster_walker_needs_a_higher_max_rc():
-    """0.65 m/s is faster than stick 50 (0.5 m/s): with SafetyCfg.max_rc 70 follow keeps up."""
-    check_sim(run_sim(speed=0.65, max_rc=70, seed=1))
+    """0.65 m/s is faster than stick 50 (~0.48 m/s): with SafetyCfg.max_rc 80 (~0.77 m/s) follow keeps up."""
+    check_sim(run_sim(speed=0.65, max_rc=80, seed=1), speed=0.65)
 
 
 def test_closed_loop_without_feed_forward_lags_but_keeps_the_walker():
-    """ff=0 (the fallback knob if the speed estimate misbehaves): distance error alone must drive fb, so it trails
-    ~1.2 m further back at 0.4 m/s, but never loses the walker."""
-    dist = check_sim(run_sim(speed=0.4, max_rc=50, cfg=FollowCfg(ff=0.0), seed=2), tol_m=1.6)
+    """ff=0 (the fallback knob if the speed estimate misbehaves) and no integral: distance error alone must drive
+    fb, so it trails further back at 0.4 m/s, but never loses the walker. The integral (on by default) takes most
+    of that lag back even without the feed-forward."""
+    dist = check_sim(run_sim(speed=0.4, max_rc=50, cfg=FollowCfg(ff=0.0, k_i_fb=0.0), seed=2), tol_m=1.6)
+    with_i = check_sim(run_sim(speed=0.4, max_rc=50, cfg=FollowCfg(ff=0.0), seed=2), tol_m=1.6)
     with_ff = check_sim(run_sim(speed=0.4, max_rc=50, seed=2))
     assert dist.max() > with_ff.max() + 0.5
+    assert np.mean(np.abs(with_i - 1.2)) < np.mean(np.abs(dist - 1.2))
 
 
 # ------------------------------------------------------------------ prediction (kite/predict.py) in the closed loop
 def test_closed_loop_prediction_planner_holds_the_standoff_better_than_reactive():
     """Same walk, same seed: the planner keeps closer to the point 1.2 m back along the walker's path and keeps the
-    walker nearer the frame centre through the corner, with every safety check of check_sim still holding."""
+    walker well inside the frame through the corner, with every safety check of check_sim still holding. (The
+    reactive controller now trails further back on purpose, by its time gap, which also shrinks its corner bearing.)"""
     reactive = sim_metrics(run_sim(seed=0))
     log = run_sim(cfg=FollowCfg(predict=True), seed=0)
     check_sim(log)
     pred = sim_metrics(log)
     assert pred["predict_frac"] > 0.95  # it steered (not the fallback) almost all the time
     assert pred["standoff_mean"] < reactive["standoff_mean"] - 0.05
-    assert pred["max_bearing"] < reactive["max_bearing"]
+    assert pred["max_bearing"] < 12.0
     assert pred["lost"] == 0 and pred["flips_per_min"] < 2
     assert max(abs(v) for r in log for v in r["rc"]) <= 50
 
