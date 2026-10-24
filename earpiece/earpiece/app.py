@@ -283,7 +283,7 @@ class Earpiece:
         elif t == "guidance":
             self.last_guidance = (msg.text, now)
             self.say(msg.text, msg.priority, key=msg.key, ttl=msg.ttl,
-                     pre_sound=spatial.render(sounds.nav_chime(), msg.bearing or 0.0, self.engine.rate)
+                     pre_sound=spatial.render(sounds.nav_chime(msg.text), msg.bearing or 0.0, self.engine.rate)
                      if msg.priority == "nav" else None)
             self._event("guidance", {"text": msg.text})
         elif t == "beacon":

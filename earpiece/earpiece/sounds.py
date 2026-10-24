@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import sys
 from typing import Iterable
 
@@ -328,7 +329,15 @@ def _gap(s: float) -> np.ndarray:
 
 
 # ---------------------------------------------------------------- beacon
-BEACON_PITCH_HZ = {"on": (1568.0, 2093.0), "near": 1175.0, "side": 880.0, "behind": (880.0, 659.0)}
+# Every beacon cue is told apart by pitch contour, rhythm and timbre alone, so they survive
+# mono playback (table speakers, one earbud) where left/right panning collapses; the
+# spatialisation on top is a redundant cue. Turn pairs step a perfect fourth:
+#   on      same-pitch double ping, bright        ("keep going")
+#   right   rising pair, low -> high              (bearing > 0)
+#   left    falling pair, high -> low             (bearing < 0)
+#   behind  three low, dull, same-pitch pulses    (back band, no bright partials)
+BEACON_PITCH_HZ = {"on": 2093.0, "near": 1175.0, "side": 880.0, "behind": 784.0}
+TURN_INTERVAL = 4.0 / 3.0         # a perfect fourth: an unmistakable step that stays in one register
 BRIGHT_SPAN_DEG = 55.0            # brightness falls from 1 on axis to 0 here (Soundscape's 'near' edge)
 
 
@@ -349,46 +358,59 @@ def beacon_ping(freq: float, brightness: float, dur_s: float = 0.11) -> np.ndarr
     return x * _env(t.size, attack_s=0.004, decay_tau_s=0.035, release_s=0.012)
 
 
+def _notes(notes: list[np.ndarray], gap_s: float, target_lu: float, amount: float,
+           fade_s: float = 0.004) -> np.ndarray:
+    """Notes matched to each other, then the whole cue matched to target_lu (integrated)."""
+    parts = [_finish(n, target_lu, amount, fade_s) for n in notes]
+    seq = _seq(*[x for p in parts for x in (p, _gap(gap_s))][:-1])
+    return _to_loudness(seq, target_lu + GENTLE_DB * amount)
+
+
+def turn_pitches(f_low: float, bearing_deg: float) -> tuple[float, float]:
+    """Rising pair for a right turn (bearing > 0), falling pair for a left turn."""
+    hi = f_low * TURN_INTERVAL
+    return (f_low, hi) if bearing_deg >= 0 else (hi, f_low)
+
+
 def beacon_tick(region: str, bearing_deg: float = 0.0) -> np.ndarray:
-    """The beacon cue for a Soundscape region ('on' | 'near' | 'side' | 'behind') at a bearing.
-    'on' is a double ping (an accent on top of the continuous brightness, as in Ahmetovic
-    et al.'s IS+P / MS+P), 'near' and 'side' single pings, 'behind' the turn-around cue."""
+    """The beacon cue for a Soundscape region ('on' | 'near' | 'side' | 'behind') at a bearing
+    (positive = right). 'on' is a same-pitch double ping (an on-target accent on top of the
+    continuous brightness, as in Ahmetovic et al.'s IS+P / MS+P); 'near' and 'side' are a
+    rising pair when the waypoint is to the right and a falling pair when it is to the left;
+    'behind' is the turn-around triple pulse."""
     if region == "behind":
         return beacon_behind()
     amount = gentle_amount(None)
     b = beacon_brightness(bearing_deg) if region != "side" else 0.0
-    dur = _dur(0.11, amount)
-    if region == "on":
-        f1, f2 = BEACON_PITCH_HZ["on"]
-        notes = [beacon_ping(f1, b, _dur(0.07, amount)), beacon_ping(f2, b, _dur(0.09, amount))]
-        parts = [_finish(n, BEACON_TARGET_LU, amount) for n in notes]
-        return _seq(parts[0], _gap(0.03), parts[1])
-    return _finish(beacon_ping(BEACON_PITCH_HZ[region], b, dur), BEACON_TARGET_LU, amount)
+    f = BEACON_PITCH_HZ[region]
+    f1, f2 = (f, f) if region == "on" else turn_pitches(f, bearing_deg)
+    notes = [beacon_ping(f1, b, _dur(0.07, amount)), beacon_ping(f2, b, _dur(0.09, amount))]
+    return _notes(notes, 0.03, BEACON_TARGET_LU, amount)
 
 
 def beacon_on_course() -> np.ndarray:
-    """Bright double ping: 'you are pointed at the waypoint'."""
+    """Bright same-pitch double ping: 'you are pointed at the waypoint'."""
     return beacon_tick("on", 0.0)
 
 
-def beacon_off_course() -> np.ndarray:
-    """Single ping, spatialised toward the waypoint, half-bright: 'turn toward me'."""
-    return beacon_tick("near", 35.0)
+def beacon_off_course(bearing_deg: float = 35.0) -> np.ndarray:
+    """Rising pair (waypoint to the right) or falling pair (to the left): 'turn toward me'."""
+    return beacon_tick("near" if abs(bearing_deg) <= BRIGHT_SPAN_DEG else "side", bearing_deg)
 
 
 def beacon_behind() -> np.ndarray:
-    """'The waypoint is behind you, turn around': a slow falling fourth (A5 -> E5) whose
-    energy sits in Blauert's 0.72-1.8 kHz back band, with no bright partials, so it never
-    sounds like the bright on-course ping even when front and back are confused."""
+    """'The waypoint is behind you, turn around': three low, same-pitch pulses (G5) whose
+    energy sits in Blauert's 0.72-1.8 kHz back band, with no bright partials. Three beats and
+    a dull timbre set it apart from the bright double 'on' ping and from both turn contours,
+    in mono and even when front and back are confused."""
     lp = butter(2, 1800.0, btype="lowpass", fs=RATE)
-    f1, f2 = BEACON_PITCH_HZ["behind"]
+    f = BEACON_PITCH_HZ["behind"]
     notes = []
-    for f, d in ((f1, 0.095), (f2, 0.135)):
-        t = _t(d)
+    for _ in range(3):
+        t = _t(0.075)
         x = _harmonics(2 * math.pi * f * t, f, [1.0, 0.6, 0.15])
-        x = lfilter(*lp, x * _env(t.size, attack_s=0.008, decay_tau_s=0.09, release_s=0.02))
-        notes.append(_finish(x, BEHIND_TARGET_LU, 0.0, fade_s=0.01))
-    return _seq(notes[0], _gap(0.045), notes[1])
+        notes.append(lfilter(*lp, x * _env(t.size, attack_s=0.008, decay_tau_s=0.06, release_s=0.02)))
+    return _notes(notes, 0.06, BEHIND_TARGET_LU, 0.0, fade_s=0.01)
 
 
 # ---------------------------------------------------------------- status
@@ -413,8 +435,9 @@ def listening() -> np.ndarray:
 
 
 def heard() -> np.ndarray:
-    """Short double blip: 'got it'."""
-    return _seq(sine_pip(880, 0.05, 0.38), _gap(0.035), sine_pip(1175, 0.06, 0.38))
+    """Short same-pitch double blip: 'got it'. Level, not rising: A5 -> D6 rising pips were
+    the right-turn beacon's exact notes and contour (the dull side ping is nearly a sine)."""
+    return _seq(sine_pip(1319, 0.05, 0.38), _gap(0.035), sine_pip(1319, 0.06, 0.38))
 
 
 def error() -> np.ndarray:
@@ -452,6 +475,17 @@ def ear_check(side: str) -> np.ndarray:
     return knock(880 if side == "left" else 1320, 0.12, 0.5)
 
 
-def nav_chime() -> np.ndarray:
-    """Soft two-note lead-in before a navigation instruction: 'directions coming'."""
-    return chime(988, 1319, step_s=0.07, peak=0.32)
+def turn_side(text: str) -> int:
+    """+1 if an instruction's first left/right word is 'right', -1 if 'left', 0 if neither."""
+    m = re.search(r"\b(left|right)\b", text or "", re.IGNORECASE)
+    return 0 if m is None else (1 if m.group(1).lower() == "right" else -1)
+
+
+def nav_chime(text: str = "") -> np.ndarray:
+    """Soft lead-in before a navigation instruction: 'directions coming'. It follows the beacon
+    contour so it never contradicts the words: a rising pair before a right turn, a falling
+    pair before a left, and a single knock when the instruction names no side."""
+    side = turn_side(text)
+    if side == 0:
+        return chime(1175, peak=0.32)
+    return chime(*turn_pitches(988.0, side), step_s=0.07, peak=0.32)
