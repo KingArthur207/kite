@@ -22,10 +22,28 @@ def main() -> None:
                 break
             except OSError:
                 time.sleep(0.1)
+        check_origins()
         with connect(f"ws://127.0.0.1:{PORT}/pub") as pub, connect(f"ws://127.0.0.1:{PORT}/sub") as sub:
             check(pub, sub)
     finally:
         relay.terminate()
+
+
+def check_origins() -> None:
+    """Any web page can open a socket to 127.0.0.1: only the local sim page (and non-browsers) get in."""
+    from websockets.exceptions import InvalidStatus
+    for origin in ("https://evil.example", "http://localhost.evil.example:5173", "null"):
+        try:
+            with connect(f"ws://127.0.0.1:{PORT}/pub", origin=origin):
+                pass
+        except InvalidStatus as e:
+            assert e.response.status_code == 403, e
+        else:
+            raise AssertionError(f"relay accepted origin {origin}")
+    for origin in ("http://localhost:5173", "http://127.0.0.1:5173"):
+        with connect(f"ws://127.0.0.1:{PORT}/sub", origin=origin):
+            pass
+    print("relay origin check OK")
 
 
 def check(pub, sub) -> None:
