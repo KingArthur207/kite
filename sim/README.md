@@ -45,7 +45,7 @@ The plan was to texture each street-facing wall with a rectified Mapillary photo
 - The photo darkens toward the bottom over its lowest 0.6 m so it meets the sidewalk like a contact shadow. A faint plaster normal map and roughness 0.92 keep it from looking flat and shiny.
 - L toggles labels (`building_id/wall_index`) on every footprint edge of 2 m or more, on screen only: green means it has a photo and white means it's procedural. Use it to check that a photo landed on the right wall.
 - The console logs how many walls are photo and how many are procedural, and so does `window.__kitePhotoStats`. `window.__kitePhoto` reads `ready` once every photo has loaded.
-- The textures sit in the gitignored `public/local/` of whichever checkout runs vite. The facade agents write them into the main checkout, so run vite there, or link the folders into a worktree's `sim/public/local/`. Screenshots go in `public/local/compare_photo/`. Never commit or publish them.
+- The textures sit in the gitignored `public/local/` of whichever checkout runs vite. The facade agents write them into the main checkout, so run vite there, or link the folders into a worktree's `sim/public/local/` (vite lists public files at startup, so restart it after a facade agent adds files there). Screenshots go in `public/local/compare_photo/`. Never commit or publish them.
 
 ### Real facades (`?world=real`, local only)
 
