@@ -632,3 +632,17 @@ def test_tello_drone_connect_streams_through_the_raw_reader(monkeypatch):
         drone.close()
         tx.stop()
     assert fake.ended and port_is_free(port) and not raw_threads()
+
+
+def test_codec_flags_resolve_in_either_case():
+    import enum
+    from kite.sources.tello_raw import _flag
+
+    class Upper(enum.IntFlag):
+        LOW_DELAY = 1
+
+    class Lower(enum.IntFlag):
+        low_delay = 2
+
+    assert _flag(Upper, "low_delay") == 1
+    assert _flag(Lower, "low_delay") == 2
