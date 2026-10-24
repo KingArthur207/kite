@@ -56,8 +56,9 @@ python -m pytest                        # + the H.264-over-UDP reader tests (nee
 |---|---|
 | `drone/tello.py` | `TelloDrone`: djitellopy for commands + state. Discrete moves are non-blocking (`busy()` / `last_result()`), late replies after `stop` are discarded, `streamon` is re-sent until video arrives, `dry_run=True` never sends motion. |
 | `drone/safety.py` | `SafetyGovernor`: wraps any drone; clamps rc, altitude ceiling/floor, lands on low battery or flight time, hovers on stale video/telemetry. Call `check()` every loop. |
-| `sources/` | Newest-frame video readers: `TelloVideoSource` (PyAV or the team's OpenCV `VideoStream`, auto-reconnect), `WebcamSource`, file replay; `open_source(spec)` opens any of them, a take or the sim for perception (below). |
-| `config.py` | `DroneCfg` / `SafetyCfg` defaults. |
+| `sources/` | Newest-frame video readers: `TelloVideoSource` (auto-reconnect) over one of three Tello readers, `WebcamSource`, file replay; `open_source(spec)` opens any of them, a take or the sim for perception (below). |
+| `sources/tello_raw.py` | `RawTelloStream`: kite's own UDP socket (8 MB receive buffer) + PyAV's bare H.264 decoder, no FFmpeg network code, probing or timeouts. Waits for an SPS + IDR, keeps the newest frame, `stats()` counts packets, frames, decode errors. The macOS default. |
+| `config.py` | `DroneCfg` / `SafetyCfg` defaults. `DroneCfg.video_backend`: `auto` (raw on macOS, pyav elsewhere), `raw`, `pyav` or `opencv`; every Tello command takes `--video-backend` (and `open_source("tello:raw")`). |
 
 ```python
 from kite.config import Config
@@ -71,7 +72,8 @@ frames = drone.frame_source()
 ### Before flying
 
 - Latency / stream check: `python tests/drone_test.py --ground --preview`, then the flight version (3 x 3 m clear,
-  prop guards, battery >= 30 %). Ctrl+C lands.
+  prop guards, battery >= 30 %). Ctrl+C lands. If no frame shows, try another reader (`--video-backend raw|pyav|opencv`)
+  and record the packets for analysis: `python -m kite.video_doctor`.
 - Only one program can hold the Tello ports: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` should print nothing.
 - macOS: allow incoming connections for Python, and Local Network access for your terminal app
   (System Settings > Privacy & Security) if sends fail with "No route to host".

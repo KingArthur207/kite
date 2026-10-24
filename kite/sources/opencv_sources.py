@@ -20,9 +20,29 @@ def _readonly(img: np.ndarray) -> np.ndarray:
     return img
 
 
+def stream_class(backend: str):
+    """The reader class for a resolved video backend (all share constructor(url, fps=, open_timeout_ms=,
+    read_timeout_ms=), start(), read_seq(copy=), stop())."""
+    if backend == "raw":
+        from .tello_raw import RawTelloStream
+
+        return RawTelloStream
+    if backend == "pyav":
+        from .pyav_stream import PyAVStream
+
+        return PyAVStream
+    if backend == "opencv":
+        from .video_stream import VideoStream
+
+        return VideoStream
+    raise ValueError(f"video backend {backend!r}: use raw, pyav or opencv")
+
+
 class TelloVideoSource(FrameSource):
-    """The Tello's H.264 stream, decoded by PyAV (backend "pyav", default: djitellopy's decoder) or by the team's
-    OpenCV VideoStream (backend "opencv").
+    """The Tello's H.264 stream, read by one of three backends (DroneCfg.video_backend, kite.config.resolve_video_backend):
+    "raw" (kite's own UDP socket + PyAV's bare H.264 decoder, tello_raw.py; the macOS default through "auto"),
+    "pyav" (FFmpeg's udp:// + h264 demuxer, djitellopy's decoder; the default elsewhere) or "opencv" (the team's
+    OpenCV VideoStream).
 
     The drone must already have been told `streamon` (the drone adapter does that). Only one reader
     can bind UDP 11111: every consumer shares this source.
@@ -38,10 +58,10 @@ class TelloVideoSource(FrameSource):
     name = "tello"
 
     def __init__(self, url: str = TELLO_UDP_URL, fps: int = 60, timeout_ms: int = 15000, reconnect_after_s: float = 20.0,
-                 backend: str = "pyav"):
-        if backend not in ("pyav", "opencv"):
-            raise ValueError(f"video backend {backend!r}: use pyav or opencv")
-        self.url, self.fps, self.backend = url, fps, backend
+                 backend: str = "auto"):
+        from ..config import resolve_video_backend
+
+        self.url, self.fps, self.backend = url, fps, resolve_video_backend(backend)  # ValueError if unknown
         # FFmpeg open/read timeout. It must outlast the wait for a clean keyframe: nothing decodes before one, and
         # the Tello sends them seconds apart (a lost packet costs a whole one). With 5 s / 3 s the capture was
         # aborted before its first keyframe on a weak link, and a timed-out capture never delivers again.
@@ -61,12 +81,16 @@ class TelloVideoSource(FrameSource):
             self._thread.start()
         return self
 
-    def _run(self) -> None:
-        if self.backend == "pyav":
-            from .pyav_stream import PyAVStream as Stream
-        else:
-            from .video_stream import VideoStream as Stream
+    def stats(self) -> dict:
+        """The current reader's counters (raw backend: datagrams, frames, decode errors, ...), {} otherwise."""
+        with self._lock:
+            stream = self._stream
+        fn = getattr(stream, "stats", None)
+        out = fn() if fn is not None else {}
+        return {"backend": self.backend, "reconnects": self.reconnects, **out}
 
+    def _run(self) -> None:
+        Stream = stream_class(self.backend)
         while not self._stop.is_set():
             try:
                 stream = Stream(self.url, fps=self.fps, open_timeout_ms=self.timeout_ms, read_timeout_ms=self.timeout_ms).start()

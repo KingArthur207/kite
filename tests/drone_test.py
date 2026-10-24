@@ -18,10 +18,14 @@ Run:      python tests/drone_test.py                        # full flight (~2 mi
           python tests/drone_test.py --preview              # same, with a live camera window
           python tests/drone_test.py --ground --preview     # no takeoff: command delay, stream rates, camera check
           python tests/drone_test.py --analyze results/tello_latency_<stamp>.json
+          python tests/drone_test.py --ground --preview --video-backend opencv   # another video reader
 
-Video goes through kite.sources.video_stream.VideoStream (OpenCV/FFmpeg, nobuffer + low_delay, grab-drain with
-decode capped at --video-fps) rather than djitellopy's PyAV reader, so latency does not grow over
-the flight. The recorder and the preview window share that one reader.
+Video goes through one of kite's newest-frame readers (--video-backend, default auto = kite.config's per-platform
+profile): raw = kite.sources.tello_raw.RawTelloStream (its own UDP socket + PyAV's bare H.264 decoder, no FFmpeg
+network code; the macOS default), pyav = PyAVStream (FFmpeg udp:// + h264 demuxer; the default elsewhere), opencv =
+the team's VideoStream (OpenCV/FFmpeg, nobuffer + low_delay). Each decodes every frame but converts at most
+--video-fps per second, so latency does not grow over the flight. The recorder and the preview window share
+that one reader.
 Safety:   3 x 3 m clear space, prop guards, battery >= 30 %. Ctrl+C lands.
 
 The state stream is ~10 Hz, so one measurement is quantised to ~100 ms; the mean over repeats is better
@@ -32,11 +36,14 @@ import argparse
 import json
 import os
 import socket
+import sys
 import threading
 import time
 from datetime import datetime
 
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # the kite package next to this file
 
 FIELDS = ["pitch", "roll", "yaw", "vgx", "vgy", "vgz", "tof", "h", "bat"]
 
@@ -93,13 +100,16 @@ def probe_video_packets(tello, seconds=3.0):
     return n, size
 
 
-def open_video(tello, fps, tries=3):
-    """streamon + VideoStream, re-sending streamon between tries: the Tello often ignores the first one.
+def open_video(tello, fps, backend="raw", tries=3):
+    """streamon + the chosen reader, re-sending streamon between tries: the Tello often ignores the first one.
 
-    On failure, probes the raw video port and prints what is wrong; returns None.
+    On failure, says what is wrong (no packets, or packets that do not decode); returns None.
     """
-    from kite.sources.video_stream import VideoStream
+    from kite.sources.opencv_sources import stream_class
 
+    Stream = stream_class(backend)
+    if backend == "raw":
+        return open_raw_video(tello, Stream, fps, tries)
     for i in range(tries):
         try:
             tello.streamon()
@@ -107,17 +117,54 @@ def open_video(tello, fps, tries=3):
             print(f"video try {i + 1}/{tries}: streamon -> {e}")
             continue
         try:
-            return VideoStream(tello.get_udp_video_address(), fps=fps).start()
+            return Stream(tello.get_udp_video_address(), fps=fps).start()
         except RuntimeError as e:
             print(f"video try {i + 1}/{tries}: {e}")
     n, size = probe_video_packets(tello)
     if n is None:
         print(f"video: {size}. Quit it: lsof -nP -iUDP:{tello.vs_udp_port}")
     elif n:
-        print(f"video: the drone IS sending ({n} packets, {size // 1024} KB in 3 s), but OpenCV could not decode it. "
-              "Check with kite's PyAV reader: python -m kite.sources.open tello --preview")
+        print(f"video: the drone IS sending ({n} packets, {size // 1024} KB in 3 s), but the {backend} reader could "
+              "not decode it. Try --video-backend raw, or record the packets: python -m kite.video_doctor")
     else:
         print(f"video: no packets reached UDP {tello.vs_udp_port} in 3 s: the drone is not streaming. "
+              "Close the Tello phone app, power-cycle the drone, rejoin its Wi-Fi and try again.")
+    return None
+
+
+def open_raw_video(tello, Stream, fps, tries=3, wait_s=5.0):
+    """kite's own UDP reader: bind first (its constructor never waits), then streamon until a frame decodes.
+    streamon is re-sent only while no packet arrives; once packets flow it waits for a keyframe (wait_s per try)."""
+    try:
+        stream = Stream(tello.get_udp_video_address(), fps=fps).start()
+    except RuntimeError as e:  # the port is held by another program
+        print(f"video: {e}")
+        return None
+    for i in range(tries):
+        if i == 0 or not stream.stats()["datagrams"]:  # re-sent only while nothing arrives
+            try:
+                tello.streamon()
+            except Exception as e:  # an 'error' reply: try again
+                print(f"video try {i + 1}/{tries}: streamon -> {e}")
+                continue
+        t_end = time.time() + wait_s
+        while time.time() < t_end:
+            if stream.read_seq(copy=False)[1] is not None:
+                st = stream.stats()
+                print(f"video: raw reader, first frame {st['time_to_first_frame_s']} s after start, {st['size']}, "
+                      f"SO_RCVBUF {st['rcvbuf']} bytes")
+                return stream
+            time.sleep(0.05)
+        st = stream.stats()
+        print(f"video try {i + 1}/{tries}: no frame yet ({st['datagrams']} packets, {st['bytes'] // 1024} KB, "
+              f"decode errors {st['decode_errors']}, {st['skipped_bytes']} bytes skipped before a keyframe)")
+    st = stream.stats()
+    stream.stop()
+    if st["datagrams"]:
+        print(f"video: the drone IS sending ({st['datagrams']} packets) but no frame decoded: {st}. Record the "
+              "packets for analysis: python -m kite.video_doctor")
+    else:
+        print(f"video: no packets reached UDP {tello.vs_udp_port}: the drone is not streaming. "
               "Close the Tello phone app, power-cycle the drone, rejoin its Wi-Fi and try again.")
     return None
 
@@ -438,7 +485,9 @@ def fly(args, ui):
     import cv2  # noqa: F401  - fail here, not silently inside the video thread
     from djitellopy import Tello
 
-    from kite.sources.video_stream import VideoStream  # likewise: a missing install must not quietly drop the video
+    from kite.sources.opencv_sources import stream_class  # likewise: a missing install must not quietly drop the video
+
+    stream_class(args.video_backend)
 
     Tello.LOGGER.setLevel(logging.WARNING)  # otherwise every rc packet is printed
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -455,12 +504,12 @@ def fly(args, ui):
     hud = ui["hud"] if ui is not None else {"phase": "starting"}
     threading.Thread(target=log_state, args=(tello, rec, stop), daemon=True).start()
 
-    # One OpenCV/FFmpeg reader for both the recorder and the preview: djitellopy's PyAV reader
-    # and a second cv2.VideoCapture cannot both bind UDP 11111. The grab()-drain in VideoStream
-    # also stops decoder backlog from inflating the measured video delay over a long flight.
+    # One reader for both the recorder and the preview: two readers cannot both bind UDP 11111. Every reader
+    # drains the stream and keeps only the newest frame, so decoder backlog never inflates the measured video
+    # delay over a long flight.
     stream = None
     try:
-        stream = open_video(tello, args.video_fps)
+        stream = open_video(tello, args.video_fps, args.video_backend)
     except Exception as e:  # a video problem must never stop the flight or the telemetry run
         print(f"video unavailable ({e})")
     if stream is None:
@@ -555,7 +604,9 @@ def check_args(p, args):
                 f"(default is 30 x 1.5 = 45) or you will need more than 3 x 3 m")
 
 
-def main():
+def build_parser():
+    from kite.config import VIDEO_BACKENDS
+
     p = argparse.ArgumentParser(description="Measure Tello command, motion and video lag in one flight.")
     p.add_argument("--mag", type=int, default=30, help="rc stick value for the steps, 10-100 (default 30)")
     p.add_argument("--dur", type=float, default=1.5, help="seconds each step is held (default 1.5)")
@@ -567,10 +618,27 @@ def main():
     p.add_argument("--preview", action="store_true", help="show the live camera feed in a window during the run")
     p.add_argument("--preview-scale", type=float, default=1.0, help="scale the preview window, e.g. 0.5 (default 1.0)")
     p.add_argument("--video-fps", type=int, default=30, help="decode cap in fps; frames arriving faster are dropped, not queued (default 30)")
+    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default="auto",
+                   help="video reader: raw (kite's UDP socket + bare H.264 decoder), pyav, opencv; "
+                        "auto = raw on macOS, pyav elsewhere (default auto)")
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
     p.add_argument("--analyze", metavar="JSON", help="re-analyse a saved run without flying")
     p.add_argument("--out", default="results")
-    args = p.parse_args()
+    return p
+
+
+def parse_args(argv=None):
+    """Arguments with --video-backend resolved to the reader that will run (auto -> this platform's)."""
+    from kite.config import resolve_video_backend
+
+    p = build_parser()
+    args = p.parse_args(argv)
+    args.video_backend = resolve_video_backend(args.video_backend)
+    return p, args
+
+
+def main(argv=None):
+    p, args = parse_args(argv)
     if not args.analyze:
         check_args(p, args)
     if args.analyze:

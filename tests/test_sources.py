@@ -164,7 +164,7 @@ UDP_SCRIPT = textwrap.dedent("""
 
 @pytest.mark.slow
 @needs_ffmpeg
-@pytest.mark.parametrize("backend,port", [("pyav", 11177), ("opencv", 11176)])
+@pytest.mark.parametrize("backend,port", [("raw", 11175), ("pyav", 11177), ("opencv", 11176)])
 def test_tello_reader_full_rate_and_safe_stop_on_stalled_udp_stream(backend, port):
     code = UDP_SCRIPT.format(root=ROOT, port=port, backend=backend)
     p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=90)
@@ -180,7 +180,7 @@ def test_tello_reader_full_rate_and_safe_stop_on_stalled_udp_stream(backend, por
 
 @pytest.mark.slow
 @needs_ffmpeg
-@pytest.mark.parametrize("backend,port", [("pyav", 11178), ("opencv", 11179)])
+@pytest.mark.parametrize("backend,port", [("raw", 11174), ("pyav", 11178), ("opencv", 11179)])
 def test_tello_source_waits_for_a_stream_that_starts_after_the_open_timeout(backend, port):
     # the "can't find camera" bugs: video starting > 5 s after start() raised; keyframes 5 s apart never decoded
     src = TelloVideoSource(url=f"udp://@0.0.0.0:{port}", backend=backend).start()  # must not raise

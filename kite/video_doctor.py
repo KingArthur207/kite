@@ -150,6 +150,23 @@ def decode_with_parser(path: Path) -> dict:
             "first_frame_at_byte": first, "first_frame_at_fraction": round(first / max(len(data), 1), 3) if first is not None else None}
 
 
+def decode_with_raw_reader(path: Path) -> dict:
+    """kite's own reader (kite.sources.tello_raw, the macOS default) fed the capture's bytes in 1460-byte chunks."""
+    try:
+        from .sources.tello_raw import RawTelloStream
+    except ImportError as e:
+        return {"error": f"raw reader unavailable: {e}"}
+    data = path.read_bytes()
+    s = RawTelloStream(feed=[data[i:i + 1460] for i in range(0, len(data), 1460)]).start()
+    t_end = time.monotonic() + 60
+    while not s.finished and time.monotonic() < t_end:
+        time.sleep(0.02)
+    s.stop()
+    st = s.stats()
+    return {k: st[k] for k in ("frames", "corrupt_frames", "decode_errors", "skipped_bytes", "resyncs", "size",
+                               "last_error")}
+
+
 def decode_with_demuxer(path: Path) -> dict:
     """PyAV's h264 demuxer on the file (what av.open(udp://, format='h264') does, minus the network)."""
     try:
@@ -271,7 +288,8 @@ def run(args) -> int:
     summary["stream"] = analyse_packets(packets)
     if packets:
         print("decoding the capture offline ...")
-        summary["decode"] = {"pyav_parser": decode_with_parser(raw), "pyav_demuxer": decode_with_demuxer(raw),
+        summary["decode"] = {"pyav_parser": decode_with_parser(raw), "raw_reader": decode_with_raw_reader(raw),
+                             "pyav_demuxer": decode_with_demuxer(raw),
                              "opencv_file": decode_with_opencv(raw)}
     summary["verdict"] = verdict(summary)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str) + "\n")

@@ -10,6 +10,7 @@
 
 Specs (case-insensitive kinds):
     tello                   live Tello, dry run: video + telemetry only, motion is never sent. Newest frame only.
+    tello:<backend>         the same with one video reader: raw | pyav | opencv | auto (default auto: raw on macOS)
     recording:<dir>, <dir>  a kite.record take (a folder with meta.json / frames.csv): RecordingSource, every frame.
     <file>, file:<file>     a video file: every frame in order (realtime=True paces it at the file's fps).
     webcam:<n>, <n>         camera index n (cv2.VideoCapture(n)). Newest frame only.
@@ -28,6 +29,7 @@ Options (keyword arguments; an option a source does not take raises TypeError):
     cam_height=m, pitch=deg                     pose of a webcam (default 1.3 m, 0: a chest camera) or a video file
     realtime=True, speed=x                      pace a file or recording at its own frame rate
     timeout=s                                   live sources: how long read() waits for a new frame
+    video_backend=raw|pyav|opencv|auto          tello: the H.264 reader (default DroneCfg's auto: raw on macOS)
 
     python -m kite.sources.open <spec> [--seconds 5] [--preview]    does this source work? fps, size, camera, poses
     python -m kite.sources.open --list-cameras [--probe]            this Mac's cameras with their indices
@@ -43,11 +45,13 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 
 from ..camera import Camera, load_camera
+from ..config import VIDEO_BACKENDS
 from .opencv_sources import WebcamSource, _ThreadedCapture
 from .pose import MAX_GAP_S, PITCH_SIGN, POSE_KEYS, TelemetryTrack, empty_pose
 from .recording import RecordingSource
@@ -284,13 +288,19 @@ class TelloSource(_LiveSource):
 
     def __init__(self, cfg=None, timeout: float = 5.0, max_gap_s: float = MAX_GAP_S, pitch_sign: int = PITCH_SIGN,
                  camera: Camera | None = None, fx: float | None = None, hfov_deg: float | None = None,
-                 poll_s: float = 0.02):
-        from ..config import Config
+                 poll_s: float = 0.02, video_backend: str | None = None):
+        from ..config import Config, resolve_video_backend
         from ..drone import make_tello
 
-        super().__init__("tello (live, dry run)", _camera_for(tello_camera, camera, fx, hfov_deg), (960, 720), timeout)
+        cfg = cfg or Config()
+        if video_backend:
+            resolve_video_backend(video_backend)  # ValueError before touching the drone
+            cfg = replace(cfg, drone=replace(cfg.drone, video_backend=video_backend))  # never edit the caller's cfg
+        backend = resolve_video_backend(cfg.drone.video_backend)
+        super().__init__(f"tello (live, dry run, {backend} video)", _camera_for(tello_camera, camera, fx, hfov_deg),
+                         (960, 720), timeout)
         self.max_gap_s, self.pitch_sign, self.poll_s = max_gap_s, pitch_sign, poll_s
-        drone = make_tello(cfg or Config(), dry_run=True)
+        drone = make_tello(cfg, dry_run=True)
         if not getattr(drone, "dry_run", False):  # make_tello must honour dry_run=True; never go on without it
             raise RuntimeError("tello source: the drone is not in dry run, refusing to open it")
         self._drone = drone  # private on purpose: nothing outside this class should get at its motion methods
@@ -402,6 +412,12 @@ def parse_spec(spec) -> tuple[str, object]:
         return "webcam", int(s)
     if low == "tello":
         return "tello", None
+    if low.startswith("tello:"):
+        from ..config import resolve_video_backend
+
+        backend = low.partition(":")[2].strip()
+        resolve_video_backend(backend)  # ValueError for an unknown reader
+        return "tello", backend
     if low == "webcam":
         return "webcam", 0
     if low == "sim":
@@ -439,6 +455,8 @@ def open_source(spec, **opts):
     (ok, bgr), .pose, .camera, .name, release(), usable as a context manager."""
     kind, arg = parse_spec(spec)
     if kind == "tello":
+        if arg:  # tello:<backend>
+            opts.setdefault("video_backend", arg)
         return TelloSource(**opts)
     if kind == "recording":
         rec = RecordingSource(arg, **opts)
@@ -565,7 +583,7 @@ def check(src, seconds: float, preview: bool = False, n_poses: int = 5) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m kite.sources.open", description="Check that a frame source works.")
-    p.add_argument("spec", nargs="?", help="tello | sim:drone | sim:chest | webcam:<index or name> | <index> | "
+    p.add_argument("spec", nargs="?", help="tello | tello:raw | sim:drone | sim:chest | webcam:<index or name> | <index> | "
                                            "recording:<dir> | <take dir> | <video file>")
     p.add_argument("--seconds", type=float, default=5.0, help="read for this long (default 5)")
     p.add_argument("--preview", action="store_true", help="show the frames")
@@ -576,6 +594,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pitch", type=float, help="webcam / file: camera pitch, deg (+ = up)")
     p.add_argument("--fx", type=float, help="focal length in px at the frame size (instead of the default)")
     p.add_argument("--hfov", type=float, help="horizontal field of view in deg (instead of the default)")
+    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
+                   help="tello: the H.264 reader (default auto: raw on macOS, pyav elsewhere)")
     args = p.parse_args(argv)
     if args.list_cameras:
         list_cameras(args.probe)
@@ -583,7 +603,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.spec:
         p.error("give a source spec, or --list-cameras")
     opts = {k: v for k, v in (("cam_height", args.cam_height), ("pitch", args.pitch), ("fx", args.fx),
-                              ("hfov_deg", args.hfov)) if v is not None}
+                              ("hfov_deg", args.hfov), ("video_backend", args.video_backend)) if v is not None}
     try:
         if (args.realtime or args.preview) and parse_spec(args.spec)[0] in ("file", "recording"):
             opts["realtime"] = True

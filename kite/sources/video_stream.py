@@ -7,9 +7,16 @@ Kept as written by the team except (marked CHANGED):
     reader thread may still be inside grab(): releasing under a blocked grab() on a stalled stream
     segfaults the process (found in review; reproduced by killing the UDP sender).
   * the unused copying read() is gone: read_seq() is the only accessor.
+  * the open timeout always outlasts FFmpeg's probe (analyzeduration). The probe has to read up to a keyframe (SPS/PPS
+    + IDR: nothing decodes before one) and was allowed 12 s / 10 MB, but drone_test opened with a 5 s timeout, so
+    the open was killed mid-probe ("Stream timeout triggered after 5015 ms", after "non-existing PPS 0 referenced"
+    from the packets before the first keyframe). Kept the large probe (a small one can return without the frame
+    size when the first keyframe is late) and raised the open timeout instead: at least analyzeduration + 3 s
+    (15 s), whatever the caller asks for.
 """
 
 import os
+import re
 import threading
 import time
 
@@ -25,6 +32,16 @@ os.environ.setdefault(
 )
 
 
+PROBE_MARGIN_MS = 3000  # after analyzeduration, time to open the decoder and hand back the first frame
+
+
+def min_open_timeout_ms() -> int:
+    """Open timeout that lets FFmpeg's probe finish: the analyzeduration actually in effect + PROBE_MARGIN_MS."""
+    m = re.search(r"analyzeduration;(\d+)", os.environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS", ""))
+    analyze_us = int(m.group(1)) if m else 5_000_000  # FFmpeg's default analyzeduration is 5 s
+    return analyze_us // 1000 + PROBE_MARGIN_MS
+
+
 class VideoStream:
     """
     Reads the Tello's UDP video feed directly via OpenCV's FFmpeg backend,
@@ -36,8 +53,10 @@ class VideoStream:
     regardless of how fast frames arrive.
     """
 
-    def __init__(self, url, fps=30, open_timeout_ms=5000, read_timeout_ms=3000):
-        # CHANGED: bounded open/read so a stalled stream cannot block grab() forever
+    def __init__(self, url, fps=30, open_timeout_ms=15000, read_timeout_ms=3000):
+        # CHANGED: bounded open/read so a stalled stream cannot block grab() forever, and an open timeout that never
+        # cuts FFmpeg's probe short (it reads up to the first keyframe, up to analyzeduration)
+        open_timeout_ms = max(open_timeout_ms, min_open_timeout_ms())
         self.cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, open_timeout_ms,
                                                           cv2.CAP_PROP_READ_TIMEOUT_MSEC, read_timeout_ms])
         if not self.cap.isOpened():

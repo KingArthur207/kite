@@ -14,6 +14,7 @@ The pilot's half of spec section 8. One battery, one take of about 5 minutes on 
 
 1. Close the Tello phone app. Power on the Tello, join its `TELLO-xxxxxx` Wi-Fi.
 2. `python -m kite.preflight`. It checks the laptop (ports, disk, battery, Wi-Fi, terminal), then opens the drone in dry run (no motion is ever sent) for about 6 s: battery, temperature, first frame, fps, frame size, telemetry rate and command latency. It closes the link itself and ends with GO or NO-GO; every NO-GO line says what to fix. Fallback if it can't run: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` must print nothing.
+   - Video on the Mac goes through kite's own reader (`raw`: its own UDP socket and decoder; the video line ends with "(raw reader)"). A video NO-GO says whether no packet arrived or packets arrived and did not decode. For the second, try `python -m kite.preflight --video-backend pyav` (then `opencv`), and record the packets for analysis with `python -m kite.video_doctor` (about 20 s of power). Whichever reader gives GO, pass the same `--video-backend` to `kite.record` and `kite.calibrate`.
 3. `python -m kite.record --source tello --out recordings --fly --dry-run --max-s 30`
    - The status line shows about 30 fps, a battery figure and `on ground`.
    - Press `t`, `w`, `r`, space, `l`: each shows in the status line as `rc ...` or an event, and nothing moves (dry run).
