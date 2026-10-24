@@ -556,6 +556,14 @@ python -m pytest -m "not slow"          # ~15 s, no drone needed
 python -m pytest                        # + the H.264-over-UDP reader tests (needs ffmpeg, ~75 s more)
 ```
 
+If the repo is on an iCloud-synced Desktop or Documents folder, iCloud marks everything inside `.venv` hidden, and Python 3.12.14 and later skip hidden `.pth` files, so `import kite` fails outside pytest ("No module named 'kite'"). Keep the venv where iCloud doesn't touch it, behind the usual name:
+
+```bash
+mv .venv .venv.nosync && ln -s .venv.nosync .venv && chflags -R nohidden .venv.nosync
+```
+
+The same applies to `earpiece/.venv`.
+
 ### Drone layer (`kite/`)
 
 | Module | What it does |
