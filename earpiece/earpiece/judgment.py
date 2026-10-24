@@ -13,7 +13,11 @@ Guardrails, all enforced here and not left to the prompt:
     to "critical" (that level belongs to the sonar).
   * At most one call every `min_gap_s`, none when hazards and scene are
     unchanged, never on the audio thread, and a slow or failed call is dropped
-    without a word.
+    without a word. A call still unanswered after `hedge_s` is raced by a
+    second identical one; a reply cut off at MAX_TOKENS is never spoken.
+  * The same line is never said twice within RECENT_SPEECH_S.
+
+Tune with scripts/judgment_eval.py (real Claude over data/scenarios/*.jsonl).
 """
 
 from __future__ import annotations
@@ -49,7 +53,7 @@ chest camera. Each message is a JSON snapshot of the street right now. Bearings 
 
 Like a guide dog's intelligent disobedience, speak only when the walker should do something they would not do \
 from what they have already heard: hold at the curb, let something pass, or understand what a hazard means. \
-Lead with the action, in the walker's frame, under 10 words:
+Lead with the action, in the walker's frame (left, right, ahead), in 8 words or fewer, no street names:
 "Wait. Car turning in from your right."
 "Crowd on the crossing. Hold here."
 "Cyclist on the sidewalk, coming toward you."
