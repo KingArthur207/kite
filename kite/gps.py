@@ -142,9 +142,13 @@ def _local(tag: str) -> str:
 ACCURACY_KEYS = ("accuracy", "horizontalaccuracy", "hacc", "haccuracy", "acc", "horizontal_accuracy")
 
 
+TIME_ERRORS = (ValueError, OverflowError, OSError)  # parse_time / datetime.timestamp on a garbled time
+
+
 def read_gpx(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
+    """Points with an unreadable time are skipped; if no point has a readable one, the first error is raised."""
     root = ET.parse(path).getroot()
-    fixes = []
+    fixes, bad = [], None
     for el in root.iter():
         if _local(el.tag) not in ("trkpt", "rtept"):
             continue
@@ -158,8 +162,14 @@ def read_gpx(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
         acc = next((_num(vals[k]) for k in ACCURACY_KEYS if k in vals), None)
         if acc is None and "hdop" in vals and _num(vals["hdop"]) is not None:
             acc = 5.0 * _num(vals["hdop"])  # rough: HDOP x ~5 m user range error
-        fixes.append(Fix(parse_time(vals["time"], tz), lat, lng, _num(vals.get("ele")), acc,
-                         _num(vals.get("speed")), _num(vals.get("course"))))
+        try:
+            t = parse_time(vals["time"], tz)
+        except TIME_ERRORS as e:
+            bad = bad or e
+            continue
+        fixes.append(Fix(t, lat, lng, _num(vals.get("ele")), acc, _num(vals.get("speed")), _num(vals.get("course"))))
+    if not fixes and bad is not None:
+        raise bad
     return fixes
 
 
@@ -180,6 +190,7 @@ CSV_COLS = {
 
 
 def read_csv(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
+    """Rows with an unreadable time are skipped; if no row has a readable one, the first error is raised."""
     text = Path(path).read_text(encoding="utf-8-sig")
     try:
         dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t")
@@ -195,7 +206,7 @@ def read_csv(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
     if col["time"] is None or col["lat"] is None or col["lng"] is None:
         raise ValueError(f"{path}: need time, lat and lon columns, got {rows[0]}")
     split_date = keys[col["time"]] == "time" and "date" in keys  # separate date and time-of-day columns
-    fixes = []
+    fixes, bad = [], None
     for r in rows[1:]:
         if len(r) < len(keys):
             continue
@@ -205,8 +216,14 @@ def read_csv(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
             continue
         if split_date and not re.search(r"\d{4}-\d{2}-\d{2}|^\d+(\.\d+)?$", ts):
             ts = f"{r[keys.index('date')].strip()} {ts.strip()}"
-        fixes.append(Fix(parse_time(ts, tz), lat, lng, _num(get("ele")), _num(get("accuracy")),
-                         _num(get("speed")), _num(get("course"))))
+        try:
+            t = parse_time(ts, tz)
+        except TIME_ERRORS as e:  # one garbled row (a logger killed mid-write) must not lose the whole walk
+            bad = bad or e
+            continue
+        fixes.append(Fix(t, lat, lng, _num(get("ele")), _num(get("accuracy")), _num(get("speed")), _num(get("course"))))
+    if not fixes and bad is not None:
+        raise bad
     return fixes
 
 

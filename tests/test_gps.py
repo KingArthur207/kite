@@ -139,6 +139,24 @@ def test_time_parsing_zones_and_epochs():
         assert gps.parse_time(s, tz) == pytest.approx(want, abs=1e-3), s
 
 
+def test_a_row_with_a_garbled_time_is_skipped_not_fatal(tmp_path):
+    """One unreadable time (a logger killed mid-write, a hand edit) used to abort the whole track."""
+    t, lat, lng, acc = noisy_fixes(seed=1)
+    good = gps.read_track(write_csv(tmp_path / "w.csv", t, lat, lng, acc), gps.parse_tz("-07:00"))
+    lines = (tmp_path / "w.csv").read_text().splitlines()
+    lines[5] = "2026-10-24 07:0x:00.000," + lines[5].split(",", 1)[1]
+    (tmp_path / "bad.csv").write_text("\n".join(lines) + "\n")
+    fixes = gps.read_track(tmp_path / "bad.csv", gps.parse_tz("-07:00"))
+    assert len(fixes) == len(good) - 1
+    gpx = write_gpx(tmp_path / "w.gpx", t, lat, lng, acc).read_text()
+    first = gpx.index("<time>")
+    (tmp_path / "bad.gpx").write_text(gpx[:first] + "<time>not a time</time>" + gpx[gpx.index("</time>", first) + 7:])
+    assert len(gps.read_track(tmp_path / "bad.gpx")) == len(good) - 1
+    (tmp_path / "none.csv").write_text("time,lat,lon\nsoon,37.7783,-122.4087\nlater,37.7784,-122.4087\n")
+    with pytest.raises(ValueError, match="unreadable time 'soon'"):  # nothing readable: still a clear error
+        gps.read_track(tmp_path / "none.csv")
+
+
 def test_gpx_with_offset_and_csv_with_local_naive_times_read_the_same(tmp_path):
     t, lat, lng, acc = noisy_fixes()
     a = gps.read_track(write_gpx(tmp_path / "w.gpx", t, lat, lng, acc))
