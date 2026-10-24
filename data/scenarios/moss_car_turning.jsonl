@@ -1,0 +1,8 @@
+{"type": "position", "source": "route-plan", "lat": 37.77834, "lng": -122.40874, "heading": 225.0, "place": "Moss St at Howard St", "t": 0.0}
+{"type": "guidance", "source": "route-plan", "text": "Cross Moss Street on the zebra crossing ahead.", "key": "cross-moss", "ttl": 10, "t": 0.3}
+{"type": "beacon", "source": "route-plan", "bearing": 0, "distance": 26, "label": "Howard Street, 20 meters past Moss", "t": 0.5}
+{"type": "scene", "source": "scene-drone", "text": "Zebra crossing over Moss Street 4 meters ahead. A white car on Howard Street on the right is slowing and turning into Moss toward the crossing.", "t": 1.0}
+{"type": "hazard", "source": "drone", "kind": "vehicle", "text": "Car at 2 o'clock, 9 meters.", "bearing": 55, "distance": 9, "ttl": 4, "t": 2.0}
+{"type": "hazard", "source": "drone", "kind": "vehicle", "text": "Car at 2 o'clock, 9 meters.", "bearing": 48, "distance": 7, "ttl": 4, "t": 4.0}
+{"type": "hazard", "source": "drone", "kind": "vehicle", "text": "Car at 1 o'clock, 5 meters.", "bearing": 30, "distance": 5, "ttl": 4, "t": 6.0}
+{"type": "hazard", "source": "drone", "kind": "vehicle", "text": "Car at 1 o'clock, 5 meters.", "bearing": 10, "distance": 4, "ttl": 4, "t": 8.0}

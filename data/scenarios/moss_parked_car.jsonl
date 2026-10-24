@@ -1,0 +1,41 @@
+{"type": "position", "source": "route-plan", "lat": 37.77834, "lng": -122.40874, "heading": 315.0, "place": "Moss St at Howard St", "t": 0.0}
+{"type": "guidance", "source": "route-plan", "text": "Head northwest on Moss Street for 15 meters, then turn left onto Howard.", "key": "moss-1", "ttl": 10, "t": 0.3}
+{"type": "beacon", "source": "route-plan", "bearing": 0, "distance": 15, "label": "the corner of Moss and Howard", "t": 0.5}
+{"type": "scene", "source": "scene-drone", "text": "Sidewalk along Moss Street, the corner with Howard 12 meters ahead. A gray car is parked at the curb on the left with nobody inside.", "t": 1.0}
+{"type": "obstacles", "source": "webcam", "seq": 0, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -59.0, "distance": 3.1, "confidence": 0.9}], "t": 1.0}
+{"type": "obstacles", "source": "webcam", "seq": 1, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -59.8, "distance": 3.08, "confidence": 0.9}], "t": 1.2}
+{"type": "obstacles", "source": "webcam", "seq": 2, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -60.6, "distance": 3.06, "confidence": 0.9}], "t": 1.4}
+{"type": "obstacles", "source": "webcam", "seq": 3, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -61.4, "distance": 3.04, "confidence": 0.9}], "t": 1.6}
+{"type": "obstacles", "source": "webcam", "seq": 4, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -62.2, "distance": 3.02, "confidence": 0.9}], "t": 1.8}
+{"type": "obstacles", "source": "webcam", "seq": 5, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -63.0, "distance": 3.0, "confidence": 0.9}], "t": 2.0}
+{"type": "obstacles", "source": "webcam", "seq": 6, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -63.8, "distance": 2.98, "confidence": 0.9}], "t": 2.2}
+{"type": "obstacles", "source": "webcam", "seq": 7, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -64.6, "distance": 2.96, "confidence": 0.9}], "t": 2.4}
+{"type": "obstacles", "source": "webcam", "seq": 8, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -65.4, "distance": 2.94, "confidence": 0.9}], "t": 2.6}
+{"type": "obstacles", "source": "webcam", "seq": 9, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -66.2, "distance": 2.92, "confidence": 0.9}], "t": 2.8}
+{"type": "obstacles", "source": "webcam", "seq": 10, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -67.0, "distance": 2.9, "confidence": 0.9}], "t": 3.0}
+{"type": "obstacles", "source": "webcam", "seq": 11, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -67.8, "distance": 2.88, "confidence": 0.9}], "t": 3.2}
+{"type": "obstacles", "source": "webcam", "seq": 12, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -68.6, "distance": 2.86, "confidence": 0.9}], "t": 3.4}
+{"type": "obstacles", "source": "webcam", "seq": 13, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -69.4, "distance": 2.84, "confidence": 0.9}], "t": 3.6}
+{"type": "obstacles", "source": "webcam", "seq": 14, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -70.2, "distance": 2.82, "confidence": 0.9}], "t": 3.8}
+{"type": "obstacles", "source": "webcam", "seq": 15, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -71.0, "distance": 2.8, "confidence": 0.9}], "t": 4.0}
+{"type": "obstacles", "source": "webcam", "seq": 16, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -71.8, "distance": 2.78, "confidence": 0.9}], "t": 4.2}
+{"type": "obstacles", "source": "webcam", "seq": 17, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -72.6, "distance": 2.76, "confidence": 0.9}], "t": 4.4}
+{"type": "obstacles", "source": "webcam", "seq": 18, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -73.4, "distance": 2.74, "confidence": 0.9}], "t": 4.6}
+{"type": "obstacles", "source": "webcam", "seq": 19, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -74.2, "distance": 2.72, "confidence": 0.9}], "t": 4.8}
+{"type": "obstacles", "source": "webcam", "seq": 20, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -75.0, "distance": 2.7, "confidence": 0.9}], "t": 5.0}
+{"type": "obstacles", "source": "webcam", "seq": 21, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -75.8, "distance": 2.68, "confidence": 0.9}], "t": 5.2}
+{"type": "obstacles", "source": "webcam", "seq": 22, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -76.6, "distance": 2.66, "confidence": 0.9}], "t": 5.4}
+{"type": "obstacles", "source": "webcam", "seq": 23, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -77.4, "distance": 2.64, "confidence": 0.9}], "t": 5.6}
+{"type": "obstacles", "source": "webcam", "seq": 24, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -78.2, "distance": 2.62, "confidence": 0.9}], "t": 5.8}
+{"type": "obstacles", "source": "webcam", "seq": 25, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -79.0, "distance": 2.6, "confidence": 0.9}], "t": 6.0}
+{"type": "scene", "source": "scene-drone", "text": "The corner of Moss and Howard is 6 meters ahead. A parked gray car is beside you on the left, at the curb.", "t": 6.0}
+{"type": "obstacles", "source": "webcam", "seq": 26, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -79.8, "distance": 2.58, "confidence": 0.9}], "t": 6.2}
+{"type": "obstacles", "source": "webcam", "seq": 27, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -80.6, "distance": 2.56, "confidence": 0.9}], "t": 6.4}
+{"type": "obstacles", "source": "webcam", "seq": 28, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -81.4, "distance": 2.54, "confidence": 0.9}], "t": 6.6}
+{"type": "obstacles", "source": "webcam", "seq": 29, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -82.2, "distance": 2.52, "confidence": 0.9}], "t": 6.8}
+{"type": "obstacles", "source": "webcam", "seq": 30, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -83.0, "distance": 2.5, "confidence": 0.9}], "t": 7.0}
+{"type": "obstacles", "source": "webcam", "seq": 31, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -83.8, "distance": 2.48, "confidence": 0.9}], "t": 7.2}
+{"type": "obstacles", "source": "webcam", "seq": 32, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -84.6, "distance": 2.46, "confidence": 0.9}], "t": 7.4}
+{"type": "obstacles", "source": "webcam", "seq": 33, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -85.4, "distance": 2.44, "confidence": 0.9}], "t": 7.6}
+{"type": "obstacles", "source": "webcam", "seq": 34, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -86.2, "distance": 2.42, "confidence": 0.9}], "t": 7.8}
+{"type": "obstacles", "source": "webcam", "seq": 35, "objects": [{"id": "c1", "kind": "vehicle", "bearing": -87.0, "distance": 2.4, "confidence": 0.9}], "t": 8.0}

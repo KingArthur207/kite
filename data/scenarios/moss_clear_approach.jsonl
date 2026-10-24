@@ -1,0 +1,5 @@
+{"type": "position", "source": "route-plan", "lat": 37.77834, "lng": -122.40874, "heading": 225.0, "place": "Moss St at Howard St", "t": 0.0}
+{"type": "guidance", "source": "route-plan", "text": "Cross Moss Street on the zebra crossing ahead.", "key": "cross-moss", "ttl": 10, "t": 0.3}
+{"type": "beacon", "source": "route-plan", "bearing": 0, "distance": 26, "label": "Howard Street, 20 meters past Moss", "t": 0.5}
+{"type": "scene", "source": "scene-drone", "text": "Zebra crossing over Moss Street 6 meters ahead with tactile paving at the curb. No cars or people nearby.", "t": 1.0}
+{"type": "scene", "source": "scene-drone", "text": "The curb and the zebra crossing are 3 meters ahead. Moss Street is empty.", "t": 6.0}

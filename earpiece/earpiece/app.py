@@ -26,7 +26,7 @@ from .brain import Actions, Brain
 from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
 from .events import PRIORITY_RANK, Msg, clock_phrase, distance_phrase
-from .judgment import Judgment
+from .judgment import RECENT_SPEECH_S, Judgment
 from .listen import Listener
 from .memory import MemoryStore
 from .mixer import Engine
@@ -565,6 +565,8 @@ class Earpiece:
             "last_instruction": None if self.last_guidance is None else {
                 "text": self.last_guidance[0], "seconds_ago": round(now - self.last_guidance[1])},
             "scene": self.scene[0] if self.scene and now - self.scene[1] < 90 else None,
+            "recent_speech": [h["text"] for h in list(self.speaker.history)
+                              if h.get("result") != "dropped" and time.time() - h["t"] < RECENT_SPEECH_S][-4:],
             "position": self.position,
             "drone": self.drone or None,
             "guidance_paused": self.paused,
