@@ -114,5 +114,8 @@ METRICS = (
     "min_dist3d_m",  # closest 3D approach of the drone to the walker's head
     "start_failed",  # 1 if follow could never start (excluded for every arm alike)
 )
+# Reported, never trained on (kite.fly.sim.metrics): the forward and lateral sticks' stick_change, and the share of
+# "following" control steps the prediction planner steered (FollowCfg.predict, kite/predict.py).
+SIM_EXTRA_METRICS = ("fb_change", "lr_change", "planned")
 # "collision" means overhead: the drone within 0.3 m horizontally of the head while above it (blind over the head).
 # After one, the rest of the episode is charged as lost at a 90 deg bearing, so a crash can never look better.

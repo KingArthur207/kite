@@ -5,8 +5,9 @@
     evaluate_items(items, 8)       # in item order, on a persistent pool of 8 worker processes
 
 Item keys: arm, seed, profile, episode_s, size_blind, behind_m (the FollowCfg override of the standoff report; None:
-the shared 1.0 m), overrides (sim parameters, e.g. {"fx_px": 1077}), and the controller (x, or params (+ norm), or
-params_file; none of them means the arm's reference: KITE-LAW's or PRED-PD's defaults, FLY-YAW-PREV, FLY-YAW-HAND).
+the shared 1.0 m), follow (other FollowCfg fields, e.g. {"predict": True} or {"pitch_comp": -1.0}; None: none),
+overrides (sim parameters, e.g. {"fx_px": 1077}), and the controller (x, or params (+ norm), or params_file; none of
+them means the arm's reference: KITE-LAW's or PRED-PD's defaults, FLY-YAW-PREV, FLY-YAW-HAND).
 stub_s (tests, Modal smoke) swaps the simulator for a synthetic episode burning that much CPU. tag is echoed back.
 """
 
@@ -38,7 +39,7 @@ MAX_TRACEBACK = 3000
 def make_item(arm: str, seed: int, profile: str = "train", *, x=None, params: dict | None = None,
               norm: dict | None = None, params_file: str | None = None, size_blind: bool | None = None,
               episode_s: float = 60.0, behind_m: float | None = None, overrides: dict | None = None,
-              stub_s: float | None = None, tag: Any = None) -> dict:
+              follow: dict | None = None, stub_s: float | None = None, tag: Any = None) -> dict:
     return {
         "arm": arm,
         "seed": int(seed),
@@ -51,6 +52,7 @@ def make_item(arm: str, seed: int, profile: str = "train", *, x=None, params: di
         "episode_s": float(episode_s),
         "behind_m": None if behind_m is None else float(behind_m),
         "overrides": overrides,
+        "follow": dict(follow) if follow else None,
         "stub_s": None if stub_s is None else float(stub_s),
         "tag": tag,
     }

@@ -2,12 +2,14 @@
 yaw source, and the parameter spaces CMA-ES searches.
 
     make_follow_cfg("KITE-LAW-CMA", x)                                      # shared config + tuned k_yaw / deadband
+    make_follow_cfg("KITE-LAW", follow={"predict": True})                   # + other FollowCfg fields (a variant)
     make_yaw_source("FLY-YAW", x, norm=norm, size_blind=True, seed=2000, follow_cfg=cfg)   # a kite.follow.YawSource
     run_item({"arm": "FLY-YAW-PREV", "seed": 2000, "profile": "demo"})      # one EpisodeResult
 
 Arms (interfaces.ARMS). Every arm flies the sim's shared FollowCfg(behind_m=1.0, above_m=0.30, max_yaw=70) (DESIGN
-R3), or that config with another behind_m (the G3 standoff side report); a yaw source is always built from the very
-instance the controller uses (asserted):
+R3), or that config with another behind_m (the G3 standoff side report) and other FollowCfg fields (an item's
+`follow`: e.g. predict, main's opt-in prediction planner, on the law arms only; pitch_comp); a yaw source is always
+built from the very instance the controller uses (asserted):
   KITE-LAW      yaw_source None, the law's defaults (k_yaw 1.5 stick/deg, 2 deg deadband)
   KITE-LAW-CMA  yaw_source None, k_yaw and db_yaw_deg from x in LAW_SPACE
   PRED-PD       kite.fly.steer.PredPD: FlySteer's latency filter and stick conditioning around a PD (x in PD_SPACE)
@@ -20,7 +22,7 @@ STUB (not an interface arm) is a cheap synthetic episode for tests and the Modal
 from __future__ import annotations
 
 import time
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -77,14 +79,36 @@ def init_point(arm: str, init: str) -> dict:
 # ---------------------------------------------------------------------------------------------------------------
 
 
-def make_follow_cfg(arm: str, x=None, params: dict | None = None, behind_m: float | None = None) -> FollowCfg:
-    """The sim's shared config (behind_m overridden if given); KITE-LAW-CMA takes k_yaw / db_yaw_deg from x or
-    params. One new instance per call: build the yaw source from the instance the controller gets."""
+def check_follow(arm: str, follow: dict | None) -> dict:
+    """An item's FollowCfg overrides, typed like the fields ({"predict": 1.0} -> {"predict": True}). behind_m is the
+    side sets' (the item's behind_m); predict replaces the yaw law, so only the law arms take it (a yaw source and
+    FollowCfg.predict are exclusive in FollowController)."""
+    kinds = {f.name: type(getattr(_LAW, f.name)) for f in fields(FollowCfg)}
+    out: dict = {}
+    for k, v in (follow or {}).items():
+        if k not in kinds:
+            raise ValueError(f"{k!r} is not a FollowCfg field")
+        if k == "behind_m":
+            raise ValueError("behind_m is set by a side set (<profile>@<metres>), not a FollowCfg override")
+        kind = kinds[k]
+        out[k] = bool(v) if kind is bool else int(round(float(v))) if kind is int else float(v)
+    if out.get("predict") and arm not in LAW_ARMS:
+        raise ValueError(f"FollowCfg.predict steers instead of a yaw source: {arm} has one; use a law arm")
+    return out
+
+
+def make_follow_cfg(arm: str, x=None, params: dict | None = None, behind_m: float | None = None,
+                    follow: dict | None = None) -> FollowCfg:
+    """The sim's shared config (behind_m and the `follow` fields overridden if given, see check_follow); KITE-LAW-CMA
+    takes k_yaw / db_yaw_deg from x or params. One new instance per call: build the yaw source from the instance the
+    controller gets."""
     from kite.fly.sim.world import default_follow_cfg
 
     cfg = default_follow_cfg()
     if behind_m is not None:
         cfg = replace(cfg, behind_m=float(behind_m))
+    if follow:
+        cfg = replace(cfg, **check_follow(arm, follow))
     if arm == "KITE-LAW-CMA":
         if params is None:
             if x is None:
@@ -158,7 +182,7 @@ def run_item(item: dict) -> EpisodeResult:
     x = item.get("x")
     law_cma = arm == "KITE-LAW-CMA"
     cfg = make_follow_cfg(arm, x if law_cma else None, item.get("params") if law_cma else None,
-                          behind_m=item.get("behind_m"))
+                          behind_m=item.get("behind_m"), follow=item.get("follow"))
     sb = item.get("size_blind")
     ys = make_yaw_source(arm, x=x, params_file=item.get("params_file"), size_blind=True if sb is None else bool(sb),
                          seed=seed, params=item.get("params"), norm=item.get("norm"), follow_cfg=cfg)

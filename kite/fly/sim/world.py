@@ -3,6 +3,8 @@
     res = run_episode(seed, "demo")                          # KITE-LAW: FollowController's own yaw law
     res = run_episode(seed, "train", yaw_source=FlySteer())  # any kite.follow.YawSource steers the yaw
     res = run_episode(seed, "demo", overrides={"p_head": 0.3})   # change one world parameter (profiles.SimParams)
+    cfg = dataclasses.replace(default_follow_cfg(), predict=True)   # FollowCfg.predict: kite/predict.py steers
+    res = run_episode(seed, "demo", follow_cfg=cfg)
 
 The loop, as kite.record drives FollowMode live:
   fake detector (camera.FakeDetector: boxes at their frame time, after latency) -> kite.follow.WalkerTracker
@@ -11,7 +13,10 @@ The loop, as kite.record drives FollowMode live:
      kite.drone.base.Drone), with governor.check(now, last_frame_t) every control step
   -> drone.DroneModel in 0.01 s sub-steps; a command takes effect from the next sub-step.
 The control period is 0.100 + U(0, 0.012) s, as kite.record's loop measures it. The controller sees only boxes,
-Telemetry.height_m (truth + bias + noise), pitch_deg (truth + noise) and tof_m; reward and metrics use truth.
+Telemetry.height_m (truth + bias + noise), pitch_deg (truth + noise) and yaw_deg (truth) in whole degrees as the
+Tello's state packet sends them (yaw wrapped to +-180; only FollowCfg.pitch_comp and the prediction's dead reckoning
+read them), and tof_m; reward and metrics use truth. No route is simulated, so the controller gets route None and
+walker_xy None, as kite.record runs it (FollowCfg.predict then predicts without the route prior).
 
 Start. The walker stands facing away (+-30 deg) at behind_m + U(-0.2, +0.8) m and +-15 deg off the drone's heading;
 the drone hovers at head top + above_m + U(-0.10, +0.15) m. Draws whose head top is not >= 20 px inside the frame
@@ -247,8 +252,10 @@ class _World:
                 self.last_true = t_avail
 
     def packet(self, t: float, k: int) -> Telemetry:
+        """The state packet: attitude in whole degrees (the Tello sends integers), yaw in -180..180."""
         m = self.model
-        return Telemetry(t=t, yaw_deg=math.degrees(m.heading), pitch_deg=m.pitch_deg + self.tel_p[k],
+        yaw = (math.degrees(m.heading) + 180.0) % 360.0 - 180.0
+        return Telemetry(t=t, yaw_deg=float(round(yaw)), pitch_deg=float(round(m.pitch_deg + self.tel_p[k])),
                          height_m=m.z + self.tel_h[k], tof_m=m.z)
 
     def _preroll(self, periods: list[float]) -> bool:
@@ -329,14 +336,14 @@ def run_episode(seed: int, profile: str, follow_cfg: FollowCfg | None = None, ya
     mx = EpisodeMetrics(behind, cfg.min_range_m, t0f + METRIC_START_S, corners, reward_cfg.band_frac)
     mx._was_in_view = head_in_view(g)
     phys = mx.phys
-    prev_yaw = 0
+    prev_yaw = prev_fb = prev_lr = 0
     collided = cancelled = False
     trace: dict[str, list] | None = None
     if record:
         trace = {key: [] for key in ("t", "state", "lr", "fb", "ud", "yaw", "cmd_fb", "cmd_yaw", "x", "y", "z",
                                      "heading_deg", "pitch_deg", "walker_x", "walker_y", "range_m", "bearing_deg",
                                      "in_view", "v_top", "est_range_m", "est_bearing_deg", "walker_m_s", "lost",
-                                     "action", "holding")}
+                                     "action", "holding", "planner")}
         trace["meta"] = [{"t_start": t_start, "start": w.sp, "v_cap_mps": p.v_cap_mps, "params": p,
                           "segments": walker.segments, "step": walker.step_ticks, "started": w.started}]
     rng_t = math.hypot(wx - model.x, wy - model.y)
@@ -366,8 +373,9 @@ def run_episode(seed: int, profile: str, follow_cfg: FollowCfg | None = None, ya
         lost = gap or state == "lost"
         d_yaw = yaw - prev_yaw
         ret += reward.step(dt_c, math.hypot(dx, dy), bearing, d_yaw, lost)
-        mx.control(t_c, dt_c, state, d_yaw, yaw, gap, w.last_true)
-        prev_yaw = yaw
+        mx.control(t_c, dt_c, state, d_yaw, yaw, gap, w.last_true, fb - prev_fb, lr - prev_lr,
+                   cmd is not None and cmd.planner == "predict")
+        prev_yaw, prev_fb, prev_lr = yaw, fb, lr
         if trace is not None:
             for key, v in (("t", t_c - t_start), ("state", state), ("lr", lr), ("fb", fb), ("ud", ud), ("yaw", yaw),
                            ("cmd_fb", None if cmd is None else cmd.fb), ("cmd_yaw", None if cmd is None else cmd.yaw),
@@ -378,7 +386,8 @@ def run_episode(seed: int, profile: str, follow_cfg: FollowCfg | None = None, ya
                            ("est_range_m", None if cmd is None else cmd.range_m),
                            ("est_bearing_deg", None if cmd is None else cmd.bearing_deg),
                            ("walker_m_s", None if cmd is None else cmd.walker_m_s), ("lost", lost),
-                           ("action", action), ("holding", model.holding)):
+                           ("action", action), ("holding", model.holding),
+                           ("planner", None if cmd is None else cmd.planner)):
                 trace[key].append(v)
 
         while tick * pdt < t_stop - _EPS and tick < tick_end:
