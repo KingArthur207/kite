@@ -494,6 +494,25 @@ def interrupt_thread(th):
     ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(th.ident), ctypes.py_object(KeyboardInterrupt))
 
 
+def _drop_binary_reply_noise(record) -> bool:
+    """djitellopy logs an ERROR when the Tello answers with one of its binary packets (they start with 0xCC); it
+    then retries the command, so the line only looks alarming."""
+    return "can't decode byte" not in record.getMessage()
+
+
+def quiet_ffmpeg() -> None:
+    """Hide FFmpeg's decoder chatter (\"non-existing PPS 0 referenced\", \"no frame!\", \"error while decoding MB\"):
+    it is printed until the first keyframe and after every lost packet, and the report already measures the video.
+    --ffmpeg-log brings it back."""
+    os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")  # OpenCV's bundled FFmpeg: quiet (read when it starts)
+    try:
+        import av.logging
+
+        av.logging.set_level(av.logging.PANIC)  # PyAV's FFmpeg (pyav, raw and socket readers)
+    except Exception:
+        pass
+
+
 def fly(args, ui):
     import logging
 
@@ -505,6 +524,7 @@ def fly(args, ui):
     stream_class(args.video_backend)
 
     Tello.LOGGER.setLevel(logging.WARNING)  # otherwise every rc packet is printed
+    Tello.LOGGER.addFilter(_drop_binary_reply_noise)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     rec = {"meta": {"stamp": stamp, "args": vars(args)}, "state": [], "video": [], "events": []}
     stop = threading.Event()
@@ -632,11 +652,15 @@ def build_parser():
     p.add_argument("--min-battery", type=int, default=30)
     p.add_argument("--preview", action="store_true", help="show the live camera feed in a window during the run")
     p.add_argument("--preview-scale", type=float, default=1.0, help="scale the preview window, e.g. 0.5 (default 1.0)")
-    p.add_argument("--video-fps", type=int, default=30, help="decode cap in fps; frames arriving faster are dropped, not queued (default 30)")
+    p.add_argument("--video-fps", type=int, default=60, help="decode cap in fps; frames arriving faster are dropped, not "
+                   "queued (default 60: it must sit above the ~30 fps stream, a cap of 30 drops ~40 %% of frames to jitter)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="video reader: pyav (default), opencv, or kite's own UDP readers raw (bare H.264 decoder), "
                         "socket (big receive buffer) and auto = raw on macOS, pyav elsewhere")
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
+    p.add_argument("--simple", action="store_true", help="short flight: one + and one - step per axis, no forward/back "
+                   "moves (same as --trials 1 --forward 0, about 45 s in the air)")
+    p.add_argument("--ffmpeg-log", action="store_true", help="show FFmpeg's decoder messages (hidden by default)")
     p.add_argument("--analyze", metavar="JSON", help="re-analyse a saved run without flying")
     p.add_argument("--out", default="results")
     return p
@@ -649,11 +673,15 @@ def parse_args(argv=None):
     p = build_parser()
     args = p.parse_args(argv)
     args.video_backend = resolve_video_backend(args.video_backend)
+    if args.simple:
+        args.trials, args.forward = 1, 0
     return p, args
 
 
 def main(argv=None):
     p, args = parse_args(argv)
+    if not args.ffmpeg_log:
+        quiet_ffmpeg()
     if not args.analyze:
         check_args(p, args)
     if args.analyze:
