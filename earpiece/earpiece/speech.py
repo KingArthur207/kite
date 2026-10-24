@@ -85,7 +85,7 @@ class PhraseCache:
         self._mem: dict[str, np.ndarray] = {}
 
     def _path(self, text: str, tag: str | None = None) -> Path:
-        h = hashlib.sha1(f"{tag or self.tag}|{text}".encode()).hexdigest()[:20]
+        h = hashlib.sha1(f"{tag or self.tag}|{text}".encode(), usedforsecurity=False).hexdigest()[:20]
         return self.dir / f"{h}.f32"
 
     def get(self, text: str) -> np.ndarray | None:

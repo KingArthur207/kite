@@ -28,7 +28,15 @@ pub struct Voice {
 
 impl Voice {
     pub fn new(data: Vec<f32>, start: i64, gain: f32, bus: u8, tag: u64) -> Self {
-        Voice { data, start, gain, bus, tag, fade_left: None, fade_len: 1 }
+        Voice {
+            data,
+            start,
+            gain,
+            bus,
+            tag,
+            fade_left: None,
+            fade_len: 1,
+        }
     }
     fn frames(&self) -> u64 {
         (self.data.len() / 2) as u64
@@ -49,12 +57,32 @@ struct Speech {
 
 pub enum Cmd {
     Play(Voice),
-    Stop { tag: u64, fade: u64 },
-    SpBegin { uid: u64, gain: f32 },
-    SpFeed { uid: u64, data: Vec<f32> },
-    SpEnd { uid: u64 },
-    SpCancel { uid: u64, fade: u64 }, // uid 0 = whatever is playing
-    Params { master: f32, cue: f32, speech: f32, duck: f32, muted: bool },
+    Stop {
+        tag: u64,
+        fade: u64,
+    },
+    SpBegin {
+        uid: u64,
+        gain: f32,
+    },
+    SpFeed {
+        uid: u64,
+        data: Vec<f32>,
+    },
+    SpEnd {
+        uid: u64,
+    },
+    SpCancel {
+        uid: u64,
+        fade: u64,
+    }, // uid 0 = whatever is playing
+    Params {
+        master: f32,
+        cue: f32,
+        speech: f32,
+        duck: f32,
+        muted: bool,
+    },
 }
 
 #[derive(Default, Clone, Copy)]
@@ -89,15 +117,37 @@ pub struct Mixer {
 }
 
 impl Mixer {
-    pub fn new(rate: u32, master: f32, ceiling: f32, cue_gain: f32, speech_gain: f32, duck: f32,
-               events: Producer<(u8, u64)>, garbage: Producer<Vec<f32>>) -> Self {
+    pub fn new(
+        rate: u32,
+        master: f32,
+        ceiling: f32,
+        cue_gain: f32,
+        speech_gain: f32,
+        duck: f32,
+        events: Producer<(u8, u64)>,
+        garbage: Producer<Vec<f32>>,
+    ) -> Self {
         let cap = 16384;
         Mixer {
-            rate, now: 0, master, ceiling, cue_gain, speech_gain, duck, muted: false,
-            voices: Vec::with_capacity(512), speech: None, duck_env: 1.0, lim_env: 1.0,
+            rate,
+            now: 0,
+            master,
+            ceiling,
+            cue_gain,
+            speech_gain,
+            duck,
+            muted: false,
+            voices: Vec::with_capacity(512),
+            speech: None,
+            duck_env: 1.0,
+            lim_env: 1.0,
             release: (-1.0 / (0.25 * rate as f64)).exp(),
-            cue: vec![0.0; cap], alert: vec![0.0; cap], sp: vec![0.0; cap / 2],
-            events, garbage, speaking: false,
+            cue: vec![0.0; cap],
+            alert: vec![0.0; cap],
+            sp: vec![0.0; cap / 2],
+            events,
+            garbage,
+            speaking: false,
         }
     }
 
@@ -139,11 +189,21 @@ impl Mixer {
                             self.recycle(c);
                         }
                     }
-                    self.speech = Some(Speech { uid, chunks: VecDeque::with_capacity(64), offset: 0,
-                        ended: false, started: false, fade_left: None, fade_len: 1, gain, pending: 0 });
+                    self.speech = Some(Speech {
+                        uid,
+                        chunks: VecDeque::with_capacity(64),
+                        offset: 0,
+                        ended: false,
+                        started: false,
+                        fade_left: None,
+                        fade_len: 1,
+                        gain,
+                        pending: 0,
+                    });
                 }
                 Cmd::SpFeed { uid, data } => {
-                    let ok = matches!(&self.speech, Some(sp) if sp.uid == uid && sp.fade_left.is_none());
+                    let ok =
+                        matches!(&self.speech, Some(sp) if sp.uid == uid && sp.fade_left.is_none());
                     if ok {
                         let sp = self.speech.as_mut().unwrap();
                         sp.pending += data.len() as i64;
@@ -172,7 +232,13 @@ impl Mixer {
                         }
                     }
                 }
-                Cmd::Params { master, cue, speech, duck, muted } => {
+                Cmd::Params {
+                    master,
+                    cue,
+                    speech,
+                    duck,
+                    muted,
+                } => {
                     self.master = master;
                     self.cue_gain = cue;
                     self.speech_gain = speech;
@@ -307,7 +373,11 @@ impl Mixer {
                 continue;
             }
             let v = &mut self.voices[i];
-            let dst = if v.bus == BUS_ALERT { &mut self.alert } else { &mut self.cue };
+            let dst = if v.bus == BUS_ALERT {
+                &mut self.alert
+            } else {
+                &mut self.cue
+            };
             let k_total = (b - a) as usize;
             let mut drop_now = false;
             let (fade_n, fl, flen) = match v.fade_left {
@@ -351,19 +421,32 @@ impl Mixer {
         let d1 = d0 + (target - d0) * if target < d0 { 0.35 } else { 0.08 };
         self.duck_env = d1;
         let cue_gain = if self.muted { 0.0 } else { self.cue_gain };
-        let step = if frames > 1 { (d1 - d0) as f64 / (frames - 1) as f64 } else { 0.0 };
+        let step = if frames > 1 {
+            (d1 - d0) as f64 / (frames - 1) as f64
+        } else {
+            0.0
+        };
         let mut peak = 0.0f32;
         for f in 0..frames {
             let duck = (d0 as f64 + step * f as f64) as f32; // linspace(d0, d1, frames)
-            let s = if has_speech { self.sp[f] * self.speech_gain } else { 0.0 };
+            let s = if has_speech {
+                self.sp[f] * self.speech_gain
+            } else {
+                0.0
+            };
             for c in 0..2 {
-                let x = (self.cue[f * 2 + c] * (duck * cue_gain) + self.alert[f * 2 + c] + s) * self.master;
+                let x = (self.cue[f * 2 + c] * (duck * cue_gain) + self.alert[f * 2 + c] + s)
+                    * self.master;
                 out[f * 2 + c] = x;
                 peak = peak.max(x.abs());
             }
         }
         // limiter: instant attack ramped across the block, ~250 ms release
-        let want = if peak > 0.0 { (self.ceiling / peak).min(1.0) } else { 1.0 };
+        let want = if peak > 0.0 {
+            (self.ceiling / peak).min(1.0)
+        } else {
+            1.0
+        };
         let g0 = self.lim_env;
         let limited;
         let g1 = if want < g0 {
@@ -376,10 +459,18 @@ impl Mixer {
         };
         self.lim_env = g1;
         let mut out_peak = 0.0f32;
-        let lstep = if frames > 1 { (g1 - g0) as f64 / (frames - 1) as f64 } else { 0.0 };
+        let lstep = if frames > 1 {
+            (g1 - g0) as f64 / (frames - 1) as f64
+        } else {
+            0.0
+        };
         let apply = g0 != 1.0 || g1 != 1.0;
         for f in 0..frames {
-            let g = if apply { (g0 as f64 + lstep * f as f64) as f32 } else { 1.0 };
+            let g = if apply {
+                (g0 as f64 + lstep * f as f64) as f32
+            } else {
+                1.0
+            };
             for c in 0..2 {
                 let x = (out[f * 2 + c] * g).clamp(-self.ceiling, self.ceiling);
                 out[f * 2 + c] = x;
@@ -387,7 +478,12 @@ impl Mixer {
             }
         }
         self.now = end as u64;
-        BlockStats { limited, peak: out_peak, voices: self.voices.len(), speaking: self.speaking }
+        BlockStats {
+            limited,
+            peak: out_peak,
+            voices: self.voices.len(),
+            speaking: self.speaking,
+        }
     }
 }
 
@@ -400,7 +496,12 @@ mod tests {
         let (gp, _gc) = rtrb::RingBuffer::new(1024);
         let (cp, cc) = rtrb::RingBuffer::new(1024);
         std::mem::forget(_gc);
-        (Mixer::new(48000, 0.9, 0.89, 0.55, 1.0, 0.45, ep, gp), cp, cc, ec)
+        (
+            Mixer::new(48000, 0.9, 0.89, 0.55, 1.0, 0.45, ep, gp),
+            cp,
+            cc,
+            ec,
+        )
     }
 
     #[test]
@@ -409,7 +510,8 @@ mod tests {
         let mut d = vec![0.0f32; 20];
         d[0] = 0.5;
         d[1] = 0.5;
-        cp.push(Cmd::Play(Voice::new(d, 1234, 1.0, BUS_ALERT, 1))).ok();
+        cp.push(Cmd::Play(Voice::new(d, 1234, 1.0, BUS_ALERT, 1)))
+            .ok();
         let mut out = vec![0.0f32; 4096 * 2];
         m.render(&mut out, &mut cc);
         let hits: Vec<usize> = (0..4096).filter(|&f| out[f * 2].abs() > 0.1).collect();
@@ -420,7 +522,14 @@ mod tests {
     fn limiter_holds_ceiling() {
         let (mut m, mut cp, mut cc, _) = rig();
         for t in 0..60 {
-            cp.push(Cmd::Play(Voice::new(vec![1.0; 9600], -1, 1.0, BUS_ALERT, t))).ok();
+            cp.push(Cmd::Play(Voice::new(
+                vec![1.0; 9600],
+                -1,
+                1.0,
+                BUS_ALERT,
+                t,
+            )))
+            .ok();
         }
         let mut out = vec![0.0f32; 1024];
         for _ in 0..10 {
@@ -433,7 +542,11 @@ mod tests {
     fn speech_events_start_then_done() {
         let (mut m, mut cp, mut cc, mut ec) = rig();
         cp.push(Cmd::SpBegin { uid: 7, gain: 1.0 }).ok();
-        cp.push(Cmd::SpFeed { uid: 7, data: vec![0.2; 1000] }).ok();
+        cp.push(Cmd::SpFeed {
+            uid: 7,
+            data: vec![0.2; 1000],
+        })
+        .ok();
         cp.push(Cmd::SpEnd { uid: 7 }).ok();
         let mut out = vec![0.0f32; 1024];
         for _ in 0..4 {

@@ -18,3 +18,11 @@ rtrb = "0.4"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+
+[lints.clippy]
+# style-only lints that would make the mixer's port of mixer.py harder to read side by side
+too_many_arguments = "allow"
+manual_clamp = "allow"
+needless_range_loop = "allow"
+chunks_exact_to_as_chunks = "allow"
+type_complexity = "allow"
