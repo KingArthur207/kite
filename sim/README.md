@@ -4,7 +4,7 @@ A browser street corner with an arrow-key walker and two virtual cameras. A dron
 
 ## World
 
-The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`, the default when a key is set; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world.
+The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world. Locally, a Blender-built street with Street View facades replaces the OSM look when its file exists (`?world=real`, see Real facades below).
 
 - `scripts/osm_corner.py` fetches OSM and writes `public/osm/moss.json` in metres (x east, y north), with the origin at the Moss zebra, OSM node 12144593726. Run it again to refresh. `python scripts/osm_corner.py raw.json` reuses a saved Overpass response.
 - `moss.json` also has `lanes`: car lane polylines in travel order with `speed_mps`. Moss flows SE (Howard to Folsom) and Howard flows SW. `src/osmWorld.ts` exports them as `lanes`, and the traffic drives on them (see Cars and people).
@@ -36,6 +36,26 @@ Cars are found more often. People past 20 m are found less: in front of textured
 #### Mapillary facades (not done)
 
 The plan was to texture each street-facing wall with a rectified Mapillary photo (CC BY-SA 4.0). There was no `MAPILLARY_TOKEN` in `.env`, so only the geometry exists: `scripts/facade_rectify.py` projects a wall into a Mapillary camera (position, compass angle, focal from `camera_parameters`) and warps it into a texture with a homography. `uv run --no-project --with numpy python scripts/facade_rectify.py` runs its self-check, which renders a synthetic wall through a known camera and rectifies it back. The docstring has the Graph API query and the image selection rule for when a token exists.
+
+### Real facades (`?world=real`, local only)
+
+`?world=real` is the default when `public/local/moss_real.glb` exists. It is Moss St built in Blender, with each street-facing wall textured from Google Street View (our permission covers this one street, see `docs/google-permission.md`). The GLB is only the look: collisions, lanes, the route, the spawn and the traffic still come from `moss.json`, and both the screen and capture renderers draw it. Without the file the sim logs a warning and shows the textured OSM street. `?world=moss` forces the OSM street.
+
+Street View-derived pixels are never committed or published. The textures, the GLB and any screenshots of it live in `public/local/`, which is gitignored. `npm run build` copies `public/` into `dist/`, so don't publish a build made on a machine that has `public/local/`.
+
+To rebuild (Moss and the Howard corner: 27 Google panoramas, about 90 billed Static images on the first run):
+
+```
+set -a; . ./.env; set +a           # from the repo root: GOOGLE_MAPS_API_KEY (in a worktree, source the main checkout's)
+uv run --no-project --with numpy --with opencv-python-headless python scripts/streetview_facades.py
+/Applications/Blender.app/Contents/MacOS/Blender -b -P sim/blender/build_real_moss.py -- --export
+rm -rf /tmp/kite_sv                # raw Street View responses cached for reruns
+```
+
+- `scripts/streetview_facades.py` picks the OSM footprint edges that face Moss (Folsom to Howard) or Howard within the corner, bay faces included (72 walls). It asks the metadata endpoint for Google panoramas every 4 m along those roads, inside the `kite/sources/streetview.py` SCOPE, then fetches one 640x640 view per panorama per group of walls within 15 m, aimed square at them and pitched up to mid-wall. Each wall texel (40 px/m) is projected into every view with `scripts/facade_rectify.py` (camera 2.5 m up at the panorama, now with pitch) and blended by how square and close each view is. Views where another footprint is in the way are skipped. It then finds window and door rectangles in each texture (closed Canny contours) and writes `public/local/facades/*.jpg` plus `facades.json`. `--openings-only` redoes the detection without fetching.
+- `sim/blender/build_real_moss.py` extrudes every footprint and maps the photos onto the street walls (u along the wall, v up). Detected windows are recessed 12 cm with glossier glass, and doors and garages 25 to 30 cm, with a step in front of each door. Each photographed wall gets a cornice in the colour of the top of its photo. Side and back walls of photographed buildings are plain stucco in that colour. Other buildings get the Poly Haven materials and a plain window grid. The street side has asphalt, 15 cm sidewalks and curbs, zebras, lane lines, the OSM furniture, wooden poles with three wires along Moss, and steel streetlights and simple trees along Howard. It also runs inside a live Blender (`exec(open(...).read(), {"KITE_ROOT": "<repo>", "__name__": "x"})`, then `build()` and `export(*build())`), which adds cameras at the drone spawn, chest corner and Howard viewpoints.
+- Oct 24 run: 72 of 72 walls textured, 18 MB GLB, 60 fps in headless Chromium with Metal (vsync cap) with the capture renderer running. YOLO (yolo11n, same script and session, traffic differs between runs): `?world=real` drone car 71%, person 39%, chest car 74%, person 36%; `?world=moss` drone car 68%, person 26%, chest car 69%, person 30%. Person recall was lower for both worlds in this session than in the table above, so compare within a session.
+- Still off: parked cars, street trees and wires are baked into the lower walls; close walls are soft (about 50 px/m at the source); OSM heights don't always match the real rooflines, so some walls show sky at the top; window detection finds about half the windows and some false ones on murals and trees; the Howard trees and streetlights are placed every 18 m and 36 m, not where the real ones stand; buildings outside the corner have no photos.
 
 ### Google 3D tiles (`?world=tiles`)
 

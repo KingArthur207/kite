@@ -5,6 +5,7 @@ import {
 } from "./config";
 import { buildWorld } from "./world";
 import { buildOsmWorld, type WorldExtras } from "./osmWorld";
+import { buildRealWorld } from "./realWorld";
 import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
@@ -13,7 +14,7 @@ import { clampToFence } from "./fence";
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
 // tilesWorld.ts and docs/google-permission.md). By default the capture cameras render OSM Moss (YOLO recall on tile
-// frames is far lower) and tiles show on screen only; ?detector=tiles puts tiles in capture too. ?world=moss (default): Moss St from OSM with textured facades
+// frames is far lower) and tiles show on screen only; ?detector=tiles puts tiles in capture too. ?world=moss: Moss St from OSM with textured facades
 // everywhere. ?world=placeholder: the old box world.
 // Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
 // ?relay= and ?ear= override the socket URLs (empty = offline).
@@ -43,7 +44,9 @@ const capture = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer
 capture.setPixelRatio(1);
 capture.setSize(CAM_W, CAM_H, false);
 
-let worldName = metricsOn ? "moss" : query.get("world") ?? "moss";   // textured OSM street by default; ?world=tiles for Google 3D (looks crumpled at street level)
+// ?world=real (default): the Blender-built street with Street View facades from the local public/local/moss_real.glb,
+// falling back to the textured OSM street when that file is missing.
+let worldName = metricsOn ? "moss" : query.get("world") ?? "real";   // ?world=tiles for Google 3D (looks crumpled at street level)
 if (worldName === "tiles" && !TILES_KEY) {
   console.warn("[sim] no VITE_GOOGLE_MAPS_API_KEY (run sh sim/tiles_env.sh); using ?world=moss");
   worldName = "moss";
@@ -55,6 +58,7 @@ const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () =>
     walkers, cameras: [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
     detector: query.get("detector") === "tiles" ? "tiles" : "osm",   // OSM capture by default: YOLO recall on tile frames is far lower (PR #41)
   })
+  : worldName === "real" ? buildRealWorld({ actors: !metricsOn, walkers })
   : buildOsmWorld({ actors: !metricsOn, walkers });
 world.tune?.(capture);   // tone mapping, colour space and shadows; the screen renderer gets the same
 if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
