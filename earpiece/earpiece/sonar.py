@@ -70,15 +70,49 @@ class Track:
         return self.given_speed if self.given_speed is not None else self.est_speed
 
 
-@lru_cache(maxsize=2048)
-def _cue(kind: str, pitch_q: int, bearing_q: int, rate: int) -> np.ndarray:
-    """Rendered stereo beep, cached on (kind, quantised pitch, 5-degree bearing)."""
+# The canonical object kinds (events._kind) that have their own sonar cue.
+PREWARM_KINDS = ("person", "vehicle", "bike", "curb", "stairs_down", "obstacle")
+_WARM: dict[tuple[str, int, int, int], np.ndarray] = {}   # pre-rendered at startup, never evicted
+
+
+def _mono_cue(kind: str, pitch_q: int, rate: int) -> np.ndarray:
     mono = sounds.proximity_cue(kind, float(pitch_q))
     if rate != sounds.RATE:
         from scipy.signal import resample_poly
         g = math.gcd(rate, sounds.RATE)
         mono = resample_poly(mono, rate // g, sounds.RATE // g).astype(np.float32)
-    return spatial.render(mono, float(bearing_q), rate)
+    return mono
+
+
+def _cue(kind: str, pitch_q: int, bearing_q: int, rate: int) -> np.ndarray:
+    """Rendered stereo beep for (kind, quantised pitch, 5-degree bearing)."""
+    hit = _WARM.get((kind, pitch_q, bearing_q, rate))
+    return hit if hit is not None else _cue_render(kind, pitch_q, bearing_q, rate)
+
+
+@lru_cache(maxsize=2048)
+def _cue_render(kind: str, pitch_q: int, bearing_q: int, rate: int) -> np.ndarray:
+    return spatial.render(_mono_cue(kind, pitch_q, rate), float(bearing_q), rate)
+
+
+def critical_pitch_q(cfg: SonarCfg) -> int:
+    """The quantised pitch tick() uses at urgency 1 (every critical warning)."""
+    pitch = cfg.pitch_low_hz + (cfg.pitch_high_hz - cfg.pitch_low_hz) * 1.0
+    return int(round(pitch / 25.0) * 25)
+
+
+def prewarm(cfg: SonarCfg, rate: int, kinds: tuple[str, ...] = PREWARM_KINDS) -> int:
+    """Pre-render the critical cue of every kind at every 5-degree bearing, so the first
+    beep of a sudden danger never waits on synthesis or placement. One batched native
+    render per kind when kite_audio is built. Returns the number of cues rendered."""
+    pitch_q = critical_pitch_q(cfg)
+    n = 0
+    for kind in kinds:
+        rendered = spatial.render_many(_mono_cue(kind, pitch_q, rate), spatial.BEARINGS_5DEG, rate)
+        for bq, st in zip(spatial.BEARINGS_5DEG, rendered):
+            _WARM[(kind, pitch_q, bq, rate)] = st
+            n += 1
+    return n
 
 
 class Sonar:
