@@ -61,6 +61,23 @@ With no perception stream, the earpiece grabs one frame from the local camera on
 | "Forget the bench" / "rename the bench to the reading bench" / "undo" | Edits a saved memory; "undo" brings back the last one forgotten |
 | "Take me home" | Routes to the saved home |
 | "Stop" / "repeat" / "pause" / "louder" / "mute the beeps" | Handled locally, offline |
+| "Talk faster" / "slower" / "normal speed" | Speaking rate in steps of 0.1x between 0.7x and 1.5x (Sonic 3.6's `generation_config.speed`). The setting is kept in `.cache/voice_prefs.json`, and the backup voice follows it too |
+
+## The voice loop
+
+- **Barge-in.** The first stem press cuts non-safety speech at once, with a 40 ms fade and without waiting for the 0.3 s gesture window. It also drops queued replies to the old question and stops Claude's answer mid-stream. Warnings are never cut. A navigation line that was cut comes back afterwards if it is still fresh. In hands-free mode with headphones, saying "Kite" cuts speech the same way, because the wake word arrives from Ink as its own segment while you are still talking.
+- **Short commands end early.** At the first 0.3 s pause, Kite sends Ink a speculative `finalize`, and the stream stays open. If the words so far already form a complete command ("louder", "stop", "talk faster"), the utterance ends there without waiting for the full 0.7 s of silence.
+- **Moss is fetched while you talk.** Each Ink segment starts the memory recall, so the memories are ready when the question ends. A recall slower than 0.3 s is skipped rather than allowed to delay the answer.
+- **Measured latency.** The time from the end of speech to the first audio of the reply is broken down by stage in `state()["speech"]["voice_loop"]`: endpoint, STT, brain, TTS and total. `selftest` prints an estimate from its measured parts. `tests/test_voice_live.py` runs the real Ink and Sonic round trip on recorded speech:
+
+  | Run on Oct 24, null output | endpoint | STT | brain | TTS | total |
+  |---|---|---|---|---|---|
+  | "Louder, please." (early end) | 596 ms | 2 ms | 6 ms | 204 ms | **808 ms** |
+  | "What's around me?" (full silence) | 695 ms | 95 ms | 3 ms | 98 ms | **892 ms** |
+
+  The TTS number is for replies that are not cached. Cached replies such as "Louder." start in about 0 ms, and AirPods add 150 to 250 ms of Bluetooth latency on top.
+- **Street names.** `speech.PRONUNCIATIONS` respells the street names the voices get wrong, in the synthesised text only. For example, "Lyon Street" becomes "Lion Street" because San Francisco says LIE-un. Set `KITE_CARTESIA_PRONUNCIATION_DICT` to apply a Cartesia pronunciation dictionary as well.
+- **Outages.** A failed connection backs off. A background handshake, which costs no credits, notices when the network is back, so no sentence pays a connect timeout to find out. The handshake also keeps the socket warm: replies on a cold socket took about 300 ms, against about 100 ms on a warm one. The wearer hears "No internet. Using the backup voice." at most once a minute. They hear "Internet is back." only if they were told about the outage. An uncached warning gives Cartesia 1 s and then plays the backup voice, which has been rendering in parallel. `say` runs with stdin closed: when it inherits a pipe, it hangs for its full 15 s timeout.
 
 ## Safety rules in code
 
@@ -72,11 +89,11 @@ When `kite_audio` is built, the sonar's per-tick decisions run in Rust (`native/
 
 ## Credits and limits
 
-Characters sent to Cartesia are counted across runs in `earpiece/.cache/cartesia_usage.json`; past `KITE_CARTESIA_CHAR_BUDGET` (default 150,000) only urgent speech uses the neural voice. Phrase warm-up runs one request at a time (our plan allows two in flight).
+Characters sent to Cartesia are counted across runs in `earpiece/.cache/cartesia_usage.json`; past `KITE_CARTESIA_CHAR_BUDGET` (default 150,000) only urgent speech uses the neural voice. Phrase warm-up runs one request at a time (our plan allows two in flight). A `quota_exceeded` error switches to the backup voice for 5 minutes instead of retrying every line. After a rate change, only the fixed phrases (about 900 characters) are re-recorded; sonar labels recorded at the old rate keep playing instantly and are refreshed when they are next used. The live voice test costs about 56 TTS characters and 4 s of STT audio per run.
 
 ## Controls
 
-AirPods (or any Bluetooth headphones' play button): once = talk, twice = repeat, three times = pause guidance (safety warnings stay on). Keyboard fallback: Enter / `r` / `p`, plus `t <words>` to type a command.
+AirPods (or any Bluetooth headphones' play button): once = talk, twice = repeat, three times = pause guidance (safety warnings stay on). Any press first stops Kite talking (barge-in). Keyboard fallback: Enter / `r` / `p`, plus `t <words>` to type a command.
 
 ## Caregiver line (Grok Voice)
 
