@@ -11,6 +11,8 @@ import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
 import { clampToFence } from "./fence";
+import { SHOTS } from "./shots";
+import { startShot, shotCam } from "./shot";
 
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
@@ -20,6 +22,16 @@ import { clampToFence } from "./fence";
 // Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
 // ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
+// ?shot=<name>: film a shot for the demo video (shots.ts, shot.ts, scripts/record_shot.py). The shot's query
+// defaults (world, metrics settings) fill in whatever the URL leaves out; sockets stay offline, debug off.
+const shotName = query.get("shot");
+const shot = shotName === null ? null : SHOTS[shotName];
+if (shotName !== null && !shot) throw new Error(`unknown ?shot=${shotName}; one of ${Object.keys(SHOTS).join(", ")}`);
+if (shot) {
+  for (const [k, v] of Object.entries({ ...shot.query, relay: "", ear: "" })) if (!query.has(k)) query.set(k, v);
+  query.delete("debug");
+}
+const scriptedCorner = shot?.carAtZebra !== undefined;   // the shot drives the corner's car itself
 const metricsOn = query.get("metrics") === "1";
 // Capture frames get the Tello camera model in Python (sim/tello_cam.py, applied by sim/frames.py); ?cam=raw turns it
 // off. The flag rides on the pose messages. The screen view is never modelled.
@@ -60,12 +72,13 @@ const walkers = () => [walker];                                       // cars yi
 const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () => void; view?: (m: "screen" | "capture") => void } =
   worldName === "placeholder" ? buildWorld()
   : worldName === "tiles" ? buildTilesWorld({
-    walkers, cameras: [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
+    walkers, cameras: shot ? [shotCam] : [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
+    scriptedCorner, manualLevel: !!shot,
     detector: query.get("detector") === "tiles" ? "tiles" : "osm",   // OSM capture by default: YOLO recall on tile frames is far lower (PR #41)
   })
-  : worldName === "photo" ? buildPhotoWorld({ actors: !metricsOn, walkers })
-  : worldName === "real" ? buildRealWorld({ actors: !metricsOn, walkers })
-  : buildOsmWorld({ actors: !metricsOn, walkers });
+  : worldName === "photo" ? buildPhotoWorld({ actors: !metricsOn, walkers, scriptedCorner })
+  : worldName === "real" ? buildRealWorld({ actors: !metricsOn, walkers, scriptedCorner })
+  : buildOsmWorld({ actors: !metricsOn, walkers, scriptedCorner });
 world.tune?.(capture);   // tone mapping, colour space and shadows; the screen renderer gets the same
 if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
 const { scene } = world;
@@ -79,7 +92,8 @@ const body = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0x4a6fa5 }),
 );
 scene.add(body);
-const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }) : null;
+const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }, query) : null;
+if (shot) body.visible = false;   // the shot has its own walker model
 
 function forward() {
   const h = THREE.MathUtils.degToRad(walker.heading);
@@ -113,8 +127,7 @@ renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setScissorTest(true);
 view.appendChild(renderer.domElement);
 const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
-window.addEventListener("resize", resize);
-resize();
+if (!shot) { window.addEventListener("resize", resize); resize(); }
 
 function drawScreen() {
   const W = window.innerWidth, H = window.innerHeight;
@@ -253,8 +266,8 @@ function frame(now: number) {
   if (metrics) hud.textContent = metrics.hud(); else drawHud();
   requestAnimationFrame(frame);
 }
-placeCameras();
-requestAnimationFrame(frame);
+if (shot) startShot({ name: shotName!, shot, scene, renderer, world, worldName, walker, metrics, place: placeCameras });
+else { placeCameras(); requestAnimationFrame(frame); }
 
 // Tell anyone wiring this up which numbers the cameras use.
 console.info(`[sim] camera ${CAM_W}x${CAM_H}, vfov ${VFOV_DEG.toFixed(2)}°, eye ${EYE_HEIGHT} m`);

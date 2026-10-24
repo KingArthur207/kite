@@ -5,7 +5,9 @@
 
 Without --url it starts its own vite on --port (default 5287) and stops it afterward.
 First time only: `uv run --with playwright playwright install chromium`.
-Kite mode runs in real time (~50 s a walk) and needs the earpiece and the detector running.
+Kite mode runs in real time (~90 s a walk) and needs the relay, the detector and the earpiece running;
+--relay/--ear point the page at them, e.g. --relay ws://127.0.0.1:6121/pub --ear ws://127.0.0.1:6111.
+Chromium renders on the GPU (ANGLE Metal on macOS) unless --swiftshader.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 SIM = pathlib.Path(__file__).resolve().parent.parent / "sim"
@@ -39,6 +42,9 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--url", help="running sim, e.g. http://localhost:5173 (default: start vite)")
     ap.add_argument("--port", type=int, default=5287)
+    ap.add_argument("--relay", help="kite: relay /pub URL for the page (?relay=)")
+    ap.add_argument("--ear", help="kite: earpiece WebSocket URL for the page (?ear=)")
+    ap.add_argument("--swiftshader", action="store_true", help="software WebGL instead of the GPU")
     args = ap.parse_args()
 
     from playwright.sync_api import sync_playwright
@@ -53,11 +59,23 @@ def main() -> None:
         wait_http(url, 30)
         timeout_s = args.trials * 200 if args.mode == "kite" else 300
         with sync_playwright() as p:
-            browser = p.chromium.launch(args=["--use-angle=swiftshader", "--enable-unsafe-swiftshader"])
+            gl = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] if args.swiftshader or sys.platform != "darwin" \
+                else ["--use-angle=metal", "--ignore-gpu-blocklist"]
+            browser = p.chromium.launch(args=gl)
             page = browser.new_page()
             page.on("pageerror", lambda e: print(f"[page error] {e}", file=sys.stderr))
-            page.goto(f"{url}/?metrics=1&mode={args.mode}&trials={args.trials}&seed={args.seed}")
-            page.wait_for_function("window.kiteMetrics && window.kiteMetrics.done", timeout=timeout_s * 1000)
+            q = {"metrics": 1, "mode": args.mode, "trials": args.trials, "seed": args.seed,
+                 **{k: v for k, v in (("relay", args.relay), ("ear", args.ear)) if v}}
+            page.goto(f"{url}/?{urllib.parse.urlencode(q)}")
+            end, seen = time.time() + timeout_s, -1
+            while not page.evaluate("!!(window.kiteMetrics && window.kiteMetrics.done)"):
+                if time.time() > end:
+                    raise SystemExit("timed out")
+                n = page.evaluate("window.kiteMetrics ? window.kiteMetrics.results.length : 0")
+                if n != seen:
+                    seen = n
+                    print(f"[sim_metrics] {n}/{args.trials} walks", file=sys.stderr, flush=True)
+                page.wait_for_timeout(2000)
             print(json.dumps(page.evaluate("window.kiteMetrics")))
             browser.close()
     finally:

@@ -84,7 +84,9 @@ function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
 /** actors: false leaves the street empty (metrics mode). walkers: people the cars must yield to.
  *  skipWalls: building walls left out (`${id}:${edge}`), the photo world draws them.
  *  osmMeshes is the drawn street (ground, roads, buildings); the tiles world shows it to the capture cameras only. */
-export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: number; n: number }[]; skipWalls?: Set<string> } = {}) {
+export function buildOsmWorld(opts: {
+  actors?: boolean; walkers?: () => { x: number; n: number }[]; skipWalls?: Set<string>; scriptedCorner?: boolean;
+} = {}) {
   const scene = new THREE.Scene();
   // Sun shadows cover the demo walk and the corner; the sky HDRI lights everything else.
   addSkyAndSun(scene, { x: 15, n: -25 }, 160);
@@ -120,6 +122,6 @@ export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: num
     place: "Moss St at Howard St",
     tune: tuneRenderer,
   };
-  const actors = opts.actors === false ? null : spawnMossActors(scene, opts.walkers ?? (() => []));
+  const actors = opts.actors === false ? null : spawnMossActors(scene, opts.walkers ?? (() => []), { scriptedCorner: opts.scriptedCorner });
   return { scene, osmMeshes: visible, update: (dt: number) => actors?.update(dt), solids: () => actors?.solids() ?? [], ...extras };
 }

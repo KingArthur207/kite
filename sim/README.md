@@ -140,6 +140,32 @@ scripts/demo.sh streetview          # earpiece, relay, bridge, sim, dashboard, d
 
 Measured on Oct 24, walking the whole route in headless Chromium (10 panoramas, from the spawn to Howard's south side): the page loaded the Maps JavaScript API once and created one panorama, and made 14 `StreetViewService` lookups. The bridge made 10 metadata requests and 30 Static images (2 per view, 15 views counting the turns). Screenshots without imagery: `docs/streetview_walk_black_start.jpg` and `docs/streetview_walk_black_corner.jpg` (black screen and HUD).
 
+## Shots for the demo video (`?shot=`)
+
+The sim also films the recreation of Moss St that runs next to the real Tello footage in the video. `?shot=<name>` hides the HUD and debug drawing, opens no sockets, and stops the clock: nothing moves until `window.kiteShot.frame(dt)` steps it. A scripted walker in the casual model, with a white cane, walks the demo route, and a Tello-sized quadcopter built from primitives flies 1 m behind and 0.3 m above the head. Camera moves are Catmull-Rom keyframes for position and look-at, timed by a monotone cubic that eases in and out (`src/shots.ts`). `src/shot.ts` runs them and draws labels and pulse rings onto a 1920x1080 canvas.
+
+| Shot | World | Length | What it shows |
+|---|---|---|---|
+| `establishing` | tiles | 15 s | Starts 175 m over the Moss block looking down, with the route drawn in, then descends to 15 m behind the walker on Moss. Past the geofence there is no city, only the gray ground plane, so the camera frames along Moss. |
+| `follow` | tiles | 62 s | The drone's own view (Tello vertical FOV) from the spawn up Moss, stopping at the zebra curb. |
+| `corner` | tiles | 24 s | The walker stops short of the zebra while a car turns in from Howard without yielding, waits, then crosses. The camera orbits slowly over Howard. Labels read "Car turning in" and "Kite: Stop." |
+| `explainer` | moss | 40 s | Top-down view of one metrics walk (blind mode, seed 1, 2.4x speed), with the obstacles labelled, a red ring on each collision and the running count. |
+
+`?world=` overrides the default (`tiles`, `moss`, `real`, and `photo` once it exists). In the corner shot the car is scripted, so the street's own cars in Howard's left lane and on the turn into Moss are left out, and so is the pedestrian who walks the demo route.
+
+Record from the repo root (starts vite on port 6999; `--url` reuses a running sim):
+
+```
+uv run --no-project --with playwright python scripts/record_shot.py corner
+uv run --no-project --with playwright python scripts/record_shot.py follow --world moss
+uv run --no-project --with playwright python scripts/record_shot.py all
+uv run --no-project --with playwright python scripts/record_shot.py corner --preview 0,10.4,23   # PNG stills only
+```
+
+It steps headless Chromium (Metal) at a fixed 1/60 s, waits for the tiles to finish loading before each frame, writes PNGs to a temp dir, encodes H.264 at crf 18 with ffmpeg and deletes the frames. Output goes to `out/shots/<shot>-<world>.mp4` plus a 640 px still, both gitignored. The same shot gives the same motion on every run. On the tiles world the tiles are levelled once before the first frame and never again, so the ground can't jump mid-shot. The script fails if the camera leaves the geofence or a tile request falls outside it.
+
+MP4s and stills of the tiles world show Google Photorealistic 3D Tiles. They are for the demo video only: never commit or publish them on their own, and keep the Google attribution that is drawn into every frame. The video credits also need the CC-BY line from `public/models/CREDITS.md` (the bus and the Range Rover are in some shots).
+
 ## Run
 
 ```
@@ -169,7 +195,7 @@ The HUD counts collisions with buildings, cars, pedestrians and the bin.
 `?metrics=1&mode=blind|kite|oracle&trials=20&seed=1` runs an autopilot with no keyboard input, always in the Moss world. A walker at 1.2 m/s follows the demo `route`: up Moss's NE sidewalk, left across the zebra, then along Howard's south sidewalk. On the way it meets a pedestrian crossing Moss into a doorway, a bin, a head-height sign, a car turning in from Howard's left lane through the zebra without yielding, and a pedestrian stepping out of a doorway on Howard. Their timing is seeded, so each trial is different and every run with the same seed is identical. The street's own traffic and people are not spawned in this mode. Building faces and curbs still block the walker, and touching one counts as a collision.
 
 - `blind`: the walker never reacts. Runs time-accelerated (`speed`, default 300).
-- `kite`: the walker reacts only to the earpiece on `ws://127.0.0.1:5011`. It stops 0.7 s after a `spoken` event with priority `critical` or `hazard`, a `state` with a critical sonar track, or a hazard in `dont_walk`/`wait`/`red`/`stop`. It walks on after 1.5 s with no cue and never detours. Runs in real time, since the pipeline is real time.
+- `kite`: the walker reacts only to the earpiece on `ws://127.0.0.1:5011` (or `?ear=`). It stops 0.7 s after a `spoken` event with priority `critical` or `hazard`, a `state` with a critical sonar track, or a hazard in `dont_walk`/`wait`/`red`/`stop`. Status lines that share the hazard priority ("Obstacle detection paused.", "... is back.", "Path is clear. You can continue.") don't count; the earpiece tags them by `key` in each `spoken` event. It walks on after 1.5 s with no cue and never detours. Runs in real time, since the pipeline is real time. Each walk's result lists `stops_at_m`, the route metres where a cue stopped it.
 - `oracle`: an upper bound that reacts to the true obstacles in a 5 m corridor ahead, looking up to 3 s into the future. It is not Kite and must never be presented as Kite.
 
 In every mode, a walker that stays blocked for 1 s or waits 8 s feels around the obstacle with a sidestep, the way a cane user would: 1 m toward the buildings on Moss's narrow sidewalk, 1.5 m elsewhere. A sidestep that runs into a wall or curb stops there. Each obstacle counts as one collision per walk at most; walls count every new contact. Results show in the HUD and in `window.kiteMetrics`, get logged as one `KITE_METRICS {...}` console line, and can be downloaded as JSON. Blind and oracle open no sockets, so they never feed a shared earpiece or relay.
@@ -182,9 +208,47 @@ uv run --with playwright python scripts/sim_metrics.py --mode blind
 uv run --with playwright python scripts/sim_metrics.py --mode oracle
 ```
 
-Kite mode: start the relay, the detector on sim frames and the earpiece, then open `?metrics=1&mode=kite` or run `--mode kite`. That takes about 90 s a walk. Run it on a machine where nothing else is sending to the earpiece.
+Kite mode: start the relay, the detector on sim frames and the earpiece, then run `--mode kite` (or open `?metrics=1&mode=kite`). It takes about 90 s a walk, so 20 walks is half an hour. Use ports nobody else is on; the earpiece runs headless and without a Cartesia key, so it never uses the team's two concurrent Cartesia requests:
 
-Results on Moss, seed 1, 20 walks: blind 61 collisions (3.05 a walk, every walk hit the bin, the sign and the car; one also hit the second pedestrian), oracle 0 collisions and 40 near misses (the bin and sign on the 1 m sidestep). Kite mode has not been run on Moss yet.
+```
+python sim/relay.py --port 6121
+cd earpiece && env -u CARTESIA_API_KEY .venv/bin/python -m earpiece run --null --no-stem --no-judgment --udp-port 6110 --ws-port 6111
+uv run --no-project --with ultralytics --with opencv-python-headless --with lap --with websockets --with python-dotenv \
+  --with numpy --with scipy python sim/standin_detect.py --relay ws://127.0.0.1:6121/sub --ear-port 6110
+uv run --with playwright python scripts/sim_metrics.py --mode kite --port 6099 \
+  --relay ws://127.0.0.1:6121/pub --ear ws://127.0.0.1:6111
+```
+
+`sim_metrics.py` renders on the GPU (ANGLE Metal in headless Chromium on macOS; `--swiftshader` for software) and prints progress after each walk.
+
+### Results on Moss (seed 1, 20 walks, textured OSM world)
+
+Measured on Oct 24 on an M5 MacBook. Kite is the full pipeline: sim frames, relay, the YOLO11n stand-in detector on `mps`, the earpiece (`--null --no-stem --no-judgment`, no Cartesia key), and a walker that reacts only to what the earpiece says or does. The detector ran at a median 8.0 frames/s per camera (10th percentile 4.5). That is the sim's frame rate (8 per camera), so the detector kept up, while other detectors on the same GPU pushed YOLO to 40 to 80 ms a frame.
+
+| | blind | Kite | Kite + `--depth` | oracle (not Kite) |
+|---|---|---|---|---|
+| collisions per walk | 3.05 | 3.05 | 3.00, not comparable | 0 |
+| walks with any collision | 20/20 | 20/20 | 20/20 | 0/20 |
+| near misses (under 0.5 m) | 13 | 13 | 0 | 40 |
+| walks completed | 20/20 | 20/20 | 0/20 (150 s cap) | 20/20 |
+| mean time | 87.0 s | 87.6 s | 150 s | 128.6 s |
+| pedestrian crossing Moss (hit / near) | 0 / 2 | 0 / 2 | 0 / 0 | 0 / 0 |
+| bin (hits) | 20 | 20 | 20 | 0 (20 near) |
+| head-height sign (hits) | 20 | 20 | 20 | 0 (20 near) |
+| car turning in from Howard (hits) | 20 | 20 | not reached | 0 |
+| pedestrian on Howard (hit / near) | 1 / 11 | 1 / 11 | not reached | 0 / 0 |
+
+With the stand-in detector, Kite did not reduce collisions in this scenario. Why it missed each one:
+
+- Bin and head-height sign: COCO, and so YOLO, has no class for either, and the detector never reported them. Nothing in the earpiece warned about them.
+- Car turning in: the corner building hides it on Howard while the walker comes up Moss. The walker then turns left onto the zebra, and the car comes in from behind and to the right, outside the 51° field of view of both cameras until contact. The drone raised no `vehicle` hazard in any walk.
+- Pedestrians: Kite stopped the walker for the one crossing Moss in 4 of the 20 walks (cue stops 15 to 20 m along the route), but the blind walker misses that pedestrian anyway because of the timing, so the count can't improve. The Howard pedestrian steps out of a doorway 1.6 m to the walker's left and was hit once in both modes.
+
+Kite + `--depth` adds the Depth Anything fallback from `live_walk.py`. It did see the bin, at about 1.7 m, and stopped the walker in front of it ("Stop. Obstacle ahead." 122 times in 20 walks). Two things broke it. As the walker closed in, the reported distance stayed at about 1.7 m and then the bin dropped out of the chest camera's view (pitch 0, so nothing under about 0.8 m is visible within 1.2 m). The cue went quiet, the walker walked on after 1.5 s and hit it. Then, at the Moss and Howard corner, depth reported something 1.2 to 1.4 m dead ahead on every frame, the walker stopped and sidestepped into the corner walls, and no walk got past the zebra within the 150 s cap. So the depth run never met the car or the Howard pedestrian, and its 3.00 is not comparable with the others.
+
+An earlier Kite run, before status lines were ignored, gave 2.95. Two cars were missed there only because "Obstacle detection paused." stopped the walker when the GPU starved the detector (down to 2 to 3 frames/s). That is timing luck, not detection, and is not a Kite result.
+
+To make Kite count here, the detector needs classes for bins and overhanging signs, a stop that holds once something static is close and then out of view, and coverage to the side for the turning car. The oracle row is what perfect warnings with this walker would give.
 
 ## Cars and people
 
