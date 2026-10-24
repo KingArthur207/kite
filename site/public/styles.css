@@ -367,3 +367,31 @@ h1 em { color: var(--indigo); font-weight: 400; }
 .doodle[data-d="airpods"] { width: 96px; left: -96px; top: 120px; transform: rotate(-8deg); }
 .doodle[data-d="signal"] { width: 92px; right: -100px; top: 110px; transform: rotate(5deg); }
 .doodle[data-d="tello"] { width: 110px; right: -118px; top: 70px; transform: rotate(10deg); }
+
+/* ------------------------------------------------------------ human type: no caps-lock eyebrows */
+.label { font: 600 21px/1.1 var(--hand); color: var(--verm); letter-spacing: 0; text-transform: none; margin: 2px 0 8px; display: inline-block; transform: rotate(-1.5deg); }
+.player .label { font-size: 20px; }
+.for { font: 600 17px/1.4 var(--sans); letter-spacing: 0; text-transform: none; color: var(--indigo); margin: 20px 0 10px; }
+.compare dt { font: 600 15px var(--sans); letter-spacing: 0; color: var(--indigo); }
+.group-title { font: 600 30px/1 var(--hand); letter-spacing: 0; color: var(--verm); transform: rotate(-1.5deg); }
+.sticker { display: inline-block; margin: 0 0 14px; padding: 5px 12px 6px; font: 600 14px/1.25 var(--sans); color: var(--ink); background: var(--sky); border: 1.5px solid var(--ink); border-radius: 6px; transform: rotate(-2deg); box-shadow: 2px 2px 0 var(--ink); }
+.track:nth-child(even) .sticker { background: #DCE2F7; transform: rotate(1.5deg); }
+mark { background: none; color: inherit; padding: 0 2px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40' preserveAspectRatio='none'%3E%3Cpath d='M3 12 C 40 7, 120 10, 197 8 L 195 34 C 130 37, 60 33, 5 36 Z' fill='%23FFCDE3'/%3E%3C/svg%3E");
+  background-size: 100% 62%; background-position: 0 85%; background-repeat: no-repeat; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.crit { margin-top: 16px; }
+.crit-h { margin: 0 0 6px; font: 600 19px var(--hand); color: var(--indigo); }
+.crit ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.crit li { position: relative; padding-left: 26px; font-size: 14px; line-height: 1.35; color: var(--ink); }
+.crit li::before { content: ""; position: absolute; left: 0; top: 1px; width: 17px; height: 17px; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--paper-2); }
+.crit li::after { content: ""; position: absolute; left: 3px; top: -3px; width: 18px; height: 16px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 18 16'%3E%3Cpath d='M2 9 C 4 10, 6 12, 7 14 C 9 9, 12 5, 17 1' fill='none' stroke='%23E2448F' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat; }
+.track dt { font: 600 16px var(--sans); color: var(--ink); display: inline;
+  background-image: linear-gradient(transparent 62%, #FFE1EE 62%); }
+.track dl > div { padding-bottom: 12px; border-bottom: 1.5px dashed rgba(29, 43, 107, 0.18); }
+.track dl > div:last-child { border-bottom: 0; padding-bottom: 0; }
+.track dd { margin-top: 6px; }
+.toc a { font: 600 14px var(--sans); }
+.badge { text-decoration: none; color: var(--ink); font: 600 13.5px var(--sans); letter-spacing: 0; padding: 7px 12px; gap: 7px; }
+.badge::before { display: none; }
+.badge:hover { background: var(--ink); color: var(--paper); }
