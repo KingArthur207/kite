@@ -15,9 +15,19 @@ npm install
 npm run dev        # connects to Maincloud by default
 ```
 
-![Dashboard](docs/screenshot.png)
+![Dashboard](docs/reveal-normal.png)
 
-The map (Leaflet, OpenStreetMap tiles darkened in CSS) follows the walker from the newest `position` event that has `lat`/`lng`, and draws the recent trail. Active hazards are placed from their walker-frame `bearing` and `distance` plus the walker's compass `heading`, coloured by priority. The latest `beacon` shows as a green marker with a dashed line. Dragging the map stops auto-follow; the button turns it back on. On the right: walker, hazards, last spoken line, devices (green under 5 s since their last write, amber under 15 s, red after) and the live feed.
+The map (Leaflet, OpenStreetMap tiles darkened in CSS) follows the walker from the newest `position` event that has `lat`/`lng`, and draws the recent trail. Active hazards are placed from their walker-frame `bearing` and `distance` plus the walker's compass `heading`, coloured by priority. The latest `beacon` shows as a green marker with a dashed line. Dragging the map stops auto-follow; the button turns it back on. On the right: the last spoken line with who said it, the walker, active hazards, shared live state (each source is green under 5 s since its last write, amber under 15 s, red after), the caregiver message box and the live feed.
+
+Under the map, the walk timeline lists the last walk's key moments in order: stops (spoken "Stop." lines and critical hazards), hazards, Claude's judgments, answers and scene text, caregiver messages and route guidance. A walk is everything after the last 45 s gap in the event table. Each card has a badge for who acted: Kite (deterministic code, no AI), Claude, or Caregiver. Click a card to fly the map to where the walker was at that moment; stops stay marked on the map. Times come from the producer's own `t` when it is an epoch time, so a burst delivered late by a busy bridge still spreads out correctly.
+
+"Shared live state" counts sources that wrote in the last 15 s and events in the last minute, with a sparkline per source, all from the `event` and `latest` tables. The event table keeps only the newest 500 rows, so when every row falls inside the last minute the rate shows as a lower bound (≥).
+
+Press `P` (or the Present button) for presentation mode at the reveal. It hides the raw feed, the message box, the walker panel and the Clear button, and makes the map, timeline and last spoken line bigger. `#present` in the URL opens it that way.
+
+![Presentation mode](docs/reveal-presentation.png)
+
+The timeline logic has a self-check: `node --experimental-strip-types src/timeline.check.ts` (Node 22+).
 
 To see it move without hardware, from the repo root:
 
