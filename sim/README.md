@@ -25,6 +25,19 @@ Start them in any order. The page reconnects to the relay and the earpiece every
 
 The HUD counts collisions with buildings, cars, pedestrians and the bin.
 
+## Cars and people
+
+`src/actors.ts` loads glTF models from `public/models/` (credits and licenses in `public/models/CREDITS.md`) and scales them to real size: cars are 4.3 to 5.3 m long, the bus 12 m, and people 1.65 to 1.82 m tall. Three cars and the bus loop the main road at 8 to 11 m/s. Two cars loop the cross street at 7 m/s and wait at a stop line while someone is on the crosswalk or main-road traffic is within 18 m. Faster cars hold back behind slower ones in the same lane. Five people walk a loop on the sidewalk at 1.25 to 1.5 m/s with their walk animation, crossing the cross street on the crosswalk both ways. One more stands near the corner. Collision boxes come from each car model's bounds; people get a 0.5 m box.
+
+YOLO detects them. `python sim/yolo_check.py` (usage at the top of the file) drives the sim in headless Chromium with a frozen clock, mocks the relay and earpiece sockets, and scores YOLO against the actors' projected boxes. On 168 frames (83 drone, 85 chest), counting instances at least 30 px tall:
+
+| Model | Drone car | Drone person | Chest car | Chest person |
+|---|---|---|---|---|
+| yolo11n | 91% | 99% | 85% | 96% |
+| yolo26n | 90% | 99% | 93% | 97% |
+
+The ground truth ignores buildings, so a car hidden behind one counts as a miss and these numbers are a floor. The pickup crossing at a distance is the weakest model (about 70%). Examples: `docs/yolo_drone.jpg`, `docs/yolo_chest.jpg`, `docs/yolo_drone_road.jpg` (thick boxes are detections, thin white boxes are found ground truth, thin red ones are misses).
+
 ## What the sim sends
 
 To the earpiece (`ws://127.0.0.1:5011`):
@@ -54,8 +67,7 @@ Needs `websockets`, `numpy` and `opencv-python`.
 
 ## Placeholder parts that get replaced
 
-- `src/world.ts` is the whole world: boxes for buildings and cars, capsules for people. The Gaussian splat replaces it and keeps the same exports (`scene`, `update`, `solids`).
-- Cars and people become realistic glTF models so YOLO detects them in the camera frames. Their collision boxes stay.
+- `src/world.ts` is the static world: boxes for buildings, the bin and flat ground. The Gaussian splat replaces it and keeps the same exports (`scene`, `update`, `solids`). The glTF cars and people from `src/actors.ts` stay, composited into the splat.
 - The splat has no collision, so walls and curbs will come from a hand-placed layer lined up with the splat.
 - `ORIGIN` in `src/config.ts` (37.8013, -122.4477) maps to sim (0, 0). It gets re-anchored to splat landmarks so Karthik's route and the dashboard line up with the sim.
 - `FX` in `src/config.ts` starts at 1000. Arthur's Tello calibration replaces it.
