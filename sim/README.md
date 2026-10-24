@@ -4,12 +4,49 @@ A browser street corner with an arrow-key walker and two virtual cameras. A dron
 
 ## World
 
-The default world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: extruded building footprints, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track. Building faces and curbs block the walker, and each marked crossing has a gap in the curb. `?world=placeholder` loads the old box world.
+The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: extruded building footprints, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track. Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead (`?world=tiles`, the default when a key is set; see below). `?world=moss` forces the OSM boxes, and `?world=placeholder` loads the old box world.
 
 - `scripts/osm_corner.py` fetches OSM and writes `public/osm/moss.json` in metres (x east, y north), with the origin at the Moss zebra, OSM node 12144593726. Run it again to refresh. `python scripts/osm_corner.py raw.json` reuses a saved Overpass response.
 - `moss.json` also has `lanes`: car lane polylines in travel order with `speed_mps`. Moss flows SE (Howard to Folsom) and Howard flows SW. `src/osmWorld.ts` exports them as `lanes`, and the traffic drives on them (see Cars and people).
 - The demo walk is `route` in `moss.json`, and the same points as lat/lng are in `public/osm/route.json`. It starts on the NE sidewalk of Moss 70 m before the zebra, facing NW, turns left across the zebra, and ends 20 m SW along Howard's south sidewalk, 98 m in all. The sim draws it faintly on screen but never in the camera frames.
 - The numbers are under `measurements` in `moss.json`. OSM has no width tag for Moss, so the 6.1 m roadway is an assumption. Tape-measure it on site.
+
+### Google 3D tiles (`?world=tiles`)
+
+`src/tilesWorld.ts` loads Google Photorealistic 3D Tiles with the `3d-tiles-renderer` package. Collisions, lanes, the route, the spawn and the traffic still come from `moss.json`; only the OSM meshes are hidden.
+
+Key: the sim reads `VITE_GOOGLE_MAPS_API_KEY` from `sim/.env.local`, which is gitignored. Write it from the repo-root `.env` (`GOOGLE_MAPS_API_KEY=...`, with the Map Tiles API enabled):
+
+```
+sh sim/tiles_env.sh                       # or: sh sim/tiles_env.sh /path/to/.env
+```
+
+The script never prints the key. Without a key the sim falls back to `?world=moss` and logs a warning. Vite bakes the key into `npm run build` output (`dist/`, gitignored), so don't publish a build made with an unrestricted key.
+
+Placement: the tiles are reoriented to east-north-up at the Moss zebra (`ORIGIN`) and turned so x is east and -z is north, like the rest of the sim. Moss drops about 2 m from Howard to the spawn, so the sim fits a plane to the tile road under the lanes within 12 m of the route (lowest hit, so trees and photogrammetry cars don't count) and tilts the tiles 1.6° to make that plane y = 0. It refits every 2 s for the first 90 s as finer tiles arrive. The road then sits within 0.2 to 0.3 m of y = 0 (90th percentile). Horizontally, OSM building footprints overlap tile geometry taller than 4 m with an IoU of 0.84; the best shift in a 1 m grid search (0.5 m west, 1 m north) only raises that to 0.85, so the two agree to about 1 m. `?debug=1` draws the OSM curbs (white) and building outlines (orange) over everything on screen, and T toggles a north-up view from 150 m (`docs/tiles_debug_topdown.jpg`).
+
+Both camera views and the hidden 960x720 capture renderer show the tiles, and the drone and chest cameras are both registered with the tiles renderer, so frames to the relay have them (`docs/tiles_drone_moss.jpg`, `docs/tiles_chest_zebra.jpg`; the screen with attribution is `docs/tiles_screen_howard.jpg`). Actors stand on y = 0 with a blob shadow.
+
+Limits:
+- Up close at street level the photogrammetry looks melted. Street trees and parked cars are solid blobs, sometimes down to the ground, and the walker can walk into them because the colliders come from OSM. The sim cuts away tile geometry more than 0.3 m above the ground within 3 m of the rendering camera, and a gray plane 0.4 m down shows through where a tree had no ground under it. The end of the route on Howard's south sidewalk is under a tree, and the view there is poor.
+- The photogrammetry has its own parked cars and the odd person baked in. YOLO sometimes detects them.
+
+Attribution: the Google Maps logo and the visible tiles' data credits sit at the bottom left of the screen, with a note that the city is Google's and the cars and people are the sim's (Maps Platform policy for 3D Tiles). The logo is Google's outlined asset in `public/google/`. Tiles are cached only by the browser and the renderer's in-memory LRU.
+
+Policy caution: Google's Map Tiles policy prohibits non-visualization uses of tile content, and lists object detection as one. The detector here runs on frames that contain tile imagery, even though what it is scored on is the sim's own cars and people. Check the Maps Platform terms before using `?world=tiles` frames for perception; `?world=moss` avoids the question.
+
+Cost, measured on this Mac: a 100 s walk along the route makes one `root.json` request (one session) and 640 to 670 tile requests. Loading the debug top view adds about 500. Each page load starts a new session.
+
+Speed: 60 fps (the vsync cap) in headless Chromium with Metal on an M-series Mac, with the capture renderer sending both cameras at 8 fps each.
+
+YOLO (yolo11n, `python sim/yolo_check.py --url 'http://localhost:5499/?world=tiles'`, same walk as below). In the tiles world the ground truth also drops actors whose middle and top are both behind tile geometry from that camera, which the check now reports. On about 650 frames, with OSM Moss from the same session for comparison:
+
+| World | Drone car | Drone person | Chest car | Chest person | Car 10 to 20 m | Person 10 to 20 m |
+|---|---|---|---|---|---|---|
+| OSM Moss | 61% | 32% | 63% | 38% | 98% | 89% |
+| 3D tiles | 55% | 35% | 54% | 26% | 64% | 55% |
+
+The tiles world hid 257 car and 502 person instances behind tile geometry. Those are left out of the tiles row. Without that filter the tiles numbers were 25% and 7% for drone car and person. Partial occlusion by trees and photogrammetry cars, and busier backgrounds, explain most of the remaining drop.
 
 ## Run
 
@@ -198,6 +235,7 @@ $RUN python sim/standin_detect.py --source clips/approach.mp4 --camera chest --s
 
 ## Files and placeholders
 
+- `src/tilesWorld.ts` is the Google 3D tiles world over the Moss colliders and traffic. `?relay=` and `?ear=` override the relay and earpiece URLs (empty means offline).
 - `src/world.ts` is the placeholder box world, with its glTF traffic from `src/actors.ts`. `src/osmWorld.ts` is Moss St, with its traffic from `src/mossActors.ts`. Both export `scene`, `update` and `solids`. The Moss world also exports `spawn`, `walls`, `overlay` and `place` (see `WorldExtras`).
 - `ORIGIN` in `src/config.ts` is the Moss zebra (37.778352, -122.408768) and maps to sim (0, 0), so the route and the dashboard use the same points.
 - `FX` in `src/config.ts` starts at 1000. Arthur's Tello calibration replaces it.
