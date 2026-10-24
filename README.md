@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="site/public/assets/logo.svg" alt="Kite logo: a diamond kite whose tail is a sound wave" width="112">
+  <img src="site/public/assets/logo.svg" alt="Kite logo: a kite flying on the wind, its line running down to the walker" width="132">
 </p>
 
 <h1 align="center">Kite</h1>
@@ -83,13 +83,14 @@ The [Anatomy](#-anatomy) table below lists every integration.
 Kite has three layers. **Eyes** turn camera frames into events. The **earpiece** on the wearable laptop decides what to say and when. **Ears and watchers** get the result: the walker through AirPods, the caregiver through a live dashboard.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#FAF6EC','primaryTextColor':'#1D2B6B','primaryBorderColor':'#1D2B6B','lineColor':'#1D2B6B','secondaryColor':'#FFD6EA','tertiaryColor':'#F4EFE3','clusterBkg':'#FBF8F1','clusterBorder':'#1D2B6B','edgeLabelBackground':'#FFD6EA','actorBkg':'#FAF6EC','actorBorder':'#1D2B6B','actorTextColor':'#1D2B6B','signalColor':'#1D2B6B','signalTextColor':'#1D2B6B','noteBkgColor':'#FFD6EA','noteBorderColor':'#FF4FA3','noteTextColor':'#1D2B6B','labelBoxBkgColor':'#FFD6EA','labelBoxBorderColor':'#FF4FA3','sequenceNumberColor':'#FFFFFF','activationBkgColor':'#FFD6EA'}}}%%
 flowchart LR
-  classDef eye fill:#E8F1FB,stroke:#3A6EA5,color:#16324F
-  classDef safe fill:#FDECEA,stroke:#C0392B,color:#5B1A12
-  classDef ai fill:#F3EBFA,stroke:#7D4CB0,color:#3A1F56
-  classDef voice fill:#FFF4E0,stroke:#D68910,color:#5A3A06
-  classDef out fill:#E9F7EF,stroke:#1E8449,color:#0E3B20
-  classDef ext fill:#F4F4F2,stroke:#8A8A85,color:#333,stroke-dasharray:4 3
+  classDef eye fill:#E6E9F5,stroke:#1D2B6B,color:#1D2B6B
+  classDef safe fill:#FFD6EA,stroke:#FF4FA3,color:#1D2B6B,stroke-width:2px
+  classDef ai fill:#F4EFE3,stroke:#1D2B6B,color:#1D2B6B
+  classDef voice fill:#FFF0F7,stroke:#D62F82,color:#1D2B6B
+  classDef out fill:#1D2B6B,stroke:#1D2B6B,color:#FFFFFF
+  classDef ext fill:#FAF6EC,stroke:#7D84A6,color:#1D2B6B,stroke-dasharray:4 3
 
   subgraph EYES["1 · Eyes"]
     direction TB
@@ -151,6 +152,7 @@ flowchart LR
 **What happens when someone steps in front of you.** The beep and the "Stop." come from local code in well under a tenth of a second. Claude may add one sentence afterwards, but nothing waits for it.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#FAF6EC','primaryTextColor':'#1D2B6B','primaryBorderColor':'#1D2B6B','lineColor':'#1D2B6B','secondaryColor':'#FFD6EA','tertiaryColor':'#F4EFE3','clusterBkg':'#FBF8F1','clusterBorder':'#1D2B6B','edgeLabelBackground':'#FFD6EA','actorBkg':'#FAF6EC','actorBorder':'#1D2B6B','actorTextColor':'#1D2B6B','signalColor':'#1D2B6B','signalTextColor':'#1D2B6B','noteBkgColor':'#FFD6EA','noteBorderColor':'#FF4FA3','noteTextColor':'#1D2B6B','labelBoxBkgColor':'#FFD6EA','labelBoxBorderColor':'#FF4FA3','sequenceNumberColor':'#FFFFFF','activationBkgColor':'#FFD6EA'}}}%%
 sequenceDiagram
   autonumber
   participant Cam as 📷 Body camera
@@ -181,6 +183,7 @@ sequenceDiagram
 **Stop and wait, like a guide dog.** Kite never steers you around an obstacle on its own. It stops, waits, and only deterministic code can let you go again.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#FAF6EC','primaryTextColor':'#1D2B6B','primaryBorderColor':'#1D2B6B','lineColor':'#1D2B6B','secondaryColor':'#FFD6EA','tertiaryColor':'#F4EFE3','clusterBkg':'#FBF8F1','clusterBorder':'#1D2B6B','edgeLabelBackground':'#FFD6EA','actorBkg':'#FAF6EC','actorBorder':'#1D2B6B','actorTextColor':'#1D2B6B','signalColor':'#1D2B6B','signalTextColor':'#1D2B6B','noteBkgColor':'#FFD6EA','noteBorderColor':'#FF4FA3','noteTextColor':'#1D2B6B','labelBoxBkgColor':'#FFD6EA','labelBoxBorderColor':'#FF4FA3','sequenceNumberColor':'#FFFFFF','activationBkgColor':'#FFD6EA'}}}%%
 stateDiagram-v2
   direction LR
   [*] --> Walking
@@ -200,15 +203,16 @@ stateDiagram-v2
 **Who gets heard first.** Every sound has a priority. A higher one cuts in and ducks the rest, and anything that goes stale before it plays is dropped instead of said late.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#FAF6EC','primaryTextColor':'#1D2B6B','primaryBorderColor':'#1D2B6B','lineColor':'#1D2B6B','secondaryColor':'#FFD6EA','tertiaryColor':'#F4EFE3','clusterBkg':'#FBF8F1','clusterBorder':'#1D2B6B','edgeLabelBackground':'#FFD6EA','actorBkg':'#FAF6EC','actorBorder':'#1D2B6B','actorTextColor':'#1D2B6B','signalColor':'#1D2B6B','signalTextColor':'#1D2B6B','noteBkgColor':'#FFD6EA','noteBorderColor':'#FF4FA3','noteTextColor':'#1D2B6B','labelBoxBkgColor':'#FFD6EA','labelBoxBorderColor':'#FF4FA3','sequenceNumberColor':'#FFFFFF','activationBkgColor':'#FFD6EA'}}}%%
 flowchart LR
-  classDef p fill:#FFFFFF,stroke:#555,color:#222
-  c["🔴 critical<br/>Stop."]:::p --> h["🟠 hazard<br/>Car, 2 o'clock."]:::p --> n["🔵 nav<br/>Turn left in 20 m."]:::p --> a["🟣 answer<br/>Claude's reply"]:::p --> i["🟢 info<br/>caregiver, memories"]:::p --> s["⚪ system<br/>battery, status"]:::p
-  style c fill:#FDECEA,stroke:#C0392B
-  style h fill:#FEF3E2,stroke:#D68910
-  style n fill:#E8F1FB,stroke:#3A6EA5
-  style a fill:#F3EBFA,stroke:#7D4CB0
-  style i fill:#E9F7EF,stroke:#1E8449
-  style s fill:#F4F4F2,stroke:#8A8A85
+  classDef p fill:#FAF6EC,stroke:#1D2B6B,color:#1D2B6B
+  c["critical<br/>Stop."]:::p --> h["hazard<br/>Car, 2 o'clock."]:::p --> n["nav<br/>Turn left in 20 m."]:::p --> a["answer<br/>Claude's reply"]:::p --> i["info<br/>caregiver, memories"]:::p --> s["system<br/>battery, status"]:::p
+  style c fill:#FF4FA3,stroke:#1D2B6B
+  style h fill:#FF8CC6,stroke:#1D2B6B
+  style n fill:#FFD6EA,stroke:#1D2B6B
+  style a fill:#E6E9F5,stroke:#1D2B6B
+  style i fill:#F4EFE3,stroke:#1D2B6B
+  style s fill:#FAF6EC,stroke:#7D84A6
 ```
 
 Every producer speaks one contract, the event types in [`earpiece/earpiece/events.py`](earpiece/earpiece/events.py): `obstacles`, `hazard`, `guidance`, `beacon`, `position`, `status`, `scene`, `scene_image`, `say`, `memory`, `heartbeat`, `control`. Bearings are degrees in the walker's frame (0 ahead, +90 right, ±180 behind) and distances are metres. Priorities run `critical` > `hazard` > `nav` > `answer` > `info` > `system`.
@@ -509,8 +513,9 @@ Tests: `cd earpiece && python -m pytest`, and `earpiece/.venv/bin/python sim/tes
 The wearable laptop runs the earpiece and drives the AirPods. The drone laptop runs perception or a replay. Connect them with a Thunderbolt cable; macOS brings up a Thunderbolt Bridge interface with a self-assigned address.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#FAF6EC','primaryTextColor':'#1D2B6B','primaryBorderColor':'#1D2B6B','lineColor':'#1D2B6B','secondaryColor':'#FFD6EA','tertiaryColor':'#F4EFE3','clusterBkg':'#FBF8F1','clusterBorder':'#1D2B6B','edgeLabelBackground':'#FFD6EA','actorBkg':'#FAF6EC','actorBorder':'#1D2B6B','actorTextColor':'#1D2B6B','signalColor':'#1D2B6B','signalTextColor':'#1D2B6B','noteBkgColor':'#FFD6EA','noteBorderColor':'#FF4FA3','noteTextColor':'#1D2B6B','labelBoxBkgColor':'#FFD6EA','labelBoxBorderColor':'#FF4FA3','sequenceNumberColor':'#FFFFFF','activationBkgColor':'#FFD6EA'}}}%%
 flowchart LR
-  classDef box fill:#F7F5F0,stroke:#555,color:#222
+  classDef box fill:#FAF6EC,stroke:#1D2B6B,color:#1D2B6B
   subgraph D["Drone laptop"]
     tello["🚁 Tello Wi-Fi"]:::box --> perc["Perception or<br/>scripts/replay.py"]:::box
   end
@@ -719,8 +724,8 @@ We think the right way to help a blind pedestrian is not a smarter cane or a tal
 |---|---|
 | Arthur | Drone layer, flight and recording |
 | Eddy | SpacetimeDB tables, dashboard and map, caregiver messages, the Claude judgment layer and scene descriptions, sim and metrics mode, video audio rendering, replay, network tools, submission |
-| Karthik | Earpiece: spatial sonar and beacon, Cartesia voice, Claude voice assistant, camera vision and reading text aloud, stop and wait, Moss memory, destinations and routing; the Rust real-time audio engine; SpacetimeDB setup and the earpiece bridge; CI, security and the landing site |
-| Rex | Perception (`streetseg`), the interview, the shoot |
+| Karthik | Earpiece: spatial sonar and beacon, Cartesia voice with the cached safety phrases, the Claude judgment layer and Claude voice assistant, camera descriptions ("what's in front of me?") and reading text aloud, stop and wait, Moss memory, destinations and walking routes, support for any stereo Bluetooth headphones; the Rust real-time audio engine; SpacetimeDB setup, the earpiece bridge and mirroring every event into it; CI, security and the landing site |
+| Rex | Perception (`streetseg`), the shoot |
 
 ## Credits
 

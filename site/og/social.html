@@ -1,19 +1,20 @@
 <!doctype html><html><head><meta charset="utf-8">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&family=DM+Sans:wght@500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;1,8..60,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Caveat:wght@600&display=swap">
 <style>
-body{margin:0;width:1280px;height:640px;background:#F6F1E7;font-family:"Source Serif 4",serif;color:#1C2230;position:relative;overflow:hidden}
-.g{position:absolute;inset:0;background-image:linear-gradient(rgba(36,52,138,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(36,52,138,.06) 1px,transparent 1px);background-size:56px 56px;-webkit-mask-image:radial-gradient(ellipse 70% 70% at 40% 50%,#000 30%,transparent 75%)}
-.brand{position:absolute;left:80px;top:64px;display:flex;align-items:center;gap:14px;font-size:44px;font-weight:600}
-.brand img{width:56px}
-h1{position:absolute;left:84px;top:175px;margin:0;font-weight:400;font-size:92px;line-height:.98;letter-spacing:-.02em}
-h1 em{color:#24348A}
-p{position:absolute;left:84px;top:430px;margin:0;font-family:"DM Sans";font-size:28px;color:#5B6170;max-width:760px}
-.hand{position:absolute;right:90px;top:84px;font-family:Caveat;font-size:44px;color:#E0512F;transform:rotate(-4deg)}
-.big{position:absolute;right:70px;bottom:40px;width:300px;opacity:.95}
-</style></head><body><div class="g"></div>
+body{margin:0;width:1280px;height:640px;background:#F4EFE3;color:#1D2B6B;font-family:"Bricolage Grotesque",sans-serif;position:relative;overflow:hidden}
+.dots{position:absolute;inset:0;background-image:radial-gradient(rgba(29,43,107,.08) 1.2px,transparent 1.5px);background-size:9px 9px}
+.patch{position:absolute;right:-60px;top:-40px;width:620px;height:620px;border-radius:50%;background-image:radial-gradient(rgba(255,79,163,.28) 2px,transparent 2.4px);background-size:12px 12px;-webkit-mask-image:radial-gradient(circle,#000 35%,transparent 70%)}
+.brand{position:absolute;left:80px;top:58px;display:flex;align-items:center;gap:10px;font-size:46px;font-weight:800;letter-spacing:-.04em}
+.brand img{width:64px}
+h1{position:absolute;left:78px;top:160px;margin:0;font-weight:800;font-size:100px;line-height:.9;letter-spacing:-.05em;text-shadow:4px 4px 0 rgba(255,79,163,.35)}
+h1 span{color:#FF4FA3;text-shadow:4px 4px 0 rgba(29,43,107,.2)}
+p{position:absolute;left:82px;top:462px;margin:0;font-weight:600;font-size:28px;line-height:1.3;max-width:640px;letter-spacing:-.01em}
+.hand{position:absolute;left:300px;top:74px;font-family:Caveat;font-size:42px;color:#FF4FA3;transform:rotate(-4deg)}
+.big{position:absolute;right:50px;bottom:40px;width:400px}
+</style></head><body><div class="dots"></div><div class="patch"></div>
 <div class="brand"><img src="../public/assets/logo.svg">kite</div>
 <div class="hand">a guide dog that flies</div>
-<h1>Hear the street<br><em>before you reach it.</em></h1>
+<h1>Hear the street<br><span>before you<br>reach it.</span></h1>
 <p>A drone and a chest camera watch the street. AirPods tell a blind walker what's coming.</p>
 <img class="big" src="../public/assets/logo.svg">
 </body></html>

@@ -3,7 +3,7 @@
 > A guide dog that flies, for blind pedestrians, built at Cal Hacks 13.0. A DJI Tello flies just above and behind the walker's head and sees the route, crowds and crossings ahead; a chest camera watches the ground at their feet; AirPods deliver directional beeps (rate rises with time to contact) and Cartesia voice. Kite stops and waits rather than detouring. Safety-critical cues run in deterministic code; Claude can only make Kite more cautious.
 
 - Voice: Cartesia Sonic (streaming TTS, ~0.1 s to first audio) and Ink (streaming STT)
-- Judgment and scene description: Claude
+- Judgment (Claude Haiku, can only add caution), scene description and reading text aloud (Claude Opus)
 - Shared live state across devices and the caregiver dashboard: SpacetimeDB
 - Memory of personal places and hazards: Moss (3-12 ms lookups)
 - Routing and nearby places: Google Routes API v2 and Places API (New)

@@ -24,7 +24,7 @@
     for (let i = 0; i < n; i++) {
       const v = Math.max(0.04, data.peaks[i] / max);
       const bh = v * (h - 8);
-      ctx.fillStyle = i / n <= progress ? "#1E2A5E" : "#D8D0BF";
+      ctx.fillStyle = i / n <= progress ? "#1D2B6B" : "#E3C9D8";
       ctx.fillRect(i * bw + 0.5, (h - bh) / 2, Math.max(1, bw - 1.2), bh);
     }
   }

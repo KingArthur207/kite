@@ -4,12 +4,38 @@ A browser street corner with an arrow-key walker and two virtual cameras. A dron
 
 ## World
 
-The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: extruded building footprints, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track. Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`, the default when a key is set; see below). `?world=moss` forces the OSM boxes, and `?world=placeholder` loads the old box world.
+The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`, the default when a key is set; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world.
 
 - `scripts/osm_corner.py` fetches OSM and writes `public/osm/moss.json` in metres (x east, y north), with the origin at the Moss zebra, OSM node 12144593726. Run it again to refresh. `python scripts/osm_corner.py raw.json` reuses a saved Overpass response.
 - `moss.json` also has `lanes`: car lane polylines in travel order with `speed_mps`. Moss flows SE (Howard to Folsom) and Howard flows SW. `src/osmWorld.ts` exports them as `lanes`, and the traffic drives on them (see Cars and people).
 - The demo walk is `route` in `moss.json`, and the same points as lat/lng are in `public/osm/route.json`. It starts on the NE sidewalk of Moss 70 m before the zebra, facing NW, turns left across the zebra, and ends 20 m SW along Howard's south sidewalk, 98 m in all. The sim draws it faintly on screen but never in the camera frames.
 - The numbers are under `measurements` in `moss.json`. OSM has no width tag for Moss, so the 6.1 m roadway is an assumption. Tape-measure it on site.
+- `moss.json` keeps each building's OSM tags that matter for its look (`building`, `building:levels`, `height`, `building:material`, `building:colour`, `roof:*`, `shop`, `amenity`, `addr:housenumber`) and a `storefront` flag (a shop or amenity tag, or a shop/amenity node inside the footprint). `furniture` lists OSM street furniture nodes in the box: 3 hydrants, 2 signals at 7th and Howard, the stop sign at Moss and Folsom, 2 SFMTA pay stations, 2 power poles and 8 lowered kerbs with tactile paving. OSM has no trees, lamps, bins or meters here.
+
+### OSM look
+
+`src/osmLook.ts` (materials, sky, sun, renderer settings), `src/osmFacades.ts` (buildings) and `src/osmStreet.ts` (streets and furniture) turn `moss.json` into something that reads as a SoMa alley. This is also what the detector's capture cameras see in `?world=moss` and `?world=tiles&detector=osm`. Screenshots from the capture renderer: `docs/osm_facades_spawn.jpg` (spawn, facing NW up Moss), `docs/osm_facades_corner.jpg` and `docs/osm_facades_corner_chest.jpg` (the corner, facing the zebra), `docs/osm_facades_howard.jpg` (Howard's south sidewalk, facing SW).
+
+- Textures are CC0 from Poly Haven, 9.8 MB in `public/textures/` (list in `public/textures/CREDITS.md`). Every surface has UVs in metres, so bricks, siding and sidewalk slabs are real size.
+- Each building gets a facade material from `building:material` if OSM has one, otherwise from its `building` type and a random pick seeded by its OSM id: painted stucco or plaster, wood siding, brick, concrete or corrugated metal, tinted from an SF palette (or `building:colour`). No building here has a material or colour tag, so every look is the seeded pick.
+- Storeys come from `building:levels`, else height / 3.2 m. Every storey gets a row of windows with frames, sills and a meeting rail, and dark glass that reflects the sky. Walls shared with a neighbour stay blank. Street fronts (the wall's normal reaches a roadway within 20 m) get a ground floor: shop glass and a sign band for storefronts, a garage door and a front door per 7.6 m lot on residential fronts, a roll-up door on industrial ones. About two thirds of residential lots with 2+ storeys get an angled SF bay window from the second floor up. A cornice runs along every roofline. Windows and doors are instanced, about 3,500 of them in 14 draw calls.
+- Streets: asphalt, lane lines from the OSM lanes (white dashes 3 m on, 9 m off between same-direction lanes, double yellow between opposite ones), zebra stripes, and a stop line before each marked crossing on a one-way road where it doesn't fall inside the junction. Sidewalks have concrete slabs on 15 cm curbs, an apron ramps from the curb into the gutter in front of every garage, and the OSM lowered kerbs get yellow tactile pads.
+- Furniture: the OSM nodes above, built from primitives. Not in OSM, added by us: wooden utility poles every 32 m along Moss's SW curb, each with a cobra-head light, and three overhead wires; steel streetlights every 36 m and street trees every 14 m along both Howard curbs. None of it collides; the walker still collides with building faces and curbs only.
+- Light: the Poly Haven `urban_street_01` HDRI lights everything and shows in the glass, a partly cloudy sky is the background, and a sun from the SW casts shadows over a 160 m square around the route. A light haze fades the far edge of the model. ACES tone mapping and sRGB output are set on both the screen renderer and the capture renderer through `world.tune()`, so the screen and the frames match. The tiles world inherits the same renderer settings and sky.
+- Speed: 60 fps (vsync cap) in headless Chromium with Metal on an M-series Mac, capture renderer running.
+
+YOLO (yolo11n, `python sim/yolo_check.py --url 'http://localhost:5699/?world=moss'`, the walk described under Cars and people, both runs back to back on Oct 24 with the same script):
+
+| Capture frames | Drone car | Drone person | Chest car | Chest person | Car 10 to 20 m | Person 10 to 20 m | Person over 20 m |
+|---|---|---|---|---|---|---|---|
+| flat-colour OSM boxes (main before this) | 55% | 59% | 63% | 59% | 97% | 88% | 46% |
+| textured OSM facades | 67% | 51% | 72% | 54% | 100% | 85% | 36% |
+
+Cars are found more often. People past 20 m are found less: in front of textured walls with garage doors, windows and poles they stand out less than against a flat pastel box. Close in they are about the same (95% under 10 m, 90% before). The traffic differs between runs, so a few points either way is noise.
+
+#### Mapillary facades (not done)
+
+The plan was to texture each street-facing wall with a rectified Mapillary photo (CC BY-SA 4.0). There was no `MAPILLARY_TOKEN` in `.env`, so only the geometry exists: `scripts/facade_rectify.py` projects a wall into a Mapillary camera (position, compass angle, focal from `camera_parameters`) and warps it into a texture with a homography. `uv run --no-project --with numpy python scripts/facade_rectify.py` runs its self-check, which renders a synthetic wall through a known camera and rectifies it back. The docstring has the Graph API query and the image selection rule for when a token exists.
 
 ### Google 3D tiles (`?world=tiles`)
 
@@ -261,6 +287,6 @@ $RUN python sim/standin_detect.py --source clips/approach.mp4 --camera chest --s
 ## Files and placeholders
 
 - `src/tilesWorld.ts` is the Google 3D tiles world over the Moss colliders and traffic, and `src/fence.ts` is its geofence. `?detector=osm` keeps the capture frames on OSM Moss. `?relay=` and `?ear=` override the relay and earpiece URLs (empty means offline). `window.__kiteWalker` is the walker, for scripted checks.
-- `src/world.ts` is the placeholder box world, with its glTF traffic from `src/actors.ts`. `src/osmWorld.ts` is Moss St, with its traffic from `src/mossActors.ts`. Both export `scene`, `update` and `solids`. The Moss world also exports `spawn`, `walls`, `overlay` and `place` (see `WorldExtras`).
+- `src/world.ts` is the placeholder box world, with its glTF traffic from `src/actors.ts`. `src/osmWorld.ts` is Moss St, with its traffic from `src/mossActors.ts` and its look from `src/osmLook.ts`, `src/osmFacades.ts` and `src/osmStreet.ts`. Both export `scene`, `update` and `solids`. The Moss world also exports `spawn`, `walls`, `overlay`, `place` and `tune` (see `WorldExtras`).
 - `ORIGIN` in `src/config.ts` is the Moss zebra (37.778352, -122.408768) and maps to sim (0, 0), so the route and the dashboard use the same points.
 - `FX` in `src/config.ts` starts at 1000. Arthur's Tello calibration replaces it.
