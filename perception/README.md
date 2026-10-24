@@ -257,7 +257,7 @@ Key objects, one row each (distance in metres, and how perception/ measured it: 
 | `overlay.py` | review overlays (never on live cameras or Street View) |
 | `bench.py`, `bench_labels.json` | the comparison above |
 | `bytetrack_open.yaml` | ByteTrack with a 0.15 start threshold, since rare street objects score low |
-| `tests/` | 36 tests with fake models (no download): geometry, ground fit, overhead and stairs, corridor rises and drops, NMS, hazard gating, every event parsed by `earpiece.events.parse`. `-m slow` adds a real-model test |
+| `tests/` | 45 tests with fake models (no download): geometry, ground fit, overhead and stairs, corridor rises and drops, NMS, hazard gating, every event parsed by `earpiece.events.parse`, the CLI's guards (no overlay from a live camera) and the review overlay. `-m slow` adds a real-model test |
 
 ```bash
 uv run --no-project --python 3.12 --with numpy --with scipy --with pytest python -m pytest perception/tests   # no torch needed
