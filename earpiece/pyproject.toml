@@ -20,7 +20,7 @@ brain = ["anthropic>=0.40"]
 memory = ["inferedge-moss>=1.0.0b19"]
 camera = ["opencv-python-headless>=4.9"]
 hrtf = ["sofar>=1.1"]           # optional KEMAR renderer (KITE_HRTF=kemar), see earpiece/hrtf.py
-dev = ["pytest>=8", "pytest-asyncio>=0.23", "hypothesis>=6.100", "pytest-cov>=5"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pytest-xdist>=3.5", "hypothesis>=6.100", "pytest-cov>=5"]
 evals = ["pillow>=10"]          # evals/run_live.py draws signs onto test images
 
 [project.scripts]
