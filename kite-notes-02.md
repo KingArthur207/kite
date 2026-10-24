@@ -463,7 +463,7 @@ Optional SpacetimeDB link (`spacetime_enabled: false` by default).
 
 | Risk | Why | Mitigation |
 |---|---|---|
-| Drone can't keep up with a walk | top speed in `rc` mode unknown; people walk ~1.2–1.4 m/s | measure the stick response at 30/60/100 first; raise `SafetyCfg.max_rc`; fly ahead/above along the planned route rather than chasing; have the walker go slowly in the demo |
+| Drone can't keep up with a walk | top speed in `rc` mode unknown; people walk ~1.2–1.4 m/s | measure the stick response at 30/60/100 first; raise `SafetyCfg.max_rc`; fly behind and above the walker (team call), never ahead; have the walker go slowly in the demo |
 | Control and video lag | the drone needs time to respond; video adds more | measure it; low gains, deadbands, feed-forward; drone = look-ahead, webcam = reflexes |
 | No internet on the drone laptop | Tello AP only | iPhone USB tethering / Ethernet / USB Wi-Fi dongle on the drone laptop, or route everything through the wearable laptop |
 | Earpiece only listens on localhost | `bind_host 127.0.0.1` | send drone events via SpacetimeDB or a relay on the wearable laptop, or change the bind host |
