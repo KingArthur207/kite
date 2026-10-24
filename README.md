@@ -497,6 +497,7 @@ Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walke
 | `dashboard/` | SpacetimeDB module (`spacetimedb/src/index.ts`) and the React caregiver dashboard. See [`dashboard/README.md`](dashboard/README.md) |
 | `sim/` | three.js Moss St world, frame relay (`relay.py`), `SimFrameSource` (`frames.py`), the stand-in detector and live walk (`standin_detect.py`, `live_walk.py`), Claude scene descriptions (`scene_describe.py`), and the YOLO check (`yolo_check.py`). See [`sim/README.md`](sim/README.md) |
 | `kite/` | Drone layer: Tello control, safety governor, frame sources, recorder, calibration, preflight, GPS alignment and follow mode. See [`docs/operations.md`](docs/operations.md) |
+| `kite/fly/` | Opt-in yaw sources for follow mode (a fruit-fly pursuit circuit and a predictive PD), their follow simulator and CMA-ES tuning. Off by default: see [Opt-in yaw sources](#opt-in-yaw-sources-kitefly) |
 | `scripts/replay.py` | Replays a JSONL of events into the earpiece, and optionally into SpacetimeDB |
 | `scripts/audit.py` | Pre-submission check: secrets, `.env`, repo visibility, README, large files, model weights |
 | `scripts/netcheck.py` | Checks this laptop's setup: the earpiece over UDP and WebSocket, SpacetimeDB, internet to Claude, Cartesia and Google, and which keys are set |
@@ -512,6 +513,39 @@ Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walke
 | `tests/drone_test.py` | Tello latency and ground-check script |
 | `docs/` | Operations and networking guides, sourced facts, and the Google permission record. Index in [`docs/README.md`](docs/README.md) |
 | `docs/internal/` | The team's working notes from the hackathon (spec, runbooks, drafts). Not needed to understand Kite |
+
+## Opt-in yaw sources (kite.fly)
+
+Follow mode turns toward the walker with a simple proportional yaw law ([`kite/follow.py`](kite/follow.py)). [`kite/fly/`](kite/fly/) has two alternatives that decide **only the yaw stick** while following. Forward speed, altitude, the clamps, coasting, the lost-walker hover and the safety governor stay exactly as they are.
+
+- **`fly`**: a 1,446-neuron pursuit circuit from the male fruit-fly connectome. The walker's bearing drives its visual inputs (LC10a, LC9, LC11), and the yaw stick is read from its steering descending neurons. The wiring is fixed; only the small encoder and readout around it were tuned, with CMA-ES, in a simulator of kite's own follow loop.
+- **`pd`**: a predictive PD on the same latency filter, which predicts the walker past the video lag. It is the control experiment that separates "the fly helps" from "prediction helps".
+
+Nothing changes by default. To try one (tested in simulation only, never flown):
+
+```bash
+pip install -e ".[fly]"                                       # scipy
+python -m kite.follow --source recordings/<take> --yaw pd      # rehearsal on a take or a clip, no drone
+python -m kite.record --source tello --out recordings --fly --follow --follow-yaw fly
+```
+
+`--follow-yaw` (live) and `--yaw` (rehearsal) take `law` (the default), `pd` or `fly`, and `--follow-yaw-params` / `--yaw-params` swap in another parameter file. They can't be combined with `--follow-predict` / `--predict`, whose planner steers yaw itself. Both sources were tuned at a 1.0 m standoff, 0.30 m above the head, with the yaw stick clamped at 70. Kite's follow defaults are 1.2 m and 40, so the startup line points out the difference; nothing is forced. The events log names the source steering yaw. If a source fails, the follow law steers yaw instead and the fallback is logged once.
+
+**The result: neither passed the ship gate.** These numbers come from 200 held-out simulated walks per profile ([`docs/fly-yaw-results.md`](docs/fly-yaw-results.md), [`kite/fly/DESIGN.md`](kite/fly/DESIGN.md) section 11):
+
+- `fly` has 6 to 10 % less steering error (RMS bearing to the walker) than the current law, with the same safety numbers on the `demo` profile. A tuned version of the law itself does far better: the fly has 24 to 37 % more error than it.
+- `pd` has 35 to 38 % less steering error, but it fails the safety margins. In the `stress` and `fast` simulations it collides on 9 and 8 walks where the law doesn't (2 and 1 the other way round), and on every profile it has more separate losses and more time too close to the walker.
+
+To evaluate or retrain (`pip install -e ".[train]"`; Modal is optional):
+
+```bash
+python -m kite.fly.sim --arm FLY-YAW --profile demo --seeds baseline     # one arm in the follow simulator
+python -m kite.fly.train.cma_train --arm FLY-YAW --cma-seed 1 --dry-run   # the plan and its cost; drop --dry-run to train
+python -m kite.fly.train.report --arms KITE-LAW,PRED-PD,FLY-YAW --best kite/fly/data/pred_pd.json \
+    --best kite/fly/data/fly_yaw.json --seeds baseline --name mine        # paired comparison and the gates
+```
+
+Data: the circuit is a subgraph of the MaleCNS v1.0 connectome (Janelia FlyEM et al., CC-BY 4.0). The leaky integrate-and-fire neuron model and its parameters are from Shiu et al., "A Drosophila computational brain model reveals sensorimotor processing", Nature 2024.
 
 ## Known limitations
 
@@ -537,6 +571,7 @@ We think the right way to help a blind pedestrian is not a smarter cane or a tal
 - 3D car and pedestrian models in the sim: Quaternius (CC0), and "Range Rover by IvOfficial and Bus by Poly by Google, via Poly Pizza, licensed CC-BY 3.0". The full list is in [`sim/public/models/CREDITS.md`](sim/public/models/CREDITS.md).
 - Map tiles and street data: © OpenStreetMap contributors, ODbL. Google Photorealistic 3D Tiles and Street View on Moss St, with Google's attribution on screen.
 - Perception models: Ultralytics YOLO11n (AGPL-3.0) and Depth Anything V2 Small (metric, indoor; Apache-2.0).
+- Fruit-fly pursuit circuit in [`kite/fly/`](kite/fly/): a subgraph of the MaleCNS v1.0 connectome (Janelia FlyEM et al., CC-BY 4.0), run with the leaky integrate-and-fire model and parameters of Shiu et al., Nature 2024, and tuned with pycma (CMA-ES).
 - Video segmentation stand-in ([`sim/seg_standin.py`](sim/seg_standin.py)): Ultralytics YOLO26n-sem trained on ADE20K (`yolo26n-sem-ade20k.pt`), AGPL-3.0 like the rest of Ultralytics. ADE20K is from MIT CSAIL (Zhou et al., "Scene Parsing through ADE20K Dataset", CVPR 2017).
 - Open-source libraries: djitellopy, three.js, 3d-tiles-renderer, SpacetimeDB, React, Leaflet, react-leaflet, Vite, NumPy, SciPy, sounddevice, websockets, httpx, the Anthropic Python SDK, Moss (`inferedge-moss`), OpenCV, PyAV, Ultralytics, Hugging Face Transformers, Playwright, cpal, rtrb, PyO3. Services: Google Routes API v2, Places API (New), Map Tiles API and Street View Static API
 - Head model for binaural rendering: Brown and Duda's spherical-head model

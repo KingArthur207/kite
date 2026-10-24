@@ -1,8 +1,11 @@
 """kite.fly.steer as kite.follow's yaw sources (FlySteer, PredPD): the fly arms turn toward a walker steadily off
 centre (the R8 sign check), the ticks follow the caller's clock (at most 3 per call, resync after gaps), the latency
 filter predicts the walker to the tick time, no measurement for 0.5 s means no target, the geometry comes from the
-controller's FollowCfg, determinism by seed, the fallback on any failure, and both inside a real FollowController."""
+controller's FollowCfg, determinism by seed, the fallback on any failure, and both inside a real FollowController.
+The opt-in entry points: make_yaw_source (pd, fly) from a FollowCfg, kite.record --follow-yaw building it from its own
+FollowCfg, and the rehearsal's --yaw."""
 
+import csv
 import json
 import math
 
@@ -10,12 +13,13 @@ import numpy as np
 import pytest
 
 from kite.camera import Camera
+from kite.config import Config
 from kite.fly import steer as steer_mod
-from kite.fly.interfaces import BRAIN_TICK_MS, DT, OUTPUT_GROUPS, PREV_PARAMS
+from kite.fly.interfaces import BRAIN_TICK_MS, DT, OUTPUT_GROUPS, PD_FILE, PREV_PARAMS, TRAINED_FILE
 from kite.fly.decoder import soft_deadzone
 from kite.fly.params import HAND_FILE, PD_SPACE, load_params
-from kite.fly.steer import (MAX_TICKS_PER_CALL, WARMUP_S, FlySteer, PredPD, make_fly_steer, make_hand, make_pd,
-                            make_prev)
+from kite.fly.steer import (MAX_TICKS_PER_CALL, TUNED_AT, WARMUP_S, FlySteer, PredPD, describe_yaw_source,
+                            make_fly_steer, make_hand, make_pd, make_prev, make_yaw_source)
 from kite.follow import FollowCfg, FollowController, Track
 from kite.types import Telemetry
 
@@ -181,13 +185,16 @@ def test_fly_arm_factory(monkeypatch, tmp_path):
     assert hand.stats["source"] == str(HAND_FILE) and hand.video_lag_s == 0.4 and hand.behind_m == 1.2
 
 
-@pytest.mark.parametrize("kind", ["FLY-YAW-PREV", "PRED-PD"])
+@pytest.mark.parametrize("kind", ["FLY-YAW-PREV", "PRED-PD", "pd", "fly"])
 def test_inside_a_real_follow_controller(kind):
     """The source decides yaw only while following, inside FollowController's clamps; coasting does not call it, and
-    a lost -> following resume resets it."""
+    a lost -> following resume resets it. pd / fly: the tuned sources --follow-yaw flies (make_yaw_source)."""
     cam = Camera()
     cfg = CFG
-    src = PredPD(cfg=cfg) if kind == "PRED-PD" else make_fly_steer(kind, cfg=cfg)
+    if kind in ("pd", "fly"):
+        src = make_yaw_source(kind, cfg)
+    else:
+        src = PredPD(cfg=cfg) if kind == "PRED-PD" else make_fly_steer(kind, cfg=cfg)
     ctrl = FollowController(cfg, cam, max_rc=80, yaw_source=src)
     for bearing, sign in ((12.0, 1), (-12.0, -1)):
         ctrl.reset(2.0)
@@ -320,3 +327,96 @@ def test_an_outlier_frame_still_refreshes_the_hold():
     assert fly.stats["rejected"] == 1
     fly.yaw(1.65, 1.32, 45.0, 1.0, FALLBACK)  # 0.78 s after the last fused frame, 0.33 s after the outlier
     assert fly.stats["target_valid"] and fly.stats["bearing_pred_deg"] == pytest.approx(5.0, abs=0.5)
+
+
+# ------------------------------------------------------------------ opt-in entry points (--follow-yaw, --yaw)
+def test_make_yaw_source_builds_the_tuned_sources_from_the_cfg(tmp_path):
+    """pd and fly by name, from the controller's own FollowCfg instance (any geometry), which accepts them; a cfg that
+    disagrees, or prediction, is refused by the controller."""
+    cfg = FollowCfg(behind_m=1.3, video_lag_s=0.3)
+    pd, fly = make_yaw_source("pd", cfg), make_yaw_source("fly", cfg, seed=3)
+    assert isinstance(pd, PredPD) and isinstance(fly, FlySteer)
+    assert (pd.name, pd.arm, pd.source) == ("pd", "PRED-PD", str(PD_FILE))
+    assert (fly.name, fly.arm, fly.source, fly.size_blind, fly.seed) == ("fly", "FLY-YAW", str(TRAINED_FILE), True, 3)
+    assert pd.params == pytest.approx(json.loads(PD_FILE.read_text())["params"])  # the tuned gains, not the defaults
+    assert pd.params["kp"] == pytest.approx(2.33, abs=0.01)
+    for src in (pd, fly):
+        assert src.cfg is cfg and (src.behind_m, src.video_lag_s) == (1.3, 0.3)
+        assert FollowController(cfg, Camera(), yaw_source=src).yaw_source is src
+        with pytest.raises(ValueError):
+            FollowController(FollowCfg(), Camera(), yaw_source=src)  # another geometry: build it from that cfg
+        with pytest.raises(ValueError):
+            FollowController(FollowCfg(behind_m=1.3, video_lag_s=0.3, predict=True), Camera(), yaw_source=src)
+    assert make_yaw_source("fly", CFG, params=PREV_PARAMS).source == str(PREV_PARAMS)  # params replace the file
+    path = tmp_path / "pd.json"
+    path.write_text(json.dumps({"params": {"kp": 1.0, "kd": 0.0, "deadband_deg": 3.0}}))
+    assert make_yaw_source("pd", CFG, path).params == pytest.approx({"kp": 1.0, "kd": 0.0, "deadband_deg": 3.0})
+    with pytest.raises(ValueError):
+        make_yaw_source("law", CFG)
+    with pytest.raises(FileNotFoundError):
+        make_yaw_source("pd", CFG, tmp_path / "missing.json")
+    with pytest.raises(TypeError):
+        make_yaw_source("pd", None)
+
+
+def test_the_startup_line_names_the_source_and_an_untested_geometry():
+    assert TUNED_AT == {"behind_m": 1.0, "above_m": 0.30, "max_yaw": 70}
+    tuned = describe_yaw_source(make_yaw_source("pd", CFG), CFG)
+    assert tuned == ("yaw source pd (PRED-PD, kite/fly/data/pred_pd.json): EXPERIMENTAL, tested in simulation only, "
+                     "never flown")
+    default = describe_yaw_source(make_yaw_source("fly", FollowCfg()), FollowCfg())  # kite's own defaults
+    assert default.startswith("yaw source fly (FLY-YAW, kite/fly/data/fly_yaw.json)")
+    assert default.endswith("; tuned at behind_m 1.0, max_yaw 70, this follow flies behind_m 1.2, max_yaw 40 "
+                            "(not forced)")
+
+
+def test_record_builds_the_yaw_source_from_its_own_follow_cfg(capsys, monkeypatch):
+    import kite.follow
+    from kite.record import _make_follow, build_parser
+
+    class NoFrames:
+        def read(self):
+            return None
+
+    monkeypatch.setattr(kite.follow, "YoloPersonDetector", lambda weights=None: (lambda img: []))
+    for argv, name, arm, note in (
+            (["--follow-yaw", "pd"], "pd", "PRED-PD", True),
+            (["--follow-yaw", "fly", "--follow-behind", "1.0"], "fly", "FLY-YAW", True),  # max_yaw is still 40
+            (["--follow-yaw", "fly", "--follow-yaw-params", str(PREV_PARAMS)], "fly", "FLY-YAW", True)):  # its arm
+        args = build_parser().parse_args(["--source", "tello", "--fly", "--follow", *argv])
+        follow = _make_follow(args, NoFrames(), Config())
+        try:
+            src = follow.yaw_source
+            assert follow.ctrl.yaw_source is src and src.cfg is follow.cfg is follow.ctrl.cfg  # one FollowCfg
+            assert (src.name, src.arm, src.behind_m) == (name, arm, follow.cfg.behind_m)
+            assert src.video_lag_s == follow.cfg.video_lag_s == Config().drone.video_lag_s
+            assert src.source == str(args.follow_yaw_params or (PD_FILE if name == "pd" else TRAINED_FILE))
+        finally:
+            follow.close()
+        out = capsys.readouterr().out
+        assert out.startswith(f"follow: yaw source {name} ({arm}, ") and ("(not forced)" in out) == note
+
+
+def test_rehearsal_steers_with_a_yaw_source(capsys, monkeypatch, tmp_path):
+    import test_follow
+
+    import kite.follow
+    from kite.follow import main as follow_main
+
+    clip = str(test_follow.make_clip(tmp_path / "walk.avi"))
+    monkeypatch.setattr(kite.follow, "detector_available", lambda weights=None: None)  # no ultralytics needed
+    monkeypatch.setattr(kite.follow, "YoloPersonDetector", lambda weights=None: test_follow.DriftingWalker())
+    seen = {}
+    real = kite.follow.rehearse
+
+    def spy(*a, **k):
+        seen["src"], seen["cfg"] = k["yaw_source"], a[2]
+        return real(*a, **k)
+
+    monkeypatch.setattr(kite.follow, "rehearse", spy)
+    assert follow_main(["--source", clip, "--yaw", "pd", "--behind", "1.0", "--out", str(tmp_path / "pd.csv")]) == 0
+    out = capsys.readouterr().out
+    assert "yaw source pd (PRED-PD, kite/fly/data/pred_pd.json)" in out and "fell back" not in out
+    assert seen["src"].arm == "PRED-PD" and seen["src"].cfg is seen["cfg"] and seen["cfg"].behind_m == 1.0
+    rows = list(csv.DictReader(open(tmp_path / "pd.csv")))
+    assert rows[-1]["state"] == "following" and int(rows[-1]["yaw"]) > 0  # drifted right: the PD turns right

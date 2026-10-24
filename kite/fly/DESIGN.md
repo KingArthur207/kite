@@ -443,7 +443,7 @@ offset; the previous readout's own fit is biased right by about 5-8°.
 **Verdict, computed mechanically: FLY-YAW fails G3** (criterion 1, and a too_close_s margin on train).
 - The retuned fly beats kite's law (-6 % on train, -10 % on demo; CIs below 0) and the previous parameters
   (-8 % / -16 %).
-- It is far behind both tuned classical arms (+24 % to +38 % worse).
+- It is far behind both tuned classical arms (+24 % to +51 % worse on train, +37 % to +38 % on demo).
 - Its safety metrics are level with KITE-LAW's on demo.
 
 **The classical arms fail G3 too, on safety margins, not on steering.**
@@ -452,7 +452,9 @@ offset; the previous readout's own fit is biased right by about 5-8°.
   `fast` (8 vs 1).
 - Holding the walker centred keeps the forward law engaged at short range.
 
-**No flight behaviour changes.**
+**No flight behaviour changes.** The retuned fly (`data/fly_yaw.json`) and the tuned PRED-PD
+(`data/pred_pd.json`) are available opt in only: `kite.record --follow-yaw fly|pd` and the rehearsal's
+`--yaw fly|pd` (`steer.make_yaw_source`). The default stays KITE-LAW.
 
 **Findings that matter more than the yaw law:**
 - **The standoff:**

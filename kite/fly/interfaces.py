@@ -25,7 +25,10 @@ BRAIN_TICK_MS = 50.0
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 BRAIN_FILE = DATA_DIR / "pursuit_core1.npz"  # MaleCNS v1.0 pursuit subgraph, 1,446 neurons (CC-BY 4.0 data)
-TRAINED_FILE = DATA_DIR / "fly_yaw.json"  # the kite-retuned parameters (written by kite.fly.train, if they pass)
+# The tuned yaw sources kite.record --follow-yaw / kite.follow --yaw can use (kite.fly.steer.make_yaw_source). Opt in
+# only: neither passed G3 (DESIGN section 11), so kite's own yaw law stays the default.
+TRAINED_FILE = DATA_DIR / "fly_yaw.json"  # the kite-retuned fly (FLY-YAW, size-blind, CMA seed 1 gen 50)
+PD_FILE = DATA_DIR / "pred_pd.json"  # the CMA-tuned PRED-PD gains (kp 2.33, kd 0.09, deadband 1.52 deg)
 REFERENCE_DIR = DATA_DIR / "reference"  # the previously trained yaw parameters and their readout calibration
 PREV_PARAMS = REFERENCE_DIR / "fly_yaw_prev_smooth.json"
 PREV_CALIBRATION = REFERENCE_DIR / "fly_calibration_prev.json"

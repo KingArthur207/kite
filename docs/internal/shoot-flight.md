@@ -73,6 +73,7 @@ Code: `kite/follow.py`. Tested in a simulation only; it has never flown. Set up 
 2. Fly: `python -m kite.record --source tello --out recordings --fly --follow`. Take off, climb to the walker's height plus 0.3 m, and get behind them by hand. The status line shows `follow off (walker conf .. box ..)` once it sees a person cut off by the bottom edge. Then press `g`.
 3. Any key cancels follow first: space hovers, `w`/`a`/... take over, `l` lands. If it loses the walker for 0.5 s it hovers (rc 0), beeps and waits. It never searches. It picks the walker up again once they are back at the bottom edge. A safety hover or `WI-FI DOWN` switches follow off for good: press `g` again once it clears.
 4. Knobs: `--follow-behind 1.5` shows more of the head and shoulders, which helps if the detector misses a bare head. `--follow-height` sets the altitude to hold (default: the height when you press `g`). The drone can't go faster than `SafetyCfg.max_rc` (50 is about 0.5 m/s), so the walker keeps to 0.5 m/s.
+   - `--follow-yaw pd|fly` (a kite.fly yaw source: a predictive PD or the fruit-fly circuit) is experimental and has only run in simulation, where neither passed the ship gate. Not for the shoot: leave it at the default, `law`.
 
 ### Follow with prediction (`--follow-predict`)
 

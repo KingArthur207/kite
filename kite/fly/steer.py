@@ -4,6 +4,7 @@ PredPD (the classical PRED-PD ablation around exactly the same filter and stick 
     cfg = FollowCfg(behind_m=1.0, above_m=0.30, max_yaw=70)
     fly = make_fly_steer("FLY-YAW-PREV", cfg=cfg)     # or FlySteer.from_file(path, cfg=cfg, size_blind=True)
     pd = PredPD.from_x(x, cfg=cfg)                    # or PredPD(cfg=cfg): the follow law's gains
+    src = make_yaw_source("pd", cfg)                  # by name, tuned: what kite.record --follow-yaw pd|fly flies
     ctrl = FollowController(cfg, camera, max_rc, yaw_source=fly)
     ... FollowController.update() calls fly.yaw(t, track.t, bearing_deg, range_m, fallback) while following
 
@@ -49,8 +50,8 @@ from ..follow import FollowCfg
 from .brain import PursuitBrain
 from .decoder import YawReadout, soft_deadzone
 from .encoder import TargetEncoder
-from .interfaces import (BRAIN_FILE, BRAIN_TICK_MS, DT, NO_TARGET, OUTPUT_GROUPS, PREV_PARAMS, TRAINED_FILE,
-                         TargetFeatures)
+from .interfaces import (BRAIN_FILE, BRAIN_TICK_MS, DATA_DIR, DT, NO_TARGET, OUTPUT_GROUPS, PD_FILE, PREV_PARAMS,
+                         TRAINED_FILE, TargetFeatures)
 from .params import HAND_FILE, PD_SPACE, SPACE, load_params, norm_array
 
 log = logging.getLogger("kite.fly")
@@ -162,6 +163,7 @@ class LagCompensatedYaw:
     conditioning, the fail-safe and the stats. Subclasses give _raw_yaw(features) per tick and _reset_inner()."""
 
     arm: str | None = None
+    name: str | None = None  # the --follow-yaw / --yaw name (pd, fly) when built by make_yaw_source
 
     def __init__(self, *, cfg: FollowCfg | None = None, behind_m: float | None = None,
                  video_lag_s: float | None = None, size_blind: bool = True, seed: int = 0, arm: str | None = None,
@@ -426,3 +428,52 @@ def make_trained() -> FlySteer:
 
 def make_pd() -> PredPD:
     return PredPD()
+
+
+# ------------------------------------------------------------------ opt-in yaw sources for kite.record / kite.follow
+YAW_SOURCE_FILES = {"pd": PD_FILE, "fly": TRAINED_FILE}
+# The FollowCfg every arm was tuned and evaluated with (DESIGN R3). kite flies FollowCfg's own defaults (behind_m 1.2,
+# max_yaw 40) unless told otherwise; a source runs at any geometry (behind_m comes from the cfg), it is just untested.
+TUNED_AT = {"behind_m": 1.0, "above_m": 0.30, "max_yaw": 70}
+
+
+def make_yaw_source(name: str, cfg: FollowCfg, params: str | Path | None = None, seed: int = 0) -> LagCompensatedYaw:
+    """A kite.follow.YawSource by name, for kite.record --follow-yaw and kite.follow --yaw:
+      pd   PredPD with the CMA-tuned gains (PD_FILE)
+      fly  FlySteer with the kite-retuned fly parameters (TRAINED_FILE), size-blind as it was trained
+    Neither passed G3 (DESIGN section 11): opt in, simulation only. `params` is a parameter file in place of the
+    shipped one. Built from `cfg`, the very FollowCfg instance the controller flies, so behind_m and video_lag_s
+    always match it (FollowController refuses a source that disagrees)."""
+    if name not in YAW_SOURCE_FILES:
+        raise ValueError(f"not a yaw source: {name!r} (expected one of {', '.join(YAW_SOURCE_FILES)})")
+    if not isinstance(cfg, FollowCfg):
+        raise TypeError(f"make_yaw_source needs the controller's FollowCfg, not {cfg!r}")
+    path = Path(params) if params is not None else YAW_SOURCE_FILES[name]
+    if not path.is_file():
+        raise FileNotFoundError(f"yaw source {name}: no parameter file at {path}")
+    src = PredPD.from_file(path, cfg=cfg, seed=seed) if name == "pd" else FlySteer.from_file(path, cfg=cfg, seed=seed)
+    src.name = name
+    return src
+
+
+def tuned_geometry_diff(cfg: FollowCfg) -> dict[str, tuple[float, float]]:
+    """{field: (tuned at, cfg's)} for the TUNED_AT fields where cfg differs."""
+    return {k: (v, getattr(cfg, k)) for k, v in TUNED_AT.items() if not math.isclose(getattr(cfg, k), v)}
+
+
+def describe_yaw_source(src: LagCompensatedYaw, cfg: FollowCfg) -> str:
+    """The one startup line for a yaw source: name, arm, parameter file, and the geometry it was tuned at if cfg
+    differs (said, never forced)."""
+    path = Path(src.source) if src.source else None
+    if path is not None:
+        try:
+            path = path.resolve().relative_to(DATA_DIR.parents[2])
+        except ValueError:
+            pass
+    line = (f"yaw source {src.name or src.arm} ({src.arm or type(src).__name__}, {path}): EXPERIMENTAL, "
+            f"tested in simulation only, never flown")
+    diff = tuned_geometry_diff(cfg)
+    if diff:
+        line += ("; tuned at " + ", ".join(f"{k} {t}" for k, (t, _) in diff.items()) + ", this follow flies "
+                 + ", ".join(f"{k} {v}" for k, (_, v) in diff.items()) + " (not forced)")
+    return line

@@ -5,6 +5,7 @@
     python -m kite.record --source tello --out recordings --fly --dry-run   # rehearse the keys, motion only logged
     python -m kite.record --source tello --out recordings --fly   # the shoot: fly with the keys and record
     python -m kite.record --source tello --out recordings --fly --follow   # g toggles follow mode (kite/follow.py)
+    python -m kite.record --source tello --out recordings --fly --follow --follow-yaw pd   # opt in, simulation only
 
 Only one program can hold the Tello ports (UDP 8889/8890/11111), so the program that records from the Tello is also
 the only one that can fly it: --fly adds keyboard control in this same process, through kite's drone layer and
@@ -590,19 +591,23 @@ class Recorder:
 
 # ------------------------------------------------------------------ CLI
 def _make_follow(args, frames, cfg):
-    """FollowMode for --follow: the detector loads and tracks in its own thread from now on."""
+    """FollowMode for --follow: the detector loads and tracks in its own thread from now on. --follow-yaw pd|fly builds
+    its kite.fly yaw source from this same FollowCfg instance; law (the default) builds none and never imports
+    kite.fly."""
     from .camera import load_camera
-    from .follow import FollowCfg, FollowMode, YoloPersonDetector
+    from .follow import FollowCfg, FollowMode, YoloPersonDetector, build_yaw_source
 
     fcfg = FollowCfg(height_m=args.follow_height, video_lag_s=cfg.drone.video_lag_s, predict=args.follow_predict)
     if args.follow_behind:
         fcfg.behind_m = args.follow_behind
+    yaw_source, line = build_yaw_source(args.follow_yaw, fcfg, args.follow_yaw_params)
+    print(f"follow: {line}", flush=True)
     print("follow: loading the person detector in the background ...", flush=True)
     return FollowMode(frames, lambda: YoloPersonDetector(args.follow_weights), fcfg, load_camera(),
-                      max_rc=cfg.safety.max_rc).start_tracker()
+                      max_rc=cfg.safety.max_rc, yaw_source=yaw_source).start_tracker()
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m kite.record", description="Record drone video + telemetry to disk.")
     p.add_argument("--source", required=True, help="a video file (dry run, no drone) or 'tello'")
     p.add_argument("--out", default="recordings", help="output folder; each run gets a timestamped subfolder")
@@ -621,6 +626,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--follow-weights", default=None, help="YOLO weights for --follow")
     p.add_argument("--follow-predict", action="store_true", help="with --follow: steer on the walker prediction and "
                    "the planned drone path (kite/predict.py); falls back to the reactive controller when unsure")
+    p.add_argument("--follow-yaw", choices=("law", "pd", "fly"), default="law", help="with --follow: what steers yaw "
+                   "while following. law (default): the follow controller's own yaw law. pd: kite.fly's predictive "
+                   "PD; fly: kite.fly's fruit-fly pursuit circuit. pd and fly are EXPERIMENTAL, tested in simulation "
+                   "only, never flown; they need the 'fly' extra and do not mix with --follow-predict")
+    p.add_argument("--follow-yaw-params", default=None, metavar="PATH", help="with --follow-yaw pd|fly: a parameter "
+                   "file instead of the tuned one (kite/fly/data/pred_pd.json, fly_yaw.json)")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = build_parser()
     args = p.parse_args(argv)
 
     if not 10 <= args.speed <= 100:
@@ -634,6 +650,21 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--fly needs an interactive terminal for the keys")
     if args.follow_predict and not args.follow:
         p.error("--follow-predict needs --follow")
+    if args.follow_yaw == "law" and args.follow_yaw_params:
+        p.error("--follow-yaw-params needs --follow-yaw pd or fly")
+    if args.follow_yaw != "law":  # an opt-in kite.fly yaw source; law imports nothing from kite.fly
+        from .follow import fly_available
+
+        if not args.follow:
+            p.error(f"--follow-yaw {args.follow_yaw} needs --follow")
+        if args.follow_predict:
+            p.error(f"--follow-yaw {args.follow_yaw} and --follow-predict are exclusive: the prediction planner "
+                    f"steers yaw itself")
+        why = fly_available()
+        if why:
+            p.error(f"--follow-yaw {args.follow_yaw}: {why}")
+        if args.follow_yaw_params and not os.path.isfile(args.follow_yaw_params):
+            p.error(f"--follow-yaw-params: no such file: {args.follow_yaw_params}")
     if args.follow:
         from .follow import detector_available
 
