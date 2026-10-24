@@ -14,6 +14,7 @@ import { clampToFence } from "./fence";
 import { SHOTS } from "./shots";
 import { startShot, shotCam } from "./shot";
 import { look2, createPost } from "./look2";
+import { startCompare } from "./compare";
 
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
@@ -131,11 +132,14 @@ view.appendChild(renderer.domElement);
 const postReady = look2 && worldName === "moss" ? createPost(renderer, scene) : Promise.resolve(null);
 let post: ((cam: THREE.Camera) => void) | null = null;
 void postReady.then((p) => { post = p; }).catch((e) => console.error("[look2] post-processing off", e));
-const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
+const resize = () => renderer.setSize(view.clientWidth, view.clientHeight);
 if (!shot) { window.addEventListener("resize", resize); resize(); }
+// ?compare=1 (compare.ts): Street View beside the sim, synced to the drone camera.
+const compare = query.get("compare") === "1" && !shot && !metricsOn
+  ? startCompare({ walker, canvas: renderer.domElement, view }) : null;
 
 function drawScreen() {
-  const W = window.innerWidth, H = window.innerHeight;
+  const W = view.clientWidth, H = view.clientHeight;
   renderer.setScissor(0, 0, W, H);
   renderer.setClearColor(0x000000);
   renderer.clear();
@@ -269,6 +273,7 @@ function frame(now: number) {
   world.updateTiles?.();
   view.classList.toggle("hidden", black);
   if (!black) drawScreen();
+  compare?.frame();
   if (metrics) hud.textContent = metrics.hud(); else drawHud();
   requestAnimationFrame(frame);
 }

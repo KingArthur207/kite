@@ -31,3 +31,8 @@ export function toLatLng(east: number, north: number) {
     lng: ORIGIN.lng + east / (mPerDegLat * Math.cos((ORIGIN.lat * Math.PI) / 180)),
   };
 }
+
+/** Inverse of toLatLng: sim metres (x east, y north). */
+export const toSim = ({ lat, lng }: { lat: number; lng: number }) => ({
+  x: (lng - ORIGIN.lng) * 111320 * Math.cos((ORIGIN.lat * Math.PI) / 180), y: (lat - ORIGIN.lat) * 111320,
+});
