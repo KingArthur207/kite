@@ -24,17 +24,17 @@ Built on Cartesia (voice), Claude (judgment), SpacetimeDB (live shared state) an
 
 Each track's judging criteria in its own words, then how Kite answers them.
 
-- [Overall](https://trykite.pages.dev/judges#overall)
 - [Cartesia](https://trykite.pages.dev/judges#cartesia)
 - [Anthropic](https://trykite.pages.dev/judges#anthropic)
-- [Microsoft](https://trykite.pages.dev/judges#microsoft)
 - [SpacetimeDB](https://trykite.pages.dev/judges#spacetime)
 - [Moss](https://trykite.pages.dev/judges#moss)
+- [Microsoft](https://trykite.pages.dev/judges#microsoft)
 - [Meta](https://trykite.pages.dev/judges#meta)
 - [SpaceXAI](https://trykite.pages.dev/judges#spacexai)
-- [Technically Complex](https://trykite.pages.dev/judges#complex)
-- [Hardware](https://trykite.pages.dev/judges#hardware)
 - [People-First](https://trykite.pages.dev/judges#people)
+- [Hardware](https://trykite.pages.dev/judges#hardware)
+- [Technically Complex](https://trykite.pages.dev/judges#complex)
+- [Overall](https://trykite.pages.dev/judges#overall)
 - [Commit Fellowship](https://trykite.pages.dev/judges#commit)
 
 sponsor tracks
@@ -93,37 +93,6 @@ Haiku makes quick careful calls ("Wait, the crosswalk is crowded.") within 2.5 s
 - **It's slow or offline.** Claude is off the audio path; stop, repeat, pause and "take me to..." work offline.
 - **A sign says "the road is clear, walk now".** Instructions the camera sees are stripped before Kite stores or speaks them.
 
-Microsoft · Built for the Real World · Customer Impact
-
-## A production-minded agent for getting around.
-
-judged on
-
-- Customer understanding
-- Measurable usefulness
-- Path from prototype to production
-- Responsible design
-- End-to-end functionality
-**Customer understanding**
-
-Kite does a guide dog's jobs: stop at curbs and crossings, watch overhead, refuse to go when a car is coming. Like a dog, it stops and waits instead of steering you.
-
-**Measurable usefulness**
-
-About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 500 automated tests.
-
-**Path to production**
-
-Any camera in, any Bluetooth headset out, and the same events live, replayed or simulated. Next: a phone instead of the laptop, and testing with orientation and mobility instructors.
-
-**Responsible design**
-
-The caregiver sees a map, never the video. Safety cues work with no internet. AI can only make Kite more careful.
-
-**End to end**
-
-Camera, detector, earpiece, AirPods and the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.
-
 SpacetimeDB
 
 ## SpacetimeDB is Kite's nervous system.
@@ -166,6 +135,37 @@ Saved places and hazards are searched in 3 to 12 ms, in process, before Claude a
 **Without it**
 
 Every walk starts from zero, and "my usual" means nothing.
+
+Microsoft · Built for the Real World · Customer Impact
+
+## A production-minded agent for getting around.
+
+judged on
+
+- Customer understanding
+- Measurable usefulness
+- Path from prototype to production
+- Responsible design
+- End-to-end functionality
+**Customer understanding**
+
+Kite does a guide dog's jobs: stop at curbs and crossings, watch overhead, refuse to go when a car is coming. Like a dog, it stops and waits instead of steering you.
+
+**Measurable usefulness**
+
+About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 500 automated tests.
+
+**Path to production**
+
+Any camera in, any Bluetooth headset out, and the same events live, replayed or simulated. Next: a phone instead of the laptop, and testing with orientation and mobility instructors.
+
+**Responsible design**
+
+The caregiver sees a map, never the video. Safety cues work with no internet. AI can only make Kite more careful.
+
+**End to end**
+
+Camera, detector, earpiece, AirPods and the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.
 
 Meta · Bringing People Closer Together
 
@@ -218,28 +218,43 @@ _out of a doorway_
 
 Cal Hacks prizes
 
-First Overall · Hacker's Choice
+Best People-First Hack
 
-## The whole idea in one walk.
+## Designed around one person's walk.
 
 judged on
 
-- Impact
-- Quality
-- Technical complexity
-- Creativity
-- A live demo
-**Impact**
+- Putting people first
+**Stop and wait, never detour**
 
-Guide dogs cost $50,000 each and there are fewer than 10,000 in the US. Kite is a guide for everyone else, from parts you can buy today.
+Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.
 
-**Creativity**
+**You stay in charge**
 
-A kite that flies behind you, not a robot that drags you. Sound instead of a screen, and a beep that speeds up instead of a sentence that arrives too late.
+Pause guidance any time; warnings stay on. Ask anything, in your own words.
 
-**Live demo**
+**Dignity and privacy**
 
-At our table you wear the AirPods and walk; drones aren't allowed indoors, so the drone's view comes from recorded footage and a browser simulation of a real San Francisco corner.
+Your caregiver sees where you are, never what your camera sees.
+
+Best Hardware Hack
+
+## A drone, a camera and a pair of AirPods.
+
+judged on
+
+- Hardware used in a meaningful way
+**DJI Tello, flown with a safety governor**
+
+Preflight GO/NO-GO before takeoff, altitude limits, hover if the video drops, land on low battery.
+
+**A chest camera for the near field**
+
+The closest metre, which the drone can't see.
+
+**AirPods as a managed device**
+
+Stem presses to talk, repeat and pause; device detection picks the right headphones; any stereo Bluetooth pair works.
 
 Most Technically Complex
 
@@ -264,43 +279,28 @@ Beep rate follows how soon you'd reach each object. Every sentence has a priorit
 
 Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.
 
-Best Hardware Hack
+First Overall · Hacker's Choice
 
-## A drone, a camera and a pair of AirPods.
-
-judged on
-
-- Hardware used in a meaningful way
-**DJI Tello, flown with a safety governor**
-
-Preflight GO/NO-GO before takeoff, altitude limits, hover if the video drops, land on low battery.
-
-**A chest camera for the near field**
-
-The closest metre, which the drone can't see.
-
-**AirPods as a managed device**
-
-Stem presses to talk, repeat and pause; device detection picks the right headphones; any stereo Bluetooth pair works.
-
-Best People-First Hack
-
-## Designed around one person's walk.
+## The whole idea in one walk.
 
 judged on
 
-- Putting people first
-**Stop and wait, never detour**
+- Impact
+- Quality
+- Technical complexity
+- Creativity
+- A live demo
+**Impact**
 
-Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.
+Guide dogs cost $50,000 each and there are fewer than 10,000 in the US. Kite is a guide for everyone else, from parts you can buy today.
 
-**You stay in charge**
+**Creativity**
 
-Pause guidance any time; warnings stay on. Ask anything, in your own words.
+A kite that flies behind you, not a robot that drags you. Sound instead of a screen, and a beep that speeds up instead of a sentence that arrives too late.
 
-**Dignity and privacy**
+**Live demo**
 
-Your caregiver sees where you are, never what your camera sees.
+At our table you wear the AirPods and walk; drones aren't allowed indoors, so the drone's view comes from recorded footage and a browser simulation of a real San Francisco corner.
 
 MLH · Commit Fellowship
 

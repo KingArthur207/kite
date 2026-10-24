@@ -32,3 +32,17 @@ test("the kite/drone flip is CSS-only, about 1.8 s a side, with a still fallback
   assert.ok(reduced, "reduced motion shows the drone flying a tiny kite");
   assert.doesNotMatch(read("app.js"), /kb-(kite|drone|flip)/, "no JS involved");
 });
+
+const judges = read("judges.html");
+const SPONSOR = ["cartesia", "anthropic", "spacetime", "moss", "microsoft", "meta", "spacexai"];
+const CALHACKS = ["people", "hardware", "complex", "overall", "commit"];
+const card = (id) => judges.match(new RegExp(`<article class="card track" id="${id}">[\\s\\S]*?</article>`))[0];
+
+test("/judges cards run from most to least likely to win, and the contents list matches", () => {
+  const cards = [...judges.matchAll(/<article class="card track" id="(\w+)">/g)].map((m) => m[1]);
+  assert.deepEqual(cards, [...SPONSOR, ...CALHACKS]);
+  const toc = judges.match(/<nav class="toc"[\s\S]*?<\/nav>/)[0];
+  assert.deepEqual([...toc.matchAll(/href="#(\w+)"/g)].map((m) => m[1]), [...SPONSOR, ...CALHACKS]);
+  const calhacks = judges.indexOf('id="calhacks"');
+  assert.ok(judges.indexOf('id="spacexai"') < calhacks && calhacks < judges.indexOf('id="people"'));
+});

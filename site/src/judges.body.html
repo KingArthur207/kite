@@ -15,7 +15,7 @@
       <h2 id="tracks-h" class="display">Every track, <em>criterion by criterion.</em></h2>
       <p class="lede">Each track's judging criteria in its own words, then how Kite answers them.</p>
       <nav class="toc" aria-label="Tracks on this page">
-        <a href="#overall">Overall</a><a href="#cartesia">Cartesia</a><a href="#anthropic">Anthropic</a><a href="#microsoft">Microsoft</a><a href="#spacetime">SpacetimeDB</a><a href="#moss">Moss</a><a href="#meta">Meta</a><a href="#spacexai">SpaceXAI</a><a href="#complex">Technically Complex</a><a href="#hardware">Hardware</a><a href="#people">People-First</a><a href="#commit">Commit Fellowship</a>
+        <a href="#cartesia">Cartesia</a><a href="#anthropic">Anthropic</a><a href="#spacetime">SpacetimeDB</a><a href="#moss">Moss</a><a href="#microsoft">Microsoft</a><a href="#meta">Meta</a><a href="#spacexai">SpaceXAI</a><a href="#people">People-First</a><a href="#hardware">Hardware</a><a href="#complex">Technically Complex</a><a href="#overall">Overall</a><a href="#commit">Commit Fellowship</a>
       </nav>
     </section>
 
@@ -58,21 +58,6 @@
           </dl>
         </article>
 
-        <article class="card track" id="microsoft">
-          <div class="meta">
-            <p class="sticker">Microsoft · Built for the Real World · Customer Impact</p>
-            <h2>A production-minded agent for getting around.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Customer understanding</li><li>Measurable usefulness</li><li>Path from prototype to production</li><li>Responsible design</li><li>End-to-end functionality</li></ul></div>
-          </div>
-          <dl>
-            <div><dt>Customer understanding</dt><dd>Kite does a guide dog's jobs: stop at curbs and crossings, watch overhead, refuse to go when a car is coming. Like a dog, it stops and waits instead of steering you.</dd></div>
-            <div><dt>Measurable usefulness</dt><dd>About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 500 automated tests.</dd></div>
-            <div><dt>Path to production</dt><dd>Any camera in, any Bluetooth headset out, and the same events live, replayed or simulated. Next: a phone instead of the laptop, and testing with orientation and mobility instructors.</dd></div>
-            <div><dt>Responsible design</dt><dd>The caregiver sees a map, never the video. Safety cues work with no internet. AI can only make Kite more careful.</dd></div>
-            <div><dt>End to end</dt><dd>Camera, detector, earpiece, AirPods and the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.</dd></div>
-          </dl>
-        </article>
-
         <article class="card track" id="spacetime">
           <div class="meta">
             <p class="sticker">SpacetimeDB</p>
@@ -97,6 +82,21 @@
             <div><dt>Searched on every sentence you speak</dt><dd>Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.</dd></div>
             <div><dt>A personal agent</dt><dd>"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.</dd></div>
             <div><dt>Without it</dt><dd>Every walk starts from zero, and "my usual" means nothing.</dd></div>
+          </dl>
+        </article>
+
+        <article class="card track" id="microsoft">
+          <div class="meta">
+            <p class="sticker">Microsoft · Built for the Real World · Customer Impact</p>
+            <h2>A production-minded agent for getting around.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Customer understanding</li><li>Measurable usefulness</li><li>Path from prototype to production</li><li>Responsible design</li><li>End-to-end functionality</li></ul></div>
+          </div>
+          <dl>
+            <div><dt>Customer understanding</dt><dd>Kite does a guide dog's jobs: stop at curbs and crossings, watch overhead, refuse to go when a car is coming. Like a dog, it stops and waits instead of steering you.</dd></div>
+            <div><dt>Measurable usefulness</dt><dd>About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 500 automated tests.</dd></div>
+            <div><dt>Path to production</dt><dd>Any camera in, any Bluetooth headset out, and the same events live, replayed or simulated. Next: a phone instead of the laptop, and testing with orientation and mobility instructors.</dd></div>
+            <div><dt>Responsible design</dt><dd>The caregiver sees a map, never the video. Safety cues work with no internet. AI can only make Kite more careful.</dd></div>
+            <div><dt>End to end</dt><dd>Camera, detector, earpiece, AirPods and the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.</dd></div>
           </dl>
         </article>
 
@@ -132,18 +132,31 @@
         </article>
       </div>
 
-      <p class="group-title" id="overall">Cal Hacks prizes</p>
+      <p class="group-title" id="calhacks">Cal Hacks prizes</p>
       <div class="tracks">
-        <article class="card track">
+        <article class="card track" id="people">
           <div class="meta">
-            <p class="sticker">First Overall · Hacker's Choice</p>
-            <h2>The whole idea in one walk.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Impact</li><li>Quality</li><li>Technical complexity</li><li>Creativity</li><li>A live demo</li></ul></div>
+            <p class="sticker">Best People-First Hack</p>
+            <h2>Designed around one person's walk.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Putting people first</li></ul></div>
           </div>
           <dl>
-            <div><dt>Impact</dt><dd>Guide dogs cost $50,000 each and there are fewer than 10,000 in the US. Kite is a guide for everyone else, from parts you can buy today.</dd></div>
-            <div><dt>Creativity</dt><dd>A kite that flies behind you, not a robot that drags you. Sound instead of a screen, and a beep that speeds up instead of a sentence that arrives too late.</dd></div>
-            <div><dt>Live demo</dt><dd>At our table you wear the AirPods and walk; drones aren't allowed indoors, so the drone's view comes from recorded footage and a browser simulation of a real San Francisco corner.</dd></div>
+            <div><dt>Stop and wait, never detour</dt><dd>Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.</dd></div>
+            <div><dt>You stay in charge</dt><dd>Pause guidance any time; warnings stay on. Ask anything, in your own words.</dd></div>
+            <div><dt>Dignity and privacy</dt><dd>Your caregiver sees where you are, never what your camera sees.</dd></div>
+          </dl>
+        </article>
+
+        <article class="card track" id="hardware">
+          <div class="meta">
+            <p class="sticker">Best Hardware Hack</p>
+            <h2>A drone, a camera and a pair of AirPods.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Hardware used in a meaningful way</li></ul></div>
+          </div>
+          <dl>
+            <div><dt>DJI Tello, flown with a safety governor</dt><dd>Preflight GO/NO-GO before takeoff, altitude limits, hover if the video drops, land on low battery.</dd></div>
+            <div><dt>A chest camera for the near field</dt><dd>The closest metre, which the drone can't see.</dd></div>
+            <div><dt>AirPods as a managed device</dt><dd>Stem presses to talk, repeat and pause; device detection picks the right headphones; any stereo Bluetooth pair works.</dd></div>
           </dl>
         </article>
 
@@ -161,29 +174,16 @@
           </dl>
         </article>
 
-        <article class="card track" id="hardware">
+        <article class="card track" id="overall">
           <div class="meta">
-            <p class="sticker">Best Hardware Hack</p>
-            <h2>A drone, a camera and a pair of AirPods.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Hardware used in a meaningful way</li></ul></div>
+            <p class="sticker">First Overall · Hacker's Choice</p>
+            <h2>The whole idea in one walk.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Impact</li><li>Quality</li><li>Technical complexity</li><li>Creativity</li><li>A live demo</li></ul></div>
           </div>
           <dl>
-            <div><dt>DJI Tello, flown with a safety governor</dt><dd>Preflight GO/NO-GO before takeoff, altitude limits, hover if the video drops, land on low battery.</dd></div>
-            <div><dt>A chest camera for the near field</dt><dd>The closest metre, which the drone can't see.</dd></div>
-            <div><dt>AirPods as a managed device</dt><dd>Stem presses to talk, repeat and pause; device detection picks the right headphones; any stereo Bluetooth pair works.</dd></div>
-          </dl>
-        </article>
-
-        <article class="card track" id="people">
-          <div class="meta">
-            <p class="sticker">Best People-First Hack</p>
-            <h2>Designed around one person's walk.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Putting people first</li></ul></div>
-          </div>
-          <dl>
-            <div><dt>Stop and wait, never detour</dt><dd>Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.</dd></div>
-            <div><dt>You stay in charge</dt><dd>Pause guidance any time; warnings stay on. Ask anything, in your own words.</dd></div>
-            <div><dt>Dignity and privacy</dt><dd>Your caregiver sees where you are, never what your camera sees.</dd></div>
+            <div><dt>Impact</dt><dd>Guide dogs cost $50,000 each and there are fewer than 10,000 in the US. Kite is a guide for everyone else, from parts you can buy today.</dd></div>
+            <div><dt>Creativity</dt><dd>A kite that flies behind you, not a robot that drags you. Sound instead of a screen, and a beep that speeds up instead of a sentence that arrives too late.</dd></div>
+            <div><dt>Live demo</dt><dd>At our table you wear the AirPods and walk; drones aren't allowed indoors, so the drone's view comes from recorded footage and a browser simulation of a real San Francisco corner.</dd></div>
           </dl>
         </article>
 
