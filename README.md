@@ -229,7 +229,7 @@ Every producer speaks one event contract, defined in [`earpiece/earpiece/events.
 | Where it comes from | Where the thing is, rendered binaurally with a spherical-head model. |
 | What it sounds like | What it is: a knock for a person, a buzz for a car, a pip for a pole, a glide for a curb. At most two at once. |
 | How fast it repeats | How soon you'd reach it. Beeps start at 3.5 s time-to-contact, one a second, and speed up to one every 0.11 s, rising from 520 Hz to 1250 Hz. Then "Stop." |
-| A tick from one side | The beacon toward the next waypoint. Bright when you're facing it. |
+| A two-note ping | The beacon toward the next waypoint. Rising means turn right, falling means turn left, a bright same-pitch double means you're facing it, three low pulses mean it's behind you. The tune carries the direction, so it still works on one speaker. |
 
 AirPods stem: press once to talk, twice to repeat, three times to pause guidance (safety warnings stay on).
 
