@@ -2,6 +2,7 @@
 export function reconnectingSocket(url: string, binary = false) {
   let ws: WebSocket | null = null;
   const connect = () => {
+    if (!url) return; // offline: stays closed, send() drops
     const s = new WebSocket(url);
     if (binary) s.binaryType = "arraybuffer";
     s.onopen = () => { ws = s; };
