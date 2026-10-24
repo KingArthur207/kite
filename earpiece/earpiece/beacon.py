@@ -28,7 +28,7 @@ from typing import Callable
 
 import numpy as np
 
-from . import sounds, spatial
+from . import hrtf, sounds, spatial
 from .config import BeaconCfg
 from .mixer import Engine
 
@@ -54,9 +54,23 @@ def _beacon_sound(region: str, bearing_q: int, rate: int) -> np.ndarray:
     return hit if hit is not None else _beacon_render(region, bearing_q, rate)
 
 
+def _use_hrtf(rate: int) -> bool:
+    """KITE_HRTF=kemar and the KEMAR set is already loaded (prewarm loads it, off the tick)."""
+    return hrtf.enabled() and hrtf.ready(rate)
+
+
+def _place_many(mono: np.ndarray, bqs: list[int], rate: int) -> list[np.ndarray]:
+    if _use_hrtf(rate):
+        return [hrtf.render(mono, float(bq), rate) for bq in bqs]
+    return spatial.render_many(mono, bqs, rate)
+
+
 @lru_cache(maxsize=512)
 def _beacon_render(region: str, bearing_q: int, rate: int) -> np.ndarray:
-    return spatial.render(_mono_sound(region, bearing_q, rate), float(bearing_q), rate)
+    mono = _mono_sound(region, bearing_q, rate)
+    if _use_hrtf(rate):
+        return hrtf.render(mono, float(bearing_q), rate)
+    return spatial.render(mono, float(bearing_q), rate)
 
 
 def region_of(bearing: float, cfg: BeaconCfg) -> str:
@@ -71,11 +85,15 @@ def region_of(bearing: float, cfg: BeaconCfg) -> str:
     return "behind"
 
 
-def prewarm(cfg: BeaconCfg, rate: int) -> int:
+def prewarm(cfg: BeaconCfg, rate: int, log=print) -> int:
     """Pre-render every (region, 5-degree bearing) pair tick() can ask for: a bearing
     rounds to bq from within +-2.5 deg, so each bq gets the regions spanned by that
     interval. One batched native render per (region, |bearing|), since the mono cue
-    depends only on those. Returns the number of cues."""
+    depends only on those. With KITE_HRTF=kemar this is also where the KEMAR set is
+    loaded (downloaded on first use), never on the audio tick. Returns the cue count."""
+    if hrtf.enabled() and not hrtf.ready(rate) and hrtf.ensure(rate, log=log):
+        _WARM.clear()
+        _beacon_render.cache_clear()
     want: dict[str, list[int]] = {r: [] for r in REGIONS}
     for bq in spatial.BEARINGS_5DEG:
         lo = REGIONS.index(region_of(max(0.0, abs(bq) - 2.5), cfg))
@@ -86,7 +104,7 @@ def prewarm(cfg: BeaconCfg, rate: int) -> int:
     for region, bqs in want.items():
         for mag in sorted({abs(bq) for bq in bqs}):
             group = [bq for bq in bqs if abs(bq) == mag]
-            for bq, st in zip(group, spatial.render_many(_mono_sound(region, mag, rate), group, rate)):
+            for bq, st in zip(group, _place_many(_mono_sound(region, mag, rate), group, rate)):
                 _WARM[(region, bq, rate)] = st
                 n += 1
     return n
