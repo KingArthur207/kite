@@ -2,6 +2,8 @@
 # One command to bring the Kite demo up and down on this Mac (docs/demo-runbook.md).
 #
 #   scripts/demo.sh sim [--output <device>]              earpiece, relay, sim, dashboard, stand-in detector
+#   scripts/demo.sh streetview [--output <device>]       earpiece, relay, Street View bridge, sim, dashboard, detector;
+#                                                        the Moss St Street View walk opens in a new Chrome window
 #   scripts/demo.sh live [camera] [--output <dev>]       earpiece, dashboard, detector on a camera (index, name or video file)
 #   scripts/demo.sh replay <file.jsonl> [--output <dev>] earpiece, dashboard, scripts/replay.py
 #   scripts/demo.sh stop                                 stops only what this script started
@@ -136,12 +138,10 @@ start_detector() {  # extra standin flags...
   fi
   local deps="$DETECT_DEPS --with opencv-python-headless" extra=()
   [ "${1:-}" = --source ] && deps="$DETECT_DEPS --with opencv-python --with transformers --with av"  # --show needs GUI OpenCV; av opens cameras by name
-  # The detector always sends to port 5010, so with a port offset it must not send (it would feed someone else's earpiece).
-  [ "$OFF" != 0 ] && { extra+=(--no-send); say "  note: KITE_PORT_OFFSET is set, so the detector runs with --no-send"; }
   # shellcheck disable=SC2206
   [ -n "${KITE_DETECT_ARGS:-}" ] && extra+=(${KITE_DETECT_ARGS})
   # shellcheck disable=SC2086
-  launch detector "$ROOT" uv run --no-project $deps python sim/standin_detect.py "$@" ${extra[@]+"${extra[@]}"}
+  launch detector "$ROOT" env KITE_EARPIECE_PORT="$UDP_PORT" uv run --no-project $deps python sim/standin_detect.py "$@" ${extra[@]+"${extra[@]}"}
 }
 
 open_url() {
@@ -162,6 +162,9 @@ begin() {  # common start checks; args are check_prereqs words, then -- then por
   while [ $# -gt 0 ] && [ "$1" != -- ]; do pre+=("$1"); shift; done
   shift; ports=("$@")
   any_running && die "Kite is already running from this script. Run scripts/demo.sh stop first (or status to see it)."
+  # Every mode starts an earpiece, and the team's Cartesia plan allows one at a time, on any port.
+  local ep; ep=$(pgrep -f 'python.* -m earpiece run' | head -1)
+  [ -n "$ep" ] && die "an earpiece is already running (pid $ep). Cartesia allows one: use that one, or stop it first."
   local ok=0
   check_prereqs "${pre[@]}" || ok=1
   check_ports "${ports[@]}" || ok=1
@@ -183,6 +186,27 @@ cmd_sim() {
   wait_port dashboard "$DASH_PORT" tcp 20; wait_port earpiece "$WS_PORT" tcp 45
   open_url "http://localhost:$SIM_PORT"; open_url "http://localhost:$DASH_PORT"
   say "up. Sim: arrow keys walk, B blacks out, V reveals. Stop everything with: scripts/demo.sh stop"
+}
+
+cmd_streetview() {
+  [ -f "$ROOT/sim/.env.local" ] || die "no sim/.env.local (the page's Google key). Fix: sh sim/tiles_env.sh"
+  begin venv sim dashboard uv -- earpiece:$UDP_PORT:udp earpiece:$WS_PORT:tcp \
+    relay:$RELAY_PORT:tcp sim:$SIM_PORT:tcp dashboard:$DASH_PORT:tcp
+  say "starting the Street View walk on Moss St"
+  start_earpiece
+  launch relay "$ROOT" "$PY" sim/relay.py --port "$RELAY_PORT"
+  launch bridge "$ROOT" "$PY" sim/streetview_bridge.py --relay "ws://127.0.0.1:$RELAY_PORT"
+  start_vite sim "$SIM_PORT"
+  start_vite dashboard "$DASH_PORT"
+  start_detector --relay "ws://127.0.0.1:$RELAY_PORT/sub" || true
+  wait_port relay "$RELAY_PORT" tcp 15; wait_port sim "$SIM_PORT" tcp 20
+  wait_port dashboard "$DASH_PORT" tcp 20; wait_port earpiece "$WS_PORT" tcp 45
+  still_up bridge || { say "  FAIL bridge exited. Last log lines:"; tail -n 3 "$LOGS/bridge.log" | sed 's/^/       /'; }
+  local url="http://localhost:$SIM_PORT/?world=streetview&relay=ws://127.0.0.1:$RELAY_PORT/pub&ear=ws://127.0.0.1:$WS_PORT"
+  if [ "${KITE_NO_OPEN:-0}" = 1 ]; then say "  open $url in Chrome"
+  else open -na "Google Chrome" --args --new-window "$url"; fi
+  open_url "http://localhost:$DASH_PORT"
+  say "up. Street View: Up/Down next/previous panorama, Left/Right turn, B blacks out, V reveals. Stop with: scripts/demo.sh stop"
 }
 
 cmd_live() {
@@ -284,9 +308,10 @@ set -- ${ARGS[@]+"${ARGS[@]}"}
 
 case "$MODE" in
   sim) cmd_sim ;;
+  streetview) cmd_streetview ;;
   live) cmd_live "$@" ;;
   replay) cmd_replay "$@" ;;
   stop) cmd_stop ;;
   status) cmd_status ;;
-  *) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
