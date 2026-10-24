@@ -1,3 +1,8 @@
 .env
 .env.*
 !.env.example
+
+# stand-in detector: weights, stock clips, outputs
+weights/
+clips/
+out/
