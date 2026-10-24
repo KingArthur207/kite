@@ -4,6 +4,7 @@
     python -m kite.follow --source clip.mp4 --overlay --preview    # any video; overlay mp4 next to the csv
     python -m kite.record --source tello --out recordings --fly --follow   # live: g toggles follow
     python -m kite.record --source tello --out recordings --fly --follow --follow-predict   # steer on the prediction
+    python -m kite.follow --source recordings/<take> --yaw pd      # opt in: a kite.fly yaw source (simulation only)
 
 Geometry. The camera is fixed and level, so from above and behind only the top of the walker's head (and, further
 back, the shoulders) is in frame, cut off by the bottom edge: that cut-off person is the walker (spec 5.3). The head
@@ -23,6 +24,9 @@ Pieces (each testable without a drone):
                     following, a walker motion model (IMM Kalman filter) and a short-horizon drone planner replace
                     lr, fb and yaw; the reactive command stays when the filter is not confident yet. Coast, lost
                     (hover), ud, clamps and slew are the same either way.
+                    Yaw source (kite/fly, opt in: --follow-yaw / --yaw pd|fly, extra `fly`): a predictive PD or the
+                    fruit-fly pursuit circuit decides the yaw stick alone while following; neither passed its
+                    simulation ship gate (kite/fly/DESIGN.md section 11). Exclusive with prediction.
   FollowMode       the live glue for kite.record: tracker thread, start checks, decisions -> events.jsonl.
 Every rc goes through the SafetyGovernor (kite.record sends it), which clamps to SafetyCfg.max_rc.
 
@@ -48,7 +52,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 
 import numpy as np
 
@@ -289,11 +293,24 @@ def scaled_camera(cam: Camera, width: int, height: int) -> Camera:
     return Camera(width, height, cam.fx * sx, cam.fy * sy, cam.cx * sx, cam.cy * sy, cam.source)
 
 
+class YawSource(Protocol):
+    """Replaces the yaw law while following (kite.fly.steer.FlySteer). Called every control step with a fresh track:
+    the walker's bearing (deg, + right) and range (m) measured on the frame that arrived at frame_t. Returns the yaw
+    stick before the clamps and slew limit; `fallback` is the law's own value (returned if the source fails).
+    It runs on the control loop and nothing times it out: keep a call to a few ms (FlySteer: ~3 ms, under 6 ms worst)."""
+
+    def reset(self) -> None: ...
+
+    def yaw(self, t: float, frame_t: float, bearing_deg: float, range_m: float, fallback: float) -> float: ...
+
+
 class FollowController:
-    """Track + telemetry -> rc. Call update() at the control rate (kite.record: 10 Hz); it is rate independent."""
+    """Track + telemetry -> rc. Call update() at the control rate (kite.record: 10 Hz); it is rate independent.
+    yaw_source (optional, reactive mode only) decides the yaw stick while following; coasting and lost handling stay
+    the same. If it raises or returns a non-finite value, the yaw law takes over for good (yaw_source_error says why)."""
 
     def __init__(self, cfg: FollowCfg | None = None, camera: Camera | None = None, max_rc: int = 100,
-                 route: np.ndarray | None = None, open_loop: bool = False):
+                 route: np.ndarray | None = None, open_loop: bool = False, yaw_source: YawSource | None = None):
         self.cfg = cfg or FollowCfg()
         self.camera = camera or load_camera()
         self.max_rc = max_rc
@@ -301,9 +318,42 @@ class FollowController:
         # open_loop (rehearsal on a file): the rc is never flown, so the camera moved only as it did in the video and
         # the dead reckoning ignores the sticks. ponytail: a flown take could dead-reckon on telemetry vgx/vgy instead
         self.open_loop = open_loop
+        if yaw_source is not None and self.cfg.predict:  # the planner owns yaw in predict mode; never mix the two
+            raise ValueError("a yaw source and FollowCfg.predict are exclusive: pick one")
+        for name in ("behind_m", "video_lag_s"):  # a source built for another geometry would steer on wrong numbers
+            v = getattr(yaw_source, name, None)
+            if v is not None and abs(float(v) - getattr(self.cfg, name)) > 1e-9:
+                raise ValueError(f"yaw source {name} {v} != follow cfg {name} {getattr(self.cfg, name)}: "
+                                 f"build it from the controller's FollowCfg")
+        self.yaw_source = yaw_source
+        self.yaw_source_error: str | None = None
         self.reset()
 
+    def _drop_yaw_source(self, e: Exception) -> None:
+        self.yaw_source_error = f"{type(e).__name__}: {e}"
+        self.yaw_source = None
+
+    def _reset_yaw_source(self) -> None:
+        if self.yaw_source is not None:
+            try:
+                self.yaw_source.reset()
+            except Exception as e:  # a broken source must never stop following: the law takes over
+                self._drop_yaw_source(e)
+
+    def _yaw(self, t: float, track: Track, bearing: float, rng: float, law: float) -> float:
+        if self.yaw_source is None:
+            return law
+        try:
+            y = float(self.yaw_source.yaw(t, track.t, bearing, rng, law))
+            if not math.isfinite(y):
+                raise ValueError(f"yaw source returned {y}")
+            return y
+        except Exception as e:
+            self._drop_yaw_source(e)
+            return law
+
     def reset(self, height_target_m: float | None = None) -> None:
+        self._reset_yaw_source()
         self.height_target = self.cfg.height_m if self.cfg.height_m is not None else height_target_m
         self.state = "following"
         self._t: float | None = None
@@ -365,6 +415,7 @@ class FollowController:
                 self.state = "following"
                 self._last_meas = None
                 self._reset_prediction()
+                self._reset_yaw_source()  # its memory of the walker is from before the loss
         elif age > c.lost_s:
             self.state = "lost"
         else:
@@ -391,8 +442,8 @@ class FollowController:
             fb = c.k_fb * _db(rng - c.behind_m, c.db_range_m)
             if rng >= c.min_range_m:
                 fb += c.ff * v_walker / c.stick_m_s
-            out = np.array([c.k_lr * _db(lateral, c.db_lat_m), fb, self._ud(tel, cmd),
-                            c.k_yaw * _db(bearing, c.db_yaw_deg)])
+            yaw = self._yaw(t, track, bearing, rng, c.k_yaw * _db(bearing, c.db_yaw_deg))
+            out = np.array([c.k_lr * _db(lateral, c.db_lat_m), fb, self._ud(tel, cmd), yaw])
             cmd.planner = "reactive"
             plan = self._predict(track, rng, lateral, t, walker_xy)
             if c.predict and plan is not None:
@@ -494,6 +545,49 @@ class FollowController:
         return np.clip(out, self._out - step, self._out + step)
 
 
+# ------------------------------------------------------------------ opt-in yaw sources (kite.fly)
+YAW_CHOICES = ("law", "pd", "fly")  # kite.record --follow-yaw, rehearsal --yaw. law: FollowController's own (default)
+FLY_HINT = 'pip install -e ".[fly]"'
+
+
+def fly_available() -> str | None:
+    """None if kite.fly's yaw sources can load (scipy, the `fly` extra), else why not. Imports nothing from kite.fly."""
+    import importlib.util
+
+    if importlib.util.find_spec("scipy") is None:
+        return f"scipy is not installed (kite.fly needs it); one time, on normal internet: {FLY_HINT}"
+    return None
+
+
+def build_yaw_source(name: str, cfg: FollowCfg, params: str | Path | None = None) -> tuple[YawSource | None, str]:
+    """--follow-yaw / --yaw: (the yaw source, built from this very cfg instance, and its startup line). law builds
+    nothing and never imports kite.fly."""
+    if name == "law":
+        return None, "yaw source law (the follow controller's own yaw law, the default)"
+    try:
+        from .fly.steer import describe_yaw_source, make_yaw_source
+    except ImportError as e:
+        raise ImportError(f"yaw source {name}: kite.fly cannot load ({e}); {FLY_HINT}") from None
+    src = make_yaw_source(name, cfg, params)
+    return src, describe_yaw_source(src, cfg)
+
+
+def yaw_source_label(src: YawSource | None) -> str:
+    """How logs and the status line name a yaw source: law for none, else its name (pd, fly), arm or class."""
+    if src is None:
+        return "law"
+    return str(getattr(src, "name", None) or getattr(src, "arm", None) or type(src).__name__)
+
+
+def yaw_source_failure(ctrl: FollowController, src: YawSource | None) -> str | None:
+    """Why the configured yaw source `src` is not steering now (None while it is, or when there is none): the
+    controller dropped it for good (yaw_source_error), or it fell back to the law on its own until its next reset
+    (kite.fly's `failed`, the same as its stats["failed"])."""
+    if src is None:
+        return None
+    return ctrl.yaw_source_error or getattr(src, "failed", None) or None
+
+
 # ------------------------------------------------------------------ live follow inside kite.record
 def _link_error(drone) -> str | None:
     """TelloDrone.link_error behind any wrapper (SafetyGovernor.inner): set while Wi-Fi sends fail."""
@@ -513,14 +607,21 @@ class FollowMode:
     tracked. tick() is called by the recorder's control loop while active; it returns the rc to send (the recorder
     sends it through the SafetyGovernor) and cancels itself on any safety action, landing or discrete command.
     log(msg, quiet=False, **extra) records to events.jsonl (quiet: no console line).
+    yaw_source (opt in, --follow-yaw pd|fly): passed to the controller. With one, "follow on", every "follow" event
+    and the status line name the source steering yaw (law once it fell back, with why), and the fallback is logged
+    once when it happens. Without one, the per-tick events and the status line are as before.
     """
 
     def __init__(self, frames, detector_factory: Callable[[], Detector], cfg: FollowCfg | None = None,
-                 camera: Camera | None = None, max_rc: int = 50, log: Callable | None = None):
+                 camera: Camera | None = None, max_rc: int = 50, log: Callable | None = None,
+                 yaw_source: YawSource | None = None):
         self.frames = frames
         self.cfg = cfg or FollowCfg()
         self.tracker = WalkerTracker(self.cfg)
-        self.ctrl = FollowController(self.cfg, camera, max_rc)
+        self.ctrl = FollowController(self.cfg, camera, max_rc, yaw_source=yaw_source)
+        self.yaw_source = yaw_source  # as configured (the controller drops a failing one: ctrl.yaw_source is None)
+        self.yaw_name = yaw_source_label(yaw_source)
+        self._yaw_failure_logged: str | None = None
         self.log = log or (lambda msg, quiet=False, **kw: None)
         self._factory = detector_factory
         self._lock = threading.Lock()
@@ -601,10 +702,34 @@ class FollowMode:
         self.ctrl.reset(tel.height_m)
         self.active = True
         self.last = FollowCmd(state="following")
+        yaw = {"yaw_source": "law"} if self.yaw_source is None else {
+            **self._yaw_fields(), "yaw_params": getattr(self.yaw_source, "source", None)}
         self.log("follow on", box=[round(v) for v in tr.box], conf=round(tr.conf, 2),
                  height_target=None if self.ctrl.height_target is None else round(self.ctrl.height_target, 2),
-                 behind_m=self.cfg.behind_m)
+                 behind_m=self.cfg.behind_m, **yaw)
+        self._log_yaw_fallback()
         return None
+
+    # -- the yaw source (only with one configured)
+    def yaw_state(self) -> tuple[str, str | None]:
+        """(the yaw source steering now, why the configured one fell back to the law or None)."""
+        why = yaw_source_failure(self.ctrl, self.yaw_source)
+        return ("law" if why else self.yaw_name), why
+
+    def _yaw_fields(self) -> dict:
+        if self.yaw_source is None:
+            return {}
+        active, why = self.yaw_state()
+        return {"yaw_source": active} if why is None else {"yaw_source": active, "yaw_source_error": why}
+
+    def _log_yaw_fallback(self) -> None:
+        """Log a fallback once when it happens (again only if it recovered, on a reset, and failed anew)."""
+        if self.yaw_source is None:
+            return
+        _, why = self.yaw_state()
+        if why is not None and self._yaw_failure_logged is None:
+            self.log(f"follow: yaw source {self.yaw_name} failed -> the follow law steers yaw", reason=why)
+        self._yaw_failure_logged = why
 
     def cancel(self, reason: str) -> None:
         if self.active:
@@ -640,12 +765,14 @@ class FollowMode:
                 self.log(f"follow: walker lost for {self.cfg.lost_s:g} s -> hover (rc 0), waiting for the walker")
             elif prev == "lost":
                 self.log("follow: walker found again -> following")
+        self._log_yaw_fallback()
         self.log("follow", quiet=True, state=cmd.state, rc=list(cmd.rc), conf=None if tr is None else round(tr.conf, 2),
                  box=None if tr is None else [round(v) for v in tr.box],
                  range_m=None if cmd.range_m is None else round(cmd.range_m, 2),
                  bearing_deg=None if cmd.bearing_deg is None else round(cmd.bearing_deg, 1),
                  walker_m_s=None if cmd.walker_m_s is None else round(cmd.walker_m_s, 2),
-                 height_err_m=None if cmd.height_err_m is None else round(cmd.height_err_m, 2), planner=cmd.planner)
+                 height_err_m=None if cmd.height_err_m is None else round(cmd.height_err_m, 2), planner=cmd.planner,
+                 **self._yaw_fields())
         return cmd.rc
 
     def status(self) -> str:
@@ -661,13 +788,17 @@ class FollowMode:
             walker = f"walker conf {tr.conf:.2f} box {','.join(str(round(v)) for v in tr.box)}"
             if tr.age(now) > self.cfg.fresh_s:
                 walker += f" ({tr.age(now):.1f}s old)"
+        yaw = ""
+        if self.yaw_source is not None:
+            active, why = self.yaw_state()
+            yaw = f"yaw {active}" if why is None else f"yaw law ({self.yaw_name} failed: {why[:60]})"
         if not self.active:
-            return f"follow off ({walker}, {self.det_fps:.0f} det/s)"
+            return f"follow off ({walker}, {self.det_fps:.0f} det/s{', ' + yaw if yaw else ''})"
         s = self.last
         line = f"FOLLOW {s.state.upper()} {walker}"
         if s.range_m is not None:
             line += f" r {s.range_m:.1f}m b {s.bearing_deg:+.0f}°"
-        return line
+        return f"{line} {yaw}" if yaw else line
 
 
 # ------------------------------------------------------------------ rehearsal on a file (open loop)
@@ -804,11 +935,12 @@ def _walker_gps(take: Path) -> dict[int, tuple[float, float]]:
 
 def rehearse(source: str | Path, detector: Detector, cfg: FollowCfg | None = None, out_csv: str | Path | None = None,
              overlay: str | Path | None = None, preview: bool = False, control_hz: float = 10.0,
-             max_rc: int = 50, max_s: float = 0.0) -> dict:
+             max_rc: int = 50, max_s: float = 0.0, yaw_source: YawSource | None = None) -> dict:
     """Run tracker + controller open loop on every frame of a take or clip; write the rc it WOULD send per frame.
     Follow engages at the first walker touching the bottom edge, like pressing g. Returns a summary.
     The prediction always runs (the overlay draws it); cfg.predict says whether its plan or the reactive rc is
-    written. A take with gps/frames_gps.csv (kite.gps) also gets the route prior."""
+    written. A take with gps/frames_gps.csv (kite.gps) also gets the route prior. yaw_source (opt in, built from this
+    cfg; not with cfg.predict) decides yaw while following; the summary says which one and its first fallback."""
     import cv2
 
     src = Path(source)
@@ -826,7 +958,7 @@ def rehearse(source: str | Path, detector: Detector, cfg: FollowCfg | None = Non
     cmd, next_tick, t0 = FollowCmd(), None, None
     vw = None
     stats = {"frames": 0, "walker_frames": 0, "following_ticks": 0, "coast_ticks": 0, "lost_ticks": 0, "ticks": 0,
-             "losses": 0, "engaged_at_s": None}
+             "losses": 0, "engaged_at_s": None, "yaw_source": yaw_source_label(yaw_source), "yaw_source_error": None}
     try:
         with open(out_csv, "w", newline="") as fh:
             out = csv.writer(fh)
@@ -842,13 +974,15 @@ def rehearse(source: str | Path, detector: Detector, cfg: FollowCfg | None = Non
                 stats["frames"] += 1
                 stats["walker_frames"] += fresh
                 if ctrl is None and fresh and tr.confirmed and tr.touches_bottom:
-                    ctrl = FollowController(cfg, cam or load_camera(), max_rc, route=route, open_loop=True)
+                    ctrl = FollowController(cfg, cam or load_camera(), max_rc, route=route, open_loop=True,
+                                            yaw_source=yaw_source)
                     ctrl.reset(tel.height_m if tel else None)
                     stats["engaged_at_s"] = round(t - t0, 2)
                     next_tick = t
                 if ctrl is not None and t >= next_tick:
                     prev = cmd.state
                     cmd = ctrl.update(tr, tel, t, gps.get(i))
+                    stats["yaw_source_error"] = stats["yaw_source_error"] or yaw_source_failure(ctrl, yaw_source)
                     next_tick += 1.0 / control_hz
                     stats["ticks"] += 1
                     stats[f"{cmd.state}_ticks"] += 1
@@ -895,16 +1029,34 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds of the source")
     p.add_argument("--predict", action="store_true", help="write the prediction planner's rc instead of the reactive "
                    "controller's (the overlay draws the prediction either way)")
+    p.add_argument("--yaw", choices=YAW_CHOICES, default="law", help="what steers yaw while following: law (default, "
+                   "the controller's own yaw law), pd (kite.fly's predictive PD) or fly (kite.fly's fruit-fly pursuit "
+                   "circuit). pd and fly are experimental, simulation only, and need the 'fly' extra; not with "
+                   "--predict")
+    p.add_argument("--yaw-params", default=None, metavar="PATH", help="with --yaw pd|fly: a parameter file instead of "
+                   "the tuned one (kite/fly/data/pred_pd.json, fly_yaw.json)")
     args = p.parse_args(argv)
 
     src = Path(args.source)
     if not src.exists():
         p.error(f"no such file or folder: {src}")
+    if args.yaw == "law" and args.yaw_params:
+        p.error("--yaw-params needs --yaw pd or fly")
+    if args.yaw != "law":
+        if args.predict:
+            p.error(f"--yaw {args.yaw} and --predict are exclusive: the prediction planner steers yaw itself")
+        why = fly_available()
+        if why:
+            p.error(f"--yaw {args.yaw}: {why}")
+        if args.yaw_params and not Path(args.yaw_params).is_file():
+            p.error(f"--yaw-params: no such file: {args.yaw_params}")
     why = detector_available(args.weights)
     if why:
         print(why)
         return 1
     cfg = FollowCfg(behind_m=args.behind, above_m=args.above, height_m=args.height, predict=args.predict)
+    yaw_source, line = build_yaw_source(args.yaw, cfg, args.yaw_params)
+    print(line, flush=True)
     out = Path(args.out) if args.out else None
     overlay = None
     if args.overlay:
@@ -912,7 +1064,7 @@ def main(argv: list[str] | None = None) -> int:
         overlay = Path(base).with_suffix(".mp4")
     print(f"loading the detector ... (rehearsal on {src})", flush=True)
     det = YoloPersonDetector(args.weights)
-    s = rehearse(src, det, cfg, out, overlay, args.preview, max_s=args.max_s)
+    s = rehearse(src, det, cfg, out, overlay, args.preview, max_s=args.max_s, yaw_source=yaw_source)
     n = max(1, s["ticks"])
     print(f"{s['frames']} frames, walker seen in {s['walker_frames']} ({100 * s['walker_frames'] / max(1, s['frames']):.0f}%)")
     if s["engaged_at_s"] is None:
@@ -920,6 +1072,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"engaged at {s['engaged_at_s']} s; control ticks: following {100 * s['following_ticks'] / n:.0f}%  "
               f"coast {100 * s['coast_ticks'] / n:.0f}%  lost {100 * s['lost_ticks'] / n:.0f}%  ({s['losses']} losses)")
+    if s["yaw_source_error"]:
+        print(f"yaw source {s['yaw_source']} fell back to the follow law: {s['yaw_source_error']}")
     print(f"rc per frame -> {s['csv']}" + (f"\noverlay -> {s['overlay']}" if s["overlay"] else ""))
     return 0
 

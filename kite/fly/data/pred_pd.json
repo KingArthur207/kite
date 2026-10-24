@@ -1,0 +1,50 @@
+{
+ "arm": "PRED-PD",
+ "x": [
+  0.739292644968557,
+  0.09059438911254485,
+  0.379525276273283
+ ],
+ "params": {
+  "kp": 2.3260432703979532,
+  "kd": 0.09059438911254485,
+  "deadband_deg": 1.518101105093132
+ },
+ "norm": null,
+ "size_blind": null,
+ "gen": 20,
+ "sel_fitness": -1.0045126460197347,
+ "metric_means": {
+  "rms_bearing_deg": 39.48991161223566,
+  "p95_bearing_deg": 58.04566309556131,
+  "in_view": 0.6272724780701754,
+  "following": 0.5215105595377262,
+  "time_lost_s": 21.39919026589823,
+  "losses": 2.515625,
+  "rms_range_err_m": 5.795263690042326,
+  "in_band": 0.024059758771929826,
+  "min_range_m": 1.169374398631109,
+  "too_close_s": 0.756874999999992,
+  "collision": 0.0625,
+  "rms_alt_err_m": 0.05779981624874028,
+  "stick_change": 1.255263350468588,
+  "mean_abs_yaw": 3.741651505633502,
+  "pitch_exits": 0.59375,
+  "corner_losses": 0.625,
+  "min_dist3d_m": 1.2241425530897065,
+  "start_failed": 0.0
+ },
+ "n_sel": 64,
+ "profile": "train",
+ "episode_s": 60.0,
+ "cma_seed": 1,
+ "tag": "kite1",
+ "init": "default",
+ "init_source": "PRED-PD defaults",
+ "pop": 12,
+ "k": 24,
+ "sigma0": 0.1,
+ "stds": {},
+ "stub_s": null,
+ "time": "2026-10-24T11:55:59+00:00"
+}

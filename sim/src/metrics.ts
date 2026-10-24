@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import { WALKER_RADIUS, WALK_SPEED, EARPIECE_URL } from "./config";
 import { route } from "./osmWorld";
+import moss from "../public/osm/moss.json";
 import { Path, mossPaths, carBoxes, type Pose } from "./mossActors";
 import { loadCar, loadPerson } from "./actors";
 
@@ -16,8 +17,12 @@ const STUCK_S = 8;          // waiting this long = a static thing: feel around i
 const BLOCKED_S = 1;        // pressed against something this long = feel around it
 const SIDE_LEN = 7;         // meters walked on the sidestep line before rejoining
 const IGNORE_LEN = 3;       // meters after a sidestep where cues are ignored (else static things hold forever)
+const FEEL_OFFSETS = [0.5, 0.75, 1, 1.25, 1.5];   // metres to the side tried when feeling around, nearest first
+const FEEL_AHEAD = [0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4];   // ... each clear where the walker stands and this far on
+                                                     // (Kite stops for a depth obstacle up to 2.2 m out)
+const SQUEEZE_AFTER_S = 5, SQUEEZE_M = 1;   // no headway for 5 s: squeeze past for 1 m, brushing whatever is there (it counts)
 const NEAR_MISS_M = 0.5;
-const TRIAL_MAX_S = 150;
+const TRIAL_MAX_S = 240;   // Kite waits STUCK_S at each static obstacle before feeling around; 150 s cut walks short
 const DT = 0.02;            // fixed step for accelerated modes
 const ORACLE_AHEAD = 5, ORACLE_HALF_W = 0.6, ORACLE_LOOKAHEAD_S = [0, 0.5, 1, 1.5, 2, 2.5, 3];
 // The turning car: speed, seconds from its trigger to the zebra (+- jitter), seconds it drives on after.
@@ -37,11 +42,15 @@ const LABEL: Record<Mode, string> = {
 };
 
 // The Moss demo route: NW up Moss's NE sidewalk, left across the zebra, SW along Howard.
-// Sidestep per leg (sign +1 = left of the walking direction) and how far: Moss's NE sidewalk
-// has about 1 m spare toward the buildings, the zebra and Howard's sidewalk about 1.5 m.
+// Sidestep per leg (sign +1 = left of the walking direction) and how far. Since the city-data geometry (#86) the
+// route runs ~0.5 m from the buildings on Moss's 1.45 m NE sidewalk, so there the walker feels left, toward the
+// curb, and may step off it; the zebra and Howard's sidewalk have about 1.5 m.
 // ponytail: hand-picked from this route's wall clearances; recheck if the route changes
 const ROUTE = new Path(route);
-const SIDE = [{ sign: -1, m: 1.0 }, { sign: -1, m: 1.5 }, { sign: 1, m: 1.5 }];
+const SIDE = [{ sign: 1, m: 1.0 }, { sign: -1, m: 1.5 }, { sign: 1, m: 1.5 }];
+// Curbs (a 15 cm step) neither block nor count: the route steps off them at the zebra, and a walker whose
+// sidewalk is blocked steps down into the gutter to get by (on Moss no sidestep fits between wall and curb).
+const CURBS = new Set<object>((moss as { curbs: object[] }).curbs);
 const ROUTE_LEN = ROUTE.len;
 
 function routeAt(s: number) {
@@ -89,7 +98,8 @@ export function startMetrics(ctx: {
   const trials = Math.max(1, Number(q.get("trials")) || 20);
   const seed = Number(q.get("seed")) || 1;
   const speed = mode === "kite" ? 1 : Math.max(1, Number(q.get("speed")) || 300);
-  const { walker, scene, walls } = ctx;
+  const { walker, scene } = ctx;
+  const walls = (x: number, n: number, r: number) => ctx.walls(x, n, r).filter((w) => !CURBS.has(w));
 
   // Visuals only (collision comes from each obstacle's pose): boxes at first, glTF car and people
   // swapped in once loaded, so the detector in kite mode sees what it would see on the street.
@@ -193,14 +203,14 @@ export function startMetrics(ctx: {
   // --- trial state
   const results: any[] = [];
   let trial = 0, obs: Obs[] = [], t = 0, s = 0, side = 0, sideTarget = 0, sideUntil = 0, ignoreUntil = 0;
-  let stopped = false, stopAt = Infinity, lastAlarm = -1e9, waited = 0, blockedFor = 0;
-  let touching = new Set<object>(), collisions = 0, done = false, stops: number[] = [];
+  let stopped = false, stopAt = Infinity, lastAlarm = -1e9, waited = 0, blockedFor = 0, progressS = 0, progressT = 0, squeezeUntil = 0;
+  let touching = new Set<object>(), collisions = 0, wallContacts = 0, done = false, stops: number[] = [];
 
   function reset() {
     obs = makeObstacles(trial);
     t = 0; s = 0; side = 0; sideTarget = 0; sideUntil = 0; ignoreUntil = 0;
-    stopped = false; stopAt = Infinity; lastAlarm = -1e9; waited = 0; blockedFor = 0;
-    touching = new Set(); collisions = 0; stops = [];
+    stopped = false; stopAt = Infinity; lastAlarm = -1e9; waited = 0; blockedFor = 0; progressS = 0; progressT = 0; squeezeUntil = 0;
+    touching = new Set(); collisions = 0; wallContacts = 0; stops = [];
     obs.forEach(place);
     placeWalker();
   }
@@ -246,9 +256,9 @@ export function startMetrics(ctx: {
     }
     if (!stopped && t >= stopAt) { stopped = true; waited = 0; stops.push(+s.toFixed(1)); }
     if (stopped) {
-      waited += dt;
+      waited += dt; progressT = t;   // waiting on a cue is not being stuck
       if (t - lastAlarm >= CLEAR_S) { stopped = false; stopAt = Infinity; }
-      else if (waited > STUCK_S) sidestep();
+      else if (waited > STUCK_S) sidestep(ob);
     }
 
     if (!stopped) {
@@ -262,14 +272,19 @@ export function startMetrics(ctx: {
       // Block only on things we aren't already touching, so a car that drove into us can't pin us.
       const key = (e: object) => ("o" in e && "b" in e ? (e as { o: Obs }).o : e);
       const hereKeys = new Set(here.map(key));
-      const blocked = touches(nx, nn, ob, WALKER_RADIUS).some((e) => !hereKeys.has(key(e)));
+      // A sidestep only stops at walls and props, not at the scripted obstacles: the bin's axis-aligned box caught
+      // every sideways sweep at its corner, so no walk got past it.
+      const blocked = s >= squeezeUntil && (lateral ? walls(nx, nn, WALKER_RADIUS) : touches(nx, nn, ob, WALKER_RADIUS))
+        .some((e) => !hereKeys.has(key(e)));
       if (blocked && lateral) {
         sideTarget = side;   // the sidestep ran into something (a wall, a curb): stop there and walk on
       } else if (blocked) {
         blockedFor += dt;
-        if (blockedFor > BLOCKED_S) sidestep();
+        if (t - progressT > SQUEEZE_AFTER_S) squeezeUntil = s + SQUEEZE_M;
+        else if (blockedFor > BLOCKED_S) sidestep(ob);
       } else {
         blockedFor = 0; s = ns; side = nside;
+        if (s > progressS + 0.1) { progressS = s; progressT = t; }
         if (sideTarget !== 0 && s >= sideUntil) sideTarget = 0;
       }
       placeWalker();
@@ -287,7 +302,7 @@ export function startMetrics(ctx: {
         continue;
       }
       now.add(e);
-      if (!touching.has(e)) collisions++;
+      if (!touching.has(e)) { collisions++; wallContacts++; }
     }
     touching = now;
     for (const { o, b } of ob) o.minClear = Math.min(o.minClear, clearance(walker.x, walker.n, b));
@@ -295,14 +310,29 @@ export function startMetrics(ctx: {
     if (s >= ROUTE_LEN || t >= TRIAL_MAX_S) finishTrial(s >= ROUTE_LEN);
   }
 
-  function sidestep() {
+  // Feel around, the way a cane user does: the nearest sideways offset (this leg's side first) that is clear where
+  // the walker would stand and FEEL_AHEAD metres on. With the street dressing (#86) a fixed 1 m step toward the
+  // buildings ran into walls, poles and the bin itself, and every walk stalled until the 150 s cap.
+  function clearAt(sv: number, ahead: number, ob: { o: Obs; b: THREE.Box3 }[]) {
+    const p = routeAt(Math.min(ROUTE_LEN, s + ahead));
+    return touches(p.x + p.side.x * sv, p.n + p.side.n * sv, ob, WALKER_RADIUS + 0.1).length === 0;
+  }
+  function sidestep(ob: { o: Obs; b: THREE.Box3 }[]) {
     stopped = false; stopAt = Infinity; blockedFor = 0; waited = 0;
-    sideTarget = 1; sideUntil = s + SIDE_LEN; ignoreUntil = s + IGNORE_LEN;
+    const m = Math.hypot(routeAt(s).side.x, routeAt(s).side.n);
+    const options = FEEL_OFFSETS.flatMap((off) => [off / m, -off / m]).filter((sv) => Math.abs(sv - side) > 0.2);
+    const p = routeAt(s), touchingNow = new Set(walls(walker.x, walker.n, WALKER_RADIUS));
+    const sweepClear = (sv: number) => [0.25, 0.5, 0.75, 1].every((k) => {   // no wall between here and there
+      const v = side + (sv - side) * k;
+      return walls(p.x + p.side.x * v, p.n + p.side.n * v, WALKER_RADIUS).every((w) => touchingNow.has(w));
+    });
+    sideTarget = options.find((sv) => sweepClear(sv) && FEEL_AHEAD.every((a) => clearAt(sv, a, ob))) ?? (side > 0 ? -1 : 1);
+    sideUntil = s + SIDE_LEN; ignoreUntil = s + IGNORE_LEN;
   }
 
   function finishTrial(completed: boolean) {
     results.push({
-      trial, collisions, near_misses: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).length,
+      trial, collisions, wall_contacts: wallContacts, near_misses: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).length,
       time_s: +t.toFixed(1), completed, stops_at_m: stops,   // route metres where the walker stopped on a cue
       hit: obs.filter((o) => o.hit).map((o) => o.name),
       near: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).map((o) => o.name),
@@ -318,6 +348,9 @@ export function startMetrics(ctx: {
     return {
       trials: results.length, collisions: sum("collisions"), collisions_per_walk: +(sum("collisions") / n).toFixed(2),
       walks_with_collision: results.filter((r) => r.collisions > 0).length,
+      // The scripted obstacles alone: walls and curbs the route clips (corner, route end) are the same in every mode.
+      obstacle_hits_per_walk: +(results.reduce((a, r) => a + r.hit.length, 0) / n).toFixed(2),
+      wall_contacts_per_walk: +(sum("wall_contacts") / n).toFixed(2),
       near_misses: sum("near_misses"), mean_time_s: +(sum("time_s") / n).toFixed(1),
       completed: results.filter((r) => r.completed).length,
     };
