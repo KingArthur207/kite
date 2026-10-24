@@ -40,6 +40,13 @@ def test_priority_order(spk):
     assert [h["text"] for h in spk.history] == ["hazard one", "nav one", "info one"]
 
 
+def test_spoken_record_carries_key(spk):
+    # listeners (the sim's metrics walker) tell status lines like "Obstacle detection paused." from warnings by key
+    spk.say("Obstacle detection paused.", "hazard", key="perception-down")
+    assert wait_for(lambda: spk.history, 5)
+    assert spk.history[0]["key"] == "perception-down"
+
+
 def test_critical_preempts_and_nav_is_requeued(spk):
     spk.say("this is a long navigation instruction", "nav", ttl=10)
     assert wait_for(lambda: spk._current is not None, 2)
