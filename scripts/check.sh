@@ -41,11 +41,12 @@ earpiece_venv() {
 }
 
 pytest_earpiece() {  # pytest_earpiece <engine>: 4 workers, then failures once more on their own
-  # a few tests measure wall-clock timing and can lose under load; a real failure fails twice
+  # a few tests measure wall-clock timing and can lose under load; a real failure fails twice.
+  # `slow` tests are benchmarks (latency budgets): they run alone in step_earpiece, never in parallel.
   local env="KITE_AUDIO_ENGINE=$1"
-  bash -c "cd '$EAR' && $env '$PY' -m pytest -q -n 4" && return 0
+  bash -c "cd '$EAR' && $env '$PY' -m pytest -q -n 4 -m 'not slow'" && return 0
   echo "-- rerunning the failures serially (wall-clock tests can lose under parallel load)"
-  bash -c "cd '$EAR' && $env '$PY' -m pytest -q --lf"
+  bash -c "cd '$EAR' && $env '$PY' -m pytest -q --lf -m 'not slow'"
 }
 
 step_earpiece() {
@@ -54,6 +55,7 @@ step_earpiece() {
   run "earpiece, rust engine" pytest_earpiece rust
   if [ "${1:-}" != quick ]; then
     run "earpiece, python engine" pytest_earpiece python
+    run "earpiece benchmarks (slow, one at a time)" bash -c "cd '$EAR' && '$PY' -m pytest -q -m slow"
   fi
 }
 
