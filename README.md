@@ -137,7 +137,18 @@ Limitations: Cartesia needs internet. Without it, cached phrases still play in t
 
 The prompt tells Claude to describe only what is in the context and never to say a street is safe to cross. Sonar warnings, `critical` obstacles and `dont_walk` hazards are handled before Claude sees anything, so they keep working when Claude is slow or unreachable.
 
-Still to build (spec section 5.6): the judgment layer that has Claude decide "wait" or "continue" from the current hazards, and Claude describing drone frames for the `scene` text.
+`earpiece/earpiece/judgment.py` is the judgment layer from spec section 5.6. When the hazard list or the drone's `scene` text changes, a background thread sends `claude-haiku-5-5` the current hazards, nearby obstacles, route, last instruction, scene and position. Claude answers through one tool, `decide`, with at most one short sentence ("Wait, the crosswalk is crowded.") and an optional priority upgrade for a hazard already on the list. Warnings play at `hazard` priority with a 4 second time to live, and each decision goes out as a `say` event with source `judgment`, so the dashboard and SpacetimeDB see it.
+
+The guardrails are in code, so a bad answer can't get through even if Claude ignores the prompt:
+
+- Kite drops any sentence that sounds like permission or a reroute ("safe to cross", "go ahead", "you can cross", "keep walking", "detour") and any sentence over 120 characters.
+- An upgrade must name a hazard that exists and must raise its priority. Kite rejects downgrades, unknown keys and `critical`, which stays with the sonar.
+- The deterministic stops (sonar "Stop.", `critical` obstacles, "Don't walk.") are spoken before Claude is asked and never wait for it.
+- Kite makes at most one call every 3.5 seconds and skips the call when nothing changed. A call slower than 2.5 seconds or one that fails is dropped and logged, and the walker hears nothing from it.
+
+Turn it off with `KITE_JUDGMENT=0` or `python -m earpiece run --no-judgment`. It also stays off without `ANTHROPIC_API_KEY`. `earpiece/tests/test_judgment.py` checks each guardrail with a fake client.
+
+Still to build: Claude describing drone frames for the `scene` text.
 
 ## SpacetimeDB
 
