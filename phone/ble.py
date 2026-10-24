@@ -153,13 +153,20 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
     stop = stop or asyncio.Event()
     t_end = time.monotonic() + args.seconds if args.seconds else None
     last_status = 0.0
+    seen = 0
     try:
         while not stop.is_set():
             now = time.monotonic()
             link.tick(now)
             ear = "" if watch is None else ("earpiece up" if watch.up else "earpiece DOWN")
-            printer.line(format_line(link.fix, link.fix_age(now), link.link_age(now), link.link_ok,
-                                     link.stats["forwarded"], ear), now)
+            text = format_line(link.fix, link.fix_age(now), link.link_age(now), link.link_ok,
+                               link.stats["forwarded"], ear)
+            n = link.stats["messages"]
+            if args.each and n != seen:
+                printer.log(f"#{n} {text}")      # one line per message from the phone (heartbeat log)
+            else:
+                printer.line(text, now)
+            seen = n
             if now - last_status >= STATUS_EVERY_S:
                 last_status = now
                 try:
@@ -196,6 +203,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--no-send", action="store_true", help="print only, send nothing to the earpiece")
     p.add_argument("--no-announce", action="store_true", help="do not ask the earpiece to say the phone was lost")
     p.add_argument("--no-watch", action="store_true", help="do not watch the earpiece's WebSocket for status")
+    p.add_argument("--quiet", dest="each", action="store_false",
+                   help="one live line instead of a line per message from the phone")
     p.add_argument("--seconds", type=float, default=0, help="stop after this long (0 = until Ctrl+C)")
     return p
 
