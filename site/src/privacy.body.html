@@ -1,0 +1,31 @@
+  <main id="main">
+    <header class="page-head">
+      <p class="hand kicker"><span class="hl-sky">short version: very little</span></p>
+      <h1>Privacy.</h1>
+      <p class="lede">What this website collects, and what the Kite earpiece does with camera frames, audio and location. Last updated October 24, 2026.</p>
+    </header>
+
+    <section class="section prose">
+      <h2>This website</h2>
+      <ul>
+        <li>No accounts, no forms, no cookies, no analytics and no advertising trackers.</li>
+        <li>The site is hosted on Cloudflare Pages, which processes standard request data (such as IP address and browser user agent) to serve and protect the site, under Cloudflare's own privacy policy.</li>
+        <li>Fonts load from Google Fonts, so your browser sends a request to Google when a page loads.</li>
+        <li>The audio clips and images are served from this site; nothing you play or click is recorded.</li>
+      </ul>
+
+      <h2>The Kite earpiece</h2>
+      <ul>
+        <li><b>Camera frames</b> are processed on the walker's laptop. A single frame is sent to Anthropic's Claude API only when the walker asks "what's in front of me?" or "read this", or when scene descriptions are turned on. Frames and video are never sent to the caregiver dashboard.</li>
+        <li><b>Voice:</b> after an AirPod press (or the optional wake word), the walker's speech is streamed to Cartesia to be transcribed, and Kite's replies are sent to Cartesia as text to be spoken. Questions that need an answer go to Claude as text.</li>
+        <li><b>Memories</b> such as "remember this place as the bench" are stored in the walker's Moss index and in a local file on the laptop.</li>
+        <li><b>Caregiver sharing</b> is off unless the walker turns it on. When it is on, the walker's position, the hazards Kite reports, what Kite says and the text of what the walker says are shared through SpacetimeDB so a caregiver can follow the walk on a map. Video is never shared. "Clear run" on the dashboard deletes the walk's events.</li>
+        <li><b>Caregiver voice line:</b> if a caregiver uses it, their speech is processed by xAI's Grok voice service on the caregiver's own computer.</li>
+        <li>API keys stay on the device in a local file and are never sent anywhere except to the service they belong to.</li>
+      </ul>
+
+      <h2>Questions</h2>
+      <p>Ask through <a href="/contact">Contact</a>. Kite is a hackathon prototype; if it ever becomes a product, this page will change before any new data is collected.</p>
+    </section>
+  </main>
+

@@ -80,6 +80,12 @@ def _host_db(host: str | None, db: str | None) -> tuple[str, str]:
             db or os.environ.get("SPACETIME_DB") or DEFAULT_DB)
 
 
+def sign_caregiver(token: str, text: str, ts_ms: int) -> dict:
+    """The dashboard's signature on a caregiver message (App.tsx signMessage): `ts` in ms and
+    `sig` = hex HMAC-SHA256(token, f"{ts}:{text}"). CaregiverInbox checks exactly this."""
+    return {"ts": ts_ms, "sig": hmac.new(token.encode(), f"{ts_ms}:{text}".encode(), hashlib.sha256).hexdigest()}
+
+
 def _identity(http: httpx.Client, host: str) -> str:
     r = http.post(f"{host}/v1/identity")
     r.raise_for_status()
@@ -150,6 +156,27 @@ def encode_payload(obj: dict, limit: int = MAX_PAYLOAD) -> str:
     return _dumps({"type": obj.get("type"), "source": obj.get("source"), "truncated": True, "bytes": len(s)})
 
 
+def sql_rows(reply: list) -> list[dict]:
+    """The HTTP SQL endpoint's reply (one statement per entry) as plain dicts keyed by column."""
+    out = []
+    for stmt in reply:
+        names = [(e.get("name") or {}).get("some") for e in stmt["schema"]["elements"]]
+        out += [dict(zip(names, row)) for row in stmt["rows"]]
+    return out
+
+
+def row_time(v) -> float | None:
+    """A row's `t` column (a Timestamp, sent as [micros since the epoch]) in epoch seconds."""
+    while isinstance(v, (list, tuple)) and v:
+        v = v[0]
+    if isinstance(v, dict):
+        v = next(iter(v.values()), None)
+    try:
+        return int(v) / 1e6
+    except (TypeError, ValueError):
+        return None
+
+
 class SpacetimeBridge:
     def __init__(self, host: str | None = None, db: str | None = None, source: str = "unknown", log=print,
                  *, throttle_s: float | None = None, max_calls_per_s: float | None = None,
@@ -211,6 +238,21 @@ class SpacetimeBridge:
                 self.stats["dropped"] += 1
                 return
         self.stats["backlog"] = self._q.unfinished_tasks
+
+    def send_now(self, obj: dict, http: httpx.Client, tries: int = 2) -> bool:
+        """Deliver one event on the caller's thread and report whether it landed.
+
+        Same path as the worker (token bucket, retries, module checks), for callers that must
+        know the outcome, such as the caregiver voice line confirming a message was sent."""
+        if obj.get("type") not in TYPES:
+            return False
+        sent = self.stats["sent"]
+        self._deliver(http, obj, tries=tries)
+        return self.stats["sent"] > sent
+
+    def take_token(self) -> None:
+        """Spend one call from this bridge's token bucket (for SQL reads that share the budget)."""
+        self._take_token()
 
     def flush(self, timeout: float = 10.0) -> bool:
         """Wait until everything queued has been sent (for scripts that exit right after)."""
@@ -402,11 +444,7 @@ class CaregiverInbox:
                       content=CAREGIVER_SQL + newer,  # nosec B608
                       headers={"Authorization": f"Bearer {self._token}"})
         r.raise_for_status()
-        out = []
-        for stmt in r.json():
-            names = [(e.get("name") or {}).get("some") for e in stmt["schema"]["elements"]]
-            out += [(int(row[names.index("id")]), str(row[names.index("payload")])) for row in stmt["rows"]]
-        return out
+        return [(int(row["id"]), str(row["payload"])) for row in sql_rows(r.json())]
 
     def _signed(self, d: dict) -> bool:
         ts, sig, text = d.get("ts"), d.get("sig"), d.get("text")
@@ -414,14 +452,15 @@ class CaregiverInbox:
             return False
         if abs(time.time() - ts / 1000) > CAREGIVER_MAX_AGE_S:
             return False
-        want = hmac.new(self.secret.encode(), f"{ts}:{text}".encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(want, sig)
+        return hmac.compare_digest(sign_caregiver(self.secret, text, ts)["sig"], sig)
 
     def poll(self, http: httpx.Client) -> None:
         rows = sorted(self.fetch(http))
         self.stats["polls"] += 1
         if self.last_id is None:                  # startup: old messages are history, not news
             self.last_id = rows[-1][0] if rows else -1
+            self.log(f"[caregiver] inbox ready on {self.db}: speaking new caregiver messages "
+                     f"({len(rows)} earlier skipped)")
             return
         for rid, payload in rows:
             if rid <= self.last_id:

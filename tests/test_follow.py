@@ -1,8 +1,11 @@
 """Follow mode without a drone: controller signs and limits on synthetic boxes, the tracker, lost walker -> hover,
-g / manual keys in kite.record against a fake Tello, the rehearsal on a file, and a closed-loop kinematic simulation
-of the Moss St walk (straight, stop at the curb, left turn, crossing) seen through kite.camera.Camera."""
+g / manual keys in kite.record against a fake Tello, FollowMode with an opt-in yaw source (passed through, named in
+the events and the status line, a fallback logged once), the rehearsal on a file and its --yaw flags, and a
+closed-loop kinematic simulation of the Moss St walk (straight, stop at the curb, left turn, crossing) seen through
+kite.camera.Camera."""
 
 import csv
+import importlib.util
 import json
 import math
 import threading
@@ -12,6 +15,7 @@ import cv2
 import numpy as np
 import pytest
 
+import kite.follow as follow_mod
 from kite.camera import Camera
 from kite.config import Config, SafetyCfg
 from kite.drone import SafetyGovernor
@@ -19,6 +23,7 @@ from kite.drone.base import Drone
 from kite.drone.tello import TelloDrone
 from kite.follow import (Detection, FollowCfg, FollowController, FollowMode, Track, WalkerTracker, draw_overlay,
                          rehearse, scaled_camera)
+from kite.follow import main as follow_main
 from kite.record import Recorder, RecordCfg
 from kite.record import main as record_main
 from kite.sources import FrameSource
@@ -334,6 +339,143 @@ def test_wifi_down_refuses_and_cancels_follow():
         fake.end()
 
 
+# ------------------------------------------------------------------ FollowMode with an opt-in yaw source
+class FakeYaw:
+    """A YawSource that always turns left (the law would turn right toward WalkerOnTheRight). After `after` calls it
+    fails: fail="raise" raises (FollowController drops it for good), fail="own" falls back on its own like kite.fly
+    (`failed` set, the law's value returned) until its next reset."""
+
+    name, source = "fake", "fake_params.json"
+
+    def __init__(self, after=None, fail="raise"):
+        self.after, self.fail = after, fail
+        self.calls = self.resets = 0
+        self.failed = None
+
+    def reset(self):
+        self.resets += 1
+        self.calls, self.failed = 0, None
+
+    def yaw(self, t, frame_t, bearing_deg, range_m, fallback):
+        self.calls += 1
+        if self.after is not None and self.calls > self.after:
+            if self.fail == "raise":
+                raise RuntimeError("injected")
+            self.failed = "RuntimeError: injected"
+        return fallback if self.failed else -30.0
+
+
+class FollowRig:
+    """FollowMode on a fake Tello in the air with a walker right of centre; tick() runs it at 10 Hz."""
+
+    def __init__(self, yaw_source=None):
+        self.fake = FakeTello()
+        tello = TelloDrone(tello=self.fake, video=False)
+        self.drone = SafetyGovernor(tello, Config().safety)
+        self.drone.connect()
+        tello._flying = True
+        time.sleep(0.25)
+        self.events = []
+        self.follow = FollowMode(LiveImage(), lambda: WalkerOnTheRight(), FollowCfg(), CAM, max_rc=50,
+                                 log=lambda msg, quiet=False, **kw: self.events.append((msg, kw)),
+                                 yaw_source=yaw_source).start_tracker()
+        t_end = time.time() + 3
+        while not (self.follow.ready and self.follow.track and self.follow.track.confirmed) and time.time() < t_end:
+            time.sleep(0.02)
+
+    def tick(self, n):
+        rcs = []
+        for _ in range(n):
+            rcs.append(self.follow.tick(self.drone))
+            time.sleep(0.1)
+        return rcs
+
+    def named(self, name):
+        return [kw for msg, kw in self.events if msg == name]
+
+    def failures(self):
+        return [kw for msg, kw in self.events if msg.startswith("follow: yaw source")]
+
+    def close(self):
+        self.follow.close()
+        self.fake.end()
+
+
+def test_follow_mode_without_a_yaw_source_logs_as_before():
+    rig = FollowRig()
+    try:
+        assert rig.follow.ctrl.yaw_source is None and rig.follow.start(rig.drone) is None
+        rcs = rig.tick(5)
+        assert rcs[-1][3] > 0  # the law: walker on the right, yaw right
+        assert rig.named("follow on")[0]["yaw_source"] == "law" and "yaw_params" not in rig.named("follow on")[0]
+        assert all("yaw_source" not in kw and "yaw_source_error" not in kw for kw in rig.named("follow"))
+        assert "yaw" not in rig.follow.status() and not rig.failures()
+    finally:
+        rig.close()
+
+
+def test_follow_mode_passes_a_yaw_source_through_and_names_it():
+    src = FakeYaw()
+    rig = FollowRig(src)
+    try:
+        assert rig.follow.ctrl.yaw_source is src and "yaw fake" in rig.follow.status()  # also while off
+        resets = src.resets
+        assert rig.follow.start(rig.drone) is None and src.resets == resets + 1  # follow on resets the source
+        rcs = rig.tick(6)
+        assert all(r[3] <= 0 for r in rcs) and rcs[-1][3] == -30  # the source's stick, through the clamps and slew
+        on = rig.named("follow on")[0]
+        assert on["yaw_source"] == "fake" and on["yaw_params"] == "fake_params.json"
+        ticks = rig.named("follow")
+        assert len(ticks) == 6 and all(kw["yaw_source"] == "fake" and "yaw_source_error" not in kw for kw in ticks)
+        assert rig.follow.status().startswith("FOLLOW FOLLOWING") and rig.follow.status().endswith("yaw fake")
+        assert not rig.failures()
+    finally:
+        rig.close()
+
+
+def test_a_yaw_source_that_raises_falls_back_to_the_law_logged_once():
+    rig = FollowRig(FakeYaw(after=3, fail="raise"))
+    try:
+        assert rig.follow.start(rig.drone) is None
+        rcs = rig.tick(12)
+        assert rcs[2][3] < 0 and rcs[-1][3] > 0  # left while the source steered, then the law turns right
+        assert rig.follow.ctrl.yaw_source is None and rig.follow.ctrl.yaw_source_error == "RuntimeError: injected"
+        assert rig.failures() == [{"reason": "RuntimeError: injected"}]  # once, not every tick
+        assert ("follow: yaw source fake failed -> the follow law steers yaw", {"reason": "RuntimeError: injected"}) \
+            in rig.events
+        last = rig.named("follow")[-1]
+        assert last["yaw_source"] == "law" and last["yaw_source_error"] == "RuntimeError: injected"
+        assert "yaw law (fake failed: RuntimeError: injected)" in rig.follow.status()
+        rig.follow.cancel("test")
+        assert rig.follow.start(rig.drone) is None  # dropped for good: the law again, still not logged twice
+        rig.tick(2)
+        assert rig.named("follow on")[-1]["yaw_source"] == "law" and len(rig.failures()) == 1
+    finally:
+        rig.close()
+
+
+def test_a_yaw_source_falling_back_on_its_own_is_logged_once_per_episode():
+    """kite.fly's sources catch their own failures (failed set, the law's value returned) until the next reset; the
+    controller still holds them, so FollowMode reads `failed` to say the law is steering."""
+    src = FakeYaw(after=3, fail="own")
+    rig = FollowRig(src)
+    try:
+        assert rig.follow.start(rig.drone) is None
+        rcs = rig.tick(12)
+        assert rcs[-1][3] > 0 and rig.follow.ctrl.yaw_source is src and rig.follow.ctrl.yaw_source_error is None
+        assert rig.failures() == [{"reason": "RuntimeError: injected"}]
+        assert rig.named("follow")[-1]["yaw_source"] == "law"
+        rig.follow.cancel("test")
+        assert rig.follow.start(rig.drone) is None  # the reset clears it: the source steers again ...
+        assert rig.named("follow on")[-1]["yaw_source"] == "fake"
+        rig.tick(2)
+        assert rig.named("follow")[-1]["yaw_source"] == "fake"
+        rig.tick(4)  # ... until it fails again: logged again, once
+        assert len(rig.failures()) == 2 and rig.named("follow")[-1]["yaw_source"] == "law"
+    finally:
+        rig.close()
+
+
 # ------------------------------------------------------------------ rehearsal on a file (open loop)
 class DriftingWalker:
     """Fake detector for a 960x720 clip: the walker drifts right and away, frame by frame."""
@@ -376,6 +518,44 @@ def test_rehearsal_on_a_kite_record_take(tmp_path):
     s = rehearse(take, DriftingWalker())
     rows = list(csv.DictReader(open(take / "follow_dry_run.csv")))
     assert len(rows) == 30 and s["following_ticks"] > 0 and int(rows[-1]["yaw"]) > 0
+
+
+def test_rehearsal_with_a_yaw_source(tmp_path):
+    clip = make_clip(tmp_path / "walk.avi")
+    s = rehearse(clip, DriftingWalker(), FollowCfg(), yaw_source=FakeYaw())
+    rows = list(csv.DictReader(open(s["csv"])))
+    assert s["yaw_source"] == "fake" and s["yaw_source_error"] is None
+    assert int(rows[-1]["yaw"]) < 0  # the source's left turn, though the walker drifted right
+    s = rehearse(clip, DriftingWalker(), FollowCfg(), out_csv=tmp_path / "b.csv", yaw_source=FakeYaw(after=2))
+    assert s["yaw_source_error"] == "RuntimeError: injected"
+    assert int(list(csv.DictReader(open(s["csv"])))[-1]["yaw"]) > 0  # the law took over
+    s = rehearse(clip, DriftingWalker(), FollowCfg(), out_csv=tmp_path / "c.csv")
+    assert s["yaw_source"] == "law" and s["yaw_source_error"] is None
+
+
+def test_rehearsal_yaw_flags(capsys, monkeypatch, tmp_path):
+    clip = str(make_clip(tmp_path / "walk.avi"))
+
+    def error(argv):
+        with pytest.raises(SystemExit) as e:
+            follow_main(argv)
+        assert e.value.code == 2
+        return capsys.readouterr().err.strip().splitlines()[-1]
+
+    assert "--yaw pd and --predict are exclusive" in error(["--source", clip, "--yaw", "pd", "--predict"])
+    assert "--yaw-params needs --yaw pd or fly" in error(["--source", clip, "--yaw-params", clip])
+    assert "no such file" in error(["--source", clip, "--yaw", "fly", "--yaw-params", str(tmp_path / "none.json")])
+    find_spec = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a, **k: None if name == "scipy" else find_spec(name, *a, **k))
+    assert 'scipy is not installed (kite.fly needs it); one time, on normal internet: pip install -e ".[fly]"' in \
+        error(["--source", clip, "--yaw", "fly"])
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    monkeypatch.setattr(follow_mod, "detector_available", lambda weights=None: None)  # no ultralytics needed
+    monkeypatch.setattr(follow_mod, "YoloPersonDetector", lambda weights=None: DriftingWalker())
+    assert follow_main(["--source", clip]) == 0  # the default: the law, as before
+    out = capsys.readouterr().out
+    assert "yaw source law (the follow controller's own yaw law, the default)" in out and "fell back" not in out
 
 
 # ------------------------------------------------------------------ closed loop: the Moss St walk, simulated

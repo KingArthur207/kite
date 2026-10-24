@@ -214,7 +214,7 @@ pub fn sinc_weights(frac: f64, taps: usize) -> Vec<f64> {
 /// spans split in halves on multiples of 8. Same order as numpy, so the
 /// energies, and with them the normalisation gain, match bit for bit; the 8
 /// independent accumulators also keep the FPU pipelines full.
-fn pairwise_sum(a: &[f64], f: impl Fn(f64) -> f64 + Copy) -> f64 {
+pub(crate) fn pairwise_sum(a: &[f64], f: impl Fn(f64) -> f64 + Copy) -> f64 {
     let n = a.len();
     if n < 8 {
         let mut res = 0.0;

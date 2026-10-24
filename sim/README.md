@@ -4,23 +4,26 @@ A browser street corner with an arrow-key walker and two virtual cameras. A dron
 
 ## World
 
-The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world. Locally, a Blender-built street with Street View facades replaces the OSM look when its file exists (`?world=real`, see Real facades below).
+The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world. Locally, a Blender-built street with Street View facades replaces the OSM look when its file exists (`?world=real`, see Real facades below). Without Blender, `?world=photo` puts the Street View walls straight onto the OSM buildings (see Photo facades below).
 
 - `scripts/osm_corner.py` fetches OSM and writes `public/osm/moss.json` in metres (x east, y north), with the origin at the Moss zebra, OSM node 12144593726. Run it again to refresh. `python scripts/osm_corner.py raw.json` reuses a saved Overpass response.
-- `moss.json` also has `lanes`: car lane polylines in travel order with `speed_mps`. Moss flows SE (Howard to Folsom) and Howard flows SW. `src/osmWorld.ts` exports them as `lanes`, and the traffic drives on them (see Cars and people).
-- The demo walk is `route` in `moss.json`, and the same points as lat/lng are in `public/osm/route.json`. It starts on the NE sidewalk of Moss 70 m before the zebra, facing NW, turns left across the zebra, and ends 20 m SW along Howard's south sidewalk, 98 m in all. The sim draws it faintly on screen but never in the camera frames.
-- The numbers are under `measurements` in `moss.json`. OSM has no width tag for Moss, so the 6.1 m roadway is an assumption. Tape-measure it on site.
+- `moss.json` also has `lanes`: car lane polylines in travel order with `speed_mps`. Moss's one lane sits NE of its SW parking lane (`PARKING_SIDES` in `osm_corner.py`, from Street View: OSM has no `parking:lane` tags there). Moss flows SE (Howard to Folsom) and Howard flows SW. `src/osmWorld.ts` exports them as `lanes`, and the traffic drives on them (see Cars and people).
+- The demo walk is `route` in `moss.json`, and the same points as lat/lng are in `public/osm/route.json`. It starts on the NE sidewalk of Moss 70 m before the zebra, facing NW, at the middle of the 2.1 m sidewalk (`osm_corner.py` puts it at the curb plus half the surveyed width, then nudges it NE until the first leg passes every DataSF tree trunk with 0.45 m to spare: 1.09 m from the curb; its self-check fails if the spawn comes back to the curb), turns left across the zebra, and ends 20 m SW along Howard's south sidewalk, 98 m in all. The sim draws it faintly on screen but never in the camera frames.
+- City data replaces OSM's guesses where DataSF has it (`scripts/sf_open_data.py`, called by `osm_corner.py`; `--osm-only` skips it; sources in `public/osm/CREDITS.md` and `sources` in `moss.json`): LiDAR roof heights for 101 of the 102 buildings (`h`, with `h_max` and the old `h_osm`), the real curb lines every 5 m along each road (`curbs_at`, per road point; `curbs` is now their median), surveyed sidewalk widths, and 130 street trees and 61 parking meters in `furniture`. Footprints are roof outlines, so SF bay windows stuck out over the sidewalk to the ground; where a front steps out past the property line (curb plus surveyed sidewalk), the building gets a `ground` footprint clipped there and the bays overhang from `bay_z` (3 m). The walker collides with `ground`.
+- The numbers are under `measurements` in `moss.json`. Moss's roadway is 5.9 m curb to curb along the whole block, measured from Street View (`SV_MOSS_ROADWAY_M` in `scripts/osm_corner.py`). DataSF's curbs gave 6.4 m, and 7.9 m past the jog 100 m down. The SW curb is DataSF's; the NE curb is 5.9 m from it, about 0.5 m further SW than DataSF had it, so the narrowest point on the NE walk (the brick building on the Howard corner) is 2.0 m instead of 1.51 m. The demo walk line and the building ground floors still use DataSF's NE curb, so neither moved. Howard is 18.0 m curb to curb (was 17.3) and its south curb was 1.6 m off.
 - `moss.json` keeps each building's OSM tags that matter for its look (`building`, `building:levels`, `height`, `building:material`, `building:colour`, `roof:*`, `shop`, `amenity`, `addr:housenumber`) and a `storefront` flag (a shop or amenity tag, or a shop/amenity node inside the footprint). `furniture` lists OSM street furniture nodes in the box: 3 hydrants, 2 signals at 7th and Howard, the stop sign at Moss and Folsom, 2 SFMTA pay stations, 2 power poles and 8 lowered kerbs with tactile paving. OSM has no trees, lamps, bins or meters here.
 
 ### OSM look
 
 `src/osmLook.ts` (materials, sky, sun, renderer settings), `src/osmFacades.ts` (buildings) and `src/osmStreet.ts` (streets and furniture) turn `moss.json` into something that reads as a SoMa alley. This is also what the detector's capture cameras see in `?world=moss` and `?world=tiles&detector=osm`. Screenshots from the capture renderer: `docs/osm_facades_spawn.jpg` (spawn, facing NW up Moss), `docs/osm_facades_corner.jpg` and `docs/osm_facades_corner_chest.jpg` (the corner, facing the zebra), `docs/osm_facades_howard.jpg` (Howard's south sidewalk, facing SW).
 
-- Textures are CC0 from Poly Haven, 9.8 MB in `public/textures/` (list in `public/textures/CREDITS.md`). Every surface has UVs in metres, so bricks, siding and sidewalk slabs are real size.
+- Textures are CC0 from Poly Haven, 9.8 MB in `public/textures/` (list in `public/textures/CREDITS.md`). Every surface has UVs in metres, and `FACADE_SIZES` in `src/osmLook.ts` is the wall area one tile covers, measured off each texture: brick 1.05 m (14 courses of 7.5 cm), siding 2.4 m (12 cm boards), concrete 3.6 m (0.9 m form panels). In `docs/fix_brick_scale.jpg` a roll-up door frame (3.23 m) is 359 px tall and a brick course is 9 px, so about 8 cm.
 - Each building gets a facade material from `building:material` if OSM has one, otherwise from its `building` type and a random pick seeded by its OSM id: painted stucco or plaster, wood siding, brick, concrete or corrugated metal, tinted from an SF palette (or `building:colour`). No building here has a material or colour tag, so every look is the seeded pick.
-- Storeys come from `building:levels`, else height / 3.2 m. Every storey gets a row of windows with frames, sills and a meeting rail, and dark glass that reflects the sky. Walls shared with a neighbour stay blank. Street fronts (the wall's normal reaches a roadway within 20 m) get a ground floor: shop glass and a sign band for storefronts, a garage door and a front door per 7.6 m lot on residential fronts, a roll-up door on industrial ones. About two thirds of residential lots with 2+ storeys get an angled SF bay window from the second floor up. A cornice runs along every roofline. Windows and doors are instanced, about 3,500 of them in 14 draw calls.
+- Storeys come from `building:levels`, else height / 3.2 m. Every storey gets a row of windows with frames, sills and a meeting rail, and dark glass that reflects the sky. Walls shared with a neighbour stay blank. Street fronts (the wall's normal reaches a roadway within 20 m) get a ground floor: shop glass and a sign band for storefronts, a garage door and a front door per 7.6 m lot on residential fronts, a roll-up door on industrial ones. About two thirds of residential lots with 2+ storeys get an angled SF bay window from the second floor up. A cornice runs along every roofline. OSM footprints are roof outlines, so where `moss.json` has a `ground` outline (bays over the sidewalk), the ground floor follows it up to `bay_z` (3 m) and the roof outline starts there, with a soffit under the overhang. Those buildings get no extra drawn bays. Windows and doors are instanced, about 3,500 of them in 14 draw calls.
+- Street View look (`styled()` in `src/osmWorld.ts`): houses fronting Moss that don't carry a Howard number are `victorian`. They get pastel siding or stucco (mint, pale blue, cream, pink, light grey, pale yellow, sage), white trim, hooded window frames, an angled 0.7 m bay over every 7.6 m lot, a 1 m cornice with a frieze and brackets every 0.9 m, a panelled garage door and a front door up a three-step stoop. A stoop only goes where it ends at least 0.6 m short of the demo walk, so many NE stoops are shallow or missing, and the stoops collide. Their OSM bay overhangs (1.1 to 1.7 m deep, about twice a real SF bay) are dropped in favour of the drawn bays. 33 Moss (OSM way 260351180, NE side, next NW of the spawn house) stays brick, as in Street View. On every other building the roof outline overhangs the ground floor by at most 0.8 m (`capBays`). Buildings on Howard's north side within 34 m of its centreline are `midrise`: pale stucco, 1.9 x 2.2 m windows, shop glass at street level. Siding and plaster get a linear gain in `facadeMaterial()` so pastel tints don't come out muddy. `?world=photo` keeps the raw footprints, since it skips walls by OSM edge index.
 - Streets: asphalt, lane lines from the OSM lanes (white dashes 3 m on, 9 m off between same-direction lanes, double yellow between opposite ones), zebra stripes, and a stop line before each marked crossing on a one-way road where it doesn't fall inside the junction. Sidewalks have concrete slabs on 15 cm curbs, an apron ramps from the curb into the gutter in front of every garage, and the OSM lowered kerbs get yellow tactile pads.
-- Furniture: the OSM nodes above, built from primitives. Not in OSM, added by us: wooden utility poles every 32 m along Moss's SW curb, each with a cobra-head light, and three overhead wires; steel streetlights every 36 m and street trees every 14 m along both Howard curbs. None of it collides; the walker still collides with building faces and curbs only.
+- Furniture: the OSM nodes above, built from primitives, plus light poles every 36 m along both Howard curbs (not in OSM), painted dark green with a red base and a pair of banners each, as in Street View. Howard's cycle track is green paint with a white line at its edge and at the edge of its 0.9 m buffer, and white flex posts every 6 m down the buffer within 120 m of the corner.
+- Street dressing (`src/streetDressing.ts`, geometry in `src/streetProps.ts`, none of it in OSM): 12 parked cars and a motorcycle along Moss's SW curb, nose SE, with gaps at driveways, the hydrant (only when it's on the SW side) and the crosswalks. Street View has the NE curb as NO PARKING with driveways, so the two NO PARKING signs stand there. The motorcycle is backed in at an angle about 9 m NW of the spawn. They follow the surveyed curb (`curbs_at`), centres 1.25 m out, so they stay in the parking lane. They reuse the Quaternius car models with their own clear-coated paint in fleet colours, dark glass and creased normals. Street trees are DataSF's inventory (moss.json `furniture`, kind `tree`) at their surveyed spots, sized from `height_m` and `dbh_in`, with the inventory's crown radius (`crown_r_m`, else a width by species). Moss's NE trees are capped at 6 m tall and a 1.3 m crown, because Street View shows them young and slim. Howard gets plane trees 11 to 14 m tall with 4 to 4.8 m crowns every 9 m on both sidewalks within 75 m of the corner, where no inventory tree, light pole or meter is close. Moss has a brick-paver medallion 3.8 m across in the roadway 6 m NW of the spawn, four strings of bulbs zigzagging between the facades 6 m up from 22 to 42 m SE of the zebra, and concrete planters with shrubs on the NE sidewalk where the walk leaves room (SE of the spawn). Each sits in a mulch pit and has a forking trunk with Poly Haven plane-tree bark and a crown of leaf cards drawn on a canvas, so the leaves cast dappled shadows. Wooden poles stand every 30 m on Moss's SW curb, with three primaries on the crossarm, two comms cables, a cobra-head light, a transformer on every other pole and service drops to the houses. All wires sag with their span. There are two NO PARKING signs, Moss St and Howard St blades at the corner, an SF white-and-blue hydrant, black, blue and green Recology carts beside two garages, a litter can on Howard and a kick scooter. The ground gets sidewalk joints every 1.5 m, driveway cuts with tyre marks, stains, asphalt patches with tar-sealed edges and cracks, a trench patch, oil down each lane and cast-iron covers. The sun is brighter and whiter (3.0), with a cool sky fill (0.8) so walls in shade keep their colour. Cars, trees, poles, signs, the hydrant, carts, can and scooter add wall segments to the collision path, so the walker can't pass through them (metrics mode too). Every prop stays at least 0.5 m clear of the demo route and off the sidewalk lines people walk. In `?world=real` the GLB replaces these meshes but the colliders stay. Screenshots: `docs/street_dressing_spawn.jpg`, `_corner_se`, `_sw_sidewalk`, `_howard`, `_poles`. Drone view after the Street View pass: `docs/look_spawn.jpg`, `look_mid_moss.jpg`, `look_corner.jpg`, `look_howard.jpg`, `look_moss_from_corner.jpg` (98 fps uncapped at the spawn, 81 looking down Moss from the corner, same setup as below). Speed: 92 to 100 fps uncapped in headless Chrome (Metal, 1280x960 at 2x, capture renderer running), against 119 without the dressing. YOLO on the same Oct 24 session, `?world=moss`: drone car 54%, person 50%, chest car 53%, person 48%; without the dressing 70%, 35%, 65%, 33%. The traffic differs between runs, but some of the car drop is real: parked cars hide moving cars on Moss from the sidewalk, and the ground truth doesn't model that. YOLO also finds the parked cars, which aren't in the ground truth.
 - Light: the Poly Haven `urban_street_01` HDRI lights everything and shows in the glass, a partly cloudy sky is the background, and a sun from the SW casts shadows over a 160 m square around the route. A light haze fades the far edge of the model. ACES tone mapping and sRGB output are set on both the screen renderer and the capture renderer through `world.tune()`, so the screen and the frames match. The tiles world inherits the same renderer settings and sky.
 - Speed: 60 fps (vsync cap) in headless Chromium with Metal on an M-series Mac, capture renderer running.
 
@@ -37,25 +40,43 @@ Cars are found more often. People past 20 m are found less: in front of textured
 
 The plan was to texture each street-facing wall with a rectified Mapillary photo (CC BY-SA 4.0). There was no `MAPILLARY_TOKEN` in `.env`, so only the geometry exists: `scripts/facade_rectify.py` projects a wall into a Mapillary camera (position, compass angle, focal from `camera_parameters`) and warps it into a texture with a homography. `uv run --no-project --with numpy python scripts/facade_rectify.py` runs its self-check, which renders a synthetic wall through a known camera and rectifies it back. The docstring has the Graph API query and the image selection rule for when a token exists.
 
+### Photo facades (`?world=photo`, local only)
+
+`?world=photo` is the default when any of `public/local/facades_ne/`, `facades_sw/` or `facades_howard/` has a `manifest.json`. It's the OSM world (`src/photoWorld.ts`) with each wall listed in a manifest drawn as one quad carrying its Street View photo. The other walls keep the procedural `osmFacades` look, and streets, curbs and furniture still come from `osmStreet`. Collision, lanes, route, spawn and traffic don't change. The screen renderer and the capture renderer both draw it. It was built for the demo video's street-level shots, so it only has to look right along the route.
+
+- Manifest: a JSON list (or `{"walls": [...]}`) of `building_id`, `wall_index` (the OSM footprint edge, `pts[i]` to `pts[i+1]`), `corners_local_m` (4 points in `moss.json` metres, bottom-left as seen from the street first, `[x, y, z]` or `[x, y]`), `width_m`, `height_m`, `texture` (a file in the same folder) and `score`. When two folders cover the same wall, the higher score wins. If `wall_index` doesn't sit under the corners, the sim uses the closest edge of that building and logs it. The image's left edge goes on the bottom-left corner and its top edge at the top.
+- The photo darkens toward the bottom over its lowest 0.6 m so it meets the sidewalk like a contact shadow. A faint plaster normal map and roughness 0.92 keep it from looking flat and shiny.
+- L toggles labels (`building_id/wall_index`) on every footprint edge of 2 m or more, on screen only: green means it has a photo and white means it's procedural. Use it to check that a photo landed on the right wall.
+- The console logs how many walls are photo and how many are procedural, and so does `window.__kitePhotoStats`. `window.__kitePhoto` reads `ready` once every photo has loaded.
+- The textures sit in the gitignored `public/local/` of whichever checkout runs vite. The facade agents write them into the main checkout, so run vite there, or link the folders into a worktree's `sim/public/local/` (vite lists public files at startup, so restart it after a facade agent adds files there). Screenshots go in `public/local/compare_photo/`. Never commit or publish them.
+
 ### Real facades (`?world=real`, local only)
 
-`?world=real` is the default when `public/local/moss_real.glb` exists. It is Moss St built in Blender, with each street-facing wall textured from Google Street View (our permission covers this one street, see `docs/google-permission.md`). The GLB is only the look: collisions, lanes, the route, the spawn and the traffic still come from `moss.json`, and both the screen and capture renderers draw it. Without the file the sim logs a warning and shows the textured OSM street. `?world=moss` forces the OSM street.
+`?world=real` is the default when `public/local/moss_real.glb` exists and no photo manifest does. It is Moss St built in Blender, with each street-facing wall textured from Google Street View (our permission covers this one street, see `docs/google-permission.md`). The GLB is only the look: collisions, lanes, the route, the spawn and the traffic still come from `moss.json`, and both the screen and capture renderers draw it. Without the file the sim logs a warning and shows the textured OSM street. `?world=moss` forces the OSM street.
 
 Street View-derived pixels are never committed or published. The textures, the GLB and any screenshots of it live in `public/local/`, which is gitignored. `npm run build` copies `public/` into `dist/`, so don't publish a build made on a machine that has `public/local/`.
 
-To rebuild (Moss and the Howard corner: 27 Google panoramas, about 90 billed Static images on the first run):
+To rebuild (Moss and the Howard corner: 27 Google panoramas, 409 billed Static tiles on the first run, none after that):
 
 ```
 set -a; . ./.env; set +a           # from the repo root: GOOGLE_MAPS_API_KEY (in a worktree, source the main checkout's)
-uv run --no-project --with numpy --with opencv-python-headless python scripts/streetview_facades.py
+python sim/seg_standin.py --download                     # once: weights/yolo26n-sem-ade20k.pt
+uv run --no-project --with numpy --with opencv-python-headless --with ultralytics python scripts/streetview_facades.py
+uv run --no-project --with numpy --with opencv-python-headless python scripts/streetview_facades.py --plain-colours
 /Applications/Blender.app/Contents/MacOS/Blender -b -P sim/blender/build_real_moss.py -- --export
-rm -rf /tmp/kite_sv                # raw Street View responses cached for reruns
+uv run --no-project --with numpy --with opencv-python-headless python scripts/facade_verify.py sim/public/local/moss_real.glb after --gate
+rm -rf /tmp/kite_sv                  # raw Street View responses, masks and poses cached for reruns
 ```
 
-- `scripts/streetview_facades.py` picks the OSM footprint edges that face Moss (Folsom to Howard) or Howard within the corner, bay faces included (72 walls). It asks the metadata endpoint for Google panoramas every 4 m along those roads, inside the `kite/sources/streetview.py` SCOPE, then fetches one 640x640 view per panorama per group of walls within 15 m, aimed square at them and pitched up to mid-wall. Each wall texel (40 px/m) is projected into every view with `scripts/facade_rectify.py` (camera 2.5 m up at the panorama, now with pitch) and blended by how square and close each view is. Views where another footprint is in the way are skipped. It then finds window and door rectangles in each texture (closed Canny contours) and writes `public/local/facades/*.jpg` plus `facades.json`. `--openings-only` redoes the detection without fetching.
-- `sim/blender/build_real_moss.py` extrudes every footprint and maps the photos onto the street walls (u along the wall, v up). Detected windows are recessed 12 cm with glossier glass, and doors and garages 25 to 30 cm, with a step in front of each door. Each photographed wall gets a cornice in the colour of the top of its photo. Side and back walls of photographed buildings are plain stucco in that colour. Other buildings get the Poly Haven materials and a plain window grid. The street side has asphalt, 15 cm sidewalks and curbs, zebras, lane lines, the OSM furniture, wooden poles with three wires along Moss, and steel streetlights and simple trees along Howard. It also runs inside a live Blender (`exec(open(...).read(), {"KITE_ROOT": "<repo>", "__name__": "x"})`, then `build()` and `export(*build())`), which adds cameras at the drone spawn, chest corner and Howard viewpoints.
-- Oct 24 run: 72 of 72 walls textured, 18 MB GLB, 60 fps in headless Chromium with Metal (vsync cap) with the capture renderer running. YOLO (yolo11n, same script and session, traffic differs between runs): `?world=real` drone car 71%, person 39%, chest car 74%, person 36%; `?world=moss` drone car 68%, person 26%, chest car 69%, person 30%. Person recall was lower for both worlds in this session than in the table above, so compare within a session.
-- Still off: parked cars, street trees and wires are baked into the lower walls; close walls are soft (about 50 px/m at the source); OSM heights don't always match the real rooflines, so some walls show sky at the top; window detection finds about half the windows and some false ones on murals and trees; the Howard trees and streetlights are placed every 18 m and 36 m, not where the real ones stand; buildings outside the corner have no photos.
+After `--gate`, run `--plain-colours` and the Blender export again.
+
+- Why #63 looked wrong: Google snaps a panorama's position to its road line. On Moss that line is about 2 m from the lane the car drove in, against walls 3 to 6 m away, and every panorama also has its own along-street error. Each wall was projected from cameras in the wrong place, so walls showed pieces of other walls, and views of the same wall disagreed. The rectification maths was right (`scripts/facade_rectify.py` self-check).
+- `scripts/streetview_facades.py` (v2) takes the street-facing walls from `moss.json`, as roof-outline walls from `bay_z` up plus the ground floors under them. It fetches 640x640 tiles square to each side of the street and at ±60° (fov 50 on Moss, about 150 px/m on the near walls; fov 36 on Howard) and masks cars, people, trees, poles, signs and sky with the ADE20K model from `sim/seg_standin.py`. It then refines every panorama's position, height, yaw and tilt so that the textures different panoramas make of the same wall agree: a coarse 0.5 m grid of lateral and along-street offsets, then a descent. The agreement score (high-pass NCC between panoramas, 60° or squarer) went from 0.03 to 0.35.
+- A wall gets a photo only if two panoramas see it and agree (score 0.3 or more; small bay facets take their building front's score) and `facade_verify.py --gate` doesn't reject it. Other street walls are plain stucco in the median colour of their clean pixels. Wrong is worse than plain. Texels no view sees cleanly (a tree in front from every panorama) are inpainted. ADE20K window and door masks on each texture give the recesses.
+- `scripts/facade_verify.py` renders the GLB in Blender from the Street View cameras and scores each wall against the photo (high-pass NCC on the wall, masks applied). It names a failure mirrored, offset or mismatch.
+- Utility poles and street lights are triangulated from pole pixels in the tiles (rays from 3 or more panoramas meeting at a curb). Trees on Moss hide most poles, so it finds few (5), and wires join only the ones found. Street trees are the DataSF inventory, built per species from trunk diameter and crown size.
+- Oct 24 run: 25 of 90 street walls carry photos, 34 MB GLB, about 150k faces. Cross-panorama agreement, same tiles for both: #63 geometry with raw Google positions, median 0.044 and 6 of 75 walls at 0.3 or more; now median 0.256 and 31 of 88. Render against Street View for walls with photos: #63 median NCC 0.055 (5 of 71 walls OK, 54 mismatched, 12 offset); now 0.746 (21 of 29 OK before the gate). These renders use the tiles the textures came from, so they check geometry and UVs, not independence. YOLO (yolo11n, same session, same walk): `?world=real` drone car 48%, person 28%, chest car 43%, person 23%; `?world=moss` drone car 49%, person 14%, chest car 48%, person 14%.
+- Still off: the bay-window fronts by the spawn (NE side) fail the check and are plain; LiDAR median roof heights sit a median 3 m below the photo rooflines of the street fronts (the max is 2 m above), so many fronts end below their parapet; few poles and wires; plain walls look grey where the photos are mostly in shade.
 
 ### Google 3D tiles (`?world=tiles`)
 
@@ -103,6 +124,14 @@ YOLO (yolo11n, `python sim/yolo_check.py --url '<sim>/?world=...'`, same walk as
 
 The `detector=osm` row matches OSM Moss within run-to-run noise (the traffic differs between runs). These person numbers are higher than the 32 to 38% measured earlier with the same script and the same sim code; the yolo11n weights were downloaded fresh for these runs, so compare rows within this table. With tiles in the capture frames the tiles hid 168 car and 506 person instances, which are left out of that row. Recall drops further because trees and photogrammetry cars partly cover the rest, and people past 20 m are found 3% of the time.
 
+### Street View compare (`?compare=1`)
+
+`?compare=1` puts the sim on the left and the live Google Street View panorama on the right, so you can see where the 3D street differs from the real one. It works with any world and with `?look=2`; it is off for `?metrics=1` and shots. `src/compare.ts` looks up the Google outdoor panorama nearest the drone camera (radius 15 m, again only after the camera moves 3 m) and gives it the walker's compass heading, pitch 0, and the drone camera's 51° horizontal FOV in a 4:3 box. Outside `SCOPE` it shows "outside permitted area" and no panorama. The label gives the pano id and date and where the panorama sits relative to the sim camera.
+
+Arrows walk as usual. X cycles the split (50/50, sim larger, Street View larger). P moves the walker so the sim camera sits on the panorama, which removes the 3 to 5 m position offset before you compare. C asks for an optional note and then, through the dev server's `/__compare` endpoint (`vite.config.ts`), writes the sim canvas to `out/compare/<stamp>_sim.png` and one line to `out/compare/notes.jsonl`: walker, camera lat/lng, pano id, POV, a `reopen` URL (`?at=x,n,heading` spawns the walker there) and a Google Maps link to the same panorama view. Street View pixels are never saved. Under `vite preview` the PNG and the line download instead.
+
+Street View's nominal FOV, 180 / 2^zoom, measured 59° at the nominal zoom, so the page adds 0.24 to the zoom (measured 51.3° after). `?svzoom=` overrides it.
+
 ### Street View walk (`?world=streetview`)
 
 Real imagery instead of a 3D world. `src/streetviewWalk.ts` puts a Google Street View panorama (Maps JavaScript API) full screen and walks it along the demo route on Moss St. It starts at the route start facing NW. Up and Down step to the linked panorama nearest the view heading, or behind it. At the corner Moss's panoramas don't link to Howard's, so when no link points the way you face, it takes the nearest Google panorama 8 to 22 m ahead. Left and Right turn 20°, and B, V and H work as in the 3D sim. Google's logo, copyright and terms stay on screen. Every other control is hidden, and clicking the image does nothing.
@@ -118,6 +147,32 @@ scripts/demo.sh streetview          # earpiece, relay, bridge, sim, dashboard, d
 ```
 
 Measured on Oct 24, walking the whole route in headless Chromium (10 panoramas, from the spawn to Howard's south side): the page loaded the Maps JavaScript API once and created one panorama, and made 14 `StreetViewService` lookups. The bridge made 10 metadata requests and 30 Static images (2 per view, 15 views counting the turns). Screenshots without imagery: `docs/streetview_walk_black_start.jpg` and `docs/streetview_walk_black_corner.jpg` (black screen and HUD).
+
+## Shots for the demo video (`?shot=`)
+
+The sim also films the recreation of Moss St that runs next to the real Tello footage in the video. `?shot=<name>` hides the HUD and debug drawing, opens no sockets, and stops the clock: nothing moves until `window.kiteShot.frame(dt)` steps it. A scripted walker in the casual model, with a white cane, walks the demo route, and a Tello-sized quadcopter built from primitives flies 1 m behind and 0.3 m above the head. Camera moves are Catmull-Rom keyframes for position and look-at, timed by a monotone cubic that eases in and out (`src/shots.ts`). `src/shot.ts` runs them and draws labels and pulse rings onto a 1920x1080 canvas.
+
+| Shot | World | Length | What it shows |
+|---|---|---|---|
+| `establishing` | tiles | 15 s | Starts 175 m over the Moss block looking down, with the route drawn in, then descends to 15 m behind the walker on Moss. Past the geofence there is no city, only the gray ground plane, so the camera frames along Moss. |
+| `follow` | tiles | 62 s | The drone's own view (Tello vertical FOV) from the spawn up Moss, stopping at the zebra curb. |
+| `corner` | tiles | 24 s | The walker stops short of the zebra while a car turns in from Howard without yielding, waits, then crosses. The camera orbits slowly over Howard. Labels read "Car turning in" and "Kite: Stop." |
+| `explainer` | moss | 40 s | Top-down view of one metrics walk (blind mode, seed 1, 2.4x speed), with the obstacles labelled, a red ring on each collision and the running count. |
+
+`?world=` overrides the default (`tiles`, `moss`, `real`, and `photo` once it exists). In the corner shot the car is scripted, so the street's own cars in Howard's left lane and on the turn into Moss are left out, and so is the pedestrian who walks the demo route.
+
+Record from the repo root (starts vite on port 6999; `--url` reuses a running sim):
+
+```
+uv run --no-project --with playwright python scripts/record_shot.py corner
+uv run --no-project --with playwright python scripts/record_shot.py follow --world moss
+uv run --no-project --with playwright python scripts/record_shot.py all
+uv run --no-project --with playwright python scripts/record_shot.py corner --preview 0,10.4,23   # PNG stills only
+```
+
+It steps headless Chromium (Metal) at a fixed 1/60 s, waits for the tiles to finish loading before each frame, writes PNGs to a temp dir, encodes H.264 at crf 18 with ffmpeg and deletes the frames. Output goes to `out/shots/<shot>-<world>.mp4` plus a 640 px still, both gitignored. The same shot gives the same motion on every run. On the tiles world the tiles are levelled once before the first frame and never again, so the ground can't jump mid-shot. The script fails if the camera leaves the geofence or a tile request falls outside it.
+
+MP4s and stills of the tiles world show Google Photorealistic 3D Tiles. They are for the demo video only: never commit or publish them on their own, and keep the Google attribution that is drawn into every frame. The video credits also need the CC-BY line from `public/models/CREDITS.md` (the bus and the Range Rover are in some shots).
 
 ## Run
 
@@ -138,19 +193,20 @@ Start them in any order. The page reconnects to the relay and the earpiece every
 | Left / Right | turn |
 | B | black screen (HUD stays) |
 | V | reveal the view |
+| L | `?world=photo`: label walls `building_id/wall_index` (green = photo) |
 | H | DEBUG: send one fake `crowd` hazard to the earpiece, only to prove sim to earpiece to beep for the skeleton gate |
 
 The HUD counts collisions with buildings, cars, pedestrians and the bin.
 
 ## Metrics mode
 
-`?metrics=1&mode=blind|kite|oracle&trials=20&seed=1` runs an autopilot with no keyboard input, always in the Moss world. A walker at 1.2 m/s follows the demo `route`: up Moss's NE sidewalk, left across the zebra, then along Howard's south sidewalk. On the way it meets a pedestrian crossing Moss into a doorway, a bin, a head-height sign, a car turning in from Howard's left lane through the zebra without yielding, and a pedestrian stepping out of a doorway on Howard. Their timing is seeded, so each trial is different and every run with the same seed is identical. The street's own traffic and people are not spawned in this mode. Building faces and curbs still block the walker, and touching one counts as a collision.
+`?metrics=1&mode=blind|kite|oracle&trials=20&seed=1` runs an autopilot with no keyboard input, always in the Moss world. A walker at 1.2 m/s follows the demo `route`: up Moss's NE sidewalk, left across the zebra, then along Howard's south sidewalk. On the way it meets a pedestrian crossing Moss into a doorway, a bin, a head-height sign, a car turning in from Howard's left lane through the zebra without yielding, and a pedestrian stepping out of a doorway on Howard. Their timing is seeded, so each trial is different and every run with the same seed is identical. The street's own traffic and people are not spawned in this mode. Building faces and street props (trees, poles, trash cans) still block the walker, and touching one counts as a wall contact. Curbs, a 15 cm step, don't block: the route steps off them at the zebra, and a walker whose sidewalk is blocked steps into the gutter to get by.
 
 - `blind`: the walker never reacts. Runs time-accelerated (`speed`, default 300).
-- `kite`: the walker reacts only to the earpiece on `ws://127.0.0.1:5011`. It stops 0.7 s after a `spoken` event with priority `critical` or `hazard`, a `state` with a critical sonar track, or a hazard in `dont_walk`/`wait`/`red`/`stop`. It walks on after 1.5 s with no cue and never detours. Runs in real time, since the pipeline is real time.
+- `kite`: the walker reacts only to the earpiece on `ws://127.0.0.1:5011` (or `?ear=`). It stops 0.7 s after a `spoken` event with priority `critical` or `hazard`, a `state` with a critical sonar track, or a hazard in `dont_walk`/`wait`/`red`/`stop`. Status lines that share the hazard priority ("Obstacle detection paused.", "... is back.", "Path is clear. You can continue.") don't count; the earpiece tags them by `key` in each `spoken` event. It walks on after 1.5 s with no cue and never detours. Runs in real time, since the pipeline is real time. Each walk's result lists `stops_at_m`, the route metres where a cue stopped it.
 - `oracle`: an upper bound that reacts to the true obstacles in a 5 m corridor ahead, looking up to 3 s into the future. It is not Kite and must never be presented as Kite.
 
-In every mode, a walker that stays blocked for 1 s or waits 8 s feels around the obstacle with a sidestep, the way a cane user would: 1 m toward the buildings on Moss's narrow sidewalk, 1.5 m elsewhere. A sidestep that runs into a wall or curb stops there. Each obstacle counts as one collision per walk at most; walls count every new contact. Results show in the HUD and in `window.kiteMetrics`, get logged as one `KITE_METRICS {...}` console line, and can be downloaded as JSON. Blind and oracle open no sockets, so they never feed a shared earpiece or relay.
+In every mode, a walker that stays blocked for 1 s or waits 8 s feels around the obstacle, the way a cane user would. It takes the nearest sideways offset from 0.5 to 1.5 m (this leg's side first: toward the curb on Moss, where the route now runs 0.5 m from the buildings) that has no wall in between and is clear where it would stand and up to 2.4 m on. If it makes no headway for 5 s it squeezes past for 1 m, and whatever it brushes counts. A walk ends after 240 s. Each scripted obstacle counts as one collision per walk at most; walls and props count every new contact. The summary gives `obstacle_hits_per_walk` (the five scripted obstacles, the number to compare) and `wall_contacts_per_walk` separately, because the route clips walls at the corner and at its end in every mode. Results show in the HUD and in `window.kiteMetrics`, get logged as one `KITE_METRICS {...}` console line, and can be downloaded as JSON. Blind and oracle open no sockets, so they never feed a shared earpiece or relay.
 
 Headless (starts its own vite on port 5287; pass `--url` to reuse one):
 
@@ -160,9 +216,49 @@ uv run --with playwright python scripts/sim_metrics.py --mode blind
 uv run --with playwright python scripts/sim_metrics.py --mode oracle
 ```
 
-Kite mode: start the relay, the detector on sim frames and the earpiece, then open `?metrics=1&mode=kite` or run `--mode kite`. That takes about 90 s a walk. Run it on a machine where nothing else is sending to the earpiece.
+Kite mode: start the relay, the detector on sim frames and the earpiece, then run `--mode kite` (or open `?metrics=1&mode=kite`). It takes 2 to 3 minutes a walk, so 20 walks is about an hour. Use ports nobody else is on; the earpiece runs headless and without a Cartesia key, so it never uses the team's two concurrent Cartesia requests:
 
-Results on Moss, seed 1, 20 walks: blind 61 collisions (3.05 a walk, every walk hit the bin, the sign and the car; one also hit the second pedestrian), oracle 0 collisions and 40 near misses (the bin and sign on the 1 m sidestep). Kite mode has not been run on Moss yet.
+```
+python sim/relay.py --port 6121
+cd earpiece && env -u CARTESIA_API_KEY .venv/bin/python -m earpiece run --null --no-stem --no-judgment --udp-port 6110 --ws-port 6111
+uv run --no-project --with ultralytics --with opencv-python-headless --with lap --with websockets --with python-dotenv \
+  --with numpy --with scipy --with transformers --with torch python sim/standin_detect.py --relay ws://127.0.0.1:6121/sub \
+  --ear-port 6110 --depth --world
+uv run --with playwright python scripts/sim_metrics.py --mode kite --port 6099 \
+  --relay ws://127.0.0.1:6121/pub --ear ws://127.0.0.1:6111
+```
+
+`sim_metrics.py` renders on the GPU (ANGLE Metal in headless Chromium on macOS; `--swiftshader` for software) and prints progress after each walk.
+
+### Results on Moss (seed 1, 20 walks, textured OSM world)
+
+Measured on Oct 24 on an M5 MacBook, on the city-data geometry (#86, #99) with the harness above. Kite is the full pipeline: sim frames, relay, the stand-in detector with `--depth --world` (YOLO11n on both cameras, YOLO-World and Depth Anything on the chest, obstacle memory, the drone's corner watch) on `mps`, the earpiece (`--null --no-stem --no-judgment`, no Cartesia key, as of `1fff94f`), and a walker that reacts only to what the earpiece says or does. Blind and Kite face the same seeded obstacles. The detector handled a median 5.0 chest frames/s (10th percentile 2) of the 8 the sim sends.
+
+| | blind | Kite | oracle (not Kite) |
+|---|---|---|---|
+| scripted-obstacle hits per walk | 2.70 | 1.25 | 0.75 |
+| walks completed | 20/20 | 20/20 | 20/20 |
+| mean time | 88.6 s | 149.9 s | 133.0 s |
+| wall and prop contacts per walk | 11.1 | 9.0 | 10.75 |
+| all collisions per walk (`collisions_per_walk`) | 13.8 | 10.25 | 11.5 |
+| pedestrian crossing Moss (hit / near) | 0 / 2 | 0 / 2 | 0 / 0 |
+| bin (hit / near) | 20 / 0 | 5 / 15 | 0 / 20 |
+| head-height sign (hit / near) | 20 / 0 | 10 / 5 | 5 / 0 |
+| car turning in from Howard (hit / near) | 13 / 2 | 0 / 2 | 1 / 0 |
+| pedestrian on Howard (hit / near) | 1 / 11 | 10 / 8 | 9 / 11 |
+
+What each fix did:
+
+- Car turning in: 13 hits blind, none with Kite. The scouting drone saw it up Howard from about 33 m, and the corner watch held the walker on the sidewalk ("Car approaching the corner.", state `wait`) until it had passed.
+- Bin: 20 hits down to 5. Depth with ground removal sees it from about 3 m, memory keeps it after it drops out of the chest camera's view, and the walker stops and feels around it. Depth's distance on this untextured box is poor (it read about 2.0 m from a true 2.3 m in to 1.2 m), which is why depth-only obstacles stop from 2.2 m. In the other 5 walks the walker still reached it.
+- Head-height sign: 20 down to 10. Depth only picks it up from about 1.7 m.
+- YOLO-World didn't matter for these two: it finds the street's real trash cans (0.7 confidence) but the bin and sign are plain boxes, which it scores at 0.23 or less.
+- Pedestrian on Howard: 1 hit blind, 10 with Kite. She steps out of a doorway 1.6 m to the left, timed on the walker's progress, and walks into a walker that Kite has stopped (often for the street's trash can a few metres before). The oracle, which also stops, gets hit 9 times. This is a real cost of stopping in a pedestrian's path, not a detection miss.
+- Kite walks take longer (150 s against 89 s) because each static obstacle costs a stop and an 8 s wait before the walker feels around it.
+
+The oracle reacts to ground truth 5 m ahead. It is not Kite and is only here as a reference; with this harness it still clips the sign and gets walked into on Howard.
+
+These numbers depend on the course: re-run all three modes if sidewalk widths, the obstacle or prop colliders, the route, or the scripted obstacles change. An earlier run on the pre-#86 geometry (PR #96) gave 3.05 collisions per walk for both blind and Kite; the course has changed since, so it doesn't compare with this table.
 
 ## Cars and people
 
@@ -193,7 +289,11 @@ The sim emits no hazards from its own object list. Hazards come from the real de
 
 To the relay (`ws://127.0.0.1:5020/pub`):
 - Binary frames, 8 fps per camera: 1 byte camera id (0 drone, 1 chest), then JPEG bytes.
-- Pose as JSON text at 5 Hz, once per camera: `{"type":"pose","camera":"drone","x":..,"y":..,"heading":..,"cam_height":..,"pitch":0,"cam_model":"tello"}`. `cam_model` is `raw` when the page has `?cam=raw`.
+- Pose as JSON text at 5 Hz, once per camera: `{"type":"pose","camera":"drone","x":..,"y":..,"heading":..,"cam_height":..,"pitch":0,"cam_model":"tello"}`. `cam_model` is `raw` when the page has `?cam=raw`. `x`, `y` and `heading` are the walker's. The drone's pose also has `cam_x`, `cam_y`, `cam_heading` (where it is and which way it looks) and `scouting`.
+
+The drone follows 0.3 m above and 1 m behind the walker's head, except near a corner where the route turns (`src/droneLook.ts`). From 20 m before the corner until 3 m onto the next leg, it flies (4 m/s, 90°/s yaw, like a Tello) to a spot 2 m past the corner at 3 m up and looks up the cross street to the right. With right-hand traffic, that lane's cars come from the right, and the corner building hides them from the walker and from any camera behind them. On Moss the car turning in from Howard sits 58° to 72° right of the walker for its whole approach, outside the 51° view of a forward camera. From the corner the drone sees it from about 33 m out (YOLO11n confidence 0.8 or more), about 4 s before it reaches the zebra.
+
+The stand-in detector's corner watch (`sim/world_frame.py`, on with sim frames; `--crossing x,y` elsewhere) puts each car the drone sees into world metres. When the walker is within 20 m of the crossing and a car is closing on it at 1 m/s or more from within 45 m, it sends `hazard` `vehicle` with key `corner`, state `wait` and the text "Car approaching the corner.". It refreshes the hazard every drone frame and holds it until the car should have passed (its last distance over its speed, plus 1.5 s). Deterministic: no model or Claude decides the stop or clears it (spec 5.3).
 
 Subscribers on `/sub` get the same messages. On connect they first get the latest frame and pose for each camera.
 
@@ -280,7 +380,7 @@ The script also listens on the earpiece WebSocket (`ws://HOST:5011`). A `heard` 
 
 ## Stand-in detector (until streetseg lands)
 
-`sim/standin_detect.py` runs YOLO11n on the chest and drone frames and sends the events perception owes the earpiece (spec 5.1), so the sim to AirPods path works before Rex's `streetseg` exists. It reads frames through `SimFrameSource`, or any video file with `--source`. Replace it with streetseg; nothing downstream changes.
+`sim/standin_detect.py` runs YOLO11n on the chest and drone frames and sends the events perception owes the earpiece (spec 5.1), so the sim to AirPods path works before the `streetseg` perception package exists. It reads frames through `SimFrameSource`, or any video file with `--source`. Replace it with streetseg; nothing downstream changes.
 
 - Chest camera: `obstacles` for every frame (kind, bearing from the box centre, distance from the box bottom on flat ground at the pose's camera height, falling back to a typical object height), plus `heartbeat` when nothing is in view.
 - Drone camera: a `hazard` for `crowd` (3 or more people 1 to 15 m ahead of the walker) or `vehicle` (a car within 12 m and 3 m of the walker's path). A person cut off by the bottom edge is the walker and never counts. A hazard, or a new direction for one, must hold 3 frames before it is spoken. It is refreshed every 2 s with the same text and expires on its 4 s ttl, with no clear message. A `scene` count goes out every 10 s.
@@ -314,9 +414,11 @@ The live path is the stand-in detector with a camera index as `--source`. `sim/l
 
 - Distances are a median over 3 frames, and closing speed is a least-squares fit over the last second.
 - Anything inside 1.6 m (`--stop-m`) and within 0.7 m of the walker's path is a stop. So is anything under 1 s from contact. A stop goes out with a closing speed that puts the earpiece's time to contact at 0.8 s. Its sonar then goes critical and says "Stop. Person ahead." at about 1.5 m instead of its own 0.75 m.
-- When a box is cut off by the bottom edge (a person close to a chest camera), the distance comes from the top of the head, assumed 1.7 m (`--person-height`).
+- When a box is cut off by the bottom or the top edge (within 16 px; a person close to a chest camera), the distance comes from the top of the head, assumed 1.7 m (`--person-height`). When both the head and the feet are out of frame, no row can say how close they are, so the box width does, taking a person as 0.45 m wide. At the live settings (960x540, 15 degrees down) that happens inside about 1.65 m; before this, every distance in there read 1.65 m and "Stop" never fired.
 - `--pitch` is the camera's downward tilt in degrees. It goes into the ground-plane distance, and a phone clipped to a shirt usually points 10 to 20 degrees down.
-- `--depth` adds Depth Anything V2 Small (metric, indoor) at 336x252 as a fallback for things YOLO has no class for, such as walls, doors and boxes. It reports something closer than 2.5 m that fills the centre of the frame and isn't floor. It takes about 18 ms a frame on `mps`.
+- `--depth` adds Depth Anything V2 Small (metric, indoor) at 336x252 as a fallback for things YOLO has no class for, such as boxes, bins, doors and overhanging signs. Every depth pixel goes to 3D with the camera's height and pitch. The depth scale is corrected from the ground (on sim frames the model's scale was off by 0.76x to 1.48x). Points under 0.2 m (ground and curb steps) and over 2.0 m (above the walker's head) drop out. So do walls beside the path: each column's foot on flat ground gives the wall's true sideways offset, which the model gets wrong on a wall seen edge-on. What is left within 0.4 m of the path and 2.5 m ahead must fill 0.5 % of the map on two frames running. A depth-only `obstacle` stops the walker from 2.2 m (other things from 1.6 m), because its distance is the least certain. It takes about 18 ms a frame on `mps`.
+- `--world` adds YOLO-World (yolov8s-worldv2) for street things COCO has no class for: trash cans, signs, poles, bollards, hydrants, benches, scooters, strollers. `--download --world` bakes that vocabulary into `weights/yolov8s-worldv2-street.pt` once; that step needs CLIP (`--with 'clip @ git+https://github.com/ultralytics/CLIP.git'`), and nothing is fetched at runtime. It takes about 11 ms a frame on `mps`, so it runs on every chest frame by default (`--world-every N` to thin it). On the sim it finds the street's trash cans at 0.7 confidence, but the metric's bin (a plain green box) scored 0.23 at best and its sign (a plain brown box) nothing, so in metrics mode those two come from depth.
+- Obstacle memory (on by default, `--no-memory` turns it off): static things the chest camera saw are kept in world metres (the sim's pose; on real hardware, dead reckoning from heading and walking speed) and keep going to the earpiece as `obstacles` with their bearing and distance updated after they leave the view. A level chest camera loses a bin inside about 1 m. They are forgotten after 5 s of walking, once they are behind the walker, or past 8 m. Standing still doesn't age them, so a stop in front of a bin holds. People and cars are never remembered, and neither is anything depth sees within 1 m of where a person or car was in the last 2 s. Of two readings for the same thing, the nearer one is kept.
 - `--show` opens the reveal window: live view, labels (kind, bearing, distance, closing speed), and a red banner such as `STOP - person 1.4 m` that stays up 1.5 s. Press `r` to replay the last 20 s, `l` for live, `q` to quit. Heads are pixelated (`--no-blur` turns that off). The 20 s buffer is JPEG bytes in RAM and is never written to disk, and `--overlay` is refused for a live camera (spec 5.3).
 
 Commands, from the repo root. `--show` needs `opencv-python` (with GUI), not the headless build:
@@ -355,9 +457,52 @@ ffmpeg -ss 9 -i clips/pexels-2795407.mp4 -vf "fps=30,scale=960:-2,reverse" -an c
 $RUN python sim/standin_detect.py --source clips/approach.mp4 --camera chest --show
 ```
 
+### Live walk bench (40 walks, no camera)
+
+`scripts/live_walk_bench.py` replays the live walk 40 times without a judge or a phone. Each run plays a clip through the stand-in detector (chest settings, real-time pacing that drops frames when it falls behind, as a camera would) into a headless earpiece on its own ports (UDP 6210, WS 6211, no Cartesia key), then reads what the earpiece said over the WebSocket and scores it against the clip's truth.
+
+```
+RUN="uv run --no-project --with ultralytics --with opencv-python-headless --with lap --with websockets --with python-dotenv --with numpy --with scipy"
+$RUN python scripts/live_walk_bench.py prepare                 # once, with internet: clips/bench/ (gitignored)
+$RUN python scripts/live_walk_bench.py run                     # 40 runs, about 20 min; table, JSON in out/bench/
+$RUN python scripts/live_walk_bench.py run --runs 6 --only syn_stepin,syn_cross   # a quick check
+$RUN python scripts/live_walk_bench.py rescore out/bench/<report>.json            # new scoring rules, same runs
+python3 scripts/live_walk_bench.py selftest                    # the scoring rules
+```
+
+It needs `earpiece/.venv` (`scripts/check.sh earpiece`) and `weights/yolo11n.pt`. It refuses to start if 6210 or 6211 is taken and only ever stops the processes it started. `--detector <path>` runs another copy of the detector (a `sim/` folder from another branch, copied to the repo root) for a before/after on the same seed.
+
+The clips:
+
+- Stock, from Pexels and Mixkit (free licenses, downloaded by `prepare`, never committed): `approach` (Pexels 2795407 reversed, then forward again, so she walks up and away), `corridor` (Mixkit 33396, the same up-and-back), `group` (Mixkit 23809, four people walking toward the camera), and two empty corridors that must stay silent (`hotel_empty`, `datacenter_empty`). Their truth is the detector's own geometry run on every frame and median-smoothed, so they test flicker, tracking, crowds and timing, not range.
+- Synthetic, with exact distances: a person cut out of a stock frame and drawn into the empty hotel corridor along a scripted path with the live geometry (960x540, fx 700, 1.2 m up, 15 degrees down). `syn_walkup` walks up to 1.0 to 1.3 m, waits 2 s and steps aside. `syn_stepin` is the demo: the teammate steps in from the side 2.4 m ahead. `syn_slow` and `syn_fast` walk at 0.6 and 1.8 m/s, `syn_occluded` has something dark over the lower left of the lens, `syn_table` hides the legs behind a low table, `syn_two` adds a bystander off the path, `syn_cross` crosses 2.3 to 2.8 m ahead (must not stop), and `syn_empty` is the corridor alone.
+
+Every run gets new jitter from the seed: speed, stop point, sideways offset, brightness and a chest bob of up to 1.2 degrees.
+
+Scoring: a stop is expected when the nearest person within 0.7 m of the path comes inside 1.5 m. Latency is from that frame to the start of "Stop. Person ahead." (negative means it started before 1.5 m). A stop while the truth is beyond 2.2 m, or with nobody on the path, is a false stop. A stop more than 1 s after the 1.5 m frame is late and counts as missed. "Path is clear" must come after the person is beyond 2.5 m or off the path and before the clip ends; one that comes while they are still there is an early continue.
+
+Before and after the fixes in this branch, same seed, back to back on an M5 MacBook (detector p50 34 and 26 fps):
+
+| | main | this branch |
+|---|---|---|
+| passed | 16 / 40 | 37 / 40 |
+| missed or late stops | 24 | 3 (all `syn_table`) |
+| false stops | 0 | 0 |
+| stop latency p50 / p95 | -0.43 / +3.26 s | -0.01 / +0.32 s |
+| missed continues | 3 | 0 |
+| early continues | 3 | 0 |
+
+What it found:
+
+1. At the live settings every synthetic walk-up missed the stop (21 of 21). With the phone 15 degrees down on a 960x540 frame, the head leaves the top of the frame at about 4.7 m and the feet leave the bottom at 1.65 m. Inside that, the top row, the bottom row and the box height all bound the distance from above, so every distance read 1.65 m, which never got under the 1.6 m stop line, and the closing speed fell to zero. A box that loses both head and feet now takes its distance from its width as well.
+2. A box only counted as cut off within 8 px of the bottom edge. YOLO boxes often stop a few pixels short, so in `approach` the same person read 3.2 m on one frame and 1.3 m on the next, the stop came 3 s late, and "Path is clear" came while she was still standing there. Cut off now means within 16 px, and a head out of the top of the frame bounds the distance too.
+3. Known limit: legs hidden behind something low (`syn_table`) make the box bottom look like feet farther away, so the person reads too far and Kite never stops. `--depth` should see the table itself; nothing in the YOLO path can.
+
+Bench fixes on the way: video files are now paced like a camera (skip ahead when behind, so a slow laptop can't fall further and further behind the clip), the detector warms YOLO up before frame 0 so the first frame doesn't stall 4 s, and it prints `[standin] t0_wall=` so the bench can line frames up with speech.
+
 ## Files and placeholders
 
 - `src/tilesWorld.ts` is the Google 3D tiles world over the Moss colliders and traffic, and `src/fence.ts` is its geofence. `?detector=osm` keeps the capture frames on OSM Moss. `?relay=` and `?ear=` override the relay and earpiece URLs (empty means offline). `window.__kiteWalker` is the walker, for scripted checks.
 - `src/world.ts` is the placeholder box world, with its glTF traffic from `src/actors.ts`. `src/osmWorld.ts` is Moss St, with its traffic from `src/mossActors.ts` and its look from `src/osmLook.ts`, `src/osmFacades.ts` and `src/osmStreet.ts`. Both export `scene`, `update` and `solids`. The Moss world also exports `spawn`, `walls`, `overlay`, `place` and `tune` (see `WorldExtras`).
 - `ORIGIN` in `src/config.ts` is the Moss zebra (37.778352, -122.408768) and maps to sim (0, 0), so the route and the dashboard use the same points.
-- `FX` in `src/config.ts` starts at 1000. Arthur's Tello calibration replaces it.
+- `FX` in `src/config.ts` starts at 1000. The Tello camera calibration replaces it.

@@ -1,8 +1,8 @@
 """Tello H.264 reader that owns its UDP socket: no FFmpeg udp:// protocol, no demuxer probing, no FFmpeg timeouts.
 
 Same interface as video_stream.VideoStream and pyav_stream.PyAVStream (constructor(url_or_port, fps=,
-open_timeout_ms=, read_timeout_ms=), start(), read_seq(copy=), stop()), plus stats(). The macOS default
-(DroneCfg.video_backend "auto" -> "raw" on darwin): on Arthur's Mac both FFmpeg-based readers received the Tello's
+open_timeout_ms=, read_timeout_ms=), start(), read_seq(copy=), stop()), plus stats(). Backend "raw", and
+"auto" on macOS (opt-in until it has run against a real Tello; the default is pyav): on Arthur's Mac both FFmpeg-based readers received the Tello's
 packets but never delivered a frame (h264 "non-existing PPS", "Stream timeout triggered after 5015 ms").
 
     receiver thread   recv() datagrams into a bounded queue, nothing else (never waits on decoding). The socket asks

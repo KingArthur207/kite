@@ -632,9 +632,9 @@ def build_parser():
     p.add_argument("--preview", action="store_true", help="show the live camera feed in a window during the run")
     p.add_argument("--preview-scale", type=float, default=1.0, help="scale the preview window, e.g. 0.5 (default 1.0)")
     p.add_argument("--video-fps", type=int, default=30, help="decode cap in fps; frames arriving faster are dropped, not queued (default 30)")
-    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default="auto",
-                   help="video reader: raw (kite's UDP socket + bare H.264 decoder), pyav, opencv; "
-                        "auto = raw on macOS, pyav elsewhere (default auto)")
+    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
+                   help="video reader: pyav (default), opencv, or kite's own UDP readers raw (bare H.264 decoder), "
+                        "socket (big receive buffer) and auto = raw on macOS, pyav elsewhere")
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
     p.add_argument("--analyze", metavar="JSON", help="re-analyse a saved run without flying")
     p.add_argument("--out", default="results")
@@ -642,7 +642,7 @@ def build_parser():
 
 
 def parse_args(argv=None):
-    """Arguments with --video-backend resolved to the reader that will run (auto -> this platform's)."""
+    """Arguments with --video-backend resolved to the reader that will run (None -> pyav, auto -> this platform's)."""
     from kite.config import resolve_video_backend
 
     p = build_parser()

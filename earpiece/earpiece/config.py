@@ -46,6 +46,9 @@ class AudioCfg:
 @dataclass
 class SonarCfg:
     """Proximity warnings. Walking speed ~1.3 m/s, so 4 s of look-ahead is ~5 m."""
+    engine: str = field(default_factory=lambda: os.environ.get("KITE_SONAR_ENGINE", "auto"))
+    # where the per-tick decisions run: "rust" (kite_audio.Sonar, identical cue stream),
+    # "python" (sonar.py), or "auto" = rust when the extension is built
     walk_speed_mps: float = 1.2       # assumed closing speed for static obstacles
     corridor_half_width_m: float = 0.55   # half shoulder width + margin
     corridor_margin_m: float = 0.35       # soft edge: partial urgency just outside the corridor
@@ -87,7 +90,10 @@ class SpeechCfg:
     connect_timeout_s: float = 4.0
     first_chunk_timeout_s: float = 2.5    # past this, fall back to the offline voice
     offline_voice: str = "Samantha"   # macOS `say` voice used without internet
-    cache_dir: Path = field(default_factory=lambda: REPO_ROOT / "earpiece" / ".cache" / "tts")
+    # KITE_TTS_CACHE points a git worktree or a test run at an existing phrase cache, so warm-up
+    # does not pay Cartesia again for phrases this machine already has (usage is counted beside it)
+    cache_dir: Path = field(default_factory=lambda: Path(os.environ["KITE_TTS_CACHE"]) if os.environ.get(
+        "KITE_TTS_CACHE") else REPO_ROOT / "earpiece" / ".cache" / "tts")
     default_ttl_s: float = 6.0        # navigation speech older than this is dropped, never spoken late
     # Credit guard: characters sent to Cartesia across ALL runs on this machine (persisted in the
     # cache dir). Past the budget, only critical/hazard speech may stream; the rest uses cached

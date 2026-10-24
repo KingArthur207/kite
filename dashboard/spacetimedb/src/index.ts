@@ -1,6 +1,6 @@
 import { schema, table, t, SenderError } from 'spacetimedb/server';
 
-// Every Kite event (earpiece wire format, docs/superpowers/specs section 5.1) lands here.
+// Every Kite event (earpiece wire format, docs/internal/spec.md section 5.1) lands here.
 // payload is the full event as JSON: its shape varies per type and is validated by
 // earpiece/earpiece/events.py before anything acts on it.
 const event = table(

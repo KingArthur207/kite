@@ -420,11 +420,11 @@ def test_replay_real_tello_capture_through_the_raw_reader(capsys):
 
 # ------------------------------------------------------------------ the backend profile
 def test_auto_backend_is_raw_on_macos_and_pyav_elsewhere():
-    assert DroneCfg().video_backend == "auto" and VIDEO_BACKENDS == ("auto", "raw", "pyav", "opencv")
+    assert DroneCfg().video_backend == "pyav" and VIDEO_BACKENDS == ("auto", "raw", "socket", "pyav", "opencv")
     assert resolve_video_backend("auto", "darwin") == "raw"
     assert resolve_video_backend("auto", "linux") == "pyav" and resolve_video_backend("auto", "win32") == "pyav"
-    assert resolve_video_backend(None, "darwin") == "raw"
-    for b in ("raw", "pyav", "opencv"):
+    assert resolve_video_backend(None, "darwin") == "pyav"  # the default: kite's own readers are opt-in
+    for b in ("raw", "socket", "pyav", "opencv"):
         assert resolve_video_backend(b, "darwin") == b and resolve_video_backend(b.upper(), "linux") == b
     with pytest.raises(ValueError):
         resolve_video_backend("gstreamer")
@@ -447,14 +447,15 @@ def test_tello_video_source_and_drone_resolve_auto(platform):
     from kite.sources.pyav_stream import PyAVStream
     from kite.sources.video_stream import VideoStream
 
-    assert TelloVideoSource().backend == want(platform)
+    assert TelloVideoSource().backend == "pyav" and TelloVideoSource(backend="auto").backend == want(platform)
     assert TelloVideoSource(backend="opencv").backend == "opencv"
     with pytest.raises(ValueError):
         TelloVideoSource(backend="nope")
-    assert make_tello(Config(), dry_run=True).video_backend == want(platform)
+    assert make_tello(Config(), dry_run=True).video_backend == "pyav"
+    assert make_tello(Config(drone=DroneCfg(video_backend="auto")), dry_run=True).video_backend == want(platform)
     assert make_tello(Config(drone=DroneCfg(video_backend="opencv")), dry_run=True).video_backend == "opencv"
     assert stream_class("raw") is RawTelloStream and stream_class("pyav") is PyAVStream
-    assert stream_class("opencv") is VideoStream
+    assert stream_class("opencv") is VideoStream and stream_class("socket").__name__ == "SocketStream"
 
 
 @pytest.fixture
@@ -478,7 +479,7 @@ def test_record_picks_the_profile(platform, connect_spy, flag, tmp_path):
 
     argv = ["--source", "tello", "--out", str(tmp_path)] + (["--video-backend", flag] if flag else [])
     assert record.main(argv) == 1  # connect failed
-    assert connect_spy == [(want(platform) if flag in (None, "auto") else flag, True)]
+    assert connect_spy == [(want(platform) if flag == "auto" else flag or "pyav", True)]
 
 
 @pytest.mark.parametrize("flag", [None, "raw", "opencv"])
@@ -488,7 +489,7 @@ def test_calibrate_picks_the_profile(platform, connect_spy, flag):
     from kite import calibrate
 
     assert calibrate._open_tello(Namespace(video_backend=flag)) is None
-    assert connect_spy == [(want(platform) if flag is None else flag, True)]
+    assert connect_spy == [(flag or "pyav", True)]
     with pytest.raises(SystemExit):  # the CLI rejects an unknown reader
         calibrate.main(["--source", "tello", "--video-backend", "gstreamer"])
 
@@ -499,7 +500,7 @@ def test_preflight_picks_the_profile(platform, connect_spy, flag):
 
     checks = preflight.drone_checks(video_backend=flag)
     assert checks[0].name == "drone link" and checks[0].status == preflight.NO_GO
-    assert connect_spy == [(want(platform) if flag is None else flag, True)]
+    assert connect_spy == [(flag or "pyav", True)]
 
 
 def test_preflight_cli_accepts_the_flag(monkeypatch):
@@ -529,8 +530,8 @@ def test_open_source_picks_the_profile(platform, connect_spy, spec, flag):
     with pytest.raises(RuntimeError, match="no drone"):
         op.open_source(spec, cfg=cfg, **({"video_backend": flag} if flag else {}))
     explicit = flag or (spec.partition(":")[2] or None)
-    assert connect_spy == [(explicit or want(platform), True)]
-    assert cfg.drone.video_backend == "auto"  # the caller's config is never edited
+    assert connect_spy == [(explicit or "pyav", True)]
+    assert cfg.drone.video_backend == "pyav"  # the caller's config is never edited
     assert op.parse_spec("tello:RAW") == ("tello", "raw")
     with pytest.raises(ValueError):
         op.parse_spec("tello:gstreamer")
@@ -553,8 +554,9 @@ def _drone_test():
 def test_drone_test_picks_the_profile(platform):
     dt = _drone_test()
     _, args = dt.parse_args([])
-    assert args.video_backend == want(platform)
-    for b in ("raw", "pyav", "opencv"):
+    assert args.video_backend == "pyav"  # the default: kite's own readers are opt-in
+    assert dt.parse_args(["--video-backend", "auto"])[1].video_backend == want(platform)
+    for b in ("raw", "socket", "pyav", "opencv"):
         assert dt.parse_args(["--video-backend", b])[1].video_backend == b
     with pytest.raises(SystemExit):
         dt.parse_args(["--video-backend", "gstreamer"])
@@ -619,7 +621,7 @@ def test_tello_drone_connect_streams_through_the_raw_reader(monkeypatch):
     port = free_port()
     tx = TelloSender(port, units, start_frame=9).start()
     fake = _FakeDjiTello(port)
-    drone = TelloDrone(tello=fake, dry_run=True)
+    drone = TelloDrone(tello=fake, dry_run=True, video_backend="auto")  # auto -> raw on darwin
     try:
         drone.connect()
         src = drone.frame_source()

@@ -50,6 +50,14 @@ python -m pytest -m "not slow"          # ~15 s, no drone needed
 python -m pytest                        # + the H.264-over-UDP reader tests (needs ffmpeg, ~75 s more)
 ```
 
+If the repo is on an iCloud-synced Desktop or Documents folder, iCloud marks everything inside `.venv` hidden, and Python 3.12.14 and later skip hidden `.pth` files, so `import kite` fails outside pytest ("No module named 'kite'"). Keep the venv where iCloud doesn't touch it, behind the usual name:
+
+```bash
+mv .venv .venv.nosync && ln -s .venv.nosync .venv && chflags -R nohidden .venv.nosync
+```
+
+The same applies to `earpiece/.venv`.
+
 ### Drone layer (`kite/`)
 
 | Module | What it does |
@@ -58,7 +66,7 @@ python -m pytest                        # + the H.264-over-UDP reader tests (nee
 | `drone/safety.py` | `SafetyGovernor`: wraps any drone; clamps rc, altitude ceiling/floor, lands on low battery or flight time, hovers on stale video/telemetry. Call `check()` every loop. |
 | `sources/` | Newest-frame video readers: `TelloVideoSource` (auto-reconnect) over one of three Tello readers, `WebcamSource`, file replay; `open_source(spec)` opens any of them, a take or the sim for perception (below). |
 | `sources/tello_raw.py` | `RawTelloStream`: kite's own UDP socket (8 MB receive buffer) + PyAV's bare H.264 decoder, no FFmpeg network code, probing or timeouts. Waits for an SPS + IDR, keeps the newest frame, `stats()` counts packets, frames, decode errors. The macOS default. |
-| `config.py` | `DroneCfg` / `SafetyCfg` defaults. `DroneCfg.video_backend`: `auto` (raw on macOS, pyav elsewhere), `raw`, `pyav` or `opencv`; every Tello command takes `--video-backend` (and `open_source("tello:raw")`). |
+| `config.py` | `DroneCfg` / `SafetyCfg` defaults. `DroneCfg.video_backend`: `pyav` (the default) or `opencv`, or kite's own UDP readers, opt-in until they have run against a real Tello: `raw`, `socket` and `auto` (raw on macOS, pyav elsewhere); every Tello command takes `--video-backend` (and `open_source("tello:raw")`). |
 
 ```python
 from kite.config import Config
@@ -110,7 +118,7 @@ python -m kite.record --source tello --out recordings --fly            # the sho
   `src.camera` (fx, fy, cx, cy).
 - `kite/camera.py` holds the Tello intrinsics: fx 920 px until calibrated. `python -m kite.calibrate --source tello`
   fits them from a chessboard on a screen with the drone on the ground (at most 45 s of stream) and writes
-  `data/tello_camera.json`. The pilot's shoot steps are in `docs/shoot-flight.md`.
+  `data/tello_camera.json`. The pilot's shoot steps are in `docs/internal/shoot-flight.md`.
 
 ### Opening any frame source (detectors)
 

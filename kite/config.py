@@ -11,14 +11,18 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 
-VIDEO_BACKENDS = ("auto", "raw", "pyav", "opencv")
+VIDEO_BACKENDS = ("auto", "raw", "socket", "pyav", "opencv")
+DEFAULT_VIDEO_BACKEND = "pyav"  # kite's own UDP readers (raw, socket, auto) are opt-in until they run on a real Tello
 
 
-def resolve_video_backend(backend: str | None = "auto", platform: str | None = None) -> str:
-    """The Tello H.264 reader to use. "auto" is the per-platform profile: "raw" on macOS (kite/sources/tello_raw.py:
-    kite's own UDP socket + PyAV's bare H.264 decoder; on a Mac both FFmpeg udp:// readers got the packets but never
-    a frame), "pyav" elsewhere (unchanged). raw / pyav / opencv force one reader on any platform."""
-    b = (backend or "auto").lower()
+def resolve_video_backend(backend: str | None = None, platform: str | None = None) -> str:
+    """The Tello H.264 reader to use. None: DEFAULT_VIDEO_BACKEND, "pyav" (FFmpeg's udp:// + h264 demuxer,
+    djitellopy's way). "opencv" is the team's VideoStream. Opt-in until they have run against a real Tello: "raw"
+    (kite/sources/tello_raw.py: kite's own UDP socket + PyAV's bare H.264 decoder), "socket"
+    (kite/sources/socket_stream.py: kite's UDP socket + PyAV's parser, big receive buffer) and "auto", the
+    per-platform profile: "raw" on macOS (on a Mac both FFmpeg udp:// readers got the packets but never a frame),
+    "pyav" elsewhere."""
+    b = (backend or DEFAULT_VIDEO_BACKEND).lower()
     if b not in VIDEO_BACKENDS:
         raise ValueError(f"video backend {backend!r}: use one of {', '.join(VIDEO_BACKENDS)}")
     if b == "auto":
@@ -43,9 +47,11 @@ class DroneCfg:
     move_speed_cm_s: int = 50  # speed for discrete moves ('speed' command)
     yaw_sign: int = 1  # +1 if telemetry yaw grows with `cw`
     video_fps: int = 60  # reader retrieve cap: must sit above the ~30 fps stream (equal drops ~40 % of frames)
-    # Tello H.264 reader: auto (raw on macOS, pyav elsewhere), raw (kite's UDP socket + bare decoder, tello_raw.py),
-    # pyav (FFmpeg udp:// + h264 demuxer, djitellopy's decoder) or opencv (the team's VideoStream). See resolve_video_backend.
-    video_backend: str = "auto"
+    # Tello H.264 reader (kite.config.resolve_video_backend): pyav (FFmpeg udp:// + h264 demuxer, djitellopy's
+    # decoder) or opencv (the team's VideoStream); kite's own UDP readers are opt-in until they have run against a
+    # real Tello: raw (tello_raw.py, bare H.264 decoder), socket (socket_stream.py, PyAV's parser, big receive
+    # buffer) and auto (raw on macOS, where the FFmpeg udp:// readers showed no image, pyav elsewhere).
+    video_backend: str = DEFAULT_VIDEO_BACKEND
     # camera-to-laptop video delay (s). After a discrete move/rotation, only frames arriving later than
     # "command done + video_lag_s" show the new view. Measure it with tests/drone_test.py.
     # vigil 2026-09-26 run: video 6 +/- 78 ms (yaw) and 21 +/- 40 ms (forward move) behind telemetry, worst 85 ms

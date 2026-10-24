@@ -1,23 +1,26 @@
-"""python -m kite.record: dry run on a video file, a hard crash mid-recording, and keyboard flight against a fake Tello
-(takeoff, a stick, and Ctrl+C landing it while the recorder keeps recording)."""
+"""python -m kite.record: dry run on a video file, a hard crash mid-recording, keyboard flight against a fake Tello
+(takeoff, a stick, and Ctrl+C landing it while the recorder keeps recording), and the --follow-yaw flags."""
 
 import csv
+import importlib.util
 import json
 import os
 import signal
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 
 from kite.config import Config
 from kite.drone import SafetyGovernor
 from kite.drone.tello import TelloDrone
-from kite.record import Recorder, RecordCfg, main
+from kite.record import Recorder, RecordCfg, build_parser, main
 from kite.sources import FrameSource
 from kite.types import Frame
 
@@ -213,3 +216,75 @@ def test_record_only_sends_no_motion(tmp_path):
     Recorder(LiveImage(), drone, RecordCfg(out_dir=str(tmp_path), max_s=0.5), {"source_kind": "fake"}).run()
     drone.close()
     assert fake.sent == ["command"]
+
+
+# ------------------------------------------------------------------ --follow-yaw (opt-in kite.fly yaw sources)
+def parse_error(capsys, argv):
+    """The message main() exits with on a bad command line (argparse: exit status 2, the error after the usage)."""
+    with pytest.raises(SystemExit) as e:
+        main(argv)
+    assert e.value.code == 2
+    return capsys.readouterr().err.strip().splitlines()[-1]
+
+
+def test_follow_yaw_defaults_to_the_law_and_pd_fly_need_follow_without_predict(capsys, monkeypatch, tmp_path):
+    args = build_parser().parse_args(["--source", "tello", "--fly", "--follow"])
+    assert args.follow_yaw == "law" and args.follow_yaw_params is None
+    clip = str(tmp_path / "missing.mp4")  # the yaw checks come before the file check
+    assert "--follow-yaw pd needs --follow" in parse_error(capsys, ["--source", clip, "--follow-yaw", "pd"])
+    err = parse_error(capsys, ["--source", clip, "--follow", "--follow-predict", "--follow-yaw", "fly"])
+    assert "--follow-yaw fly and --follow-predict are exclusive" in err
+    assert "--follow-yaw-params needs --follow-yaw pd or fly" in parse_error(
+        capsys, ["--source", clip, "--follow-yaw-params", str(tmp_path / "p.json")])
+    assert "no such file" in parse_error(capsys, ["--source", clip, "--follow", "--follow-yaw", "pd",
+                                                  "--follow-yaw-params", str(tmp_path / "p.json")])
+    find_spec = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *a, **k: None if name == "scipy" else find_spec(name, *a, **k))
+    err = parse_error(capsys, ["--source", clip, "--follow", "--follow-yaw", "fly"])
+    assert "scipy is not installed" in err and 'pip install -e ".[fly]"' in err
+    monkeypatch.setattr(importlib.util, "find_spec", find_spec)
+    monkeypatch.setattr("kite.follow.fly_available", lambda: None)  # scipy or not: the yaw checks pass ...
+    err = parse_error(capsys, ["--source", clip, "--follow", "--follow-yaw", "pd"])
+    assert "--follow needs --fly" in err and "yaw" not in err  # ... and the usual --follow checks follow
+
+
+LAW_ONLY = textwrap.dedent("""
+    import sys
+    import kite.follow
+    from kite.config import Config
+    from kite.record import _make_follow, build_parser
+
+    class NoFrames:
+        def read(self):
+            return None
+
+    kite.follow.YoloPersonDetector = lambda weights=None: (lambda img: [])  # no ultralytics, no weights
+    args = build_parser().parse_args(["--source", "tello", "--fly", "--follow"])
+    follow = _make_follow(args, NoFrames(), Config())
+    try:
+        assert args.follow_yaw == "law"
+        assert follow.yaw_source is None and follow.ctrl.yaw_source is None
+    finally:
+        follow.close()
+    fly = sorted(m for m in sys.modules if m == "kite.fly" or m.startswith("kite.fly."))
+    assert not fly, fly
+    print("law ok")
+""")
+
+
+def test_follow_yaw_law_builds_no_source_and_never_imports_kite_fly():
+    """A fresh interpreter (this one has imported kite.fly for its own tests): the default --follow builds no yaw
+    source, says so in one line, and kite.fly never enters sys.modules."""
+    r = subprocess.run([sys.executable, "-c", LAW_ONLY], cwd=ROOT, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "law ok" in r.stdout
+    assert "follow: yaw source law (the follow controller's own yaw law, the default)" in r.stdout
+
+
+def test_follow_yaw_choices_match_kite_follow():
+    from kite.follow import YAW_CHOICES
+    from kite.record import build_parser
+
+    act = next(a for a in build_parser()._actions if a.dest == "follow_yaw")
+    assert tuple(act.choices) == YAW_CHOICES  # record keeps its own literal so --help never imports kite.follow

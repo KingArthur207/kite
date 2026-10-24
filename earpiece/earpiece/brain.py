@@ -2,12 +2,21 @@
 
 Two tiers, so the important things never depend on the network:
   1. Local intents (instant, offline): stop talking, repeat, pause/resume,
-     beeps on/off, louder/quieter, beacon on/off, "take me to X", cancel route,
-     ear check, "what's around me", "where am I", "how far".
+     beeps on/off, louder/quieter, talk faster/slower, beacon on/off, "take me to X",
+     cancel route, ear check, "what's around me", "where am I", "how far".
   2. Claude for everything else, with a live snapshot of what Kite knows (nearby
      objects, hazards, route, drone scene descriptions, position) and a few
      tools (navigate, control, alert the caregiver). Text is streamed and spoken
      sentence by sentence, so the first words arrive before the answer is done.
+
+The voice loop around it:
+  * a new question, or the wearer pressing to talk, supersedes the answer in progress:
+    its remaining sentences are never spoken and its stream is closed;
+  * Moss memories are fetched while the wearer is still talking (on each final STT
+    segment), so recall costs nothing by the time the question is complete; a slow
+    recall is skipped after RECALL_DEADLINE_S rather than delaying the answer;
+  * short commands ("stop", "louder", "talk faster") are recognised as complete so the
+    listener can end the utterance early (`quick_command`).
 """
 
 from __future__ import annotations
@@ -21,6 +30,26 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .events import clock_phrase, distance_phrase
+from .judgment import fold
+from .vision import permission
+
+# A voice answer is spoken as it streams, so each sentence is checked on its own. The prompt asks
+# Claude never to say it is safe to cross; this makes it code: a sentence giving permission, an
+# all-clear or a cleared stop is not spoken, and neither is a bare "yes" to "can I cross?".
+_ASKS_GO = re.compile(
+    r"\b(?:can|could|may|should|shall|do)\s+i\s+(?:go|cross|walk|move|proceed|start|step|continue)\b"
+    r"|\bis\s+(?:it|the\s+\w+|everything)\s+(?:safe|ok|okay|clear|time|empty|fine)\b"
+    r"|\b(?:ok|okay|safe|clear|good)\s+to\s+(?:go|cross|walk|move)\b|\bmy\s+turn\b")
+_AFFIRM = re.compile(r"^\W*(?:yes|yeah|yep|yup|sure|absolutely|of\s+course|definitely|correct|right|affirmative"
+                     r"|certainly|indeed|totally|you\s+bet)\b")
+NO_PERMISSION = "I can't tell you when to cross. Listen for traffic and use your cues."
+
+
+def unsafe_answer(sentence: str, question: str = "") -> bool:
+    """True when a spoken answer sentence must not be said (see _ASKS_GO above)."""
+    if permission(sentence):
+        return True
+    return bool(question and _ASKS_GO.search(fold(question)) and _AFFIRM.search(fold(sentence)))
 
 MODEL = "claude-opus-5-5"
 SYSTEM_PROMPT = """You are Kite, the voice of an assistive navigation system for a blind pedestrian. \
@@ -33,7 +62,7 @@ How to answer:
 - Only describe what the context contains. If something is not in the context, say you can't see it yet. Never guess about obstacles, traffic, or signals.
 - Safety first: never tell the user it is safe to cross a street. If the context shows a walk signal, say the signal shows walk and remind them to listen for traffic.
 - "memories" in the context are the user's own saved places and notes: use them to understand "my usual", "home", or a known hazard, and mention a remembered hazard when it matters.
-- If the user wants to go somewhere, call navigate_to. If they want a setting changed, call control. If they are lost, hurt, scared, or ask for help, call alert_caregiver and tell them help has been notified.
+- If the user wants to go somewhere, call navigate_to. If they want a setting changed (including talking faster or slower), call control. If they are lost, hurt, scared, or ask for help, call alert_caregiver and tell them help has been notified.
 - Be warm and calm, never chatty."""
 
 TOOLS = [
@@ -45,7 +74,7 @@ TOOLS = [
      "description": "Change how Kite sounds or behaves.",
      "input_schema": {"type": "object", "properties": {"action": {"type": "string", "enum": [
          "mute_cues", "unmute_cues", "pause", "resume", "volume_up", "volume_down", "repeat",
-         "beacon_on", "beacon_off", "cancel_route"]}},
+         "beacon_on", "beacon_off", "cancel_route", "speak_faster", "speak_slower", "speak_normal"]}},
          "required": ["action"], "additionalProperties": False}},
     {"name": "remember", "eager_input_streaming": True,
      "description": "Save something the user wants Kite to remember: a place at their current location, a hazard, or a note.",
@@ -69,6 +98,10 @@ class Actions:
     ear_check: Callable[[], None]
     remember: Callable[[str, str], str | None] = lambda kind, text: None
     recall: Callable[[str], list] = lambda query: []
+    forget: Callable[[str], str | None] = lambda what: None
+    rename: Callable[[str, str], str | None] = lambda old, new: None
+    undo: Callable[[], str | None] = lambda: None
+    clarify: Callable[[str], str | None] = lambda text: None    # answers a pending "which one?"
     describe_front: Callable[[], str | None] = lambda: None   # Claude on the chest camera frame
     read_text: Callable[[], str | None] = lambda: None        # OCR: read a menu / sign / screen aloud
 
@@ -82,6 +115,13 @@ _LOCAL = [
      r"|\b(?:beeps?|beeping|sounds?|sonar)\b.*\bon$", "unmute_cues"),
     (r"\b(?:mute|turn off|stop|no more)\b.*\b(?:beeps?|beeping|sounds?|sonar)\b"
      r"|\b(?:beeps?|beeping|sounds?|sonar)\b.*\boff$", "mute_cues"),
+    (r"\b(?:normal|default|regular|usual) (?:speed|speaking speed|speech rate|rate|pace)\b", "speak_normal"),
+    (r"\b(?:talk|speak|read|say it|go|reading)\s+(?:a\s+(?:bit|little)\s+)?(?:faster|quicker|more quickly)\b"
+     r"|^(?:faster|quicker)(?: please)?$|^speed up\b|\byou(?:'re| are) (?:talking|speaking) too slow(?:ly)?\b",
+     "speak_faster"),
+    (r"\b(?:talk|speak|read|say it|go|reading)\s+(?:a\s+(?:bit|little)\s+)?(?:slower|more slowly|slowly)\b"
+     r"|^slower(?: please)?$|^slow down\b|\byou(?:'re| are) (?:talking|speaking) too fast\b|^too fast$",
+     "speak_slower"),
     (r"\b(?:louder|volume up|speak up|turn it up|can't hear)\b", "volume_up"),
     (r"\b(?:quieter|softer|volume down|too loud|turn it down)\b", "volume_down"),
     (r"\b(?:beacon|ticking)\b.*\b(?:off|stop)\b|\b(?:turn off|stop)\b.*\bbeacon\b", "beacon_off"),
@@ -92,6 +132,12 @@ _LOCAL = [
 _REMEMBER_PLACE = re.compile(r"(?i)^(?:please\s+)?(?:remember|save|mark|bookmark)\s+(?:this place|this spot|"
                              r"this location|where i am|my location|this|here)\s*(?:as|is|called)?\s+(?P<name>.+?)[.!?]*$")
 _REMEMBER_NOTE = re.compile(r"(?i)^(?:please\s+)?(?:remember|note|keep in mind|make a note)\s+(?:that\s+)?(?P<text>.+?)[.!?]*$")
+_NOT_MEMORY = r"(?:it|that|this|everything|the (?:beacon|route|directions|navigation|sonar|beeps?|sounds?))"
+_FORGET = re.compile(r"(?i)^(?:please\s+)?(?:forget|delete|remove|erase)\s+(?:about\s+)?(?:the memory (?:of|about)\s+|"
+                     r"my memory of\s+)?(?!" + _NOT_MEMORY + r"[.!?]*$)(?P<what>.+?)[.!?]*$")
+_RENAME = re.compile(r"(?i)^(?:please\s+)?(?:rename|change the name of)\s+(?P<old>.+?)\s+(?:to|as)\s+(?P<new>.+?)[.!?]*$")
+_UNDO = re.compile(r"(?i)^(?:undo|undo that|bring (?:it|that) back|i didn'?t mean (?:it|that))[.!?]*$")
+_HOME = re.compile(r"\b(?:take|bring|walk|guide|get|lead) me home\b|^(?:go|head|navigate|directions) home\b")
 _READ = re.compile(r"\bread (?:this|that|it|me|the|out|aloud|what)\b|\bread\s*$|\bwhat does (?:this|that|it|the \w+) say\b"
                    r"|\bwhat(?:'s| is) (?:written|on (?:the|this|that) (?:sign|menu|screen|label|page|board))\b")
 _RECALL = re.compile(r"\bwhat do you (?:remember|know) about\b|\bdo you remember\b")
@@ -102,6 +148,14 @@ _NAV = re.compile(r"(?i)\b(?:take me|navigate|guide me|walk me|get me|directions
 _AROUND = re.compile(r"\b(?:what'?s|what is|anything|anyone|who'?s|who is)\b.*\b(?:around|ahead|in front|near|nearby|close)\b")
 _WHERE = re.compile(r"\bwhere am i\b|\bwhere are we\b")
 _HOWFAR = re.compile(r"\bhow (?:far|long)\b|\bare we there\b|\bwhere am i going\b")
+
+
+# Commands that are complete the moment they are said: the listener may end the utterance
+# after a short pause instead of the full end-of-speech silence. Open-ended requests
+# (navigate, remember, questions for Claude) always get the full silence.
+QUICK_INTENTS = frozenset({"stop_speaking", "repeat", "pause", "resume", "mute_cues", "unmute_cues",
+                           "volume_up", "volume_down", "beacon_on", "beacon_off", "cancel_route",
+                           "ear_check", "speak_faster", "speak_slower", "speak_normal"})
 
 
 def strip_wake(text: str, wake_words: tuple[str, ...]) -> tuple[bool, str]:
@@ -115,7 +169,63 @@ def strip_wake(text: str, wake_words: tuple[str, ...]) -> tuple[bool, str]:
     return False, t
 
 
+def classify(low: str, original: str | None = None) -> tuple[str, str | None] | None:
+    """Local intent for a normalised utterance (lower case, no end punctuation), or None."""
+    o = original or low
+    m = _REMEMBER_PLACE.search(o)
+    if m:
+        return ("remember_place", m.group("name").strip())
+    m = _REMEMBER_NOTE.search(o)
+    if m and not re.match(r"(?i)^remember (?:this|here)\b", o):
+        return ("remember_note", m.group("text").strip())
+    m = _RENAME.search(o)
+    if m:
+        return ("rename", m.group("old").strip() + "\n" + m.group("new").strip())
+    m = _FORGET.search(o)
+    if m:
+        return ("forget", m.group("what").strip())
+    if _UNDO.search(o):
+        return ("undo", None)
+    if _HOME.search(low):
+        return ("navigate", "home")
+    if _READ.search(low):
+        return ("read", None)
+    if _RECALL.search(low):
+        return ("recall", None)
+    if re.search(r"\b(?:take|bring|walk|guide|lead) me back\b|^go back\b", low) and not _NAV.search(o):
+        return ("navigate", "back the way I came")
+    m = _NAV.search(o)
+    if m and len(m.group("dest")) >= 2:
+        return ("navigate", m.group("dest").strip())
+    for pat, name in _LOCAL:
+        if re.search(pat, low):
+            return (name, None)
+    if _AROUND.search(low):
+        return ("around", None)
+    if _WHERE.search(low):
+        return ("where", None)
+    if _HOWFAR.search(low):
+        return ("howfar", None)
+    return None
+
+
+def quick_command(text: str) -> bool:
+    """True if `text` (an STT transcript, wake word allowed) is already a complete short command."""
+    _, rest = strip_wake(text, ())
+    low = " ".join(rest.split()).lower().strip(" .!?,")
+    if not low or len(low.split()) > 6:
+        return False
+    k = classify(low, low)
+    return k is not None and k[0] in QUICK_INTENTS
+
+
+def _norm_query(text: str) -> str:
+    return re.sub(r"[^a-z0-9 ]", "", " ".join(text.lower().split())).strip()
+
+
 class Brain:
+    RECALL_DEADLINE_S = 0.3      # Moss is local (~ms); never let a slow recall hold an answer
+
     def __init__(self, context: Callable[[], dict], actions: Actions,
                  speak: Callable[..., object], api_key: str | None, log=print,
                  model: str = MODEL, timeout_s: float = 12.0):
@@ -130,7 +240,10 @@ class Brain:
         self.history: list[dict] = []              # short memory: last few Q/A pairs as text
         self._loop: asyncio.AbstractEventLoop | None = None
         self._busy = threading.Lock()
-        self.stats = {"local": 0, "llm": 0, "llm_errors": 0, "first_sentence_ms": []}
+        self.stats = {"local": 0, "llm": 0, "llm_errors": 0, "blocked": 0, "first_sentence_ms": [],
+                      "interrupted": 0, "recall_prefetch_hits": 0, "recall_ms": None, "recall_timeouts": 0}
+        self._gen = 0                              # bumped by every new turn and every barge-in
+        self._prefetch: tuple[str, asyncio.Future] | None = None
         if api_key:
             try:
                 import anthropic
@@ -160,11 +273,59 @@ class Brain:
         """For tests and the CLI: returns 'local:<intent>' or 'llm' or 'fallback'."""
         return asyncio.run_coroutine_threadsafe(self._handle(text), self._loop).result(timeout)
 
+    def interrupt(self) -> None:
+        """The wearer barged in: the answer in progress must not say another sentence."""
+        self._gen += 1
+
+    def prefetch(self, partial: str) -> None:
+        """Thread-safe: start the Moss recall for what the wearer has said so far (called on
+        each final STT segment, while they may still be talking)."""
+        if self._loop is None or not partial.strip():
+            return
+        self._loop.call_soon_threadsafe(self._start_recall, partial)
+
+    def _start_recall(self, text: str) -> asyncio.Future:
+        q = _norm_query(text)
+        if self._prefetch is not None and self._prefetch[0] == q:     # same query: reuse it
+            return self._prefetch[1]
+        fut = asyncio.ensure_future(asyncio.to_thread(self._timed_recall, text))
+        fut.add_done_callback(lambda f: f.cancelled() or f.exception())
+        self._prefetch = (q, fut)
+        return fut
+
+    def _timed_recall(self, text: str) -> list:
+        t0 = time.perf_counter()
+        try:
+            return self.actions.recall(text)
+        finally:
+            self.stats["recall_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+
+    async def memories(self, text: str) -> list:
+        """Memories for the finished question: the prefetched result when the wearer's final
+        words match what was prefetched, else a fresh recall, within RECALL_DEADLINE_S."""
+        if self._prefetch is not None and self._prefetch[0] == _norm_query(text):
+            self.stats["recall_prefetch_hits"] += 1
+        fut = self._start_recall(text)
+        try:
+            return list(await asyncio.wait_for(asyncio.shield(fut), self.RECALL_DEADLINE_S) or [])
+        except asyncio.TimeoutError:
+            self.stats["recall_timeouts"] += 1
+            self.log(f"[brain] memory recall slower than {self.RECALL_DEADLINE_S:.1f}s: answering without it")
+            return []
+        except Exception:
+            return []
+
     async def _handle(self, text: str) -> str:
         text = " ".join(text.split()).strip()
         if not text:
             return "empty"
+        self._gen += 1                             # a new question supersedes any answer still streaming
         low = text.lower().strip(" .!?")
+        answer = self.actions.clarify(text)          # "the park one", after "which bench?"
+        if answer:
+            self.stats["local"] += 1
+            self.speak(answer, "answer", ttl=15)
+            return "local:clarify"
         kind = self.local_intent(low, text.strip(" .!?"))
         if kind is not None:
             self.stats["local"] += 1
@@ -184,32 +345,7 @@ class Brain:
             return "fallback"
 
     def local_intent(self, low: str, original: str | None = None) -> tuple[str, str | None] | None:
-        o = original or low
-        m = _REMEMBER_PLACE.search(o)
-        if m:
-            return ("remember_place", m.group("name").strip())
-        m = _REMEMBER_NOTE.search(o)
-        if m and not re.match(r"(?i)^remember (?:this|here)\b", o):
-            return ("remember_note", m.group("text").strip())
-        if _READ.search(low):
-            return ("read", None)
-        if _RECALL.search(low):
-            return ("recall", None)
-        if re.search(r"\b(?:take|bring|walk|guide|lead) me back\b|^go back\b", low) and not _NAV.search(o):
-            return ("navigate", "back the way I came")
-        m = _NAV.search(o)
-        if m and len(m.group("dest")) >= 2:
-            return ("navigate", m.group("dest").strip())
-        for pat, name in _LOCAL:
-            if re.search(pat, low):
-                return (name, None)
-        if _AROUND.search(low):
-            return ("around", None)
-        if _WHERE.search(low):
-            return ("where", None)
-        if _HOWFAR.search(low):
-            return ("howfar", None)
-        return None
+        return classify(low, original)
 
     def _do_local(self, kind: tuple[str, str | None], low: str) -> None:
         name, arg = kind
@@ -220,6 +356,11 @@ class Brain:
         elif name == "remember_note":
             kind = "hazard" if _HAZARD_WORDS.search(arg or "") else "note"
             msg = self.actions.remember(kind, arg or "")
+            if msg:
+                self.speak(msg, "answer", ttl=15)
+        elif name in ("forget", "rename", "undo"):
+            msg = (self.actions.forget(arg or "") if name == "forget" else
+                   self.actions.rename(*(arg or "\n").split("\n", 1)) if name == "rename" else self.actions.undo())
             if msg:
                 self.speak(msg, "answer", ttl=15)
         elif name == "recall":
@@ -310,22 +451,26 @@ class Brain:
     async def _ask_llm(self, text: str) -> None:
         import anthropic
 
+        gen = self._gen
         c = self.context()
-        try:
-            c["memories"] = self.actions.recall(text)
-        except Exception:
-            c["memories"] = []
+        c["memories"] = await self.memories(text)
         ctx = json.dumps(c, separators=(",", ":"), default=str)
         messages = list(self.history[-6:])
         messages.append({"role": "user", "content": f"<context>{ctx}</context>\n\nUser said: {text}"})
         t0 = time.monotonic()
         spoken: list[str] = []
+        blocked: list[str] = []
         first = True
 
         def emit(sentence: str) -> None:
             nonlocal first
             s = sentence.strip()
-            if not s:
+            if not s or gen != self._gen:          # superseded: the wearer has moved on
+                return
+            if unsafe_answer(s, text):
+                blocked.append(s)
+                self.stats["blocked"] += 1
+                self.log(f"[brain] not spoken (sounds like permission to move): {s!r}")
                 return
             if first:
                 first = False
@@ -343,6 +488,8 @@ class Brain:
                 betas=["server-side-fallback-2026-07-01"], fallbacks="default",
             ) as stream:
                 async for ev in stream:
+                    if gen != self._gen:
+                        break                      # leaving the block closes the stream
                     if ev.type == "text":
                         buf += ev.text
                         while True:          # speak each finished sentence immediately
@@ -351,6 +498,9 @@ class Brain:
                                 break
                             emit(buf[:m.end()])
                             buf = buf[m.end():]
+                if gen != self._gen:
+                    self.stats["interrupted"] += 1
+                    return
                 resp = await stream.get_final_message()
             if buf.strip():
                 emit(buf)
@@ -367,6 +517,8 @@ class Brain:
                 results.append({"type": "tool_result", "tool_use_id": u.id, "content": out,
                                 **({"is_error": True} if err else {})})
             messages.append({"role": "user", "content": results})
+        if blocked and not spoken:                 # everything it said was a go-ahead: say why it's quiet
+            emit(NO_PERMISSION)
         answer = " ".join(spoken)
         self.history += [{"role": "user", "content": text},
                          {"role": "assistant", "content": answer or "(no answer)"}]
@@ -375,6 +527,17 @@ class Brain:
     def _run_tool(self, name: str, inp) -> tuple[str, bool]:
         if not isinstance(inp, dict):
             return "invalid input", True
+        schema = next((t["input_schema"] for t in TOOLS if t["name"] == name), None)
+        if schema is None:
+            return f"unknown tool {name}", True
+        # eager_input_streaming means the API no longer validates arguments: hold them to the schema
+        # here (no extra keys, strings only), so None never becomes a destination called "None".
+        extra = sorted(str(k) for k in inp if k not in schema["properties"])
+        if extra:
+            return f"unknown argument(s) {extra}", True
+        bad = [k for k, v in inp.items() if not isinstance(v, str)]
+        if bad:
+            return f"{', '.join(map(str, bad))} must be a string", True
         try:
             if name == "navigate_to":
                 dest = str(inp.get("destination", "")).strip()[:120]

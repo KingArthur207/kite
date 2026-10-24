@@ -4,7 +4,7 @@
     python -m kite.preflight --quick    # laptop checks only (no drone, the Wi-Fi check only warns)
     python -m kite.preflight --drone    # force the drone checks
     python -m kite.preflight --json     # machine-readable results on stdout
-    python -m kite.preflight --video-backend opencv   # check another Tello video reader (default auto: raw on macOS)
+    python -m kite.preflight --video-backend opencv   # check another Tello video reader (default pyav)
 
 Laptop: python deps, ffmpeg, free disk and a writable recordings folder, the Tello UDP ports free (8889 commands,
 8890 state, 11111 video; the program holding one is named), laptop battery, the Tello Wi-Fi, the camera calibration
@@ -391,7 +391,9 @@ def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[
     first = src.wait_first(first_frame_s)
     if first is None:
         stats = _reader_stats(src)
-        return [Check("video", NO_GO, _no_frame_detail(stats, first_frame_s), {"reader": stats})]
+        why = getattr(src, "diagnosis", lambda: None)()  # the socket reader says which case it is
+        detail = _no_frame_detail(stats, first_frame_s) + (f". Reader: {why}" if why else "")
+        return [Check("video", NO_GO, detail + "; try another --video-backend", {"reader": stats})]
     wait = time.monotonic() - t_wait
     fps, hz = _measure(src, tello, first, measure_s)
     out = []
@@ -448,7 +450,7 @@ def _latency_check(tello) -> Check:
 def drone_checks(make_drone=None, first_frame_s: float | None = None, measure_s: float | None = None,
                  video_backend: str | None = None) -> list[Check]:
     """Connect (dry run: no motion), read and measure, close. make_drone: a factory for tests. video_backend: the
-    Tello video reader (None: DroneCfg's, "auto" = raw on macOS, pyav elsewhere)."""
+    Tello video reader to check (None: DroneCfg's, the one kite.record uses; "auto" = raw on macOS, pyav elsewhere)."""
     first_frame_s = FIRST_FRAME_S if first_frame_s is None else first_frame_s
     measure_s = MEASURE_S if measure_s is None else measure_s
     if make_drone is None:
@@ -525,7 +527,7 @@ def run(out: str = "recordings", quick: bool = False, drone: bool = False, make_
     else:
         if on_check is not None:
             on_check(None)  # "connecting" notice
-        add(drone_checks(make_drone, video_backend=video_backend) if video_backend else drone_checks(make_drone))
+        add(drone_checks(make_drone, video_backend=video_backend))
     return checks
 
 
@@ -543,8 +545,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--quick", action="store_true", help="laptop checks only, no drone")
     p.add_argument("--drone", action="store_true", help="run the drone checks even when not on the Tello Wi-Fi")
     p.add_argument("--json", action="store_true", help="print machine-readable results")
-    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None, help="Tello video reader to check "
-                   "(default auto: raw on macOS, pyav elsewhere)")
+    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
+                   help="Tello H.264 reader to check (default pyav; opt-in: raw, socket, auto = raw on macOS)")
     args = p.parse_args(argv)
     if args.quick and args.drone:
         p.error("--quick and --drone contradict each other")
@@ -560,7 +562,7 @@ def main(argv: list[str] | None = None) -> int:
     checks = run(out=args.out, quick=args.quick, drone=args.drone,
                  on_check=None if args.json else show, video_backend=args.video_backend)
     v = verdict(checks)
-    nxt = NEXT_COMMAND.format(out=args.out)
+    nxt = NEXT_COMMAND.format(out=args.out) + (f" --video-backend {args.video_backend}" if args.video_backend else "")
     if args.json:
         print(json.dumps({"verdict": v, "checks": [asdict(c) for c in checks],
                           "next_command": nxt if v == GO else None}, indent=2))
