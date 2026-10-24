@@ -296,7 +296,8 @@ def scaled_camera(cam: Camera, width: int, height: int) -> Camera:
 class YawSource(Protocol):
     """Replaces the yaw law while following (kite.fly.steer.FlySteer). Called every control step with a fresh track:
     the walker's bearing (deg, + right) and range (m) measured on the frame that arrived at frame_t. Returns the yaw
-    stick before the clamps and slew limit; `fallback` is the law's own value (returned if the source fails)."""
+    stick before the clamps and slew limit; `fallback` is the law's own value (returned if the source fails).
+    It runs on the control loop and nothing times it out: keep a call to a few ms (FlySteer: ~3 ms, under 6 ms worst)."""
 
     def reset(self) -> None: ...
 

@@ -280,3 +280,11 @@ def test_follow_yaw_law_builds_no_source_and_never_imports_kite_fly():
     assert r.returncode == 0, r.stderr
     assert "law ok" in r.stdout
     assert "follow: yaw source law (the follow controller's own yaw law, the default)" in r.stdout
+
+
+def test_follow_yaw_choices_match_kite_follow():
+    from kite.follow import YAW_CHOICES
+    from kite.record import build_parser
+
+    act = next(a for a in build_parser()._actions if a.dest == "follow_yaw")
+    assert tuple(act.choices) == YAW_CHOICES  # record keeps its own literal so --help never imports kite.follow

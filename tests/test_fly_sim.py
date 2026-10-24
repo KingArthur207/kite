@@ -14,7 +14,7 @@ import pytest
 from kite.camera import Camera
 from kite.fly.interfaces import BASELINE_SEEDS, METRICS
 from kite.fly.sim import run_episode
-from kite.fly.sim.batch import parse_seeds, summarize
+from kite.fly.sim.batch import parse_seeds, run_seeds, summarize
 from kite.fly.sim.camera import H, DetectorParams, FakeDetector, head_in_view, project, visible_box
 from kite.fly.sim.drone import DroneModel, DroneParams, noise_len
 from kite.fly.sim.metrics import EpisodeMetrics
@@ -313,7 +313,7 @@ def test_a_yaw_source_returning_zero_is_clearly_worse():
 
 # ------------------------------------------------------------------ safety and sanity
 def test_kite_law_collision_rate_on_demo():
-    res = [run_episode(s, "demo") for s in SEEDS]
+    res = run_seeds(SEEDS, "demo", workers=4)
     assert sum(r.metrics["collision"] for r in res) <= 3
     assert sum(r.metrics["start_failed"] for r in res) <= 3
 

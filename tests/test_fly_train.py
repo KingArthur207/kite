@@ -5,7 +5,6 @@ paired bootstrap and the G2 / G3 gate logic on synthetic episodes, the cost proj
 import json
 import math
 import pickle
-from types import SimpleNamespace
 
 import numpy as np
 import pytest

@@ -46,7 +46,7 @@ import shutil
 import sys
 import time
 import warnings
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 

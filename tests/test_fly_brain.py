@@ -81,7 +81,8 @@ def test_deterministic_for_a_seed(brain):
     a, b, c = brain.copy(seed=7), brain.copy(seed=7), brain.copy(seed=8)
     ra = [a.tick(ch) for _ in range(6)]
     rb = [b.tick(ch) for _ in range(6)]
-    rc = [c.tick(ch) for _ in range(6)]
+    for _ in range(6):
+        c.tick(ch)
     assert np.array_equal(ra, rb) and np.array_equal(a.last_counts, b.last_counts)
     assert not np.array_equal(a.last_counts, c.last_counts)  # another fly: same wiring, its own noise
     a.reset()  # same seed again: the same fly

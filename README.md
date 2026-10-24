@@ -533,14 +533,14 @@ python -m kite.record --source tello --out recordings --fly --follow --follow-ya
 
 **The result: neither passed the ship gate.** These numbers come from 200 held-out simulated walks per profile ([`docs/fly-yaw-results.md`](docs/fly-yaw-results.md), [`kite/fly/DESIGN.md`](kite/fly/DESIGN.md) section 11):
 
-- `fly` has 6 to 10 % less steering error (RMS bearing to the walker) than the current law, with the same safety numbers on the `demo` profile. A tuned version of the law itself does far better: the fly has 24 to 37 % more error than it.
-- `pd` has 35 to 38 % less steering error, but it fails the safety margins. In the `stress` and `fast` simulations it collides on 9 and 8 walks where the law doesn't (2 and 1 the other way round), and on every profile it has more separate losses and more time too close to the walker.
+- `fly` has 6 to 10 % less steering error (RMS bearing to the walker) than the current law on the `train` and `demo` profiles (about 4 % on `stress` and `fast`; on `stress` the confidence interval reaches 0), with the same safety numbers on the `demo` profile. A tuned version of the law itself does far better: the fly has 24 to 37 % more error than it.
+- `pd` has 35 to 38 % less steering error on `train` and `demo` (17 to 23 % on `stress` and `fast`), but it fails the safety margins. In the `stress` and `fast` simulations it collides on 9 and 8 walks where the law doesn't (2 and 1 the other way round), and on every profile it has more separate losses and more time too close to the walker.
 
 To evaluate or retrain (`pip install -e ".[train]"`; Modal is optional):
 
 ```bash
 python -m kite.fly.sim --arm FLY-YAW --profile demo --seeds baseline     # one arm in the follow simulator
-python -m kite.fly.train.cma_train --arm FLY-YAW --cma-seed 1 --dry-run   # the plan and its cost; drop --dry-run to train
+python -m kite.fly.train.cma_train --arm FLY-YAW --cma-seed 1 --dry-run   # the plan and its cost; train with --backend modal (~$1.60, ~16 min a run; locally ~20 CPU-hours)
 python -m kite.fly.train.report --arms KITE-LAW,PRED-PD,FLY-YAW --best kite/fly/data/pred_pd.json \
     --best kite/fly/data/fly_yaw.json --seeds baseline --name mine        # paired comparison and the gates
 ```
