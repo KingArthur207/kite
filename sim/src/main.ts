@@ -56,6 +56,7 @@ const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () =>
     detector: query.get("detector") === "tiles" ? "tiles" : "osm",   // OSM capture by default: YOLO recall on tile frames is far lower (PR #41)
   })
   : buildOsmWorld({ actors: !metricsOn, walkers });
+world.tune?.(capture);   // tone mapping, colour space and shadows; the screen renderer gets the same
 if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
 const { scene } = world;
 
@@ -96,6 +97,7 @@ function placeCameras() {
 const view = document.getElementById("view")!;
 const hud = document.getElementById("hud")!;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+world.tune?.(renderer);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setScissorTest(true);
 view.appendChild(renderer.domElement);

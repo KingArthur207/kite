@@ -40,6 +40,18 @@ CAR_ROADS = {"primary", "secondary", "tertiary", "residential", "unclassified",
 MPH = 0.44704
 DEFAULT_MPH = {"residential": 15}   # CA alley limit; Moss has no maxspeed tag
 MOSS, HOWARD = 8916291, 1469149564
+# Street furniture nodes kept in moss.json `furniture` (kind = the first matching tag value).
+FURNITURE_FILTERS = ['"highway"~"^(street_lamp|traffic_signals|stop|give_way)$"', '"natural"="tree"',
+                     '"emergency"="fire_hydrant"',
+                     '"amenity"~"^(waste_basket|bicycle_parking|parking_meter|vending_machine|bench)$"',
+                     '"traffic_sign"', '"barrier"~"^(bollard|kerb)$"', '"power"="pole"', '"man_made"="utility_pole"']
+FURNITURE_KEYS = ["highway", "natural", "emergency", "amenity", "barrier", "power", "man_made"]
+FURNITURE_KINDS = {"street_lamp", "traffic_signals", "stop", "give_way", "tree", "fire_hydrant", "waste_basket",
+                   "bicycle_parking", "parking_meter", "vending_machine", "bench", "bollard", "kerb", "pole",
+                   "utility_pole"}
+FURNITURE_TAGS = ("direction", "traffic_sign", "colour", "fire_hydrant:type", "tactile_paving", "vending", "kerb")
+BUILDING_TAGS = ["building", "building:levels", "height", "building:material", "building:colour",
+                 "roof:shape", "roof:colour", "shop", "amenity", "addr:housenumber"]
 SPAWN_BEFORE_CROSSING = 70.0
 ROUTE_ALONG_HOWARD = 20.0
 
@@ -58,8 +70,9 @@ def fetch():
     s, n = (ORIGIN[0] + v / M_PER_DEG for v in (BBOX[1], BBOX[3]))
     w, e = (to_latlng(v, 0)["lng"] for v in (BBOX[0], BBOX[2]))
     bb = f"{s:.6f},{w:.6f},{n:.6f},{e:.6f}"
-    q = (f'[out:json][timeout:25];(way["building"]({bb});way["highway"]({bb});'
-         f'node["highway"="crossing"]({bb}););out geom tags;')
+    furniture = "".join(f'node[{f}]({bb});' for f in FURNITURE_FILTERS)
+    q = (f'[out:json][timeout:25];(way["building"]({bb});way["highway"]({bb});node["highway"="crossing"]({bb});'
+         f'{furniture}node["shop"]({bb});node["amenity"]({bb}););out geom tags;')
     req = urllib.request.Request(OVERPASS, data=urllib.parse.urlencode({"data": q}).encode(),
                                  headers={"User-Agent": UA})
     # python.org builds on macOS ship without CA certs; the system bundle works.
@@ -258,8 +271,30 @@ def build(raw):
                 float(t.get("building:levels", DEFAULT_LEVELS)) * LEVEL_H
         except ValueError:
             h = DEFAULT_LEVELS * LEVEL_H
-        buildings.append({"id": e["id"], "h": round(h, 1), "pts": loc(e["geometry"])})
+        buildings.append({"id": e["id"], "h": round(h, 1), "pts": loc(e["geometry"]),
+                          "tags": {k: t[k] for k in BUILDING_TAGS if k in t}})
     polys = [b["pts"] for b in buildings]
+
+    furniture, shop_nodes = [], []
+    for e in els:
+        t = e.get("tags", {})
+        if e["type"] != "node":
+            continue
+        p = to_local(e["lat"], e["lon"])
+        if "shop" in t or ("amenity" in t and t["amenity"] not in FURNITURE_KINDS):
+            shop_nodes.append(p)
+        kind = next((t[k] for k in FURNITURE_KEYS if t.get(k) in FURNITURE_KINDS), None)
+        if kind == "kerb" and t.get("kerb") != "lowered":
+            kind = None
+        if kind is None and "traffic_sign" in t:
+            kind = "traffic_sign"
+        if kind:
+            furniture.append({"id": e["id"], "kind": kind, "x": round(p[0], 2), "y": round(p[1], 2),
+                              "tags": {k: t[k] for k in FURNITURE_TAGS if k in t}})
+    # A building with a shop/amenity tag, or a shop/amenity node inside it, gets a storefront.
+    for b in buildings:
+        b["storefront"] = "shop" in b["tags"] or "amenity" in b["tags"] or \
+            any(inside(p, b["pts"]) for p in shop_nodes)
 
     roads = [layout({"id": e["id"], "tags": e["tags"], "pts": loc(e["geometry"])}, polys)
              for e in els if e["type"] == "way" and e.get("tags", {}).get("highway") in CAR_ROADS]
@@ -351,7 +386,9 @@ def build(raw):
         "spawn": {"x": round(spawn[0], 2), "y": round(spawn[1], 2), "heading": round(heading, 1)},
         "route": [r2(p) for p in route],
         "measurements": measurements,
-        "buildings": [{"id": b["id"], "h": b["h"], "pts": [r2(p) for p in b["pts"]]} for b in buildings],
+        "buildings": [{"id": b["id"], "h": b["h"], "pts": [r2(p) for p in b["pts"]], "tags": b["tags"],
+                       "storefront": b["storefront"]} for b in buildings],
+        "furniture": furniture,
         "roads": [{"id": r["id"], "name": r["name"], "highway": r["highway"], "oneway": r["oneway"],
                    "lanes": r["lanes"], "maxspeed_mph": r["maxspeed_mph"],
                    "curbs": [round(v, 2) for v in r["curbs"]], "sidewalk": round(r["sidewalk"], 2),
@@ -366,6 +403,15 @@ def build(raw):
     route_ll = {"attribution": data["attribution"], "length_m": round(length, 1),
                 "points": [dict(name=n, **to_latlng(*p)) for n, p in zip(names, route)]}
     return data, route_ll
+
+
+def inside(p, poly):
+    """Even-odd point in polygon."""
+    c = False
+    for a, b in zip(poly, poly[1:] + poly[:1]):
+        if (a[1] > p[1]) != (b[1] > p[1]) and p[0] < a[0] + (p[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]):
+            c = not c
+    return c
 
 
 def along_len(pts):
@@ -391,6 +437,9 @@ def self_check(data):
     sx, sy = data["spawn"]["x"], data["spawn"]["y"]
     assert sx > 0 and sy < 0 and 300 < data["spawn"]["heading"] < 330, data["spawn"]
     assert 60 < m["route_length_m"] < 130, m
+    sq = [(0, 0), (1, 0), (1, 1), (0, 1)]
+    assert inside((0.5, 0.5), sq) and not inside((2, 0.5), sq)
+    assert all("tags" in b for b in data["buildings"]) and data["furniture"], "building tags or furniture missing"
 
 
 def main():
@@ -402,7 +451,8 @@ def main():
     (OUT / "route.json").write_text(json.dumps(route, indent=2) + "\n")
     print(json.dumps(data["measurements"], indent=2))
     print(f"{len(data['buildings'])} buildings, {len(data['roads'])} roads, "
-          f"{len(data['crossings'])} crossings -> {OUT}")
+          f"{len(data['crossings'])} crossings, {len(data['furniture'])} furniture, "
+          f"{sum(b['storefront'] for b in data['buildings'])} storefronts -> {OUT}")
 
 
 if __name__ == "__main__":
