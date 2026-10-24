@@ -1,5 +1,7 @@
 # Kite: interview guide
 
+Note: the team decided on Oct 24 not to interview anyone this weekend. Nothing here was used, and no pitch or doc may quote or imply an interview. This file stays as a plan for later, when we can test with orientation and mobility instructors.
+
 For a 10-minute call with a blind or low-vision person, or with an orientation and mobility (O&M) instructor. Rex runs the interview. Anyone on the team can run it if Rex isn't free, as long as they follow the consent part word for word.
 
 The aim is to learn what we got wrong, and to get one or two sentences we may quote with permission. It is not a sales call. If they say Kite is a bad idea, that is a useful answer and it goes in the notes as said.

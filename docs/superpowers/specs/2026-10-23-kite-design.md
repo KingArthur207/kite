@@ -21,7 +21,7 @@ Goals
 - A judge wears Kite (sleep mask, headphones, a phone as the chest camera) and walks a few meters at our table. When a teammate steps into their path, Kite stops them, then tells them to go on. Then they see what Kite saw.
 - The same detection code runs on real Tello footage, on the sim's cameras, and on the live chest camera. That is our main honesty claim.
 - Real Tello footage of a walker on that corner, with Kite's cues overlaid, in the demo video.
-- One real conversation with a blind person or an orientation and mobility instructor, quoted in the pitch.
+- Honest research framing in the pitch: "We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and the KIT Flying Guide Dog user study of blindfolded walkers. Testing with orientation and mobility instructors is our next step." No interviews will be conducted.
 
 Non-goals
 - Flying at the venue. Drones are banned there.
@@ -69,7 +69,7 @@ The two-minute pitch, demo first (also the Cartesia track's format):
 2. 0:10 to 0:50. The judge walks 3 or 4 m along the aisle. A teammate steps into their path. The beeps come from the teammate's side and speed up, and Kite says "Stop. Person ahead." The teammate steps away and Kite says to go on. If there's time, the judge asks "Kite, what's in front of me?" and Claude answers.
 3. 0:50 to 1:10. Mask off. The screen shows what Kite saw on their walk: the chest camera with its boxes, and the caregiver map with the stop on it.
 4. 1:10 to 1:35. "A chest camera sees a few meters. The drone sees the street." The real Tello footage from Moss St: the drone's view with segmentation, a car turning in from Howard, Kite saying stop. Same detector.
-5. 1:35 to 1:50. The interview quote and one measured number (collisions with and without Kite in the sim).
+5. 1:35 to 1:50. The research line above, said plainly, and one measured number (collisions with and without Kite in the sim).
 6. 1:50 to 2:00. The prior-art line and what's real, then questions.
 
 The prior-art line, roughly: "In 2021, researchers at KIT flew a Tello in front of blindfolded walkers on a leash, and it kept them on the sidewalk. Kite drops the leash: the drone flies behind you, and everything reaches you as sound."
@@ -120,7 +120,7 @@ We use the event types already defined in `earpiece/earpiece/events.py` (validat
 
 ### 5.2 Transport: UDP to the earpiece, SpacetimeDB for shared state
 
-What exists on `main`: the earpiece takes events on UDP 5010 and WebSocket 5011, on localhost by default and on the LAN with `--bind 0.0.0.0`. With `--spacetime` it mirrors every event it receives and speaks to SpacetimeDB. It reads nothing back yet; caregiver messages (below) will be the one exception.
+What exists on `main`: the earpiece takes events on UDP 5010 and WebSocket 5011, on localhost by default and on the LAN with `--bind 0.0.0.0`. With `--spacetime` it mirrors every event it receives and speaks to SpacetimeDB. It reads back only caregiver messages (below).
 
 So the live path is direct: every producer uses `EarpieceClient`, pointed at `127.0.0.1` on one laptop or at the wearable laptop's Thunderbolt bridge address from the drone laptop (earpiece run with `--bind 0.0.0.0`). The address comes from `.env` (`KITE_EARPIECE_HOST`). This keeps the safety path off the internet and means nobody waits on Eddy's tables to test.
 
@@ -130,7 +130,7 @@ Networks: we build at Aneesh's apartment on its Wi-Fi. Maincloud, Claude and Car
 
 The dashboard shows the walker on a map, the current route, active hazards and drone or sim status. It shows no camera video (privacy).
 
-Caregiver messages (Eddy, next): the dashboard sends a short message to the walker by calling `push` with a `say` event, source `caregiver`, priority `info`. The earpiece polls Spacetime about once a second for new caregiver events and speaks them. These are the only events that flow from Spacetime into the earpiece. They never carry a priority above `info` and can't clear a stop. This makes Spacetime two-way, which is what its track asks for ("instant sync between users, agents and systems").
+Caregiver messages (built, PR #8): the dashboard sends a short message to the walker by calling `push` with a `say` event, source `caregiver`, priority `info`. The earpiece polls Spacetime about once a second for new caregiver events and speaks them. These are the only events that flow from Spacetime into the earpiece. They never carry a priority above `info` and can't clear a stop. This makes Spacetime two-way, which is what its track asks for ("instant sync between users, agents and systems").
 
 ### 5.3 Perception (Rex's `streetseg`)
 
@@ -200,13 +200,13 @@ Each person owns a deliverable, not a layer. One owner per job.
 | Owner | Owns | Now (done check runs without hardware where it can) | With hardware |
 |---|---|---|---|
 | Arthur | The drone: flight, recording, footage | The drone layer is on `main` (PR #4). `python -m kite.record` works in dry run against a video file. | The 7 AM shoot (section 8). Footage to Rex for the overlay by noon. Follow mode only after the footage is safe. Camera fx if battery allows. |
-| Rex | Perception (`streetseg`), the interview | Move `streetseg` into this repo emitting earpiece events. Chest camera first, because the live walk depends on it: `critical` obstacles for anything large and close, by Sat 3 PM. Then the segmentation overlay on the drone footage for the video, by Sat 6 PM. Until then, `sim/standin_detect.py` is the detector. | Point it at the phone chest camera and the Tello footage. Run the interview and verify the guide dog figures. |
-| Karthik | The voice: earpiece, Maps, Cartesia, Claude | The Claude judgment layer (5.6). Fix the `brain.py` system prompt, which says the drone "flies ahead". "What's in front of me?" answered from the chest camera. | Headphones as the output, any stereo Bluetooth pair. |
+| Rex | Perception (`streetseg`) | Move `streetseg` into this repo emitting earpiece events. Chest camera first, because the live walk depends on it: `critical` obstacles for anything large and close, by Sat 3 PM. Then the segmentation overlay on the drone footage for the video, by Sat 6 PM. Until then, `sim/standin_detect.py` is the detector. | Point it at the phone chest camera and the Tello footage. Verify the guide dog figures. |
+| Karthik | The voice: earpiece, Maps, Cartesia, Claude | Done (Karthik): the Claude judgment layer (5.6); camera descriptions ("what's in front of me?" from the chest camera, and reading text aloud); the cached safety phrases; stop and wait; walking routes; SpacetimeDB mirroring. Still to fix: the `brain.py` system prompt, which says the drone "flies ahead". | Headphones as the output: any stereo Bluetooth pair works (Karthik). |
 | Eddy | Infrastructure, sim, the live-walk kit, the video, the submission | Done: event tables, dashboard with live map, replay, `netcheck` and `offline.sh`, the sim with the Moss world, glTF cars and people, metrics mode and the stand-in detector. Next: caregiver messages through Spacetime (5.2); a reveal screen with the chest camera and its boxes; the stand-in detector on the phone camera; the collision number with the real detector. | Buy the kit at 8 AM (section 13). Run the 40-walk rehearsal at 6 PM. |
 
 Eddy decides by hand when the repo goes public (team decision, Oct 24, 1:30 AM); no gate forces it. Every code change goes through a pull request (team decision, Oct 24 meeting). Keep PRs small and merge them within the hour; if nobody else is awake, the author merges their own once the change is tested (spec author's call). Everyone works in this repo; nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
 
-Also owned: Rex runs the interview and verifies the guide dog figures. Eddy owns the clock, the demo video and the submission audit. The presenter comes from a timed tryout.
+Also owned: Rex verifies the guide dog figures. Eddy owns the clock, the demo video and the submission audit. The presenter comes from a timed tryout.
 
 ### 7.1 Kickoff prompts
 
@@ -218,6 +218,8 @@ These were the kickoff prompts on Friday night. The owner table above is current
 - Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
 
 ## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
+
+The run sheet for the morning is `docs/shoot-day.md`: the timeline, positions, who records what, props, backups and the commands for after the take.
 
 Location: Moss Street at Howard Street, SoMa (OSM way 8916291). Moss is a one-way alley, 192 m from Folsom to Howard, with sidewalks on both sides. Where Moss meets Howard there is a marked zebra crosswalk across Moss with no signal and tactile paving (OSM node at 37.778352, -122.408768); cars turn into Moss from Howard across it. Howard is three lanes one-way at 25 mph with a protected bike track.
 
@@ -253,7 +255,7 @@ We have one charged Tello battery and no charger until someone buys a USB-C to M
 
 Enter: Best Hardware Hack, Best People-First Hack, Cartesia, Spacetime, Microsoft "Built for the Real World". Tick Anthropic too; its field is huge (278 entrants for one prize at Cal Hacks 12), so we don't build anything just for it. Overall, Most Technically Complex and Hacker's Choice come automatically.
 
-The guide shows no Azure requirement for Microsoft. Its criteria are customer understanding, measurable usefulness, a path from prototype to production, responsible design and end-to-end function, and the interview, the collision number and the live walk cover them.
+The guide shows no Azure requirement for Microsoft. Its criteria are customer understanding, measurable usefulness, a path from prototype to production, responsible design and end-to-end function, and the published research, the collision number and the live walk cover them.
 
 Skip: everything else, including Meta, Moss and Bitdeer. The playbook's data: nobody won more than three sponsor families, and 8 or more opt-ins fall short.
 
@@ -264,10 +266,12 @@ What each entered track needs from us:
 | Hardware, People-First | The live walk works 40 times in a row; the drone footage is real | Eddy, Arthur, Rex |
 | Cartesia | Voice core to the flow; responsive (cached phrases, streaming); README lists Cartesia features and limitations; 2-minute demo-first pitch | Karthik |
 | Spacetime | Load-bearing and two-way: every device mirrors into one live state, the dashboard reads only from it, and caregiver messages come back through it | Eddy |
-| Microsoft | The interview (customer understanding), the collision number (measurable usefulness), cost against a $50,000 guide dog (path to production), deterministic safety and no stored video (responsible design), the live walk (end to end) | Rex, Eddy |
-| Anthropic | Named community (blind pedestrians in SF), the interview, Claude making the judgment calls, and a clear answer on where it could go wrong | Karthik, Rex |
+| Microsoft | Published research (customer understanding; no interviews), the collision number (measurable usefulness), cost against a $50,000 guide dog (path to production), deterministic safety and no stored video (responsible design), the live walk (end to end) | Rex, Eddy |
+| Anthropic | Named community (blind pedestrians in SF) and the published research behind it, not an interview, Claude making the judgment calls, and a clear answer on where it could go wrong | Karthik, Rex |
 
 ## 11. Calls already made
+
+Decision (Oct 24): no interviews this weekend. The pitch says so plainly and cites the research instead (guide dog schools' figures, the KIT study). Testing with O&M instructors is the next step after the hackathon.
 
 Made by the team: the drone flies behind and above, not ahead (fix the README, which says "ahead"). The drone is for the demo only. The 7am shoot plus a sim of the same corner. Beeps with direction and pitch plus verbal directions. Cartesia and Spacetime are in.
 

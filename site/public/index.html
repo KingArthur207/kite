@@ -6,7 +6,7 @@
   <title>Kite · a guide dog that flies</title>
   <meta name="description" content="Kite is a drone and a chest camera that watch the street for a blind pedestrian and guide them through AirPods: beeps from the direction of what's ahead, and a calm voice that stops them before trouble." />
   <link rel="canonical" href="https://trykite.pages.dev/" />
-  <meta name="theme-color" content="#F6F1E7" />
+  <meta name="theme-color" content="#F4EFE3" />
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Kite" />
@@ -22,7 +22,7 @@
   <meta name="twitter:image" content="https://trykite.pages.dev/assets/og.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400;1,8..60,500&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Caveat:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
   <link rel="stylesheet" href="/styles.css" />
   <script type="application/ld+json">
   {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Kite","applicationCategory":"AccessibilityApplication","operatingSystem":"macOS","description":"A guide dog that flies, for blind pedestrians: a drone and a chest camera watch the street, and AirPods give directional beeps and voice guidance.","url":"https://trykite.pages.dev/"}
@@ -191,6 +191,7 @@
           <ul>
             <li>Flies about <b>30 cm above and behind</b> the walker's head.</li>
             <li>Sees what a cane can't: the crowd at the corner, the crossing, the car turning in.</li>
+            <li>Won't take off until a preflight check says GO. Hovers if its video drops, and lands itself on low battery.</li>
           </ul>
           <p class="without">Without it: you only learn about the street one cane-length at a time.</p>
         </article>
@@ -209,6 +210,7 @@
           <ul>
             <li>Beeps from the direction of each obstacle; a beacon toward the next turn.</li>
             <li>Speech that knows what matters most and never says it late.</li>
+            <li>Works with any stereo Bluetooth headphones; AirPods add stem-press controls.</li>
           </ul>
           <p class="without">Without it: two cameras and nobody telling you anything.</p>
         </article>
@@ -288,7 +290,7 @@
       <div class="num"><b>~0.1 s</b><span>from decision to the first spoken word, streamed from Cartesia</span></div>
       <div class="num"><b>3–12 ms</b><span>to look up a saved place or hazard in Moss</span></div>
       <div class="num"><b>0</b><span>audio glitches with every CPU core saturated, thanks to a Rust audio engine</span></div>
-      <div class="num"><b>168</b><span>automated tests, including 20,000 malformed messages thrown at it</span></div>
+      <div class="num"><b>500+</b><span>automated tests across the earpiece, Rust engine and drone, including 20,000 malformed messages thrown at it</span></div>
     </section>
 
     <!-- ============================================================ built with -->
@@ -313,7 +315,8 @@
           <ul>
             <li>Reads the scene and answers "what's around me?" from what Kite actually sees.</li>
             <li>Reads printed and on-screen text aloud: menus, signs, books, monitors.</li>
-            <li>Makes the careful calls ("wait, the crossing is crowded") and is only allowed to make Kite <i>more</i> cautious.</li>
+            <li>Makes the careful calls ("wait, the crossing is crowded") in under 2.5 seconds, and is only allowed to make Kite <i>more</i> cautious.</li>
+            <li>Haiku for the quick calls, Opus for reading and describing.</li>
           </ul>
           <p class="without">Without it: beeps with no one to explain them.</p>
         </article>
@@ -323,6 +326,7 @@
           <ul>
             <li>Every device on the walk and the caregiver's dashboard share one live state.</li>
             <li>The drone laptop, the earpiece and the dashboard stay in sync without talking to each other directly.</li>
+            <li>A caregiver sees the walk on a live map, never the video, and can send a message the walker hears.</li>
           </ul>
           <p class="without">Without it: three machines, three versions of the truth.</p>
         </article>
@@ -353,7 +357,7 @@
   <footer class="footer">
     <div class="foot-inner">
       <a class="brand" href="/"><img src="/assets/logo.svg" alt="" width="26" height="26" /><span>kite</span></a>
-      <p>Built in 36 hours at Cal Hacks 13.0 by Arthur, Eddy, Karthik and Rex.</p>
+      <p>Built in 36 hours at Cal Hacks 13.0.</p>
       <p class="mono fine">MIT licensed · the walk above is a simulation, rendered by the real earpiece</p>
     </div>
   </footer>
