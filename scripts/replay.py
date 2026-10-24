@@ -12,7 +12,6 @@ earpiece/.venv/bin/python scripts/replay.py ...
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 import time
@@ -22,34 +21,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "earpiece"))
 
 from earpiece.client import EarpieceClient  # noqa: E402
 from earpiece.config import _load_env  # noqa: E402
-
-DEFAULT_GAP_S = 0.1
+from earpiece.sim import load_jsonl, schedule  # noqa: E402
 
 
 def load(path: str) -> list[dict]:
-    events = []
-    for n, line in enumerate(Path(path).read_text().splitlines(), 1):
-        if not line.strip():
-            continue
-        try:
-            ev = json.loads(line)
-        except json.JSONDecodeError as e:
-            sys.exit(f"{path}:{n}: bad JSON ({e.msg})")
-        if not isinstance(ev, dict) or "type" not in ev:
-            sys.exit(f"{path}:{n}: each line must be an event object with a type")
-        events.append(ev)
-    return events
-
-
-def schedule(events: list[dict]) -> list[tuple[float, dict]]:
-    """(seconds from start, event) with any absolute timestamps made relative."""
-    ts = [e.get("t") for e in events]
-    t0 = next((t for t in ts if isinstance(t, (int, float))), 0.0)
-    out, last = [], 0.0
-    for ev, t in zip(events, ts):
-        last = t - t0 if isinstance(t, (int, float)) else last + DEFAULT_GAP_S
-        out.append((last, {k: v for k, v in ev.items() if k != "t"}))
-    return out
+    try:
+        return load_jsonl(path)
+    except ValueError as e:
+        sys.exit(str(e))
 
 
 def main(argv=None) -> int:

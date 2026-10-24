@@ -1,22 +1,28 @@
 :root { --bg: #0b0e13; --panel: #151a22; --line: #232a35; --text: #e8ebf1; --muted: #8b95a7;
-  --ok: #4ade80; --warn: #f59e0b; --bad: #ef4444; --accent: #4da3ff; }
+  --ok: #4ade80; --warn: #f59e0b; --bad: #ef4444; --accent: #4da3ff;
+  --kite: #2dd4bf; --claude: #e8875f; --caregiver: #4da3ff; --stop: #ef4444; }
 html, body, #root { height: 100%; }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.45 system-ui, -apple-system, sans-serif; }
 .app { display: flex; flex-direction: column; height: 100vh; }
 
 header { display: flex; align-items: center; gap: 1.2rem; padding: .7rem 1.2rem; border-bottom: 1px solid var(--line); }
 header h1 { margin: 0; font-size: 1.7rem; letter-spacing: -.01em; }
 header h1 .muted { font-weight: 400; font-size: 1.1rem; margin-left: .3rem; }
-header button { margin-left: auto; background: #1d232d; color: var(--text); border: 1px solid #39414f; padding: .45rem 1rem; border-radius: 8px; cursor: pointer; font-size: .95rem; }
+header button { background: #1d232d; color: var(--text); border: 1px solid #39414f; padding: .45rem 1rem; border-radius: 8px; cursor: pointer; font-size: .95rem; }
 header button:hover:not(:disabled) { background: #262e3a; }
 header button:disabled { opacity: .4; cursor: default; }
+.present-toggle { margin-left: auto; }
+kbd { font: 600 .75rem ui-monospace, monospace; border: 1px solid #39414f; border-bottom-width: 2px; border-radius: 4px; padding: 0 .3rem; margin-left: .3rem; color: var(--muted); }
 .conn { display: inline-flex; align-items: center; gap: .5rem; font-weight: 600; }
 .conn i { width: .7rem; height: .7rem; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
 .ok { color: var(--ok); }
 .bad { color: var(--bad); }
 
 .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 460px; }
-@media (max-width: 900px) { .layout { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } }
+.main-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.main-col .map { flex: 1; }
+@media (max-width: 900px) { .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; } .main-col .map { height: 55vh; flex: none; } }
 aside { overflow-y: auto; padding: .4rem 1rem 1rem; border-left: 1px solid var(--line); }
 section { background: var(--panel); border-radius: 12px; padding: .2rem 1rem .9rem; margin-top: .8rem; }
 h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: .9rem 0 .4rem; }
@@ -24,7 +30,8 @@ h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .1em; color: v
 .small { font-size: .85rem; }
 .big { font-size: 1.5rem; font-weight: 650; }
 .beacon-line { margin-top: .4rem; color: #34d399; }
-.spoken { font-size: 1.3rem; font-weight: 600; margin: 0; }
+.spoken { font-size: 1.3rem; font-weight: 600; margin: 0; text-wrap: pretty; }
+.spoken-meta { display: flex; align-items: center; gap: .5rem; margin-top: .35rem; font-weight: 400; }
 
 .map { position: relative; height: 100%; min-height: 300px; background: #0e1116; }
 .map.empty { display: grid; place-items: center; text-align: center; padding: 2rem; }
@@ -58,3 +65,80 @@ td { padding: .3rem .4rem; border-bottom: 1px solid var(--line); vertical-align:
 .feed { font-size: .85rem; font-variant-numeric: tabular-nums; }
 .feed tr.p-critical td { color: #fca5a5; }
 .feed tr.p-hazard td { color: #fcd34d; }
+
+.message { display: flex; gap: .5rem; }
+.message input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid #39414f; border-radius: 8px; padding: .5rem .7rem; font: inherit; }
+.message button, .quick button { background: #1d232d; color: var(--text); border: 1px solid #39414f; padding: .45rem .9rem; border-radius: 8px; cursor: pointer; font-size: .95rem; }
+.message button:hover:not(:disabled), .quick button:hover:not(:disabled) { background: #262e3a; }
+.message button:disabled, .quick button:disabled { opacity: .4; cursor: default; }
+.quick { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
+.feed tr.caregiver td { color: var(--accent); }
+
+.leaflet-tooltip.map-label.focus { border-color: #fff; font-size: 1.05rem; white-space: nowrap; z-index: 10; }
+
+/* Who said what: one colour per actor, used by badges, timeline cards and map pins. */
+.badge { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: .08rem .45rem; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; line-height: 1.4; }
+.badge.kite { color: var(--kite); background: rgba(45, 212, 191, .12); }
+.badge.claude { color: var(--claude); background: rgba(232, 135, 95, .14); }
+.badge.caregiver { color: var(--caregiver); background: rgba(77, 163, 255, .14); }
+.legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: .8rem; color: var(--muted); margin-left: auto; }
+.legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+
+/* Walk timeline strip under the map. */
+.timeline { margin: 0; border-radius: 0; border-top: 1px solid var(--line); padding: .1rem 1rem .8rem; }
+.timeline-head { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.timeline-head h2 { margin-bottom: .2rem; }
+.tally { font-variant-numeric: tabular-nums; }
+.stop-text { color: #fca5a5; }
+.timeline-empty { margin: .3rem 0 0; }
+.strip { list-style: none; margin: .5rem 0 0; padding: 0 0 .4rem; display: flex; gap: .6rem; overflow-x: auto; scroll-snap-type: x proximity; }
+.strip li { flex: none; scroll-snap-align: end; }
+.moment { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: .15rem;
+  width: 15rem; height: 100%; padding: .55rem .7rem .6rem; border-radius: 10px; background: #1b212b;
+  border: 1px solid #2b3340; border-top: 4px solid var(--kite);
+  transition-property: transform, background-color, border-color, box-shadow; transition-duration: 150ms; transition-timing-function: ease-out; }
+.moment.w-claude { border-top-color: var(--claude); }
+.moment.w-caregiver { border-top-color: var(--caregiver); }
+.moment.k-stop { border-top-color: var(--stop); background: #2a1517; }
+.moment:hover { background: #232a36; }
+.moment.k-stop:hover { background: #351a1d; }
+.moment:active { transform: scale(.98); }
+.moment:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.moment.on { border-color: #fff; box-shadow: 0 0 0 1px #fff, 0 6px 18px rgba(0, 0, 0, .45); }
+.moment-top { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.when { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 650; font-size: .9rem; }
+.when .muted { font-weight: 400; font-size: .8rem; margin-left: .2rem; }
+.moment-kind { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.k-stop .moment-kind { color: #fca5a5; font-weight: 700; }
+.moment-text { font-weight: 600; line-height: 1.3; text-wrap: pretty; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.moment-detail { font-size: .8rem; }
+
+/* Shared live state (Spacetime track). */
+.via { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--accent); margin-left: .35rem; }
+.live-nums { display: flex; gap: 1.6rem; margin-bottom: .5rem; }
+.live-nums div { white-space: nowrap; display: flex; align-items: baseline; gap: .4rem; }
+.live-nums b { font-size: 1.9rem; font-variant-numeric: tabular-nums; line-height: 1; }
+.rate { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rate .muted { font-size: .8rem; }
+.spark { display: block; }
+.spark polyline { stroke: var(--muted); }
+.spark.fresh polyline { stroke: var(--ok); } .spark.stale polyline { stroke: var(--warn); } .spark.dead polyline { stroke: var(--bad); }
+.devices td { vertical-align: middle; }
+.honest { margin: .5rem 0 0; }
+code { font: .85em ui-monospace, monospace; }
+
+/* Presentation mode (P): no controls or raw feed; map, timeline and the last line get the room. */
+.present header h1 { font-size: 2rem; }
+.present .layout { grid-template-columns: 1fr 420px; }
+.present .walker { display: none; }
+.present .last-spoken { background: #1b212b; border: 1px solid #2b3340; }
+.present .spoken { font-size: 1.85rem; line-height: 1.25; }
+.present .moment { width: 18rem; padding: .7rem .85rem .75rem; }
+.present .moment-text { font-size: 1.15rem; }
+.present .when { font-size: 1rem; }
+.present .timeline { padding-bottom: 1rem; }
+.present .timeline-head h2 { font-size: .95rem; color: var(--text); }
+.present .tally { font-size: 1.1rem; }
+
+@media (prefers-reduced-motion: reduce) { .moment { transition: none; } .moment:active { transform: none; } }

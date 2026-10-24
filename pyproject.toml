@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+follow = ["ultralytics>=8.3"]  # kite.follow person detector (YOLO11n); weights: see kite/follow.py, never fetched at runtime
 
 [tool.setuptools.packages.find]
 include = ["kite*"]

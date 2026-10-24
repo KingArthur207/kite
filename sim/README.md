@@ -102,6 +102,23 @@ pose = src.pose                    # latest pose for this camera, or None
 
 Needs `websockets`, `numpy` and `opencv-python`.
 
+## Scene descriptions (Claude)
+
+`sim/scene_describe.py` sends one frame to Claude every 6 s and forwards the reply to the earpiece as a `scene` event, with source `scene-chest` or `scene-drone`. The earpiece doesn't speak scenes. When the wearer asks "Kite, what's in front of me?", the brain answers from the latest scene under 90 s old. Run it from the repo root:
+
+```
+uv run --no-project --with anthropic --with opencv-python-headless --with websockets \
+  --with python-dotenv --with numpy python sim/scene_describe.py --source sim-drone
+```
+
+`--source` takes `sim-chest`, `sim-drone`, a camera index (`0`), a video file, or a `kite.record` folder. Other flags are `--interval 6`, `--model` (default `claude-haiku-5-5`), `--camera chest|drone` to rename the source, and `--host`, which defaults to `KITE_EARPIECE_HOST`. `ANTHROPIC_API_KEY` is read from the repo-root `.env`.
+
+Each request carries one JPEG, 768 px wide at quality 70, with a 4 s timeout and no retries. If the previous call is still running, the next one is skipped. The system prompt asks for one or two sentences about the path, people, vehicles, obstacles, crossings and readable signs. It forbids safety judgments like "safe to cross", guesses beyond the image, and descriptions of faces or identity. Frames stay in memory and are never written to disk.
+
+The script also listens on the earpiece WebSocket (`ws://HOST:5011`). A `heard` event that matches the brain's "what's around/ahead/in front" intent, or says "describe" or "see", starts a description right away. The brain answers that question at once, offline, from the scene it already has, so the fresh description is ready for the next question. The 6 s interval keeps the first answer at most about 6 s old.
+
+`python sim/test_scene_describe.py` runs the self-check with a fake client and no network.
+
 ## Stand-in detector (until streetseg lands)
 
 `sim/standin_detect.py` runs YOLO11n on the chest and drone frames and sends the events perception owes the earpiece (spec 5.1), so the sim to AirPods path works before Rex's `streetseg` exists. It reads frames through `SimFrameSource`, or any video file with `--source`. Replace it with streetseg; nothing downstream changes.

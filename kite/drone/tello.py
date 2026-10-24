@@ -7,6 +7,10 @@ cancelled move is discarded so it cannot be credited to the next command.
 dry_run=True: connects, streams video and reads telemetry, but NEVER sends motion commands (takeoff,
 rc, moves, land are logged and "complete" after their expected duration). Use it to run the whole
 mission with the drone sitting on a table / held in hand.
+
+A Wi-Fi drop never raises out of a flight call: sendto's OSError (ENETUNREACH, ENOBUFS...) is logged once, kept in
+link_error, and the call is retried by the next one (rc every tick; a discrete command fails at once with
+'error: not sent' so it can be re-sent). Intervals use time.monotonic(), so a wall-clock step cannot stall the loop.
 """
 
 from __future__ import annotations
@@ -75,6 +79,7 @@ class TelloDrone(Drone):
         self._last_send = 0.0
         self._ignore_until = 0.0
         self._source: TelloVideoSource | None = None
+        self.link_error: str | None = None  # last send failure (Wi-Fi down); None once a send works again
         self.log: list[tuple[float, str]] = []
         self._last_state = None
         self._state_t = 0.0
@@ -138,16 +143,32 @@ class TelloDrone(Drone):
     def _replies(self) -> list:
         return self._tello.get_own_udp_object()["responses"]
 
-    def _send(self, cmd: str) -> None:
-        wait = MIN_GAP_S - (time.time() - self._last_send)
+    def _udp(self, fn, *args) -> bool:
+        """One djitellopy send; False (logged once per outage) if the network refused it."""
+        try:
+            fn(*args)
+        except OSError as e:
+            if self.link_error is None:
+                log.warning("Wi-Fi send failed (%s): retrying on every command", e)
+            self.link_error = str(e)
+            return False
+        if self.link_error is not None:
+            log.warning("Wi-Fi sends work again")
+            self.link_error = None
+        return True
+
+    def _send(self, cmd: str) -> bool:
+        wait = MIN_GAP_S - (time.monotonic() - self._last_send)
         if wait > 0:
-            time.sleep(wait)
+            time.sleep(min(wait, MIN_GAP_S))
         self.log.append((time.time(), cmd))
+        ok = True
         if self.dry_run and not cmd.endswith("?") and cmd not in ("command", "streamon", "streamoff"):
             log.info("[dry-run] %s", cmd)
         else:
-            self._tello.send_command_without_return(cmd)
-        self._last_send = time.time()
+            ok = self._udp(self._tello.send_command_without_return, cmd)
+        self._last_send = time.monotonic()
+        return ok
 
     def _start(self, cmd: str, timeout_s: float, expected_s: float) -> None:
         if self._pending is not None:
@@ -155,14 +176,15 @@ class TelloDrone(Drone):
         # Tello replies do not say which command they answer. Right after a stop(), the cancelled command
         # and the stop itself may still answer: wait that window out (hovering) so their late replies
         # cannot be taken as the answer to THIS command.
-        wait = self._ignore_until - time.time()
+        wait = self._ignore_until - time.monotonic()
         if wait > 0 and not self.dry_run:
-            time.sleep(wait)
+            time.sleep(min(wait, STOP_SETTLE_S))
         self._ignore_until = 0.0
         self._replies().clear()  # anything queued now is stale
         self._result = None
-        self._pending = _Pending(cmd, time.time(), timeout_s, expected_s)
-        self._send(cmd)
+        self._pending = _Pending(cmd, time.monotonic(), timeout_s, expected_s)
+        if not self._send(cmd):
+            self._complete(f"error: not sent ({self.link_error})")  # never reached the drone: free to re-send
 
     # ------------------------------------------------------------------ Drone interface
     @property
@@ -182,13 +204,15 @@ class TelloDrone(Drone):
             self.stop()
         self._start("land", 15.0, 4.0)
 
-    def emergency(self) -> None:
+    def emergency(self) -> bool:
+        """False if the packet could not be sent (Wi-Fi down): nothing changed, the caller must say so."""
         self.log.append((time.time(), "emergency"))
-        if not self.dry_run:
-            self._tello.send_command_without_return("emergency")
+        if not self.dry_run and not self._udp(self._tello.send_command_without_return, "emergency"):
+            return False
         self._pending = None
         self._result = "ok"
         self._flying = False
+        return True
 
     def rc(self, lr: int, fb: int, ud: int, yaw: int) -> None:
         if self._pending is not None:
@@ -198,7 +222,9 @@ class TelloDrone(Drone):
             if any(vals):
                 self.log.append((time.time(), "rc {} {} {} {}".format(*vals)))
             return
-        self._tello.send_rc_control(*vals)
+        if getattr(self._tello, "last_rc_control_timestamp", 0.0) > time.time():
+            self._tello.last_rc_control_timestamp = 0.0  # wall clock stepped back: djitellopy would drop every rc
+        self._udp(self._tello.send_rc_control, *vals)
 
     def move(self, direction: str, cm: int) -> None:
         cm = check_move(direction, cm)
@@ -216,13 +242,13 @@ class TelloDrone(Drone):
         self._pending = None
         self._result = "ok"
         self._send("stop")
-        self._ignore_until = time.time() + STOP_SETTLE_S  # 'stop' (and a cancelled command) will still answer
+        self._ignore_until = time.monotonic() + STOP_SETTLE_S  # 'stop' (and a cancelled command) will still answer
 
     def busy(self) -> bool:
         p = self._pending
         if p is None:
             return False
-        now = time.time()
+        now = time.monotonic()
         if self.dry_run:
             if now - p.t_sent >= p.expected_s:
                 self._complete("ok")

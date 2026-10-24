@@ -13,7 +13,8 @@ python -m earpiece selftest                      # check audio, voices, STT, con
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
-python -m pytest                                 # 166 tests
+python -m earpiece render --jsonl events.jsonl out/heard.wav   # same, from a JSONL timeline (docs/video-runbook.md)
+python -m pytest                                 # 191 tests
 ```
 
 Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`). Everything degrades gracefully without them.
@@ -55,4 +56,5 @@ AirPods stem: once = talk, twice = repeat, three times = pause guidance (safety 
 | `sonar.py`, `beacon.py` | obstacle warnings by time-to-contact; Soundscape-style waypoint beacon |
 | `speech.py`, `listen.py` | Cartesia TTS/STT, priorities, preemption, time-to-live, offline fallback |
 | `brain.py`, `memory.py` | local voice commands, Claude with tools, Moss memory of places and hazards |
+| `judgment.py` | Claude judgment calls on hazards and scene ("Wait, the crosswalk is crowded."), with code guardrails |
 | `app.py`, `transport.py`, `controls.py` | wiring, UDP/WebSocket, AirPods stem presses |

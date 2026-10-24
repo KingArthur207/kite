@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /earpiece
+    schedule: { interval: weekly }
+    groups:
+      python: { patterns: ["*"] }
+  - package-ecosystem: cargo
+    directory: /earpiece/native
+    schedule: { interval: weekly }
+    groups:
+      rust: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule: { interval: weekly }
+    groups:
+      dashboard: { patterns: ["*"] }
+  - package-ecosystem: npm
+    directory: /dashboard/spacetimedb
+    schedule: { interval: weekly }
+    groups:
+      spacetime-module: { patterns: ["*"] }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
