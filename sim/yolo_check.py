@@ -7,7 +7,8 @@
 Opens the sim in headless Chromium with its clock frozen, mocks the relay and earpiece sockets
 (so it never touches a shared relay), walks the walker in steps and grabs drone + chest frames.
 On Moss it walks up Moss's NE sidewalk to Howard and watches the zebra; `?world=placeholder`
-in --url keeps the old walk north. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
+in --url keeps the old walk north. The default world is Google 3D tiles when sim/.env.local has a
+key (`?world=moss` for the OSM boxes); it waits for tiles to load at every stop. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
 with the camera model from config.ts. Prints per-camera, per-class recall of visible instances.
 """
 
@@ -90,8 +91,18 @@ def cover(a, b):  # fraction of a covered by b
     return ix * iy / ((a[2] - a[0]) * (a[3] - a[1]) + 1e-9)
 
 
+OCCLUDED = defaultdict(int)  # kind -> in frame but behind tile geometry (tiles world only)
+
+
 def visible(actors, pose, cam):
-    gts = [(a["kind"], *pr, a.get("name", "")) for a in actors if (pr := project(a, pose, cam))]
+    gts = []
+    for a in actors:
+        if not (pr := project(a, pose, cam)):
+            continue
+        if a.get("occ") and a["occ"][cam]:
+            OCCLUDED[a["kind"]] += 1
+            continue
+        gts.append((a["kind"], *pr, a.get("name", "")))
     gts.sort(key=lambda g: g[2])
     keep = []
     for g in gts:
@@ -127,6 +138,18 @@ def grab(url: str, per_cam: int):
         page.goto(url)
         page.wait_for_function("window.__kiteActors && window.__kiteActors().length >= 12", timeout=30000)
         page.clock.run_for(3000)
+
+        def settle(max_s: float = 15):
+            # Tiles world: tile fetches run in real time, so tick the frozen clock until they land.
+            if not page.evaluate("!!window.__kiteTiles"):
+                return
+            for _ in range(int(max_s / 0.2)):
+                page.clock.run_for(100)
+                page.wait_for_timeout(100)
+                if page.evaluate("window.__kiteTiles.tilesStats().progress >= 1"):
+                    return
+
+        settle(40)
         # Stops along the sidewalk; at each, look ahead and then turned toward the road.
         steps = [(2.5, 0), (0, 30), (0, -30), (3, 0), (0, 40), (0, -40), (4, 0), (0, 0), (5, 0), (0, 0), (5, 0), (0, 0), (8, 0)]
         if "world=placeholder" not in url:
@@ -140,6 +163,7 @@ def grab(url: str, per_cam: int):
             if turn_deg:
                 key = "ArrowRight" if turn_deg > 0 else "ArrowLeft"
                 page.keyboard.down(key); page.clock.run_for(int(abs(turn_deg) / 90 * 1000)); page.keyboard.up(key)
+            settle()
             page.clock.run_for(450)                     # let a pose message for the stopped walker go out
             page.wait_for_timeout(300)
             state["still"] = True
@@ -200,6 +224,8 @@ def main():
     for (k, band), (h, t) in sorted(by_dist.items()):
         print(f"  {k:6s} {band:6s} {h}/{t} = {h / max(t, 1):.0%}")
     print("  by model:", ", ".join(f"{m} {h}/{t}" for m, (h, t) in sorted(by_model.items())))
+    if OCCLUDED:
+        print("  skipped, behind 3D tiles:", dict(OCCLUDED))
     print("  frames per camera:", {cams[c]: sum(1 for f in frames if f[0] == c) for c in cams})
     for cam, (_, img) in best.items():
         cv2.imwrite(str(out / f"yolo_{cams[cam]}.jpg"), cv2.resize(img, (640, 480)), [cv2.IMWRITE_JPEG_QUALITY, 80])

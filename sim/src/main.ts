@@ -7,15 +7,34 @@ import { buildWorld } from "./world";
 import { buildOsmWorld, type WorldExtras } from "./osmWorld";
 import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
+import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
 
-// ?world=placeholder keeps the old box world and its traffic; default is Moss St from OSM.
-// Metrics mode always runs on Moss, with the street emptied of traffic (it scripts its own).
+// ?world=tiles (default when VITE_GOOGLE_MAPS_API_KEY is set): Google Photorealistic 3D Tiles over
+// the Moss colliders and traffic. ?world=moss: Moss St from OSM boxes. ?world=placeholder: the old box world.
+// Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
+// ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
 const metricsOn = query.get("metrics") === "1";
-const world: ReturnType<typeof buildWorld> & WorldExtras =
-  query.get("world") === "placeholder" && !metricsOn
-    ? buildWorld()
-    : buildOsmWorld({ actors: !metricsOn, walkers: () => [walker] });   // cars yield to the walker too
+const aspect = CAM_W / CAM_H;
+const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
+const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
+const cams = [droneCam, chestCam]; // index = camera id on the wire
+// ?debug=1: T swaps the on-screen drone view for a north-up view from 150 m over the walker.
+const debug = query.get("debug") === "1";
+const topCam = new THREE.PerspectiveCamera(50, aspect, 1, 1000);
+let topView = false;
+
+let worldName = metricsOn ? "moss" : query.get("world") ?? "tiles";
+if (worldName === "tiles" && !TILES_KEY) {
+  console.warn("[sim] no VITE_GOOGLE_MAPS_API_KEY (run sh sim/tiles_env.sh); using ?world=moss");
+  worldName = "moss";
+}
+const walkers = () => [walker];                                       // cars yield to the walker too
+const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () => void } =
+  worldName === "placeholder" ? buildWorld()
+  : worldName === "tiles" ? buildTilesWorld({ walkers, cameras: debug ? [...cams, topCam] : cams, debug })
+  : buildOsmWorld({ actors: !metricsOn, walkers });
+if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
 const { scene } = world;
 
 // Walker: (x east, n north), heading in compass degrees (0 = north, 90 = east).
@@ -26,11 +45,6 @@ const body = new THREE.Mesh(
 );
 scene.add(body);
 const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }) : null;
-
-const aspect = CAM_W / CAM_H;
-const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
-const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
-const cams = [droneCam, chestCam]; // index = camera id on the wire
 
 function forward() {
   const h = THREE.MathUtils.degToRad(walker.heading);
@@ -47,6 +61,9 @@ function placeCameras() {
   const chestOut = 0.3; // just in front of the body capsule
   chestCam.position.set(wx + f.x * chestOut, CHEST_HEIGHT, wz + f.z * chestOut);
   chestCam.lookAt(chestCam.position.x + f.x, CHEST_HEIGHT, chestCam.position.z + f.z);
+  topCam.position.set(wx, 150, wz);
+  topCam.up.set(0, 0, -1);                  // north up
+  topCam.lookAt(wx, 0, wz);
 }
 
 // --- on-screen renderer: drone view letterboxed to 4:3, chest inset bottom right
@@ -76,7 +93,7 @@ function drawScreen() {
   renderer.setViewport(x, y, w, h);
   renderer.setScissor(x, y, w, h);
   if (world.overlay) world.overlay.visible = true; // screen only, never in camera frames
-  renderer.render(scene, droneCam);
+  renderer.render(scene, topView ? topCam : droneCam);
   const iw = w * 0.25, ih = iw / aspect, pad = 10;
   renderer.setViewport(x + w - iw - pad, y + pad, iw, ih);
   renderer.setScissor(x + w - iw - pad, y + pad, iw, ih);
@@ -86,8 +103,8 @@ function drawScreen() {
 
 // --- sockets
 // Blind/oracle metrics stay offline so they never feed a shared earpiece or detector.
-const relay = reconnectingSocket(metrics?.offline ? "" : RELAY_URL, true);
-const ear = reconnectingSocket(metrics?.offline ? "" : EARPIECE_URL);
+const relay = reconnectingSocket(metrics?.offline ? "" : query.get("relay") ?? RELAY_URL, true);
+const ear = reconnectingSocket(metrics?.offline ? "" : query.get("ear") ?? EARPIECE_URL);
 
 // Frames: alternate cameras so each gets FRAME_FPS. Wire format: 1 byte camera id + JPEG.
 let nextCam = 0;
@@ -126,6 +143,7 @@ window.addEventListener("keydown", (e) => {
   const k = e.key.toLowerCase();
   if (k === "b") black = true;
   if (k === "v") black = false;
+  if (k === "t" && debug) topView = !topView;
   if (k === "h" && !e.repeat) {
     // DEBUG ONLY (skeleton gate): real hazards come from the detector, never the sim's object list.
     ear.json({ type: "hazard", source: "sim", kind: "crowd", bearing: 0, distance: 5 });
@@ -193,6 +211,7 @@ function frame(now: number) {
   if (metrics) metrics.step(dt);
   else { world.update(dt); step(dt); }
   placeCameras();
+  world.updateTiles?.();
   view.classList.toggle("hidden", black);
   if (!black) drawScreen();
   if (metrics) hud.textContent = metrics.hud(); else drawHud();

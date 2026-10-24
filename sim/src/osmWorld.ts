@@ -98,8 +98,9 @@ function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
   return Math.hypot(x - (x1 + t * dx), n - (n1 + t * dn));
 }
 
-/** actors: false leaves the street empty (metrics mode). walkers: people the cars must yield to. */
-export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: number; n: number }[] } = {}) {
+/** actors: false leaves the street empty (metrics mode). walkers: people the cars must yield to.
+ *  meshes: false keeps only the colliders, lanes and actors (the tiles world draws the street). */
+export function buildOsmWorld(opts: { actors?: boolean; meshes?: boolean; walkers?: () => { x: number; n: number }[] } = {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x9ec9ff);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x666655, 1.6));
@@ -107,14 +108,17 @@ export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: num
   sun.position.set(30, 60, 20);
   scene.add(sun);
 
+  const visible = new THREE.Group();
+  visible.visible = opts.meshes !== false;
+  scene.add(visible);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), mat(0x8a8780));
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.02;
-  scene.add(ground);
-  scene.add(flat(data.road_quads, 0, mat(0x3a3a3c)));
-  scene.add(flat(data.track_quads, 0.005, mat(0x4f6b52)));   // Howard's protected cycle track
-  scene.add(flat(zebraQuads(), 0.01, mat(0xf2f2f2)));
-  scene.add(slab(data.sidewalk_quads, CURB_H, mat(0xbdbdb5)));
+  visible.add(ground);
+  visible.add(flat(data.road_quads, 0, mat(0x3a3a3c)));
+  visible.add(flat(data.track_quads, 0.005, mat(0x4f6b52)));   // Howard's protected cycle track
+  visible.add(flat(zebraQuads(), 0.01, mat(0xf2f2f2)));
+  visible.add(slab(data.sidewalk_quads, CURB_H, mat(0xbdbdb5)));
 
   // Buildings: extruded footprints, a few shades so faces read in the camera frames.
   const shades = [0xc9a27e, 0xa7b4c2, 0xd8cfc4, 0xb98b73, 0x8f9aa8, 0xcfc39b, 0xb0a99f];
@@ -123,13 +127,14 @@ export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: num
     const shape = new THREE.Shape(b.pts.map(([x, y]) => new THREE.Vector2(x, y)));
     const g = new THREE.ExtrudeGeometry(shape, { depth: b.h, bevelEnabled: false });
     g.rotateX(-Math.PI / 2);                                   // shape y (north) -> -z, depth -> up
-    scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: shades[i % shades.length] })));
+    visible.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: shades[i % shades.length] })));
     for (let k = 0; k + 1 < b.pts.length; k++) walls.push([...b.pts[k], ...b.pts[k + 1]] as Wall);
   });
 
   // Planned demo walk, drawn faintly on screen only (main.ts hides it for camera frames).
-  const overlay = flat(ribbon(data.route, 0.3), CURB_H + 0.02,
-    new THREE.MeshBasicMaterial({ color: 0x33ddff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }));
+  const overlay = new THREE.Group();
+  overlay.add(flat(ribbon(data.route, 0.3), CURB_H + 0.02,
+    new THREE.MeshBasicMaterial({ color: 0x33ddff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide })));
   overlay.visible = false;
   scene.add(overlay);
 

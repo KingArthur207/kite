@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "3d-tiles-renderer": "^0.5.3",
     "three": "^0.170.0"
   },
   "devDependencies": {
