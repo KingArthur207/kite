@@ -1,0 +1,25 @@
+body { margin: 0; background: #0e1116; color: #e6e9ef; font: 16px/1.4 system-ui, sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 1rem 1.5rem; }
+header { display: flex; align-items: center; gap: 1rem; }
+header h1 { margin: 0; font-size: 1.8rem; }
+header button { margin-left: auto; background: #222833; color: #e6e9ef; border: 1px solid #39414f; padding: .4rem .9rem; border-radius: 6px; cursor: pointer; }
+header button:disabled { opacity: .4; cursor: default; }
+h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: #8b95a7; margin: 1.2rem 0 .4rem; }
+section { background: #161b22; border-radius: 10px; padding: .2rem 1rem 1rem; margin-top: 1rem; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid section { margin-top: 1rem; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+.ok { color: #4ade80; font-weight: 600; }
+.bad { color: #f87171; font-weight: 600; }
+.muted { color: #8b95a7; }
+.small { font-size: .8rem; }
+.big { font-size: 1.4rem; font-weight: 600; }
+.trail { width: 100%; height: 260px; background: #0b0e13; border-radius: 8px; margin-top: .6rem; }
+.hazards { list-style: none; padding: 0; margin: 0; }
+.hazards li { background: #3a2a10; border-left: 4px solid #f59e0b; padding: .5rem .7rem; margin-bottom: .4rem; border-radius: 4px; font-size: 1.1rem; }
+.hazards li.critical { background: #3d1414; border-left-color: #ef4444; }
+table { width: 100%; border-collapse: collapse; }
+td { padding: .25rem .5rem; border-bottom: 1px solid #222833; vertical-align: top; }
+.feed { font-size: .9rem; font-variant-numeric: tabular-nums; }
+.feed tr.p-critical td { color: #fca5a5; }
+.feed tr.p-hazard td { color: #fcd34d; }

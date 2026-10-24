@@ -10,8 +10,23 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const Person = __t.object("Person", {
-  name: __t.string(),
+export const Event = __t.object("Event", {
+  id: __t.u64(),
+  type: __t.string(),
+  source: __t.string(),
+  priority: __t.string(),
+  payload: __t.string(),
+  t: __t.timestamp(),
 });
-export type Person = __Infer<typeof Person>;
+export type Event = __Infer<typeof Event>;
+
+export const Latest = __t.object("Latest", {
+  key: __t.string(),
+  type: __t.string(),
+  source: __t.string(),
+  priority: __t.string(),
+  payload: __t.string(),
+  t: __t.timestamp(),
+});
+export type Latest = __Infer<typeof Latest>;
 

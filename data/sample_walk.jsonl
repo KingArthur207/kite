@@ -1,0 +1,673 @@
+{"type": "position", "place": "Lyon Street and Bay Street", "lat": 37.8013, "lng": -122.4477, "t": 0.0}
+{"type": "scene", "source": "drone", "text": "Wide sidewalk heading north. Light foot traffic. A crosswalk with a signal about 30 meters ahead.", "t": 0.2}
+{"type": "guidance", "text": "Head north on Lyon Street for 60 meters.", "key": "step-1", "ttl": 10, "t": 0.5}
+{"type": "beacon", "bearing": 2.6175575743692177, "distance": 58.7, "label": "the Palace of Fine Arts", "t": 1.0}
+{"type": "obstacles", "source": "webcam", "seq": 16, "objects": [], "t": 1.0}
+{"type": "obstacles", "source": "webcam", "seq": 17, "objects": [], "t": 1.067}
+{"type": "obstacles", "source": "webcam", "seq": 18, "objects": [], "t": 1.133}
+{"type": "obstacles", "source": "webcam", "seq": 19, "objects": [], "t": 1.2}
+{"type": "obstacles", "source": "webcam", "seq": 20, "objects": [], "t": 1.267}
+{"type": "obstacles", "source": "webcam", "seq": 21, "objects": [], "t": 1.333}
+{"type": "obstacles", "source": "webcam", "seq": 22, "objects": [], "t": 1.4}
+{"type": "obstacles", "source": "webcam", "seq": 23, "objects": [], "t": 1.467}
+{"type": "beacon", "bearing": 3.835404308833624, "distance": 58.05, "label": "the Palace of Fine Arts", "t": 1.5}
+{"type": "obstacles", "source": "webcam", "seq": 24, "objects": [], "t": 1.533}
+{"type": "obstacles", "source": "webcam", "seq": 25, "objects": [], "t": 1.6}
+{"type": "obstacles", "source": "webcam", "seq": 25, "objects": [], "t": 1.667}
+{"type": "obstacles", "source": "webcam", "seq": 27, "objects": [], "t": 1.733}
+{"type": "obstacles", "source": "webcam", "seq": 28, "objects": [], "t": 1.8}
+{"type": "obstacles", "source": "webcam", "seq": 29, "objects": [], "t": 1.867}
+{"type": "obstacles", "source": "webcam", "seq": 30, "objects": [], "t": 1.933}
+{"type": "beacon", "bearing": 4.946958424557896, "distance": 57.4, "label": "the Palace of Fine Arts", "t": 2.0}
+{"type": "obstacles", "source": "webcam", "seq": 31, "objects": [], "t": 2.0}
+{"type": "obstacles", "source": "webcam", "seq": 31, "objects": [], "t": 2.067}
+{"type": "obstacles", "source": "webcam", "seq": 33, "objects": [], "t": 2.133}
+{"type": "obstacles", "source": "webcam", "seq": 34, "objects": [], "t": 2.2}
+{"type": "obstacles", "source": "webcam", "seq": 35, "objects": [], "t": 2.267}
+{"type": "obstacles", "source": "webcam", "seq": 35, "objects": [], "t": 2.333}
+{"type": "obstacles", "source": "webcam", "seq": 37, "objects": [], "t": 2.4}
+{"type": "obstacles", "source": "webcam", "seq": 38, "objects": [], "t": 2.467}
+{"type": "beacon", "bearing": 5.921414825568297, "distance": 56.75, "label": "the Palace of Fine Arts", "t": 2.5}
+{"type": "obstacles", "source": "webcam", "seq": 39, "objects": [], "t": 2.533}
+{"type": "obstacles", "source": "webcam", "seq": 40, "objects": [], "t": 2.6}
+{"type": "obstacles", "source": "webcam", "seq": 41, "objects": [], "t": 2.667}
+{"type": "obstacles", "source": "webcam", "seq": 42, "objects": [], "t": 2.733}
+{"type": "obstacles", "source": "webcam", "seq": 43, "objects": [], "t": 2.8}
+{"type": "obstacles", "source": "webcam", "seq": 44, "objects": [], "t": 2.867}
+{"type": "obstacles", "source": "webcam", "seq": 45, "objects": [], "t": 2.933}
+{"type": "beacon", "bearing": 6.731767878463172, "distance": 56.1, "label": "the Palace of Fine Arts", "t": 3.0}
+{"type": "obstacles", "source": "webcam", "seq": 46, "objects": [{"id": "p1", "kind": "person", "bearing": -12.0, "distance": 7.0, "confidence": 0.9}], "t": 3.0}
+{"type": "obstacles", "source": "webcam", "seq": 47, "objects": [{"id": "p1", "kind": "person", "bearing": -11.9, "distance": 6.926666666666667, "confidence": 0.9}], "t": 3.067}
+{"type": "obstacles", "source": "webcam", "seq": 48, "objects": [{"id": "p1", "kind": "person", "bearing": -11.8, "distance": 6.8533333333333335, "confidence": 0.9}], "t": 3.133}
+{"type": "obstacles", "source": "webcam", "seq": 49, "objects": [{"id": "p1", "kind": "person", "bearing": -11.7, "distance": 6.779999999999999, "confidence": 0.9}], "t": 3.2}
+{"type": "obstacles", "source": "webcam", "seq": 50, "objects": [{"id": "p1", "kind": "person", "bearing": -11.6, "distance": 6.706666666666667, "confidence": 0.9}], "t": 3.267}
+{"type": "obstacles", "source": "webcam", "seq": 51, "objects": [{"id": "p1", "kind": "person", "bearing": -11.5, "distance": 6.633333333333333, "confidence": 0.9}], "t": 3.333}
+{"type": "obstacles", "source": "webcam", "seq": 52, "objects": [{"id": "p1", "kind": "person", "bearing": -11.4, "distance": 6.5600000000000005, "confidence": 0.9}], "t": 3.4}
+{"type": "obstacles", "source": "webcam", "seq": 53, "objects": [{"id": "p1", "kind": "person", "bearing": -11.3, "distance": 6.486666666666666, "confidence": 0.9}], "t": 3.467}
+{"type": "beacon", "bearing": 7.355559834030041, "distance": 55.45, "label": "the Palace of Fine Arts", "t": 3.5}
+{"type": "obstacles", "source": "webcam", "seq": 54, "objects": [{"id": "p1", "kind": "person", "bearing": -11.2, "distance": 6.413333333333333, "confidence": 0.9}], "t": 3.533}
+{"type": "obstacles", "source": "webcam", "seq": 55, "objects": [{"id": "p1", "kind": "person", "bearing": -11.1, "distance": 6.34, "confidence": 0.9}], "t": 3.6}
+{"type": "obstacles", "source": "webcam", "seq": 56, "objects": [{"id": "p1", "kind": "person", "bearing": -11.0, "distance": 6.266666666666667, "confidence": 0.9}], "t": 3.667}
+{"type": "obstacles", "source": "webcam", "seq": 57, "objects": [{"id": "p1", "kind": "person", "bearing": -10.9, "distance": 6.193333333333333, "confidence": 0.9}], "t": 3.733}
+{"type": "obstacles", "source": "webcam", "seq": 58, "objects": [{"id": "p1", "kind": "person", "bearing": -10.8, "distance": 6.12, "confidence": 0.9}], "t": 3.8}
+{"type": "obstacles", "source": "webcam", "seq": 59, "objects": [{"id": "p1", "kind": "person", "bearing": -10.7, "distance": 6.046666666666667, "confidence": 0.9}], "t": 3.867}
+{"type": "obstacles", "source": "webcam", "seq": 60, "objects": [{"id": "p1", "kind": "person", "bearing": -10.6, "distance": 5.973333333333334, "confidence": 0.9}], "t": 3.933}
+{"type": "beacon", "bearing": 7.775503210906502, "distance": 54.8, "label": "the Palace of Fine Arts", "t": 4.0}
+{"type": "obstacles", "source": "webcam", "seq": 61, "objects": [{"id": "p1", "kind": "person", "bearing": -10.5, "distance": 5.9, "confidence": 0.9}], "t": 4.0}
+{"type": "obstacles", "source": "webcam", "seq": 62, "objects": [{"id": "p1", "kind": "person", "bearing": -10.4, "distance": 5.826666666666667, "confidence": 0.9}], "t": 4.067}
+{"type": "obstacles", "source": "webcam", "seq": 62, "objects": [{"id": "p1", "kind": "person", "bearing": -10.3, "distance": 5.753333333333334, "confidence": 0.9}], "t": 4.133}
+{"type": "obstacles", "source": "webcam", "seq": 64, "objects": [{"id": "p1", "kind": "person", "bearing": -10.2, "distance": 5.68, "confidence": 0.9}], "t": 4.2}
+{"type": "obstacles", "source": "webcam", "seq": 65, "objects": [{"id": "p1", "kind": "person", "bearing": -10.1, "distance": 5.6066666666666665, "confidence": 0.9}], "t": 4.267}
+{"type": "obstacles", "source": "webcam", "seq": 66, "objects": [{"id": "p1", "kind": "person", "bearing": -10.0, "distance": 5.533333333333332, "confidence": 0.9}], "t": 4.333}
+{"type": "obstacles", "source": "webcam", "seq": 67, "objects": [{"id": "p1", "kind": "person", "bearing": -9.899999999999999, "distance": 5.459999999999999, "confidence": 0.9}], "t": 4.4}
+{"type": "obstacles", "source": "webcam", "seq": 68, "objects": [{"id": "p1", "kind": "person", "bearing": -9.8, "distance": 5.386666666666667, "confidence": 0.9}], "t": 4.467}
+{"type": "beacon", "bearing": 7.979959892832436, "distance": 54.15, "label": "the Palace of Fine Arts", "t": 4.5}
+{"type": "obstacles", "source": "webcam", "seq": 69, "objects": [{"id": "p1", "kind": "person", "bearing": -9.7, "distance": 5.3133333333333335, "confidence": 0.9}], "t": 4.533}
+{"type": "obstacles", "source": "webcam", "seq": 70, "objects": [{"id": "p1", "kind": "person", "bearing": -9.600000000000001, "distance": 5.24, "confidence": 0.9}], "t": 4.6}
+{"type": "obstacles", "source": "webcam", "seq": 70, "objects": [{"id": "p1", "kind": "person", "bearing": -9.5, "distance": 5.166666666666667, "confidence": 0.9}], "t": 4.667}
+{"type": "obstacles", "source": "webcam", "seq": 72, "objects": [{"id": "p1", "kind": "person", "bearing": -9.4, "distance": 5.093333333333333, "confidence": 0.9}], "t": 4.733}
+{"type": "obstacles", "source": "webcam", "seq": 73, "objects": [{"id": "p1", "kind": "person", "bearing": -9.3, "distance": 5.02, "confidence": 0.9}], "t": 4.8}
+{"type": "obstacles", "source": "webcam", "seq": 74, "objects": [{"id": "p1", "kind": "person", "bearing": -9.2, "distance": 4.946666666666665, "confidence": 0.9}], "t": 4.867}
+{"type": "obstacles", "source": "webcam", "seq": 75, "objects": [{"id": "p1", "kind": "person", "bearing": -9.1, "distance": 4.873333333333333, "confidence": 0.9}], "t": 4.933}
+{"type": "beacon", "bearing": 7.9632636620141195, "distance": 53.5, "label": "the Palace of Fine Arts", "t": 5.0}
+{"type": "obstacles", "source": "webcam", "seq": 76, "objects": [{"id": "p1", "kind": "person", "bearing": -9.0, "distance": 4.8, "confidence": 0.9}], "t": 5.0}
+{"type": "obstacles", "source": "webcam", "seq": 77, "objects": [{"id": "p1", "kind": "person", "bearing": -8.9, "distance": 4.726666666666667, "confidence": 0.9}], "t": 5.067}
+{"type": "obstacles", "source": "webcam", "seq": 78, "objects": [{"id": "p1", "kind": "person", "bearing": -8.799999999999999, "distance": 4.653333333333332, "confidence": 0.9}], "t": 5.133}
+{"type": "obstacles", "source": "webcam", "seq": 79, "objects": [{"id": "p1", "kind": "person", "bearing": -8.7, "distance": 4.58, "confidence": 0.9}], "t": 5.2}
+{"type": "obstacles", "source": "webcam", "seq": 80, "objects": [{"id": "p1", "kind": "person", "bearing": -8.6, "distance": 4.506666666666666, "confidence": 0.9}], "t": 5.267}
+{"type": "obstacles", "source": "webcam", "seq": 81, "objects": [{"id": "p1", "kind": "person", "bearing": -8.5, "distance": 4.433333333333334, "confidence": 0.9}], "t": 5.333}
+{"type": "obstacles", "source": "webcam", "seq": 82, "objects": [{"id": "p1", "kind": "person", "bearing": -8.399999999999999, "distance": 4.359999999999999, "confidence": 0.9}], "t": 5.4}
+{"type": "obstacles", "source": "webcam", "seq": 83, "objects": [{"id": "p1", "kind": "person", "bearing": -8.3, "distance": 4.286666666666666, "confidence": 0.9}], "t": 5.467}
+{"type": "beacon", "bearing": 7.725877230059998, "distance": 52.85, "label": "the Palace of Fine Arts", "t": 5.5}
+{"type": "obstacles", "source": "webcam", "seq": 84, "objects": [{"id": "p1", "kind": "person", "bearing": -8.2, "distance": 4.213333333333333, "confidence": 0.9}], "t": 5.533}
+{"type": "obstacles", "source": "webcam", "seq": 85, "objects": [{"id": "p1", "kind": "person", "bearing": -8.100000000000001, "distance": 4.140000000000001, "confidence": 0.9}], "t": 5.6}
+{"type": "obstacles", "source": "webcam", "seq": 86, "objects": [{"id": "p1", "kind": "person", "bearing": -8.0, "distance": 4.066666666666666, "confidence": 0.9}], "t": 5.667}
+{"type": "obstacles", "source": "webcam", "seq": 87, "objects": [{"id": "p1", "kind": "person", "bearing": -7.9, "distance": 3.993333333333333, "confidence": 0.9}], "t": 5.733}
+{"type": "obstacles", "source": "webcam", "seq": 88, "objects": [{"id": "p1", "kind": "person", "bearing": -7.800000000000001, "distance": 3.92, "confidence": 0.9}], "t": 5.8}
+{"type": "obstacles", "source": "webcam", "seq": 89, "objects": [{"id": "p1", "kind": "person", "bearing": -7.700000000000001, "distance": 3.8466666666666667, "confidence": 0.9}], "t": 5.867}
+{"type": "obstacles", "source": "webcam", "seq": 90, "objects": [{"id": "p1", "kind": "person", "bearing": -7.6, "distance": 3.773333333333333, "confidence": 0.9}], "t": 5.933}
+{"type": "beacon", "bearing": 7.274379414605454, "distance": 52.2, "label": "the Palace of Fine Arts", "t": 6.0}
+{"type": "obstacles", "source": "webcam", "seq": 91, "objects": [{"id": "p1", "kind": "person", "bearing": -7.5, "distance": 3.6999999999999997, "confidence": 0.9}], "t": 6.0}
+{"type": "obstacles", "source": "webcam", "seq": 92, "objects": [{"id": "p1", "kind": "person", "bearing": -7.4, "distance": 3.6266666666666665, "confidence": 0.9}], "t": 6.067}
+{"type": "obstacles", "source": "webcam", "seq": 93, "objects": [{"id": "p1", "kind": "person", "bearing": -7.299999999999999, "distance": 3.553333333333333, "confidence": 0.9}], "t": 6.133}
+{"type": "obstacles", "source": "webcam", "seq": 94, "objects": [{"id": "p1", "kind": "person", "bearing": -7.199999999999999, "distance": 3.4799999999999995, "confidence": 0.9}], "t": 6.2}
+{"type": "obstacles", "source": "webcam", "seq": 95, "objects": [{"id": "p1", "kind": "person", "bearing": -7.1, "distance": 3.4066666666666663, "confidence": 0.9}], "t": 6.267}
+{"type": "obstacles", "source": "webcam", "seq": 96, "objects": [{"id": "p1", "kind": "person", "bearing": -7.0, "distance": 3.3333333333333335, "confidence": 0.9}], "t": 6.333}
+{"type": "obstacles", "source": "webcam", "seq": 97, "objects": [{"id": "p1", "kind": "person", "bearing": -6.8999999999999995, "distance": 3.2599999999999993, "confidence": 0.9}], "t": 6.4}
+{"type": "obstacles", "source": "webcam", "seq": 98, "objects": [{"id": "p1", "kind": "person", "bearing": -6.8, "distance": 3.186666666666666, "confidence": 0.9}], "t": 6.467}
+{"type": "beacon", "bearing": 6.6212828170076845, "distance": 51.55, "label": "the Palace of Fine Arts", "t": 6.5}
+{"type": "obstacles", "source": "webcam", "seq": 99, "objects": [{"id": "p1", "kind": "person", "bearing": -6.7, "distance": 3.1133333333333333, "confidence": 0.9}], "t": 6.533}
+{"type": "obstacles", "source": "webcam", "seq": 100, "objects": [{"id": "p1", "kind": "person", "bearing": -6.6000000000000005, "distance": 3.04, "confidence": 0.9}], "t": 6.6}
+{"type": "obstacles", "source": "webcam", "seq": 101, "objects": [{"id": "p1", "kind": "person", "bearing": -6.5, "distance": 2.966666666666666, "confidence": 0.9}], "t": 6.667}
+{"type": "obstacles", "source": "webcam", "seq": 102, "objects": [{"id": "p1", "kind": "person", "bearing": -6.4, "distance": 2.8933333333333326, "confidence": 0.9}], "t": 6.733}
+{"type": "obstacles", "source": "webcam", "seq": 103, "objects": [{"id": "p1", "kind": "person", "bearing": -6.300000000000001, "distance": 2.8200000000000003, "confidence": 0.9}], "t": 6.8}
+{"type": "obstacles", "source": "webcam", "seq": 104, "objects": [{"id": "p1", "kind": "person", "bearing": -6.200000000000001, "distance": 2.746666666666667, "confidence": 0.9}], "t": 6.867}
+{"type": "obstacles", "source": "webcam", "seq": 105, "objects": [{"id": "p1", "kind": "person", "bearing": -6.1, "distance": 2.673333333333333, "confidence": 0.9}], "t": 6.933}
+{"type": "beacon", "bearing": 5.784687053906596, "distance": 50.9, "label": "the Palace of Fine Arts", "t": 7.0}
+{"type": "obstacles", "source": "webcam", "seq": 106, "objects": [{"id": "p1", "kind": "person", "bearing": -6.0, "distance": 2.5999999999999996, "confidence": 0.9}], "t": 7.0}
+{"type": "obstacles", "source": "webcam", "seq": 107, "objects": [{"id": "p1", "kind": "person", "bearing": -5.9, "distance": 2.5266666666666664, "confidence": 0.9}], "t": 7.067}
+{"type": "obstacles", "source": "webcam", "seq": 108, "objects": [{"id": "p1", "kind": "person", "bearing": -5.799999999999999, "distance": 2.4533333333333323, "confidence": 0.9}], "t": 7.133}
+{"type": "obstacles", "source": "webcam", "seq": 109, "objects": [{"id": "p1", "kind": "person", "bearing": -5.699999999999999, "distance": 2.379999999999999, "confidence": 0.9}], "t": 7.2}
+{"type": "obstacles", "source": "webcam", "seq": 110, "objects": [{"id": "p1", "kind": "person", "bearing": -5.6, "distance": 2.3066666666666666, "confidence": 0.9}], "t": 7.267}
+{"type": "obstacles", "source": "webcam", "seq": 111, "objects": [{"id": "p1", "kind": "person", "bearing": -5.5, "distance": 2.2333333333333334, "confidence": 0.9}], "t": 7.333}
+{"type": "obstacles", "source": "webcam", "seq": 112, "objects": [{"id": "p1", "kind": "person", "bearing": -5.3999999999999995, "distance": 2.1599999999999993, "confidence": 0.9}], "t": 7.4}
+{"type": "obstacles", "source": "webcam", "seq": 113, "objects": [{"id": "p1", "kind": "person", "bearing": -5.3, "distance": 2.086666666666666, "confidence": 0.9}], "t": 7.467}
+{"type": "beacon", "bearing": 4.7877771528316515, "distance": 50.25, "label": "the Palace of Fine Arts", "t": 7.5}
+{"type": "obstacles", "source": "webcam", "seq": 114, "objects": [{"id": "p1", "kind": "person", "bearing": -5.2, "distance": 2.0133333333333328, "confidence": 0.9}], "t": 7.533}
+{"type": "obstacles", "source": "webcam", "seq": 115, "objects": [{"id": "p1", "kind": "person", "bearing": -5.1000000000000005, "distance": 1.9400000000000004, "confidence": 0.9}], "t": 7.6}
+{"type": "obstacles", "source": "webcam", "seq": 116, "objects": [{"id": "p1", "kind": "person", "bearing": -5.0, "distance": 1.8666666666666663, "confidence": 0.9}], "t": 7.667}
+{"type": "obstacles", "source": "webcam", "seq": 117, "objects": [{"id": "p1", "kind": "person", "bearing": -4.9, "distance": 1.793333333333333, "confidence": 0.9}], "t": 7.733}
+{"type": "obstacles", "source": "webcam", "seq": 118, "objects": [{"id": "p1", "kind": "person", "bearing": -4.800000000000001, "distance": 1.7199999999999998, "confidence": 0.9}], "t": 7.8}
+{"type": "obstacles", "source": "webcam", "seq": 119, "objects": [{"id": "p1", "kind": "person", "bearing": -4.700000000000001, "distance": 1.6466666666666665, "confidence": 0.9}], "t": 7.867}
+{"type": "obstacles", "source": "webcam", "seq": 120, "objects": [{"id": "p1", "kind": "person", "bearing": -4.6, "distance": 1.5733333333333324, "confidence": 0.9}], "t": 7.933}
+{"type": "beacon", "bearing": 3.658181013086496, "distance": 49.6, "label": "the Palace of Fine Arts", "t": 8.0}
+{"type": "obstacles", "source": "webcam", "seq": 121, "objects": [{"id": "p1", "kind": "person", "bearing": -4.5, "distance": 1.5, "confidence": 0.9}], "t": 8.0}
+{"type": "obstacles", "source": "webcam", "seq": 122, "objects": [{"id": "p1", "kind": "person", "bearing": -4.4, "distance": 1.4266666666666667, "confidence": 0.9}], "t": 8.067}
+{"type": "obstacles", "source": "webcam", "seq": 123, "objects": [{"id": "p1", "kind": "person", "bearing": -4.300000000000001, "distance": 1.3533333333333335, "confidence": 0.9}], "t": 8.133}
+{"type": "obstacles", "source": "webcam", "seq": 123, "objects": [{"id": "p1", "kind": "person", "bearing": -4.200000000000001, "distance": 1.2800000000000002, "confidence": 0.9}], "t": 8.2}
+{"type": "obstacles", "source": "webcam", "seq": 124, "objects": [{"id": "p1", "kind": "person", "bearing": -4.100000000000001, "distance": 1.206666666666667, "confidence": 0.9}], "t": 8.267}
+{"type": "obstacles", "source": "webcam", "seq": 125, "objects": [{"id": "p1", "kind": "person", "bearing": -4.000000000000002, "distance": 1.1333333333333337, "confidence": 0.9}], "t": 8.333}
+{"type": "obstacles", "source": "webcam", "seq": 127, "objects": [{"id": "p1", "kind": "person", "bearing": -3.8999999999999986, "distance": 1.0599999999999987, "confidence": 0.9}], "t": 8.4}
+{"type": "obstacles", "source": "webcam", "seq": 128, "objects": [{"id": "p1", "kind": "person", "bearing": -3.8000000000000007, "distance": 0.9866666666666664, "confidence": 0.9}], "t": 8.467}
+{"type": "beacon", "bearing": 2.4272037389428487, "distance": 48.95, "label": "the Palace of Fine Arts", "t": 8.5}
+{"type": "obstacles", "source": "webcam", "seq": 129, "objects": [{"id": "p1", "kind": "person", "bearing": -3.6999999999999993, "distance": 0.9133333333333331, "confidence": 0.9}], "t": 8.533}
+{"type": "obstacles", "source": "webcam", "seq": 130, "objects": [{"id": "p1", "kind": "person", "bearing": -3.6000000000000014, "distance": 0.8399999999999999, "confidence": 0.9}], "t": 8.6}
+{"type": "obstacles", "source": "webcam", "seq": 131, "objects": [{"id": "p1", "kind": "person", "bearing": -3.4999999999999982, "distance": 0.7666666666666648, "confidence": 0.9}], "t": 8.667}
+{"type": "obstacles", "source": "webcam", "seq": 132, "objects": [{"id": "p1", "kind": "person", "bearing": -3.3999999999999986, "distance": 0.6933333333333316, "confidence": 0.9}], "t": 8.733}
+{"type": "obstacles", "source": "webcam", "seq": 133, "objects": [{"id": "p1", "kind": "person", "bearing": -3.299999999999999, "distance": 0.6199999999999983, "confidence": 0.9}], "t": 8.8}
+{"type": "obstacles", "source": "webcam", "seq": 134, "objects": [{"id": "p1", "kind": "person", "bearing": -3.1999999999999993, "distance": 0.546666666666666, "confidence": 0.9}], "t": 8.867}
+{"type": "obstacles", "source": "webcam", "seq": 135, "objects": [{"id": "p1", "kind": "person", "bearing": -3.0999999999999996, "distance": 0.4733333333333327, "confidence": 0.9}], "t": 8.933}
+{"type": "beacon", "bearing": 1.1289600644789377, "distance": 48.3, "label": "the Palace of Fine Arts", "t": 9.0}
+{"type": "obstacles", "source": "webcam", "seq": 136, "objects": [], "t": 9.0}
+{"type": "obstacles", "source": "webcam", "seq": 137, "objects": [], "t": 9.067}
+{"type": "obstacles", "source": "webcam", "seq": 138, "objects": [], "t": 9.133}
+{"type": "obstacles", "source": "webcam", "seq": 139, "objects": [], "t": 9.2}
+{"type": "obstacles", "source": "webcam", "seq": 140, "objects": [], "t": 9.267}
+{"type": "obstacles", "source": "webcam", "seq": 141, "objects": [], "t": 9.333}
+{"type": "obstacles", "source": "webcam", "seq": 142, "objects": [], "t": 9.4}
+{"type": "obstacles", "source": "webcam", "seq": 143, "objects": [], "t": 9.467}
+{"type": "beacon", "bearing": -0.2005710863613527, "distance": 47.65, "label": "the Palace of Fine Arts", "t": 9.5}
+{"type": "obstacles", "source": "webcam", "seq": 144, "objects": [], "t": 9.533}
+{"type": "obstacles", "source": "webcam", "seq": 145, "objects": [], "t": 9.6}
+{"type": "obstacles", "source": "webcam", "seq": 146, "objects": [], "t": 9.667}
+{"type": "obstacles", "source": "webcam", "seq": 147, "objects": [], "t": 9.733}
+{"type": "obstacles", "source": "webcam", "seq": 148, "objects": [], "t": 9.8}
+{"type": "obstacles", "source": "webcam", "seq": 149, "objects": [], "t": 9.867}
+{"type": "obstacles", "source": "webcam", "seq": 150, "objects": [], "t": 9.933}
+{"type": "beacon", "bearing": -1.524543703003883, "distance": 47.0, "label": "the Palace of Fine Arts", "t": 10.0}
+{"type": "obstacles", "source": "webcam", "seq": 151, "objects": [], "t": 10.0}
+{"type": "obstacles", "source": "webcam", "seq": 152, "objects": [], "t": 10.067}
+{"type": "obstacles", "source": "webcam", "seq": 153, "objects": [], "t": 10.133}
+{"type": "obstacles", "source": "webcam", "seq": 154, "objects": [], "t": 10.2}
+{"type": "obstacles", "source": "webcam", "seq": 155, "objects": [], "t": 10.267}
+{"type": "obstacles", "source": "webcam", "seq": 156, "objects": [], "t": 10.333}
+{"type": "obstacles", "source": "webcam", "seq": 157, "objects": [], "t": 10.4}
+{"type": "obstacles", "source": "webcam", "seq": 158, "objects": [], "t": 10.467}
+{"type": "beacon", "bearing": -2.8062658215169587, "distance": 46.35, "label": "the Palace of Fine Arts", "t": 10.5}
+{"type": "obstacles", "source": "webcam", "seq": 159, "objects": [], "t": 10.533}
+{"type": "obstacles", "source": "webcam", "seq": 160, "objects": [], "t": 10.6}
+{"type": "obstacles", "source": "webcam", "seq": 161, "objects": [], "t": 10.667}
+{"type": "obstacles", "source": "webcam", "seq": 162, "objects": [], "t": 10.733}
+{"type": "obstacles", "source": "webcam", "seq": 163, "objects": [], "t": 10.8}
+{"type": "obstacles", "source": "webcam", "seq": 164, "objects": [], "t": 10.867}
+{"type": "obstacles", "source": "webcam", "seq": 165, "objects": [], "t": 10.933}
+{"type": "beacon", "bearing": -4.010216388706758, "distance": 45.7, "label": "the Palace of Fine Arts", "t": 11.0}
+{"type": "obstacles", "source": "webcam", "seq": 166, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.5, "confidence": 0.8}], "t": 11.0}
+{"type": "obstacles", "source": "webcam", "seq": 167, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.433333333333334, "confidence": 0.8}], "t": 11.067}
+{"type": "obstacles", "source": "webcam", "seq": 168, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.366666666666667, "confidence": 0.8}], "t": 11.133}
+{"type": "obstacles", "source": "webcam", "seq": 169, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.300000000000001, "confidence": 0.8}], "t": 11.2}
+{"type": "obstacles", "source": "webcam", "seq": 170, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.2333333333333325, "confidence": 0.8}], "t": 11.267}
+{"type": "obstacles", "source": "webcam", "seq": 171, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.166666666666666, "confidence": 0.8}], "t": 11.333}
+{"type": "obstacles", "source": "webcam", "seq": 172, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.1, "confidence": 0.8}], "t": 11.4}
+{"type": "obstacles", "source": "webcam", "seq": 173, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 5.033333333333333, "confidence": 0.8}], "t": 11.467}
+{"type": "beacon", "bearing": -5.103029676134815, "distance": 45.05, "label": "the Palace of Fine Arts", "t": 11.5}
+{"type": "obstacles", "source": "webcam", "seq": 174, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.966666666666667, "confidence": 0.8}], "t": 11.533}
+{"type": "obstacles", "source": "webcam", "seq": 175, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.9, "confidence": 0.8}], "t": 11.6}
+{"type": "obstacles", "source": "webcam", "seq": 176, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.833333333333334, "confidence": 0.8}], "t": 11.667}
+{"type": "obstacles", "source": "webcam", "seq": 177, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.7666666666666675, "confidence": 0.8}], "t": 11.733}
+{"type": "obstacles", "source": "webcam", "seq": 178, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.699999999999999, "confidence": 0.8}], "t": 11.8}
+{"type": "obstacles", "source": "webcam", "seq": 179, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.633333333333333, "confidence": 0.8}], "t": 11.867}
+{"type": "obstacles", "source": "webcam", "seq": 180, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.566666666666666, "confidence": 0.8}], "t": 11.933}
+{"type": "beacon", "bearing": -6.0544199624634265, "distance": 44.4, "label": "the Palace of Fine Arts", "t": 12.0}
+{"type": "obstacles", "source": "webcam", "seq": 181, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.5, "confidence": 0.8}], "t": 12.0}
+{"type": "obstacles", "source": "webcam", "seq": 182, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.433333333333334, "confidence": 0.8}], "t": 12.067}
+{"type": "obstacles", "source": "webcam", "seq": 183, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.366666666666667, "confidence": 0.8}], "t": 12.133}
+{"type": "obstacles", "source": "webcam", "seq": 184, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.300000000000001, "confidence": 0.8}], "t": 12.2}
+{"type": "obstacles", "source": "webcam", "seq": 185, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.2333333333333325, "confidence": 0.8}], "t": 12.267}
+{"type": "obstacles", "source": "webcam", "seq": 186, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.166666666666666, "confidence": 0.8}], "t": 12.333}
+{"type": "obstacles", "source": "webcam", "seq": 187, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.1, "confidence": 0.8}], "t": 12.4}
+{"type": "obstacles", "source": "webcam", "seq": 188, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 4.033333333333333, "confidence": 0.8}], "t": 12.467}
+{"type": "beacon", "bearing": -6.83802085791072, "distance": 43.75, "label": "the Palace of Fine Arts", "t": 12.5}
+{"type": "obstacles", "source": "webcam", "seq": 189, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.966666666666667, "confidence": 0.8}], "t": 12.533}
+{"type": "obstacles", "source": "webcam", "seq": 190, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.9000000000000004, "confidence": 0.8}], "t": 12.6}
+{"type": "obstacles", "source": "webcam", "seq": 191, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.833333333333334, "confidence": 0.8}], "t": 12.667}
+{"type": "obstacles", "source": "webcam", "seq": 192, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.7666666666666675, "confidence": 0.8}], "t": 12.733}
+{"type": "obstacles", "source": "webcam", "seq": 193, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.6999999999999993, "confidence": 0.8}], "t": 12.8}
+{"type": "obstacles", "source": "webcam", "seq": 194, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.633333333333333, "confidence": 0.8}], "t": 12.867}
+{"type": "obstacles", "source": "webcam", "seq": 195, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.5666666666666664, "confidence": 0.8}], "t": 12.933}
+{"type": "beacon", "bearing": -7.432116010166095, "distance": 43.099999999999994, "label": "the Palace of Fine Arts", "t": 13.0}
+{"type": "obstacles", "source": "webcam", "seq": 196, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.5, "confidence": 0.8}], "t": 13.0}
+{"type": "obstacles", "source": "webcam", "seq": 197, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.4333333333333336, "confidence": 0.8}], "t": 13.067}
+{"type": "obstacles", "source": "webcam", "seq": 198, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.366666666666667, "confidence": 0.8}], "t": 13.133}
+{"type": "obstacles", "source": "webcam", "seq": 199, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.3000000000000007, "confidence": 0.8}], "t": 13.2}
+{"type": "obstacles", "source": "webcam", "seq": 200, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.2333333333333325, "confidence": 0.8}], "t": 13.267}
+{"type": "obstacles", "source": "webcam", "seq": 201, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.166666666666666, "confidence": 0.8}], "t": 13.333}
+{"type": "obstacles", "source": "webcam", "seq": 202, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.0999999999999996, "confidence": 0.8}], "t": 13.4}
+{"type": "obstacles", "source": "webcam", "seq": 203, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 3.033333333333333, "confidence": 0.8}], "t": 13.467}
+{"type": "beacon", "bearing": -7.820240941320776, "distance": 42.45, "label": "the Palace of Fine Arts", "t": 13.5}
+{"type": "obstacles", "source": "webcam", "seq": 204, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.966666666666667, "confidence": 0.8}], "t": 13.533}
+{"type": "obstacles", "source": "webcam", "seq": 205, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.9000000000000004, "confidence": 0.8}], "t": 13.6}
+{"type": "obstacles", "source": "webcam", "seq": 206, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.833333333333334, "confidence": 0.8}], "t": 13.667}
+{"type": "obstacles", "source": "webcam", "seq": 207, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.7666666666666675, "confidence": 0.8}], "t": 13.733}
+{"type": "obstacles", "source": "webcam", "seq": 208, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.6999999999999993, "confidence": 0.8}], "t": 13.8}
+{"type": "obstacles", "source": "webcam", "seq": 209, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.633333333333333, "confidence": 0.8}], "t": 13.867}
+{"type": "obstacles", "source": "webcam", "seq": 210, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.5666666666666664, "confidence": 0.8}], "t": 13.933}
+{"type": "beacon", "bearing": -7.991639336783426, "distance": 41.8, "label": "the Palace of Fine Arts", "t": 14.0}
+{"type": "obstacles", "source": "webcam", "seq": 211, "objects": [{"id": "pole", "kind": "pole", "bearing": -4, "distance": 2.5, "confidence": 0.8}], "t": 14.0}
+{"type": "obstacles", "source": "webcam", "seq": 212, "objects": [{"id": "pole", "kind": "pole", "bearing": -4.799999999999997, "distance": 2.4333333333333336, "confidence": 0.8}], "t": 14.067}
+{"type": "obstacles", "source": "webcam", "seq": 213, "objects": [{"id": "pole", "kind": "pole", "bearing": -5.599999999999994, "distance": 2.366666666666667, "confidence": 0.8}], "t": 14.133}
+{"type": "obstacles", "source": "webcam", "seq": 214, "objects": [{"id": "pole", "kind": "pole", "bearing": -6.3999999999999915, "distance": 2.3000000000000007, "confidence": 0.8}], "t": 14.2}
+{"type": "obstacles", "source": "webcam", "seq": 215, "objects": [{"id": "pole", "kind": "pole", "bearing": -7.20000000000001, "distance": 2.2333333333333325, "confidence": 0.8}], "t": 14.267}
+{"type": "obstacles", "source": "webcam", "seq": 216, "objects": [{"id": "pole", "kind": "pole", "bearing": -8.000000000000007, "distance": 2.166666666666666, "confidence": 0.8}], "t": 14.333}
+{"type": "obstacles", "source": "webcam", "seq": 217, "objects": [{"id": "pole", "kind": "pole", "bearing": -8.800000000000004, "distance": 2.0999999999999996, "confidence": 0.8}], "t": 14.4}
+{"type": "obstacles", "source": "webcam", "seq": 218, "objects": [{"id": "pole", "kind": "pole", "bearing": -9.600000000000001, "distance": 2.033333333333333, "confidence": 0.8}], "t": 14.467}
+{"type": "beacon", "bearing": -7.941561140801222, "distance": 41.15, "label": "the Palace of Fine Arts", "t": 14.5}
+{"type": "obstacles", "source": "webcam", "seq": 219, "objects": [{"id": "pole", "kind": "pole", "bearing": -10.399999999999999, "distance": 1.9666666666666668, "confidence": 0.8}], "t": 14.533}
+{"type": "obstacles", "source": "webcam", "seq": 220, "objects": [{"id": "pole", "kind": "pole", "bearing": -11.199999999999996, "distance": 1.9000000000000004, "confidence": 0.8}], "t": 14.6}
+{"type": "obstacles", "source": "webcam", "seq": 221, "objects": [{"id": "pole", "kind": "pole", "bearing": -11.999999999999993, "distance": 1.833333333333334, "confidence": 0.8}], "t": 14.667}
+{"type": "obstacles", "source": "webcam", "seq": 222, "objects": [{"id": "pole", "kind": "pole", "bearing": -12.79999999999999, "distance": 1.7666666666666675, "confidence": 0.8}], "t": 14.733}
+{"type": "obstacles", "source": "webcam", "seq": 223, "objects": [{"id": "pole", "kind": "pole", "bearing": -13.600000000000009, "distance": 1.6999999999999993, "confidence": 0.8}], "t": 14.8}
+{"type": "obstacles", "source": "webcam", "seq": 224, "objects": [{"id": "pole", "kind": "pole", "bearing": -14.400000000000006, "distance": 1.6333333333333329, "confidence": 0.8}], "t": 14.867}
+{"type": "obstacles", "source": "webcam", "seq": 225, "objects": [{"id": "pole", "kind": "pole", "bearing": -15.200000000000003, "distance": 1.5666666666666664, "confidence": 0.8}], "t": 14.933}
+{"type": "beacon", "bearing": -7.671394197305108, "distance": 40.5, "label": "the Palace of Fine Arts", "t": 15.0}
+{"type": "obstacles", "source": "webcam", "seq": 226, "objects": [{"id": "pole", "kind": "pole", "bearing": -16.0, "distance": 1.5, "confidence": 0.8}], "t": 15.0}
+{"type": "obstacles", "source": "webcam", "seq": 227, "objects": [{"id": "pole", "kind": "pole", "bearing": -16.799999999999997, "distance": 1.4333333333333336, "confidence": 0.8}], "t": 15.067}
+{"type": "obstacles", "source": "webcam", "seq": 228, "objects": [{"id": "pole", "kind": "pole", "bearing": -17.599999999999994, "distance": 1.3666666666666671, "confidence": 0.8}], "t": 15.133}
+{"type": "obstacles", "source": "webcam", "seq": 229, "objects": [{"id": "pole", "kind": "pole", "bearing": -18.39999999999999, "distance": 1.3000000000000007, "confidence": 0.8}], "t": 15.2}
+{"type": "obstacles", "source": "webcam", "seq": 230, "objects": [{"id": "pole", "kind": "pole", "bearing": -19.20000000000001, "distance": 1.2333333333333325, "confidence": 0.8}], "t": 15.267}
+{"type": "obstacles", "source": "webcam", "seq": 231, "objects": [{"id": "pole", "kind": "pole", "bearing": -20.000000000000007, "distance": 1.166666666666666, "confidence": 0.8}], "t": 15.333}
+{"type": "obstacles", "source": "webcam", "seq": 232, "objects": [{"id": "pole", "kind": "pole", "bearing": -20.800000000000004, "distance": 1.0999999999999996, "confidence": 0.8}], "t": 15.4}
+{"type": "obstacles", "source": "webcam", "seq": 233, "objects": [{"id": "pole", "kind": "pole", "bearing": -21.6, "distance": 1.0333333333333332, "confidence": 0.8}], "t": 15.467}
+{"type": "beacon", "bearing": -7.1886257878458375, "distance": 39.849999999999994, "label": "the Palace of Fine Arts", "t": 15.5}
+{"type": "obstacles", "source": "webcam", "seq": 234, "objects": [{"id": "pole", "kind": "pole", "bearing": -22.4, "distance": 0.9666666666666668, "confidence": 0.8}], "t": 15.533}
+{"type": "obstacles", "source": "webcam", "seq": 235, "objects": [{"id": "pole", "kind": "pole", "bearing": -23.199999999999996, "distance": 0.9000000000000004, "confidence": 0.8}], "t": 15.6}
+{"type": "obstacles", "source": "webcam", "seq": 236, "objects": [{"id": "pole", "kind": "pole", "bearing": -23.999999999999993, "distance": 0.8333333333333339, "confidence": 0.8}], "t": 15.667}
+{"type": "obstacles", "source": "webcam", "seq": 237, "objects": [{"id": "pole", "kind": "pole", "bearing": -24.79999999999999, "distance": 0.7666666666666675, "confidence": 0.8}], "t": 15.733}
+{"type": "obstacles", "source": "webcam", "seq": 238, "objects": [{"id": "pole", "kind": "pole", "bearing": -25.60000000000001, "distance": 0.6999999999999993, "confidence": 0.8}], "t": 15.8}
+{"type": "obstacles", "source": "webcam", "seq": 239, "objects": [{"id": "pole", "kind": "pole", "bearing": -26.400000000000006, "distance": 0.6333333333333329, "confidence": 0.8}], "t": 15.867}
+{"type": "obstacles", "source": "webcam", "seq": 240, "objects": [{"id": "pole", "kind": "pole", "bearing": -27.200000000000003, "distance": 0.5666666666666664, "confidence": 0.8}], "t": 15.933}
+{"type": "beacon", "bearing": -6.50663513254064, "distance": 39.2, "label": "the Palace of Fine Arts", "t": 16.0}
+{"type": "obstacles", "source": "webcam", "seq": 241, "objects": [], "t": 16.0}
+{"type": "obstacles", "source": "webcam", "seq": 242, "objects": [], "t": 16.067}
+{"type": "obstacles", "source": "webcam", "seq": 243, "objects": [], "t": 16.133}
+{"type": "obstacles", "source": "webcam", "seq": 244, "objects": [], "t": 16.2}
+{"type": "obstacles", "source": "webcam", "seq": 245, "objects": [], "t": 16.267}
+{"type": "obstacles", "source": "webcam", "seq": 246, "objects": [], "t": 16.333}
+{"type": "obstacles", "source": "webcam", "seq": 246, "objects": [], "t": 16.4}
+{"type": "obstacles", "source": "webcam", "seq": 248, "objects": [], "t": 16.467}
+{"type": "beacon", "bearing": -5.644322604563135, "distance": 38.55, "label": "the Palace of Fine Arts", "t": 16.5}
+{"type": "obstacles", "source": "webcam", "seq": 248, "objects": [], "t": 16.533}
+{"type": "obstacles", "source": "webcam", "seq": 250, "objects": [], "t": 16.6}
+{"type": "obstacles", "source": "webcam", "seq": 250, "objects": [], "t": 16.667}
+{"type": "obstacles", "source": "webcam", "seq": 252, "objects": [], "t": 16.733}
+{"type": "obstacles", "source": "webcam", "seq": 253, "objects": [], "t": 16.8}
+{"type": "obstacles", "source": "webcam", "seq": 254, "objects": [], "t": 16.867}
+{"type": "obstacles", "source": "webcam", "seq": 255, "objects": [], "t": 16.933}
+{"type": "beacon", "bearing": -4.625585933954471, "distance": 37.9, "label": "the Palace of Fine Arts", "t": 17.0}
+{"type": "obstacles", "source": "webcam", "seq": 256, "objects": [], "t": 17.0}
+{"type": "obstacles", "source": "webcam", "seq": 257, "objects": [], "t": 17.067}
+{"type": "obstacles", "source": "webcam", "seq": 258, "objects": [], "t": 17.133}
+{"type": "obstacles", "source": "webcam", "seq": 259, "objects": [], "t": 17.2}
+{"type": "obstacles", "source": "webcam", "seq": 260, "objects": [], "t": 17.267}
+{"type": "obstacles", "source": "webcam", "seq": 261, "objects": [], "t": 17.333}
+{"type": "obstacles", "source": "webcam", "seq": 262, "objects": [], "t": 17.4}
+{"type": "obstacles", "source": "webcam", "seq": 263, "objects": [], "t": 17.467}
+{"type": "beacon", "bearing": -3.4786579170006173, "distance": 37.25, "label": "the Palace of Fine Arts", "t": 17.5}
+{"type": "obstacles", "source": "webcam", "seq": 264, "objects": [], "t": 17.533}
+{"type": "obstacles", "source": "webcam", "seq": 265, "objects": [], "t": 17.6}
+{"type": "obstacles", "source": "webcam", "seq": 266, "objects": [], "t": 17.667}
+{"type": "obstacles", "source": "webcam", "seq": 267, "objects": [], "t": 17.733}
+{"type": "obstacles", "source": "webcam", "seq": 268, "objects": [], "t": 17.8}
+{"type": "obstacles", "source": "webcam", "seq": 269, "objects": [], "t": 17.867}
+{"type": "obstacles", "source": "webcam", "seq": 270, "objects": [], "t": 17.933}
+{"type": "beacon", "bearing": -2.235323985591407, "distance": 36.599999999999994, "label": "the Palace of Fine Arts", "t": 18.0}
+{"type": "obstacles", "source": "webcam", "seq": 271, "objects": [], "t": 18.0}
+{"type": "hazard", "kind": "crosswalk", "state": "dont_walk", "bearing": 3, "distance": 6, "ttl": 15, "t": 18.0}
+{"type": "obstacles", "source": "webcam", "seq": 272, "objects": [], "t": 18.067}
+{"type": "obstacles", "source": "webcam", "seq": 273, "objects": [], "t": 18.133}
+{"type": "obstacles", "source": "webcam", "seq": 274, "objects": [], "t": 18.2}
+{"type": "obstacles", "source": "webcam", "seq": 275, "objects": [], "t": 18.267}
+{"type": "obstacles", "source": "webcam", "seq": 276, "objects": [], "t": 18.333}
+{"type": "obstacles", "source": "webcam", "seq": 277, "objects": [], "t": 18.4}
+{"type": "obstacles", "source": "webcam", "seq": 278, "objects": [], "t": 18.467}
+{"type": "beacon", "bearing": -0.9300413204818373, "distance": 35.95, "label": "the Palace of Fine Arts", "t": 18.5}
+{"type": "obstacles", "source": "webcam", "seq": 279, "objects": [], "t": 18.533}
+{"type": "obstacles", "source": "webcam", "seq": 280, "objects": [], "t": 18.6}
+{"type": "obstacles", "source": "webcam", "seq": 281, "objects": [], "t": 18.667}
+{"type": "obstacles", "source": "webcam", "seq": 282, "objects": [], "t": 18.733}
+{"type": "obstacles", "source": "webcam", "seq": 283, "objects": [], "t": 18.8}
+{"type": "obstacles", "source": "webcam", "seq": 284, "objects": [], "t": 18.867}
+{"type": "obstacles", "source": "webcam", "seq": 285, "objects": [], "t": 18.933}
+{"type": "beacon", "bearing": 0.4010160790573818, "distance": 35.3, "label": "the Palace of Fine Arts", "t": 19.0}
+{"type": "obstacles", "source": "webcam", "seq": 286, "objects": [], "t": 19.0}
+{"type": "obstacles", "source": "webcam", "seq": 287, "objects": [], "t": 19.067}
+{"type": "obstacles", "source": "webcam", "seq": 288, "objects": [], "t": 19.133}
+{"type": "obstacles", "source": "webcam", "seq": 289, "objects": [], "t": 19.2}
+{"type": "obstacles", "source": "webcam", "seq": 290, "objects": [], "t": 19.267}
+{"type": "obstacles", "source": "webcam", "seq": 291, "objects": [], "t": 19.333}
+{"type": "obstacles", "source": "webcam", "seq": 292, "objects": [], "t": 19.4}
+{"type": "obstacles", "source": "webcam", "seq": 293, "objects": [], "t": 19.467}
+{"type": "beacon", "bearing": 1.7209599047025241, "distance": 34.65, "label": "the Palace of Fine Arts", "t": 19.5}
+{"type": "obstacles", "source": "webcam", "seq": 294, "objects": [], "t": 19.533}
+{"type": "obstacles", "source": "webcam", "seq": 295, "objects": [], "t": 19.6}
+{"type": "obstacles", "source": "webcam", "seq": 296, "objects": [], "t": 19.667}
+{"type": "obstacles", "source": "webcam", "seq": 297, "objects": [], "t": 19.733}
+{"type": "obstacles", "source": "webcam", "seq": 298, "objects": [], "t": 19.8}
+{"type": "obstacles", "source": "webcam", "seq": 299, "objects": [], "t": 19.867}
+{"type": "obstacles", "source": "webcam", "seq": 300, "objects": [], "t": 19.933}
+{"type": "beacon", "bearing": 2.9932098445697597, "distance": 34.0, "label": "the Palace of Fine Arts", "t": 20.0}
+{"type": "obstacles", "source": "webcam", "seq": 301, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.0}
+{"type": "obstacles", "source": "webcam", "seq": 302, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.067}
+{"type": "obstacles", "source": "webcam", "seq": 303, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.133}
+{"type": "obstacles", "source": "webcam", "seq": 304, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.2}
+{"type": "obstacles", "source": "webcam", "seq": 305, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.267}
+{"type": "obstacles", "source": "webcam", "seq": 306, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.333}
+{"type": "obstacles", "source": "webcam", "seq": 307, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.4}
+{"type": "obstacles", "source": "webcam", "seq": 308, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.467}
+{"type": "beacon", "bearing": 4.182507353037436, "distance": 33.349999999999994, "label": "the Palace of Fine Arts", "t": 20.5}
+{"type": "obstacles", "source": "webcam", "seq": 309, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.533}
+{"type": "obstacles", "source": "webcam", "seq": 310, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.6}
+{"type": "obstacles", "source": "webcam", "seq": 311, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.667}
+{"type": "obstacles", "source": "webcam", "seq": 312, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.733}
+{"type": "obstacles", "source": "webcam", "seq": 313, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.8}
+{"type": "obstacles", "source": "webcam", "seq": 314, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.867}
+{"type": "obstacles", "source": "webcam", "seq": 315, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 20.933}
+{"type": "beacon", "bearing": 5.2558927897503125, "distance": 32.7, "label": "the Palace of Fine Arts", "t": 21.0}
+{"type": "obstacles", "source": "webcam", "seq": 316, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.0}
+{"type": "obstacles", "source": "webcam", "seq": 317, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.067}
+{"type": "obstacles", "source": "webcam", "seq": 318, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.133}
+{"type": "obstacles", "source": "webcam", "seq": 319, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.2}
+{"type": "obstacles", "source": "webcam", "seq": 320, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.267}
+{"type": "obstacles", "source": "webcam", "seq": 321, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.333}
+{"type": "obstacles", "source": "webcam", "seq": 322, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.4}
+{"type": "obstacles", "source": "webcam", "seq": 323, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.467}
+{"type": "beacon", "bearing": 6.183618847827865, "distance": 32.05, "label": "the Palace of Fine Arts", "t": 21.5}
+{"type": "obstacles", "source": "webcam", "seq": 324, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.533}
+{"type": "obstacles", "source": "webcam", "seq": 325, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.6}
+{"type": "obstacles", "source": "webcam", "seq": 326, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.667}
+{"type": "obstacles", "source": "webcam", "seq": 327, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.733}
+{"type": "obstacles", "source": "webcam", "seq": 328, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.8}
+{"type": "obstacles", "source": "webcam", "seq": 329, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.867}
+{"type": "obstacles", "source": "webcam", "seq": 330, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 21.933}
+{"type": "beacon", "bearing": 6.939974956950448, "distance": 31.4, "label": "the Palace of Fine Arts", "t": 22.0}
+{"type": "obstacles", "source": "webcam", "seq": 331, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.0}
+{"type": "obstacles", "source": "webcam", "seq": 332, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.067}
+{"type": "obstacles", "source": "webcam", "seq": 333, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.133}
+{"type": "obstacles", "source": "webcam", "seq": 334, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.2}
+{"type": "obstacles", "source": "webcam", "seq": 335, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.267}
+{"type": "obstacles", "source": "webcam", "seq": 336, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.333}
+{"type": "obstacles", "source": "webcam", "seq": 337, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.4}
+{"type": "obstacles", "source": "webcam", "seq": 338, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.467}
+{"type": "beacon", "bearing": 7.503999814197911, "distance": 30.75, "label": "the Palace of Fine Arts", "t": 22.5}
+{"type": "hazard", "kind": "crosswalk", "state": "walk", "bearing": 3, "distance": 4, "ttl": 15, "t": 22.5}
+{"type": "obstacles", "source": "webcam", "seq": 339, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.533}
+{"type": "obstacles", "source": "webcam", "seq": 340, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.6}
+{"type": "obstacles", "source": "webcam", "seq": 341, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.667}
+{"type": "obstacles", "source": "webcam", "seq": 342, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.733}
+{"type": "obstacles", "source": "webcam", "seq": 343, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.8}
+{"type": "obstacles", "source": "webcam", "seq": 344, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.867}
+{"type": "obstacles", "source": "webcam", "seq": 345, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 22.933}
+{"type": "beacon", "bearing": 7.860062295890986, "distance": 30.099999999999998, "label": "the Palace of Fine Arts", "t": 23.0}
+{"type": "obstacles", "source": "webcam", "seq": 346, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.0}
+{"type": "obstacles", "source": "webcam", "seq": 347, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.067}
+{"type": "obstacles", "source": "webcam", "seq": 348, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.133}
+{"type": "obstacles", "source": "webcam", "seq": 349, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.2}
+{"type": "obstacles", "source": "webcam", "seq": 350, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.267}
+{"type": "obstacles", "source": "webcam", "seq": 351, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.333}
+{"type": "obstacles", "source": "webcam", "seq": 352, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.4}
+{"type": "obstacles", "source": "webcam", "seq": 353, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.467}
+{"type": "beacon", "bearing": 7.99829465131377, "distance": 29.45, "label": "the Palace of Fine Arts", "t": 23.5}
+{"type": "obstacles", "source": "webcam", "seq": 354, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.533}
+{"type": "obstacles", "source": "webcam", "seq": 355, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.6}
+{"type": "obstacles", "source": "webcam", "seq": 356, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.667}
+{"type": "obstacles", "source": "webcam", "seq": 357, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.733}
+{"type": "obstacles", "source": "webcam", "seq": 358, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.8}
+{"type": "obstacles", "source": "webcam", "seq": 359, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.867}
+{"type": "obstacles", "source": "webcam", "seq": 360, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 23.933}
+{"type": "beacon", "bearing": 7.914865972987054, "distance": 28.799999999999997, "label": "the Palace of Fine Arts", "t": 24.0}
+{"type": "obstacles", "source": "webcam", "seq": 361, "objects": [{"id": "p2", "kind": "person", "bearing": 55, "distance": 3.0, "confidence": 0.7}], "t": 24.0}
+{"type": "obstacles", "source": "webcam", "seq": 362, "objects": [], "t": 24.067}
+{"type": "obstacles", "source": "webcam", "seq": 363, "objects": [], "t": 24.133}
+{"type": "obstacles", "source": "webcam", "seq": 364, "objects": [], "t": 24.2}
+{"type": "obstacles", "source": "webcam", "seq": 365, "objects": [], "t": 24.267}
+{"type": "obstacles", "source": "webcam", "seq": 366, "objects": [], "t": 24.333}
+{"type": "obstacles", "source": "webcam", "seq": 367, "objects": [], "t": 24.4}
+{"type": "obstacles", "source": "webcam", "seq": 368, "objects": [], "t": 24.467}
+{"type": "beacon", "bearing": 7.612088364664009, "distance": 28.15, "label": "the Palace of Fine Arts", "t": 24.5}
+{"type": "obstacles", "source": "webcam", "seq": 369, "objects": [], "t": 24.533}
+{"type": "obstacles", "source": "webcam", "seq": 370, "objects": [], "t": 24.6}
+{"type": "obstacles", "source": "webcam", "seq": 371, "objects": [], "t": 24.667}
+{"type": "obstacles", "source": "webcam", "seq": 372, "objects": [], "t": 24.733}
+{"type": "obstacles", "source": "webcam", "seq": 373, "objects": [], "t": 24.8}
+{"type": "obstacles", "source": "webcam", "seq": 374, "objects": [], "t": 24.867}
+{"type": "obstacles", "source": "webcam", "seq": 375, "objects": [], "t": 24.933}
+{"type": "beacon", "bearing": -45, "distance": 27.5, "label": "the Palace of Fine Arts", "t": 25.0}
+{"type": "obstacles", "source": "webcam", "seq": 376, "objects": [], "t": 25.0}
+{"type": "guidance", "text": "Turn left onto Bay Street.", "key": "step-2", "ttl": 6, "bearing": -60, "t": 25.0}
+{"type": "obstacles", "source": "webcam", "seq": 377, "objects": [], "t": 25.067}
+{"type": "obstacles", "source": "webcam", "seq": 378, "objects": [], "t": 25.133}
+{"type": "obstacles", "source": "webcam", "seq": 379, "objects": [], "t": 25.2}
+{"type": "obstacles", "source": "webcam", "seq": 380, "objects": [], "t": 25.267}
+{"type": "obstacles", "source": "webcam", "seq": 381, "objects": [], "t": 25.333}
+{"type": "obstacles", "source": "webcam", "seq": 382, "objects": [], "t": 25.4}
+{"type": "obstacles", "source": "webcam", "seq": 383, "objects": [], "t": 25.467}
+{"type": "beacon", "bearing": -45, "distance": 26.85, "label": "the Palace of Fine Arts", "t": 25.5}
+{"type": "obstacles", "source": "webcam", "seq": 384, "objects": [], "t": 25.533}
+{"type": "obstacles", "source": "webcam", "seq": 385, "objects": [], "t": 25.6}
+{"type": "obstacles", "source": "webcam", "seq": 386, "objects": [], "t": 25.667}
+{"type": "obstacles", "source": "webcam", "seq": 387, "objects": [], "t": 25.733}
+{"type": "obstacles", "source": "webcam", "seq": 388, "objects": [], "t": 25.8}
+{"type": "obstacles", "source": "webcam", "seq": 389, "objects": [], "t": 25.867}
+{"type": "obstacles", "source": "webcam", "seq": 390, "objects": [], "t": 25.933}
+{"type": "beacon", "bearing": -45, "distance": 26.199999999999996, "label": "the Palace of Fine Arts", "t": 26.0}
+{"type": "obstacles", "source": "webcam", "seq": 391, "objects": [], "t": 26.0}
+{"type": "hazard", "kind": "crowd", "text": "Small crowd ahead on the right.", "bearing": 30, "ttl": 10, "priority": "nav", "t": 26.0}
+{"type": "obstacles", "source": "webcam", "seq": 392, "objects": [], "t": 26.067}
+{"type": "obstacles", "source": "webcam", "seq": 393, "objects": [], "t": 26.133}
+{"type": "obstacles", "source": "webcam", "seq": 394, "objects": [], "t": 26.2}
+{"type": "obstacles", "source": "webcam", "seq": 395, "objects": [], "t": 26.267}
+{"type": "obstacles", "source": "webcam", "seq": 396, "objects": [], "t": 26.333}
+{"type": "obstacles", "source": "webcam", "seq": 397, "objects": [], "t": 26.4}
+{"type": "obstacles", "source": "webcam", "seq": 398, "objects": [], "t": 26.467}
+{"type": "beacon", "bearing": -45, "distance": 25.549999999999997, "label": "the Palace of Fine Arts", "t": 26.5}
+{"type": "obstacles", "source": "webcam", "seq": 399, "objects": [], "t": 26.533}
+{"type": "obstacles", "source": "webcam", "seq": 400, "objects": [], "t": 26.6}
+{"type": "obstacles", "source": "webcam", "seq": 401, "objects": [], "t": 26.667}
+{"type": "obstacles", "source": "webcam", "seq": 402, "objects": [], "t": 26.733}
+{"type": "obstacles", "source": "webcam", "seq": 403, "objects": [], "t": 26.8}
+{"type": "obstacles", "source": "webcam", "seq": 404, "objects": [], "t": 26.867}
+{"type": "obstacles", "source": "webcam", "seq": 405, "objects": [], "t": 26.933}
+{"type": "beacon", "bearing": -45, "distance": 24.9, "label": "the Palace of Fine Arts", "t": 27.0}
+{"type": "obstacles", "source": "webcam", "seq": 406, "objects": [], "t": 27.0}
+{"type": "obstacles", "source": "webcam", "seq": 407, "objects": [], "t": 27.067}
+{"type": "obstacles", "source": "webcam", "seq": 408, "objects": [], "t": 27.133}
+{"type": "obstacles", "source": "webcam", "seq": 409, "objects": [], "t": 27.2}
+{"type": "obstacles", "source": "webcam", "seq": 410, "objects": [], "t": 27.267}
+{"type": "obstacles", "source": "webcam", "seq": 411, "objects": [], "t": 27.333}
+{"type": "obstacles", "source": "webcam", "seq": 412, "objects": [], "t": 27.4}
+{"type": "obstacles", "source": "webcam", "seq": 413, "objects": [], "t": 27.467}
+{"type": "beacon", "bearing": -45, "distance": 24.25, "label": "the Palace of Fine Arts", "t": 27.5}
+{"type": "obstacles", "source": "webcam", "seq": 414, "objects": [], "t": 27.533}
+{"type": "obstacles", "source": "webcam", "seq": 415, "objects": [], "t": 27.6}
+{"type": "obstacles", "source": "webcam", "seq": 416, "objects": [], "t": 27.667}
+{"type": "obstacles", "source": "webcam", "seq": 417, "objects": [], "t": 27.733}
+{"type": "obstacles", "source": "webcam", "seq": 418, "objects": [], "t": 27.8}
+{"type": "obstacles", "source": "webcam", "seq": 419, "objects": [], "t": 27.867}
+{"type": "obstacles", "source": "webcam", "seq": 420, "objects": [], "t": 27.933}
+{"type": "beacon", "bearing": -5, "distance": 23.6, "label": "the Palace of Fine Arts", "t": 28.0}
+{"type": "obstacles", "source": "webcam", "seq": 421, "objects": [], "t": 28.0}
+{"type": "obstacles", "source": "webcam", "seq": 422, "objects": [], "t": 28.067}
+{"type": "obstacles", "source": "webcam", "seq": 423, "objects": [], "t": 28.133}
+{"type": "obstacles", "source": "webcam", "seq": 424, "objects": [], "t": 28.2}
+{"type": "obstacles", "source": "webcam", "seq": 425, "objects": [], "t": 28.267}
+{"type": "obstacles", "source": "webcam", "seq": 426, "objects": [], "t": 28.333}
+{"type": "obstacles", "source": "webcam", "seq": 427, "objects": [], "t": 28.4}
+{"type": "obstacles", "source": "webcam", "seq": 428, "objects": [], "t": 28.467}
+{"type": "beacon", "bearing": -5, "distance": 22.949999999999996, "label": "the Palace of Fine Arts", "t": 28.5}
+{"type": "obstacles", "source": "webcam", "seq": 429, "objects": [], "t": 28.533}
+{"type": "obstacles", "source": "webcam", "seq": 430, "objects": [], "t": 28.6}
+{"type": "obstacles", "source": "webcam", "seq": 431, "objects": [], "t": 28.667}
+{"type": "obstacles", "source": "webcam", "seq": 432, "objects": [], "t": 28.733}
+{"type": "obstacles", "source": "webcam", "seq": 433, "objects": [], "t": 28.8}
+{"type": "obstacles", "source": "webcam", "seq": 434, "objects": [], "t": 28.867}
+{"type": "obstacles", "source": "webcam", "seq": 435, "objects": [], "t": 28.933}
+{"type": "beacon", "bearing": -5, "distance": 22.299999999999997, "label": "the Palace of Fine Arts", "t": 29.0}
+{"type": "obstacles", "source": "webcam", "seq": 436, "objects": [], "t": 29.0}
+{"type": "obstacles", "source": "webcam", "seq": 437, "objects": [], "t": 29.067}
+{"type": "obstacles", "source": "webcam", "seq": 438, "objects": [], "t": 29.133}
+{"type": "obstacles", "source": "webcam", "seq": 439, "objects": [], "t": 29.2}
+{"type": "obstacles", "source": "webcam", "seq": 440, "objects": [], "t": 29.267}
+{"type": "obstacles", "source": "webcam", "seq": 441, "objects": [], "t": 29.333}
+{"type": "obstacles", "source": "webcam", "seq": 442, "objects": [], "t": 29.4}
+{"type": "obstacles", "source": "webcam", "seq": 443, "objects": [], "t": 29.467}
+{"type": "beacon", "bearing": -5, "distance": 21.65, "label": "the Palace of Fine Arts", "t": 29.5}
+{"type": "obstacles", "source": "webcam", "seq": 444, "objects": [], "t": 29.533}
+{"type": "obstacles", "source": "webcam", "seq": 445, "objects": [], "t": 29.6}
+{"type": "obstacles", "source": "webcam", "seq": 446, "objects": [], "t": 29.667}
+{"type": "obstacles", "source": "webcam", "seq": 447, "objects": [], "t": 29.733}
+{"type": "obstacles", "source": "webcam", "seq": 448, "objects": [], "t": 29.8}
+{"type": "obstacles", "source": "webcam", "seq": 449, "objects": [], "t": 29.867}
+{"type": "obstacles", "source": "webcam", "seq": 450, "objects": [], "t": 29.933}
+{"type": "beacon", "bearing": -5, "distance": 21.0, "label": "the Palace of Fine Arts", "t": 30.0}
+{"type": "obstacles", "source": "webcam", "seq": 451, "objects": [], "t": 30.0}
+{"type": "status", "source": "drone", "battery": 28, "state": "following", "t": 30.0}
+{"type": "obstacles", "source": "webcam", "seq": 452, "objects": [], "t": 30.067}
+{"type": "obstacles", "source": "webcam", "seq": 453, "objects": [], "t": 30.133}
+{"type": "obstacles", "source": "webcam", "seq": 454, "objects": [], "t": 30.2}
+{"type": "obstacles", "source": "webcam", "seq": 455, "objects": [], "t": 30.267}
+{"type": "obstacles", "source": "webcam", "seq": 456, "objects": [], "t": 30.333}
+{"type": "obstacles", "source": "webcam", "seq": 457, "objects": [], "t": 30.4}
+{"type": "obstacles", "source": "webcam", "seq": 458, "objects": [], "t": 30.467}
+{"type": "beacon", "bearing": -5, "distance": 20.35, "label": "the Palace of Fine Arts", "t": 30.5}
+{"type": "obstacles", "source": "webcam", "seq": 459, "objects": [], "t": 30.533}
+{"type": "obstacles", "source": "webcam", "seq": 460, "objects": [], "t": 30.6}
+{"type": "obstacles", "source": "webcam", "seq": 461, "objects": [], "t": 30.667}
+{"type": "obstacles", "source": "webcam", "seq": 462, "objects": [], "t": 30.733}
+{"type": "obstacles", "source": "webcam", "seq": 463, "objects": [], "t": 30.8}
+{"type": "obstacles", "source": "webcam", "seq": 464, "objects": [], "t": 30.867}
+{"type": "obstacles", "source": "webcam", "seq": 465, "objects": [], "t": 30.933}
+{"type": "beacon", "bearing": -5, "distance": 19.699999999999996, "label": "the Palace of Fine Arts", "t": 31.0}
+{"type": "obstacles", "source": "webcam", "seq": 466, "objects": [], "t": 31.0}
+{"type": "obstacles", "source": "webcam", "seq": 467, "objects": [], "t": 31.067}
+{"type": "obstacles", "source": "webcam", "seq": 468, "objects": [], "t": 31.133}
+{"type": "obstacles", "source": "webcam", "seq": 469, "objects": [], "t": 31.2}
+{"type": "obstacles", "source": "webcam", "seq": 470, "objects": [], "t": 31.267}
+{"type": "obstacles", "source": "webcam", "seq": 471, "objects": [], "t": 31.333}
+{"type": "obstacles", "source": "webcam", "seq": 472, "objects": [], "t": 31.4}
+{"type": "obstacles", "source": "webcam", "seq": 473, "objects": [], "t": 31.467}
+{"type": "beacon", "bearing": -5, "distance": 19.049999999999997, "label": "the Palace of Fine Arts", "t": 31.5}
+{"type": "obstacles", "source": "webcam", "seq": 474, "objects": [], "t": 31.533}
+{"type": "obstacles", "source": "webcam", "seq": 475, "objects": [], "t": 31.6}
+{"type": "obstacles", "source": "webcam", "seq": 476, "objects": [], "t": 31.667}
+{"type": "obstacles", "source": "webcam", "seq": 477, "objects": [], "t": 31.733}
+{"type": "obstacles", "source": "webcam", "seq": 478, "objects": [], "t": 31.8}
+{"type": "obstacles", "source": "webcam", "seq": 479, "objects": [], "t": 31.867}
+{"type": "obstacles", "source": "webcam", "seq": 480, "objects": [], "t": 31.933}
+{"type": "beacon", "bearing": -5, "distance": 18.4, "label": "the Palace of Fine Arts", "t": 32.0}
+{"type": "obstacles", "source": "webcam", "seq": 481, "objects": [], "t": 32.0}
+{"type": "obstacles", "source": "webcam", "seq": 481, "objects": [], "t": 32.067}
+{"type": "obstacles", "source": "webcam", "seq": 483, "objects": [], "t": 32.133}
+{"type": "obstacles", "source": "webcam", "seq": 484, "objects": [], "t": 32.2}
+{"type": "obstacles", "source": "webcam", "seq": 485, "objects": [], "t": 32.267}
+{"type": "obstacles", "source": "webcam", "seq": 485, "objects": [], "t": 32.333}
+{"type": "obstacles", "source": "webcam", "seq": 487, "objects": [], "t": 32.4}
+{"type": "obstacles", "source": "webcam", "seq": 488, "objects": [], "t": 32.467}
+{"type": "beacon", "bearing": -5, "distance": 17.75, "label": "the Palace of Fine Arts", "t": 32.5}
+{"type": "obstacles", "source": "webcam", "seq": 489, "objects": [], "t": 32.533}
+{"type": "obstacles", "source": "webcam", "seq": 490, "objects": [], "t": 32.6}
+{"type": "obstacles", "source": "webcam", "seq": 491, "objects": [], "t": 32.667}
+{"type": "obstacles", "source": "webcam", "seq": 492, "objects": [], "t": 32.733}
+{"type": "obstacles", "source": "webcam", "seq": 492, "objects": [], "t": 32.8}
+{"type": "obstacles", "source": "webcam", "seq": 494, "objects": [], "t": 32.867}
+{"type": "obstacles", "source": "webcam", "seq": 495, "objects": [], "t": 32.933}
+{"type": "beacon", "bearing": -5, "distance": 17.1, "label": "the Palace of Fine Arts", "t": 33.0}
+{"type": "obstacles", "source": "webcam", "seq": 496, "objects": [], "t": 33.0}
+{"type": "obstacles", "source": "webcam", "seq": 497, "objects": [], "t": 33.067}
+{"type": "obstacles", "source": "webcam", "seq": 498, "objects": [], "t": 33.133}
+{"type": "obstacles", "source": "webcam", "seq": 499, "objects": [], "t": 33.2}
+{"type": "obstacles", "source": "webcam", "seq": 500, "objects": [], "t": 33.267}
+{"type": "obstacles", "source": "webcam", "seq": 501, "objects": [], "t": 33.333}
+{"type": "obstacles", "source": "webcam", "seq": 502, "objects": [], "t": 33.4}
+{"type": "obstacles", "source": "webcam", "seq": 503, "objects": [], "t": 33.467}
+{"type": "beacon", "bearing": -5, "distance": 16.449999999999996, "label": "the Palace of Fine Arts", "t": 33.5}
+{"type": "obstacles", "source": "webcam", "seq": 504, "objects": [], "t": 33.533}
+{"type": "obstacles", "source": "webcam", "seq": 505, "objects": [], "t": 33.6}
+{"type": "obstacles", "source": "webcam", "seq": 505, "objects": [], "t": 33.667}
+{"type": "obstacles", "source": "webcam", "seq": 507, "objects": [], "t": 33.733}
+{"type": "obstacles", "source": "webcam", "seq": 507, "objects": [], "t": 33.8}
+{"type": "obstacles", "source": "webcam", "seq": 509, "objects": [], "t": 33.867}
+{"type": "obstacles", "source": "webcam", "seq": 509, "objects": [], "t": 33.933}
+{"type": "beacon", "bearing": -5, "distance": 15.799999999999997, "label": "the Palace of Fine Arts", "t": 34.0}
+{"type": "obstacles", "source": "webcam", "seq": 511, "objects": [], "t": 34.0}
+{"type": "obstacles", "source": "webcam", "seq": 512, "objects": [], "t": 34.067}
+{"type": "obstacles", "source": "webcam", "seq": 513, "objects": [], "t": 34.133}
+{"type": "obstacles", "source": "webcam", "seq": 514, "objects": [], "t": 34.2}
+{"type": "obstacles", "source": "webcam", "seq": 515, "objects": [], "t": 34.267}
+{"type": "obstacles", "source": "webcam", "seq": 516, "objects": [], "t": 34.333}
+{"type": "obstacles", "source": "webcam", "seq": 517, "objects": [], "t": 34.4}
+{"type": "obstacles", "source": "webcam", "seq": 518, "objects": [], "t": 34.467}
+{"type": "beacon", "bearing": -5, "distance": 15.149999999999999, "label": "the Palace of Fine Arts", "t": 34.5}
+{"type": "obstacles", "source": "webcam", "seq": 519, "objects": [], "t": 34.533}
+{"type": "obstacles", "source": "webcam", "seq": 520, "objects": [], "t": 34.6}
+{"type": "obstacles", "source": "webcam", "seq": 521, "objects": [], "t": 34.667}
+{"type": "obstacles", "source": "webcam", "seq": 522, "objects": [], "t": 34.733}
+{"type": "obstacles", "source": "webcam", "seq": 523, "objects": [], "t": 34.8}
+{"type": "obstacles", "source": "webcam", "seq": 524, "objects": [], "t": 34.867}
+{"type": "obstacles", "source": "webcam", "seq": 525, "objects": [], "t": 34.933}
+{"type": "beacon", "bearing": -5, "distance": 14.5, "label": "the Palace of Fine Arts", "t": 35.0}
+{"type": "obstacles", "source": "webcam", "seq": 526, "objects": [], "t": 35.0}
+{"type": "obstacles", "source": "webcam", "seq": 527, "objects": [], "t": 35.067}
+{"type": "obstacles", "source": "webcam", "seq": 528, "objects": [], "t": 35.133}
+{"type": "obstacles", "source": "webcam", "seq": 529, "objects": [], "t": 35.2}
+{"type": "obstacles", "source": "webcam", "seq": 530, "objects": [], "t": 35.267}
+{"type": "obstacles", "source": "webcam", "seq": 531, "objects": [], "t": 35.333}
+{"type": "obstacles", "source": "webcam", "seq": 532, "objects": [], "t": 35.4}
+{"type": "obstacles", "source": "webcam", "seq": 533, "objects": [], "t": 35.467}
+{"type": "beacon", "bearing": -5, "distance": 13.850000000000001, "label": "the Palace of Fine Arts", "t": 35.5}
+{"type": "obstacles", "source": "webcam", "seq": 534, "objects": [], "t": 35.533}
+{"type": "obstacles", "source": "webcam", "seq": 535, "objects": [], "t": 35.6}
+{"type": "obstacles", "source": "webcam", "seq": 536, "objects": [], "t": 35.667}
+{"type": "obstacles", "source": "webcam", "seq": 537, "objects": [], "t": 35.733}
+{"type": "obstacles", "source": "webcam", "seq": 538, "objects": [], "t": 35.8}
+{"type": "obstacles", "source": "webcam", "seq": 539, "objects": [], "t": 35.867}
+{"type": "obstacles", "source": "webcam", "seq": 540, "objects": [], "t": 35.933}
+{"type": "beacon", "bearing": -5, "distance": 13.199999999999996, "label": "the Palace of Fine Arts", "t": 36.0}
+{"type": "obstacles", "source": "webcam", "seq": 541, "objects": [], "t": 36.0}
+{"type": "obstacles", "source": "webcam", "seq": 542, "objects": [], "t": 36.067}
+{"type": "obstacles", "source": "webcam", "seq": 543, "objects": [], "t": 36.133}
+{"type": "obstacles", "source": "webcam", "seq": 544, "objects": [], "t": 36.2}
+{"type": "obstacles", "source": "webcam", "seq": 545, "objects": [], "t": 36.267}
+{"type": "obstacles", "source": "webcam", "seq": 546, "objects": [], "t": 36.333}
+{"type": "obstacles", "source": "webcam", "seq": 547, "objects": [], "t": 36.4}
+{"type": "obstacles", "source": "webcam", "seq": 548, "objects": [], "t": 36.467}
+{"type": "beacon", "bearing": -5, "distance": 12.549999999999997, "label": "the Palace of Fine Arts", "t": 36.5}
+{"type": "obstacles", "source": "webcam", "seq": 549, "objects": [], "t": 36.533}
+{"type": "obstacles", "source": "webcam", "seq": 550, "objects": [], "t": 36.6}
+{"type": "obstacles", "source": "webcam", "seq": 551, "objects": [], "t": 36.667}
+{"type": "obstacles", "source": "webcam", "seq": 552, "objects": [], "t": 36.733}
+{"type": "obstacles", "source": "webcam", "seq": 553, "objects": [], "t": 36.8}
+{"type": "obstacles", "source": "webcam", "seq": 554, "objects": [], "t": 36.867}
+{"type": "obstacles", "source": "webcam", "seq": 555, "objects": [], "t": 36.933}
+{"type": "beacon", "bearing": -5, "distance": 11.899999999999999, "label": "the Palace of Fine Arts", "t": 37.0}
+{"type": "obstacles", "source": "webcam", "seq": 556, "objects": [], "t": 37.0}
+{"type": "obstacles", "source": "webcam", "seq": 557, "objects": [], "t": 37.067}
+{"type": "obstacles", "source": "webcam", "seq": 558, "objects": [], "t": 37.133}
+{"type": "obstacles", "source": "webcam", "seq": 559, "objects": [], "t": 37.2}
+{"type": "obstacles", "source": "webcam", "seq": 560, "objects": [], "t": 37.267}
+{"type": "obstacles", "source": "webcam", "seq": 561, "objects": [], "t": 37.333}
+{"type": "obstacles", "source": "webcam", "seq": 562, "objects": [], "t": 37.4}
+{"type": "obstacles", "source": "webcam", "seq": 563, "objects": [], "t": 37.467}
+{"type": "beacon", "bearing": -5, "distance": 11.25, "label": "the Palace of Fine Arts", "t": 37.5}
+{"type": "obstacles", "source": "webcam", "seq": 564, "objects": [], "t": 37.533}
+{"type": "obstacles", "source": "webcam", "seq": 565, "objects": [], "t": 37.6}
+{"type": "obstacles", "source": "webcam", "seq": 566, "objects": [], "t": 37.667}
+{"type": "obstacles", "source": "webcam", "seq": 567, "objects": [], "t": 37.733}
+{"type": "obstacles", "source": "webcam", "seq": 568, "objects": [], "t": 37.8}
+{"type": "obstacles", "source": "webcam", "seq": 569, "objects": [], "t": 37.867}
+{"type": "obstacles", "source": "webcam", "seq": 570, "objects": [], "t": 37.933}
+{"type": "beacon", "bearing": -5, "distance": 10.600000000000001, "label": "the Palace of Fine Arts", "t": 38.0}
+{"type": "obstacles", "source": "webcam", "seq": 571, "objects": [], "t": 38.0}
+{"type": "obstacles", "source": "webcam", "seq": 572, "objects": [], "t": 38.067}
+{"type": "obstacles", "source": "webcam", "seq": 573, "objects": [], "t": 38.133}
+{"type": "obstacles", "source": "webcam", "seq": 574, "objects": [], "t": 38.2}
+{"type": "obstacles", "source": "webcam", "seq": 575, "objects": [], "t": 38.267}
+{"type": "obstacles", "source": "webcam", "seq": 576, "objects": [], "t": 38.333}
+{"type": "obstacles", "source": "webcam", "seq": 577, "objects": [], "t": 38.4}
+{"type": "obstacles", "source": "webcam", "seq": 578, "objects": [], "t": 38.467}
+{"type": "beacon", "bearing": -5, "distance": 9.949999999999996, "label": "the Palace of Fine Arts", "t": 38.5}
+{"type": "obstacles", "source": "webcam", "seq": 579, "objects": [], "t": 38.533}
+{"type": "obstacles", "source": "webcam", "seq": 580, "objects": [], "t": 38.6}
+{"type": "obstacles", "source": "webcam", "seq": 581, "objects": [], "t": 38.667}
+{"type": "obstacles", "source": "webcam", "seq": 582, "objects": [], "t": 38.733}
+{"type": "obstacles", "source": "webcam", "seq": 583, "objects": [], "t": 38.8}
+{"type": "obstacles", "source": "webcam", "seq": 584, "objects": [], "t": 38.867}
+{"type": "obstacles", "source": "webcam", "seq": 585, "objects": [], "t": 38.933}
+{"type": "beacon", "bearing": -5, "distance": 9.299999999999997, "label": "the Palace of Fine Arts", "t": 39.0}
+{"type": "obstacles", "source": "webcam", "seq": 586, "objects": [], "t": 39.0}
+{"type": "obstacles", "source": "webcam", "seq": 587, "objects": [], "t": 39.067}
+{"type": "obstacles", "source": "webcam", "seq": 588, "objects": [], "t": 39.133}
+{"type": "obstacles", "source": "webcam", "seq": 589, "objects": [], "t": 39.2}
+{"type": "obstacles", "source": "webcam", "seq": 590, "objects": [], "t": 39.267}
+{"type": "obstacles", "source": "webcam", "seq": 591, "objects": [], "t": 39.333}
+{"type": "obstacles", "source": "webcam", "seq": 592, "objects": [], "t": 39.4}
+{"type": "obstacles", "source": "webcam", "seq": 593, "objects": [], "t": 39.467}
+{"type": "beacon", "bearing": -5, "distance": 8.649999999999999, "label": "the Palace of Fine Arts", "t": 39.5}
+{"type": "obstacles", "source": "webcam", "seq": 594, "objects": [], "t": 39.533}
+{"type": "obstacles", "source": "webcam", "seq": 595, "objects": [], "t": 39.6}
+{"type": "obstacles", "source": "webcam", "seq": 596, "objects": [], "t": 39.667}
+{"type": "obstacles", "source": "webcam", "seq": 597, "objects": [], "t": 39.733}
+{"type": "obstacles", "source": "webcam", "seq": 598, "objects": [], "t": 39.8}
+{"type": "obstacles", "source": "webcam", "seq": 599, "objects": [], "t": 39.867}
+{"type": "obstacles", "source": "webcam", "seq": 600, "objects": [], "t": 39.933}
+{"type": "beacon", "bearing": -5, "distance": 8.0, "label": "the Palace of Fine Arts", "t": 40.0}
+{"type": "beacon", "bearing": -5, "distance": 7.350000000000001, "label": "the Palace of Fine Arts", "t": 40.5}
