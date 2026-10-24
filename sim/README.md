@@ -4,7 +4,7 @@ A browser street corner with an arrow-key walker and two virtual cameras. A dron
 
 ## World
 
-The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world. Locally, a Blender-built street with Street View facades replaces the OSM look when its file exists (`?world=real`, see Real facades below).
+The world is Moss Street in SoMa, San Francisco, running from Howard St at its NW end, where the demo crossing is, to Folsom. It is built from OpenStreetMap: building footprints with textured facades, roads at estimated widths, sidewalks raised 15 cm, the zebra across Moss at Howard, and Howard's cycle track (see OSM look below). Building faces and curbs block the walker, and each marked crossing has a gap in the curb. With a Google Maps key the sim draws it from Google Photorealistic 3D Tiles instead, geofenced to this one street (`?world=tiles`; see below). `?world=moss` forces the OSM world everywhere, and `?world=placeholder` loads the old box world. Locally, a Blender-built street with Street View facades replaces the OSM look when its file exists (`?world=real`, see Real facades below). Without Blender, `?world=photo` puts the Street View walls straight onto the OSM buildings (see Photo facades below).
 
 - `scripts/osm_corner.py` fetches OSM and writes `public/osm/moss.json` in metres (x east, y north), with the origin at the Moss zebra, OSM node 12144593726. Run it again to refresh. `python scripts/osm_corner.py raw.json` reuses a saved Overpass response.
 - `moss.json` also has `lanes`: car lane polylines in travel order with `speed_mps`. Moss flows SE (Howard to Folsom) and Howard flows SW. `src/osmWorld.ts` exports them as `lanes`, and the traffic drives on them (see Cars and people).
@@ -38,9 +38,19 @@ Cars are found more often. People past 20 m are found less: in front of textured
 
 The plan was to texture each street-facing wall with a rectified Mapillary photo (CC BY-SA 4.0). There was no `MAPILLARY_TOKEN` in `.env`, so only the geometry exists: `scripts/facade_rectify.py` projects a wall into a Mapillary camera (position, compass angle, focal from `camera_parameters`) and warps it into a texture with a homography. `uv run --no-project --with numpy python scripts/facade_rectify.py` runs its self-check, which renders a synthetic wall through a known camera and rectifies it back. The docstring has the Graph API query and the image selection rule for when a token exists.
 
+### Photo facades (`?world=photo`, local only)
+
+`?world=photo` is the default when any of `public/local/facades_ne/`, `facades_sw/` or `facades_howard/` has a `manifest.json`. It's the OSM world (`src/photoWorld.ts`) with each wall listed in a manifest drawn as one quad carrying its Street View photo. The other walls keep the procedural `osmFacades` look, and streets, curbs and furniture still come from `osmStreet`. Collision, lanes, route, spawn and traffic don't change. The screen renderer and the capture renderer both draw it. It was built for the demo video's street-level shots, so it only has to look right along the route.
+
+- Manifest: a JSON list (or `{"walls": [...]}`) of `building_id`, `wall_index` (the OSM footprint edge, `pts[i]` to `pts[i+1]`), `corners_local_m` (4 points in `moss.json` metres, bottom-left as seen from the street first, `[x, y, z]` or `[x, y]`), `width_m`, `height_m`, `texture` (a file in the same folder) and `score`. When two folders cover the same wall, the higher score wins. If `wall_index` doesn't sit under the corners, the sim uses the closest edge of that building and logs it. The image's left edge goes on the bottom-left corner and its top edge at the top.
+- The photo darkens toward the bottom over its lowest 0.6 m so it meets the sidewalk like a contact shadow. A faint plaster normal map and roughness 0.92 keep it from looking flat and shiny.
+- L toggles labels (`building_id/wall_index`) on every footprint edge of 2 m or more, on screen only: green means it has a photo and white means it's procedural. Use it to check that a photo landed on the right wall.
+- The console logs how many walls are photo and how many are procedural, and so does `window.__kitePhotoStats`. `window.__kitePhoto` reads `ready` once every photo has loaded.
+- The textures sit in the gitignored `public/local/` of whichever checkout runs vite. The facade agents write them into the main checkout, so run vite there, or link the folders into a worktree's `sim/public/local/` (vite lists public files at startup, so restart it after a facade agent adds files there). Screenshots go in `public/local/compare_photo/`. Never commit or publish them.
+
 ### Real facades (`?world=real`, local only)
 
-`?world=real` is the default when `public/local/moss_real.glb` exists. It is Moss St built in Blender, with each street-facing wall textured from Google Street View (our permission covers this one street, see `docs/google-permission.md`). The GLB is only the look: collisions, lanes, the route, the spawn and the traffic still come from `moss.json`, and both the screen and capture renderers draw it. Without the file the sim logs a warning and shows the textured OSM street. `?world=moss` forces the OSM street.
+`?world=real` is the default when `public/local/moss_real.glb` exists and no photo manifest does. It is Moss St built in Blender, with each street-facing wall textured from Google Street View (our permission covers this one street, see `docs/google-permission.md`). The GLB is only the look: collisions, lanes, the route, the spawn and the traffic still come from `moss.json`, and both the screen and capture renderers draw it. Without the file the sim logs a warning and shows the textured OSM street. `?world=moss` forces the OSM street.
 
 Street View-derived pixels are never committed or published. The textures, the GLB and any screenshots of it live in `public/local/`, which is gitignored. `npm run build` copies `public/` into `dist/`, so don't publish a build made on a machine that has `public/local/`.
 
@@ -139,6 +149,7 @@ Start them in any order. The page reconnects to the relay and the earpiece every
 | Left / Right | turn |
 | B | black screen (HUD stays) |
 | V | reveal the view |
+| L | `?world=photo`: label walls `building_id/wall_index` (green = photo) |
 | H | DEBUG: send one fake `crowd` hazard to the earpiece, only to prove sim to earpiece to beep for the skeleton gate |
 
 The HUD counts collisions with buildings, cars, pedestrians and the bin.
@@ -315,7 +326,7 @@ The live path is the stand-in detector with a camera index as `--source`. `sim/l
 
 - Distances are a median over 3 frames, and closing speed is a least-squares fit over the last second.
 - Anything inside 1.6 m (`--stop-m`) and within 0.7 m of the walker's path is a stop. So is anything under 1 s from contact. A stop goes out with a closing speed that puts the earpiece's time to contact at 0.8 s. Its sonar then goes critical and says "Stop. Person ahead." at about 1.5 m instead of its own 0.75 m.
-- When a box is cut off by the bottom edge (a person close to a chest camera), the distance comes from the top of the head, assumed 1.7 m (`--person-height`).
+- When a box is cut off by the bottom or the top edge (within 16 px; a person close to a chest camera), the distance comes from the top of the head, assumed 1.7 m (`--person-height`). When both the head and the feet are out of frame, no row can say how close they are, so the box width does, taking a person as 0.45 m wide. At the live settings (960x540, 15 degrees down) that happens inside about 1.65 m; before this, every distance in there read 1.65 m and "Stop" never fired.
 - `--pitch` is the camera's downward tilt in degrees. It goes into the ground-plane distance, and a phone clipped to a shirt usually points 10 to 20 degrees down.
 - `--depth` adds Depth Anything V2 Small (metric, indoor) at 336x252 as a fallback for things YOLO has no class for, such as walls, doors and boxes. It reports something closer than 2.5 m that fills the centre of the frame and isn't floor. It takes about 18 ms a frame on `mps`.
 - `--show` opens the reveal window: live view, labels (kind, bearing, distance, closing speed), and a red banner such as `STOP - person 1.4 m` that stays up 1.5 s. Press `r` to replay the last 20 s, `l` for live, `q` to quit. Heads are pixelated (`--no-blur` turns that off). The 20 s buffer is JPEG bytes in RAM and is never written to disk, and `--overlay` is refused for a live camera (spec 5.3).
@@ -355,6 +366,49 @@ Test clip for the live path without a second person: Pexels "Woman walking insid
 ffmpeg -ss 9 -i clips/pexels-2795407.mp4 -vf "fps=30,scale=960:-2,reverse" -an clips/approach.mp4
 $RUN python sim/standin_detect.py --source clips/approach.mp4 --camera chest --show
 ```
+
+### Live walk bench (40 walks, no camera)
+
+`scripts/live_walk_bench.py` replays the live walk 40 times without a judge or a phone. Each run plays a clip through the stand-in detector (chest settings, real-time pacing that drops frames when it falls behind, as a camera would) into a headless earpiece on its own ports (UDP 6210, WS 6211, no Cartesia key), then reads what the earpiece said over the WebSocket and scores it against the clip's truth.
+
+```
+RUN="uv run --no-project --with ultralytics --with opencv-python-headless --with lap --with websockets --with python-dotenv --with numpy --with scipy"
+$RUN python scripts/live_walk_bench.py prepare                 # once, with internet: clips/bench/ (gitignored)
+$RUN python scripts/live_walk_bench.py run                     # 40 runs, about 20 min; table, JSON in out/bench/
+$RUN python scripts/live_walk_bench.py run --runs 6 --only syn_stepin,syn_cross   # a quick check
+$RUN python scripts/live_walk_bench.py rescore out/bench/<report>.json            # new scoring rules, same runs
+python3 scripts/live_walk_bench.py selftest                    # the scoring rules
+```
+
+It needs `earpiece/.venv` (`scripts/check.sh earpiece`) and `weights/yolo11n.pt`. It refuses to start if 6210 or 6211 is taken and only ever stops the processes it started. `--detector <path>` runs another copy of the detector (a `sim/` folder from another branch, copied to the repo root) for a before/after on the same seed.
+
+The clips:
+
+- Stock, from Pexels and Mixkit (free licenses, downloaded by `prepare`, never committed): `approach` (Pexels 2795407 reversed, then forward again, so she walks up and away), `corridor` (Mixkit 33396, the same up-and-back), `group` (Mixkit 23809, four people walking toward the camera), and two empty corridors that must stay silent (`hotel_empty`, `datacenter_empty`). Their truth is the detector's own geometry run on every frame and median-smoothed, so they test flicker, tracking, crowds and timing, not range.
+- Synthetic, with exact distances: a person cut out of a stock frame and drawn into the empty hotel corridor along a scripted path with the live geometry (960x540, fx 700, 1.2 m up, 15 degrees down). `syn_walkup` walks up to 1.0 to 1.3 m, waits 2 s and steps aside. `syn_stepin` is the demo: the teammate steps in from the side 2.4 m ahead. `syn_slow` and `syn_fast` walk at 0.6 and 1.8 m/s, `syn_occluded` has something dark over the lower left of the lens, `syn_table` hides the legs behind a low table, `syn_two` adds a bystander off the path, `syn_cross` crosses 2.3 to 2.8 m ahead (must not stop), and `syn_empty` is the corridor alone.
+
+Every run gets new jitter from the seed: speed, stop point, sideways offset, brightness and a chest bob of up to 1.2 degrees.
+
+Scoring: a stop is expected when the nearest person within 0.7 m of the path comes inside 1.5 m. Latency is from that frame to the start of "Stop. Person ahead." (negative means it started before 1.5 m). A stop while the truth is beyond 2.2 m, or with nobody on the path, is a false stop. A stop more than 1 s after the 1.5 m frame is late and counts as missed. "Path is clear" must come after the person is beyond 2.5 m or off the path and before the clip ends; one that comes while they are still there is an early continue.
+
+Before and after the fixes in this branch, same seed, back to back on an M5 MacBook (detector p50 34 and 26 fps):
+
+| | main | this branch |
+|---|---|---|
+| passed | 16 / 40 | 37 / 40 |
+| missed or late stops | 24 | 3 (all `syn_table`) |
+| false stops | 0 | 0 |
+| stop latency p50 / p95 | -0.43 / +3.26 s | -0.01 / +0.32 s |
+| missed continues | 3 | 0 |
+| early continues | 3 | 0 |
+
+What it found:
+
+1. At the live settings every synthetic walk-up missed the stop (21 of 21). With the phone 15 degrees down on a 960x540 frame, the head leaves the top of the frame at about 4.7 m and the feet leave the bottom at 1.65 m. Inside that, the top row, the bottom row and the box height all bound the distance from above, so every distance read 1.65 m, which never got under the 1.6 m stop line, and the closing speed fell to zero. A box that loses both head and feet now takes its distance from its width as well.
+2. A box only counted as cut off within 8 px of the bottom edge. YOLO boxes often stop a few pixels short, so in `approach` the same person read 3.2 m on one frame and 1.3 m on the next, the stop came 3 s late, and "Path is clear" came while she was still standing there. Cut off now means within 16 px, and a head out of the top of the frame bounds the distance too.
+3. Known limit: legs hidden behind something low (`syn_table`) make the box bottom look like feet farther away, so the person reads too far and Kite never stops. `--depth` should see the table itself; nothing in the YOLO path can.
+
+Bench fixes on the way: video files are now paced like a camera (skip ahead when behind, so a slow laptop can't fall further and further behind the clip), the detector warms YOLO up before frame 0 so the first frame doesn't stall 4 s, and it prints `[standin] t0_wall=` so the bench can line frames up with speech.
 
 ## Files and placeholders
 
