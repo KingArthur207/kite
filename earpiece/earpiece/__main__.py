@@ -63,10 +63,11 @@ def cmd_run(a) -> int:
     app = Earpiece(cfg, output="null" if a.null else "device", log=_log, output_device=a.output)
     if a.spacetime or cfg.net.spacetime_enabled:
         from .spacetime import CaregiverInbox, SpacetimeBridge
-        app.bridges.append(SpacetimeBridge(source="earpiece", log=_log))
+        app.bridges.append(SpacetimeBridge(cfg.net.spacetime_host, cfg.net.spacetime_db,
+                                           source="earpiece", log=_log))
     app.start()
     if a.spacetime or cfg.net.spacetime_enabled:
-        CaregiverInbox(app.handle, log=_log)
+        CaregiverInbox(app.handle, cfg.net.spacetime_host, cfg.net.spacetime_db, log=_log)
     if not a.no_stem:
         app.gestures.enable_stem()
 

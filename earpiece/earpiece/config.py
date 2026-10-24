@@ -115,9 +115,13 @@ class NetCfg:
     udp_port: int = 5010              # fire-and-forget JSON events from perception / nav
     ws_port: int = 5011               # bidirectional JSON (events in, state + voice requests out)
     bind_host: str = "127.0.0.1"
-    spacetime_host: str = "https://maincloud.spacetimedb.com"
-    spacetime_db: str = "kite-sync-pl6rp"
-    spacetime_enabled: bool = False
+    # SpacetimeDB mirror + caregiver inbox: OFF unless `run --spacetime` or KITE_SPACETIME=1,
+    # because every call spends Maincloud credits.
+    spacetime_host: str = field(default_factory=lambda: os.environ.get("SPACETIME_HOST")
+                                or "https://maincloud.spacetimedb.com")
+    spacetime_db: str = field(default_factory=lambda: os.environ.get("SPACETIME_DB") or "kite-sync-pl6rp")
+    spacetime_enabled: bool = field(default_factory=lambda: os.environ.get("KITE_SPACETIME", "").strip()
+                                    .lower() in ("1", "true", "yes", "on"))
 
 
 @dataclass
