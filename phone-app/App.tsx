@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, AppState, Easing, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { type LinkState, startLink } from './ble';
 import { frameFix } from './frame';
 import { startLocation, stopStaleLocation } from './location';
@@ -97,19 +97,12 @@ export default function App() {
       const cmd = url?.replace(/^kite:\/\//i, '').split(/[/?#]/)[0].toLowerCase();
       if (cmd === 'start') start(prefix);
       else if (cmd === 'stop') stop();
-      else if (prefix) start(prefix); // opened any other way (Action button "Open App", home screen): start too
+      else if (prefix) say(prefix.trim());
     };
     // GPS left registered by a previous run that was killed; start() registers it again
     stopStaleLocation().finally(() => Linking.getInitialURL().then((url) => handle(url, 'Kite open. ')));
     const sub = Linking.addEventListener('url', ({ url }) => handle(url));
-    // Brought back to the front while stopped (Action button on a running app): start again
-    const fg = AppState.addEventListener('change', (s) => {
-      if (s === 'active' && !stops.current) start('Kite open. ');
-    });
-    return () => {
-      sub.remove();
-      fg.remove();
-    };
+    return () => sub.remove();
   }, [start, stop]);
 
   const active = mode !== 'idle';
