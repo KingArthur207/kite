@@ -1,6 +1,6 @@
 // Metrics mode (?metrics=1): scripted walks that count collisions with and without Kite.
 //   mode=blind   walker never reacts
-//   mode=kite    walker reacts ONLY to what the earpiece says/does (ws://127.0.0.1:5011), real time
+//   mode=kite    walker reacts ONLY to what the earpiece says/does (ws://127.0.0.1:5011, or ?ear=), real time
 //   mode=oracle  UPPER BOUND, reacts to ground-truth obstacles 5 m ahead. Never report it as Kite.
 // Params: trials (20), seed (1), speed (sim seconds per real second, blind/oracle only, 300).
 // Runs on the Moss world's demo route with the street emptied; building faces and curbs still block.
@@ -23,7 +23,9 @@ const ORACLE_AHEAD = 5, ORACLE_HALF_W = 0.6, ORACLE_LOOKAHEAD_S = [0, 0.5, 1, 1.
 // The turning car: speed, seconds from its trigger to the zebra (+- jitter), seconds it drives on after.
 const CAR = { v: 6, lead: 8, jitter: 1.2, after: 10, length: 4.6, width: 1.9, height: 1.5 };
 
-type Mode = "blind" | "kite" | "oracle";
+const STATUS_KEYS = ["perception-down", "perception-up", "continue"];   // earpiece app.py speech keys
+
+type Mode ="blind" | "kite" | "oracle";
 const LABEL: Record<Mode, string> = {
   blind: "BLIND (no cues)",
   kite: "KITE (reacts only to earpiece output)",
@@ -162,7 +164,7 @@ export function startMetrics(ctx: {
   let kiteAlarmAt = -1e9, earOpen = false, lastCue = "";
   if (mode === "kite") {
     const connect = () => {
-      const ws = new WebSocket(EARPIECE_URL);
+      const ws = new WebSocket(q.get("ear") || EARPIECE_URL);
       ws.onopen = () => { earOpen = true; };
       ws.onclose = () => { earOpen = false; setTimeout(connect, 2000); };
       ws.onerror = () => ws.close();
@@ -170,7 +172,10 @@ export function startMetrics(ctx: {
         let m: any;
         try { m = JSON.parse(e.data); } catch { return; }
         const now = performance.now() / 1000;
-        if (m.type === "spoken" && ["critical", "hazard"].includes(m.priority) && m.result !== "dropped") {
+        // Status lines share the hazard priority but warn of nothing: "Obstacle detection paused/is back"
+        // and "Path is clear. You can continue." must not stop the walker.
+        if (m.type === "spoken" && ["critical", "hazard"].includes(m.priority) && m.result !== "dropped"
+            && !STATUS_KEYS.includes(m.key)) {
           kiteAlarmAt = now; lastCue = `spoken ${m.priority}: ${m.text}`;
         } else if (m.type === "state") {
           const crit = (m.tracks ?? []).find((t: any) => t.critical);
@@ -186,13 +191,13 @@ export function startMetrics(ctx: {
   const results: any[] = [];
   let trial = 0, obs: Obs[] = [], t = 0, s = 0, side = 0, sideTarget = 0, sideUntil = 0, ignoreUntil = 0;
   let stopped = false, stopAt = Infinity, lastAlarm = -1e9, waited = 0, blockedFor = 0;
-  let touching = new Set<object>(), collisions = 0, done = false;
+  let touching = new Set<object>(), collisions = 0, done = false, stops: number[] = [];
 
   function reset() {
     obs = makeObstacles(trial);
     t = 0; s = 0; side = 0; sideTarget = 0; sideUntil = 0; ignoreUntil = 0;
     stopped = false; stopAt = Infinity; lastAlarm = -1e9; waited = 0; blockedFor = 0;
-    touching = new Set(); collisions = 0;
+    touching = new Set(); collisions = 0; stops = [];
     obs.forEach(place);
     placeWalker();
   }
@@ -236,7 +241,7 @@ export function startMetrics(ctx: {
       const alarm = mode === "oracle" ? oracleAlarm() : performance.now() / 1000 - kiteAlarmAt < 0.3;
       if (alarm) { lastAlarm = t; if (!stopped && stopAt === Infinity) stopAt = t + REACTION_S; }
     }
-    if (!stopped && t >= stopAt) { stopped = true; waited = 0; }
+    if (!stopped && t >= stopAt) { stopped = true; waited = 0; stops.push(+s.toFixed(1)); }
     if (stopped) {
       waited += dt;
       if (t - lastAlarm >= CLEAR_S) { stopped = false; stopAt = Infinity; }
@@ -295,11 +300,12 @@ export function startMetrics(ctx: {
   function finishTrial(completed: boolean) {
     results.push({
       trial, collisions, near_misses: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).length,
-      time_s: +t.toFixed(1), completed,
+      time_s: +t.toFixed(1), completed, stops_at_m: stops,   // route metres where the walker stopped on a cue
       hit: obs.filter((o) => o.hit).map((o) => o.name),
       near: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).map((o) => o.name),
     });
     trial++;
+    (window as any).kiteMetrics = out();   // progress for the headless runner (kite mode is slow)
     if (trial >= trials) return finish();
     reset();
   }
