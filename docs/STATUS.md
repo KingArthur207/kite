@@ -1,6 +1,6 @@
 # Kite status
 
-Last updated Sat Oct 24, 3:25 AM PT by Eddy's Claude session. Submission Sun 9:00 AM; freeze Sat 8:00 PM.
+Last updated Sat Oct 24, 4:15 AM PT. Submission Sun 9:00 AM; freeze Sat 8:00 PM.
 
 ## Try it now (on Eddy's laptop)
 
@@ -32,7 +32,7 @@ scripts/demo.sh stop
 | Sim | Google 3D Tiles on screen, geofenced to Moss St; OSM world as the detector fallback (`?detector=osm`) | #40, #41 |
 | Drone | Drone layer, recorder, calibration, recording replay, flight checklist | #4, #9 |
 | Drone | Flight safety fixes, preflight GO / NO-GO, `open_source()` for any camera, walker GPS alignment | #21, #22, #23, #25 |
-| Drone | Follow mode behind `--follow`, tested in simulation, not flown | #27 |
+| Drone | Follow mode behind `--follow`, tested in simulation only, never flown | #27 |
 | Drone | Street View frame source, limited to Moss St | #34, #40 |
 | Video | Real earpiece audio from an event log; captions, hazard banners and sonar over footage | #19 |
 | Tooling | `scripts/demo.sh`, replay, netcheck, offline fallback, disqualifier audit | #5, #11, #26, #31 |
@@ -41,22 +41,43 @@ scripts/demo.sh stop
 
 Karthik built the Claude judgment layer integration, the camera descriptions ("what's in front of me?" and reading text aloud), the cached safety phrases, stop and wait, walking routes, SpacetimeDB mirroring, and support for any stereo Bluetooth headphones.
 
+## Not done, said plainly
+
+- The Tello is untested. It is still in the box.
+- The live walk has never run on a real phone, only on laptop cameras.
+- Follow mode has never flown.
+- There is no real footage yet.
+- The sim is not yet close to the real street.
+- The demo video edit, the rehearsal and the final Devpost have not started.
+- Rex's `streetseg` is still in his personal repo. Stand-ins (`sim/standin_detect.py`, `sim/live_walk.py`, `sim/seg_standin.py`) cover the demo.
+
 ## In progress
 
 | What | Who | State |
 |---|---|---|
-| OSM building facades in the sim | agent | running |
-| Judgment layer tuning | agent | running |
+| Kite-mode collision number | agent | running |
+| 40-walk reliability bench | agent | running |
+| Blender street with real facades (local only) | agent | running |
+| Splat pipeline from the 7 AM phone walkthrough | agent | planned, needs the walkthrough |
+| Tello camera model for sim frames | agent | running |
+| Follow-mode path prediction | agent | running |
+| Judgment layer tuning (#56) | agent | needs Karthik's review |
 
 ## Needs a person
 
-- Eddy: the Google representative's name and role, and any written confirmation, in `docs/google-permission.md`.
-- Arthur: the 7 AM shoot (`docs/shoot-flight.md`), starting with `python -m kite.preflight`.
-- Optional: a Mapillary token.
-- Arthur (repo owner): GitHub Actions billing. The private repo ran out of Actions minutes, so hosted CI can't start; until then, run `scripts/check.sh quick` before every merge.
-- Eddy or Rex: Micro-USB cable, phone chest clip, sleep masks, wipes, over-ear headphones (Target around 8 AM).
-- Rex: `streetseg` into the repo, or confirm the stand-in detector is what we demo.
+| Who | What | When |
+|---|---|---|
+| Eddy | Ground check and calibration on Arthur's laptop; live walk on the iPhone | Now |
+| Eddy, Arthur, Rex | The 7:30 AM shoot (`docs/shoot-day.md`, `docs/shoot-flight.md`), starting with `python -m kite.preflight`. Eddy films the side angle, splat walkthrough, facade photos and the Moss crossing width. | Sat 7:30 AM |
+| Arthur | Charge, then a follow-mode test flight in an open area away from cars and the venue | After the shoot |
+| Arthur, Eddy | Actions off in Settings; decide repo visibility | Sat |
+| Rex | Bring `streetseg` in; sign off on `docs/research/facts.md`; shoot logistics | Sat |
+| Karthik | Review #8 and #56; decide the Moss track row in the README with Eddy | Sat |
+| Eddy | Footage into `recordings/`, cable, demo video edit | After the shoot |
+| Eddy | Google representative's name and role in `docs/google-permission.md` | Sat |
+| Eddy or Rex | Micro-USB cable, phone chest clip, sleep masks, wipes, over-ear headphones (Target, if needed) | About 8 AM |
+| Everyone | 3 PM cut (live walk reliable, or the sim walk becomes the demo); 6 PM rehearsal, 40 walks; 8 PM freeze | Sat |
+| Eddy | Devpost draft | Sat night |
+| Eddy | Audit 8 AM, submit by 9 AM | Sun |
 
-## Next gates
-
-Sat 7:00 AM shoot. Sat 3:00 PM cut point (live walk reliable, or the sim walk becomes the live demo). Sat 6:00 PM rehearsal, 40 walks. Sat 8:00 PM freeze.
+There is no CI. Run `scripts/check.sh quick` before every merge.
