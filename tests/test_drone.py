@@ -492,6 +492,13 @@ def test_governor_ceiling_and_floor():
     assert -50 < fake.rcs[-1][2] < 0
 
 
+def test_ceiling_push_down_stays_within_max_rc():
+    """Above the ceiling the governor pushed down with a fixed -20, beyond a max_rc below 20."""
+    gov, fake = governed(height_m=2.5, max_altitude_m=2.3, max_rc=10)
+    gov.rc(0, 0, 50, 0)
+    assert fake.rcs[-1][2] == -10
+
+
 def test_governor_refuses_moves_across_the_limits():
     gov, fake = governed(height_m=2.0, max_altitude_m=2.3, min_altitude_m=0.5)
     gov.move("up", 50)

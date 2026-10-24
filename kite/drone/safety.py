@@ -115,7 +115,7 @@ class SafetyGovernor(Drone):
             hi, lo, band = self.cfg.max_altitude_m, self.cfg.min_altitude_m, SOFT_BAND_M
             if high is not None:
                 if high > hi:
-                    ud = min(ud, -20)
+                    ud = min(ud, -min(20, m))  # pushed down, still within the stick clamp
                     self._event(f"ceiling {high:.2f} m > {hi} m -> descend")
                 elif ud > 0 and high > hi - band:  # taper the climb: the drone keeps rising ~0.2 m after rc 0
                     ud = int(ud * max(0.0, (hi - high) / band))
