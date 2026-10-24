@@ -73,9 +73,13 @@ step_drone() {
   uv pip install -q --python "$DRONE_VENV/bin/python" -e "${ROOT}[dev]"
   # a few drone tests measure wall-clock timing; rerun failures once before calling them real
   run "drone tests" bash -c "cd '$ROOT' && { '$DRONE_VENV/bin/python' -m pytest -q -m 'not slow' || '$DRONE_VENV/bin/python' -m pytest -q -m 'not slow' --lf; }"
+  earpiece_venv
   run "sim scene-describe tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q sim/test_scene_describe.py"
   # geometry, depth fusion, hazards and event contract with fake models; `-m slow` adds the real models
   run "perception tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q perception/tests"
+  # self-check scripts (no pytest functions): the relay's origin rule, the stand-in detector's geometry
+  run "sim relay self-check" bash -c "cd '$ROOT' && '$PY' sim/test_relay.py"
+  run "sim stand-in geometry self-check" bash -c "cd '$ROOT' && '$PY' sim/test_standin_geometry.py"
 }
 
 step_dashboard() {
