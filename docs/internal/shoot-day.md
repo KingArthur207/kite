@@ -135,7 +135,7 @@ People: with five of us, Rex can't play the pedestrian because he is at Arthur's
 Eddy's laptop as the recorder. The main checkout on Eddy's laptop has a `.venv` at the repo root. Tonight, on normal internet:
 
 ```bash
-cd ~/"Hackathon Destruction"/kite
+cd path/to/kite
 git pull && source .venv/bin/activate && pip install -e ".[dev]"
 python -m kite.preflight --quick
 ```
