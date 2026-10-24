@@ -1,7 +1,7 @@
 """Earth geometry for walking: distances, bearings, and one shared local map frame.
 
 Two worlds have to agree on where things are: the real street (GPS latitude and
-longitude) and the sim (Eddy's three.js world, in meters). `LocalFrame` is the one
+longitude) and the sim (the three.js world, in meters). `LocalFrame` is the one
 mapping between them: a flat east/north plane tangent to the earth at an anchor
 point (WGS84 ENU), optionally rotated so the sim's axes need not face true north.
 Over a few city blocks the flat-plane error is millimetres, far below GPS noise.

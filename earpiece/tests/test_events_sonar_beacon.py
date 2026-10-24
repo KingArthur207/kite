@@ -9,6 +9,7 @@ from earpiece.beacon import Beacon
 from earpiece.config import BeaconCfg, SonarCfg
 from earpiece.events import BadMessage, Obstacle, clock_phrase, distance_phrase, parse
 from earpiece.mixer import Engine
+from earpiece import sonar as sonar_mod
 from earpiece.sonar import Sonar
 
 DT = 1024 / 48000
@@ -106,7 +107,7 @@ def make(speak=None):
         plays.append((at / eng.rate if at is not None else None, bus, gain, tag))
         orig(st, at, bus, gain, tag)
     eng.play = spy
-    return eng, Sonar(eng, SonarCfg(), speak=speak or (lambda *a, **k: None)), plays
+    return eng, sonar_mod.create(eng, SonarCfg(), speak=speak or (lambda *a, **k: None)), plays
 
 
 def test_approaching_person_speeds_up_then_goes_critical():

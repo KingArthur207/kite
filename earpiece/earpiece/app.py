@@ -35,7 +35,7 @@ from .memory import MemoryStore
 from .mixer import Engine
 from .output import DeviceOutput, NullOutput, RustDeviceOutput
 from .route import RouteGuide
-from .sonar import Sonar
+from . import sonar as sonar_mod
 from .speech import Speaker
 from .transport import Transport
 
@@ -77,7 +77,8 @@ class Earpiece:
         self.speaker = Speaker(self.engine, self.cfg.speech, self.cfg.cartesia_key, log=log)
         self.speaker.on_spoken = self._spoken
         self._lock = threading.RLock()
-        self.sonar = Sonar(self.engine, self.cfg.sonar, speak=self.say, log=log)
+        self.sonar = sonar_mod.create(self.engine, self.cfg.sonar, speak=self.say, log=log)
+        log(f"[sonar] engine: {'rust (kite_audio)' if getattr(self.sonar, 'native', False) else 'python'}")
         self.beacon = Beacon(self.engine, self.cfg.beacon, speak=self.say, log=log)
         self.listener = Listener(self.cfg.listen, self.cfg.cartesia_key, on_text=self.heard,
                                  cue=self.cue, on_listening=self._on_listening, say=self.say, log=log)
