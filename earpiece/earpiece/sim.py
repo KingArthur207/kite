@@ -8,7 +8,9 @@ WAV files that prove what the wearer would hear.
 
 from __future__ import annotations
 
+import json
 import math
+from pathlib import Path
 from typing import Iterator
 
 FPS = 15
@@ -98,3 +100,37 @@ def timeline(name: str) -> list[tuple[float, dict]]:
 
 def duration(name: str) -> float:
     return max(t for t, _ in timeline(name)) + 2.0
+
+
+JSONL_GAP_S = 0.1   # lines without a "t" follow the previous one by this much
+
+
+def load_jsonl(path: str | Path) -> list[dict]:
+    """One event per line (earpiece wire format, optional "t"). Raises ValueError naming the bad line."""
+    events = []
+    for n, line in enumerate(Path(path).read_text().splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"{path}:{n}: bad JSON ({e.msg})") from None
+        if not isinstance(ev, dict) or "type" not in ev:
+            raise ValueError(f"{path}:{n}: each line must be an event object with a type")
+        events.append(ev)
+    return events
+
+
+def schedule(events: list[dict]) -> list[tuple[float, dict]]:
+    """(seconds from start, event) with any absolute timestamps made relative, in file order."""
+    ts = [e.get("t") for e in events]
+    t0 = next((t for t in ts if isinstance(t, (int, float))), 0.0)
+    out, last = [], 0.0
+    for ev, t in zip(events, ts):
+        last = t - t0 if isinstance(t, (int, float)) else last + JSONL_GAP_S
+        out.append((last, {k: v for k, v in ev.items() if k != "t"}))
+    return out
+
+
+def jsonl_timeline(path: str | Path) -> list[tuple[float, dict]]:
+    return sorted(schedule(load_jsonl(path)), key=lambda x: x[0])
