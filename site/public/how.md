@@ -112,6 +112,8 @@ _Moss, again_
 
 _plain code, no AI, instant_
 
+the little kite answering you is the drone, flying just above and behind your head
+
 ## What the earpiece *actually said.*
 
 The log from the 41-second walk on the home page, verbatim. Every line has a priority; a "Stop." cuts in front of everything else.

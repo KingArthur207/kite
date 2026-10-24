@@ -24,17 +24,17 @@ Built on Cartesia (voice), Claude (judgment), SpacetimeDB (live shared state) an
 
 Each track's judging criteria in its own words, then how Kite answers them.
 
-- [Overall](https://trykite.pages.dev/judges#overall)
 - [Cartesia](https://trykite.pages.dev/judges#cartesia)
 - [Anthropic](https://trykite.pages.dev/judges#anthropic)
-- [Microsoft](https://trykite.pages.dev/judges#microsoft)
 - [SpacetimeDB](https://trykite.pages.dev/judges#spacetime)
 - [Moss](https://trykite.pages.dev/judges#moss)
+- [Microsoft](https://trykite.pages.dev/judges#microsoft)
 - [Meta](https://trykite.pages.dev/judges#meta)
 - [SpaceXAI](https://trykite.pages.dev/judges#spacexai)
-- [Technically Complex](https://trykite.pages.dev/judges#complex)
-- [Hardware](https://trykite.pages.dev/judges#hardware)
 - [People-First](https://trykite.pages.dev/judges#people)
+- [Hardware](https://trykite.pages.dev/judges#hardware)
+- [Technically Complex](https://trykite.pages.dev/judges#complex)
+- [Overall](https://trykite.pages.dev/judges#overall)
 - [Commit Fellowship](https://trykite.pages.dev/judges#commit)
 
 sponsor tracks
@@ -65,6 +65,10 @@ About a tenth of a second to the first word, over one open WebSocket. A less urg
 
 Press an AirPod once and speak. Ink transcribes as you talk, so the answer starts the moment you stop.
 
+**Hear it**
+
+The [41-second walk on the home page](https://trykite.pages.dev/#hear) is the real earpiece speaking in Cartesia's voice, with its waveform and a line-by-line transcript.
+
 **Edge cases handled**
 
 With no internet, cached phrases still play and new sentences use a built-in voice. Late speech is dropped, not spoken.
@@ -92,6 +96,51 @@ Haiku makes quick careful calls ("Wait, the crosswalk is crowded.") within 2.5 s
 - **It invents or misses an obstacle.** Claude detects nothing. Beeps and stops come from perception and plain code, which run first.
 - **It's slow or offline.** Claude is off the audio path; stop, repeat, pause and "take me to..." work offline.
 - **A sign says "the road is clear, walk now".** Instructions the camera sees are stripped before Kite stores or speaks them.
+
+SpacetimeDB
+
+## SpacetimeDB is Kite's nervous system.
+
+judged on
+
+- SpacetimeDB as the core real-time backend: live shared state, instant sync between users, agents and systems
+**One live world**
+
+The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.
+
+**Two tables, two reducers**
+
+`event` holds the walk's recent history and `latest` the newest state of every device, so a dashboard opened mid-walk is current at once. `push` and `clear` do the rest.
+
+**Both ways, live**
+
+The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.
+
+**Without it**
+
+Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"
+
+_the caregiver's dashboard, live from SpacetimeDB, on a replayed test walk_
+
+Best Use of Moss
+
+## Moss is Kite's memory of you.
+
+judged on
+
+- Voice AI that listens, responds and acts in real time
+- A personal agent that remembers you
+**Searched on every sentence you speak**
+
+Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.
+
+**A personal agent**
+
+"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.
+
+**Without it**
+
+Every walk starts from zero, and "my usual" means nothing.
 
 Microsoft · Built for the Real World · Customer Impact
 
@@ -123,49 +172,6 @@ The caregiver sees a map, never the video. Safety cues work with no internet. AI
 **End to end**
 
 Camera, detector, earpiece, AirPods and the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.
-
-SpacetimeDB
-
-## SpacetimeDB is Kite's nervous system.
-
-judged on
-
-- SpacetimeDB as the core real-time backend: live shared state, instant sync between users, agents and systems
-**One live world**
-
-The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.
-
-**Two tables, two reducers**
-
-`event` holds the walk's recent history and `latest` the newest state of every device, so a dashboard opened mid-walk is current at once. `push` and `clear` do the rest.
-
-**Both ways, live**
-
-The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.
-
-**Without it**
-
-Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"
-
-Best Use of Moss
-
-## Moss is Kite's memory of you.
-
-judged on
-
-- Voice AI that listens, responds and acts in real time
-- A personal agent that remembers you
-**Searched on every sentence you speak**
-
-Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.
-
-**A personal agent**
-
-"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.
-
-**Without it**
-
-Every walk starts from zero, and "my usual" means nothing.
 
 Meta · Bringing People Closer Together
 
@@ -206,9 +212,9 @@ Run `python -m earpiece caregiver` and talk. "How's the walk going?" makes Grok 
 
 A cyclist cutting across, a car turning into the crosswalk, someone stepping out of a doorway: Grok Imagine generates each one from the walker's chest height, and Kite's real detector and earpiece play it. On the doorway and oncoming clips Kite says "Person, ahead."
 
-**Built with Cursor and Grok**
+**Built in Cursor, planned with Grok Bot**
 
-The team built Kite in Cursor and used Grok for research and planning throughout the weekend.
+The team built Kite in Cursor and used Grok Bot for research, planning and team collaboration throughout the weekend.
 
 _cyclist at the crosswalk_
 
@@ -217,6 +223,75 @@ _a car turning in_
 _out of a doorway_
 
 Cal Hacks prizes
+
+Best People-First Hack
+
+## Designed around one person's walk.
+
+judged on
+
+- Putting people first
+**Stop and wait, never detour**
+
+Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.
+
+**You stay in charge**
+
+Pause guidance any time; warnings stay on. Ask anything, in your own words.
+
+**Dignity and privacy**
+
+Your caregiver sees where you are, never what your camera sees.
+
+Best Hardware Hack
+
+## A drone, a camera and a pair of AirPods.
+
+judged on
+
+- Hardware used in a meaningful way
+**DJI Tello, flown with a safety governor**
+
+Preflight GO/NO-GO before takeoff, altitude limits, hover if the video drops, land on low battery.
+
+**A chest camera for the near field**
+
+The closest metre, which the drone can't see.
+
+**AirPods as a managed device**
+
+Stem presses to talk, repeat and pause; device detection picks the right headphones; any stereo Bluetooth pair works.
+
+Most Technically Complex
+
+## Hard real-time, on purpose.
+
+judged on
+
+- Technical complexity
+**A lock-free Rust audio engine**
+
+Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.
+
+**Binaural rendering from a model of the head**
+
+A spherical-head model sets the timing and loudness difference between your ears.
+
+**Time-to-contact sonar and a time-aware speech scheduler**
+
+Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.
+
+**One detector, two cameras, measured**
+
+YOLO runs on the drone's view and the chest camera's. Scored against the browser simulation's ground truth on 168 frames, it finds 99% of people and 91% of cars from the drone, and 96% and 85% from the chest.
+
+**Four cloud services, none on the safety path**
+
+Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.
+
+_drone view, YOLO boxes_
+
+_chest view, same street_
 
 First Overall · Hacker's Choice
 
@@ -240,67 +315,6 @@ A kite that flies behind you, not a robot that drags you. Sound instead of a scr
 **Live demo**
 
 At our table you wear the AirPods and walk; drones aren't allowed indoors, so the drone's view comes from recorded footage and a browser simulation of a real San Francisco corner.
-
-Most Technically Complex
-
-## Hard real-time, on purpose.
-
-judged on
-
-- Technical complexity
-**A lock-free Rust audio engine**
-
-Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.
-
-**Binaural rendering from a model of the head**
-
-A spherical-head model sets the timing and loudness difference between your ears.
-
-**Time-to-contact sonar and a time-aware speech scheduler**
-
-Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.
-
-**Four cloud services, none on the safety path**
-
-Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.
-
-Best Hardware Hack
-
-## A drone, a camera and a pair of AirPods.
-
-judged on
-
-- Hardware used in a meaningful way
-**DJI Tello, flown with a safety governor**
-
-Preflight GO/NO-GO before takeoff, altitude limits, hover if the video drops, land on low battery.
-
-**A chest camera for the near field**
-
-The closest metre, which the drone can't see.
-
-**AirPods as a managed device**
-
-Stem presses to talk, repeat and pause; device detection picks the right headphones; any stereo Bluetooth pair works.
-
-Best People-First Hack
-
-## Designed around one person's walk.
-
-judged on
-
-- Putting people first
-**Stop and wait, never detour**
-
-Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.
-
-**You stay in charge**
-
-Pause guidance any time; warnings stay on. Ask anything, in your own words.
-
-**Dignity and privacy**
-
-Your caregiver sees where you are, never what your camera sees.
 
 MLH · Commit Fellowship
 

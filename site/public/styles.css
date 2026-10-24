@@ -338,6 +338,23 @@ h1 em { color: var(--indigo); font-weight: 400; }
 .cast { margin-top: auto; padding: 6px 0 22px; }
 .scene-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .scene-svg .kbot { animation: bob 2.6s ease-in-out infinite; transform-box: fill-box; }
+/* Kite in the comic is both the kite character and the drone: the two flip into each other every 1.8 s */
+.scene-svg .kb-kite, .scene-svg .kb-drone { transform-box: fill-box; transform-origin: center; animation: kb-flip 3.6s ease-in-out infinite; }
+.scene-svg .kb-drone { animation-delay: -1.8s; }
+.scene-svg .kb-prop { fill: none; stroke: #1D2B6B; stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: spin .16s linear infinite; }
+.scene-svg .kb-prop.back { opacity: .55; }
+.scene-svg .kb-tail { display: none; }
+@keyframes kb-flip {
+  0%, 42% { opacity: 1; transform: scaleX(1); }
+  50% { opacity: 0; transform: scaleX(0.05); }
+  51%, 91% { opacity: 0; transform: scaleX(0.05); }
+  100% { opacity: 1; transform: scaleX(1); }
+}
+/* no motion: the drone alone, flying a tiny kite on a string */
+@media (prefers-reduced-motion: reduce) {
+  .scene-svg .kb-kite { display: none; }
+  .scene-svg .kb-tail { display: inline; }
+}
 .who-walker { width: 46px; height: auto; }
 .who-kite { width: 52px; height: auto; animation: bob 2.6s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translateY(-5px) rotate(3deg); } }
@@ -476,3 +493,19 @@ mark { background: none; color: inherit; padding: 0 2px;
 .imagined img { width: 100%; height: auto; display: block; border-radius: 3px; }
 .imagined figcaption { font: 600 18px var(--hand); color: var(--verm-ink, #C8287A); text-align: center; padding-top: 2px; }
 @media (max-width: 700px) { .imagined { grid-template-columns: 1fr; } .imagined figure { transform: none !important; } }
+
+/* sponsor logos: the official mark, small, above the sticker */
+.track-logo { display: block; max-width: 100%; height: auto; margin: 2px 0 14px; }
+
+/* evidence: real artifacts from the repo that back a card's claims */
+.track dd a { color: var(--indigo); font-weight: 600; }
+.evidence { grid-column: 1 / -1; margin: 6px 0 0; }
+.evidence.two { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.evidence.one, .evidence.two figure { background: #fff; border: 1.5px solid var(--ink); border-radius: 6px; padding: 6px 6px 4px; }
+.evidence.two figure { margin: 0; }
+.evidence.one { transform: rotate(-0.4deg); }
+.evidence.two figure:nth-child(odd) { transform: rotate(-0.8deg); }
+.evidence.two figure:nth-child(even) { transform: rotate(0.7deg); }
+.evidence img { width: 100%; height: auto; display: block; border-radius: 3px; }
+.evidence figcaption { font: 600 18px var(--hand); color: var(--verm-ink); text-align: center; padding-top: 2px; }
+@media (max-width: 700px) { .evidence.two { grid-template-columns: 1fr; } .evidence.one, .evidence.two figure { transform: none; } }
