@@ -130,7 +130,8 @@ def _age(s: float | None) -> str:
 
 def format_line(fix: Fix | None, fix_age: float | None, link_age: float | None, link_ok: bool,
                 sent: int = 0, extra: str = "") -> str:
-    """The live terminal line: position, accuracy, compass with a cardinal, speed, fix age, link state."""
+    """The live terminal line: position, accuracy, compass with a cardinal (only if the phone sends one), speed,
+    fix age, link state."""
     if fix is None:
         return f"waiting for the phone ...  {extra}".rstrip()
     if fix.has_position:
@@ -138,16 +139,15 @@ def format_line(fix: Fix | None, fix_age: float | None, link_age: float | None, 
         pos += f"  +/-{fix.acc:.0f} m" if fix.acc is not None else ""
     else:
         pos = "no GPS fix yet"
+    hd = None                                # the app sends GPS only for now: no heading, no column
     if fix.heading is not None:
         hd = f"heading {fix.heading:5.1f} {cardinal(fix.heading):<2}"
         hd += f" +/-{fix.heading_acc:.0f}" if fix.heading_acc is not None else ""
-    else:
-        hd = "heading  -  (no compass)"
     spd = f"{fix.speed:.1f} m/s" if fix.speed is not None else "- m/s"
     if fix.course is not None and fix.speed is not None and fix.speed >= COURSE_MIN_SPEED:
         spd += f" toward {cardinal(fix.course)}"
     link = "phone ok" if link_ok else f"PHONE LOST ({_age(link_age)})"
-    parts = [pos, hd, spd, f"fix {_age(fix_age)}", link, f"sent {sent}"]
+    parts = [p for p in (pos, hd, spd, f"fix {_age(fix_age)}", link, f"sent {sent}") if p]
     if extra:
         parts.append(extra)
     return "  |  ".join(parts)

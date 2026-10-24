@@ -1,7 +1,6 @@
 """Kite's phone link: the walker's phone sends GPS and compass heading (and, over USB, camera frames) to the laptop.
 
-    python -m phone                 # Bluetooth LE (primary): the phone page at https://trykite.pages.dev/phone
-    python -m phone.ble             # the same
+    python -m phone.ble             # Bluetooth LE (primary): the native app in phone-app/ connects (docs/phone.md)
     python -m phone usb             # USB Personal Hotspot fallback: HTTPS page served by this laptop, + camera frames
     python -m phone.detect -- ...   # the stand-in detector on the phone's camera (USB fallback only)
 
