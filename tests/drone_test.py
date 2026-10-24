@@ -31,6 +31,7 @@ than that, and the std includes the quantisation.
 import argparse
 import json
 import os
+import socket
 import threading
 import time
 from datetime import datetime
@@ -64,6 +65,63 @@ def log_state(tello, rec, stop):
         time.sleep(0.002)
 
 
+def probe_video_packets(tello, seconds=3.0):
+    """Count raw UDP packets on the video port after one more streamon, without decoding.
+
+    Tells "the drone sends nothing" (0 packets) from "packets arrive but OpenCV can't decode them".
+    Returns (packets, bytes), or (None, reason) if the port can't be bound.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.bind(("0.0.0.0", tello.vs_udp_port))
+    except OSError as e:
+        sock.close()
+        return None, f"UDP {tello.vs_udp_port} is held by another program ({e})"
+    sock.settimeout(0.2)
+    n = size = 0
+    try:
+        tello.send_command_without_return("streamon")
+        end = time.time() + seconds
+        while time.time() < end:
+            try:
+                size += len(sock.recv(65536))
+                n += 1
+            except socket.timeout:
+                pass
+    finally:
+        sock.close()
+    return n, size
+
+
+def open_video(tello, fps, tries=3):
+    """streamon + VideoStream, re-sending streamon between tries: the Tello often ignores the first one.
+
+    On failure, probes the raw video port and prints what is wrong; returns None.
+    """
+    from kite.sources.video_stream import VideoStream
+
+    for i in range(tries):
+        try:
+            tello.streamon()
+        except Exception as e:  # an 'error' reply: try again
+            print(f"video try {i + 1}/{tries}: streamon -> {e}")
+            continue
+        try:
+            return VideoStream(tello.get_udp_video_address(), fps=fps).start()
+        except RuntimeError as e:
+            print(f"video try {i + 1}/{tries}: {e}")
+    n, size = probe_video_packets(tello)
+    if n is None:
+        print(f"video: {size}. Quit it: lsof -nP -iUDP:{tello.vs_udp_port}")
+    elif n:
+        print(f"video: the drone IS sending ({n} packets, {size // 1024} KB in 3 s), but OpenCV could not decode it. "
+              "Check with kite's PyAV reader: python -m kite.sources.open tello --preview")
+    else:
+        print(f"video: no packets reached UDP {tello.vs_udp_port} in 3 s: the drone is not streaming. "
+              "Close the Tello phone app, power-cycle the drone, rejoin its Wi-Fi and try again.")
+    return None
+
+
 def log_video(stream, rec, stop):
     """Store every new frame's decode time and how much it differs from the previous frame."""
     import cv2
@@ -85,19 +143,27 @@ def log_video(stream, rec, stop):
         prev = small
 
 
-def preview_loop(stream, hud, stop, scale):
-    """Show the live feed in a window. Daemon thread: it must never block or slow the flight.
+def preview_loop(ui, done, scale):
+    """Show the live feed in a window until the run ends. Runs on the MAIN thread: macOS only lets the
+    main thread create windows (from any other thread cv2.namedWindow fails with "Unknown C++ exception").
 
-    All HighGUI calls stay on this one thread. Closing the window or pressing q only ends the
-    preview; landing is still Ctrl+C in the terminal.
+    The flight runs in its own thread and hands over its stream through `ui` (ui["video"] is set once
+    the video is open or has failed). Closing the window or pressing q only ends the preview; landing
+    is still Ctrl+C in the terminal.
     """
     import cv2
 
+    while not ui["video"].wait(0.1):  # stay interruptible: Ctrl+C must reach the main thread
+        if done.is_set():
+            return
+    stream, hud = ui.get("stream"), ui["hud"]
+    if stream is None:
+        return
     win = "Tello live  -  q closes preview, Ctrl+C in terminal lands"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     last = -1
     try:
-        while not stop.is_set():
+        while not done.is_set():
             seq, img, ts = stream.read_seq(copy=True)  # we draw on it, so take a copy
             if img is None or seq == last:
                 cv2.waitKey(1)
@@ -319,6 +385,54 @@ def analyze(rec):
 
 # ------------------------------------------------------------------ flight
 def run(args):
+    """Without --preview the flight runs right here. With it, the flight runs in a thread and the main
+    thread shows the window (macOS); Ctrl+C is forwarded to the flight thread, which lands as before."""
+    if not args.preview:
+        fly(args, None)
+        return
+    ui = {"video": threading.Event(), "hud": {"phase": "starting"}}
+    done = threading.Event()
+    failed = []
+
+    def flight():
+        try:
+            fly(args, ui)
+        except BaseException as e:  # reported on the main thread
+            failed.append(e)
+        finally:
+            ui["video"].set()
+            done.set()
+
+    th = threading.Thread(target=flight, name="flight")
+    th.start()
+    interrupted = shown = False
+    while not done.is_set():
+        try:
+            if not (interrupted or shown):
+                shown = True  # q or closing the window ends the preview for good
+                preview_loop(ui, done, args.preview_scale)
+            done.wait(0.1)
+        except KeyboardInterrupt:
+            if interrupted:
+                print("  Ctrl+C ignored: still landing")
+            else:
+                interrupted = True
+                interrupt_thread(th)  # raises KeyboardInterrupt inside fly(): its handler lands
+    th.join()
+    for e in failed:
+        if not isinstance(e, KeyboardInterrupt):
+            raise e
+
+
+def interrupt_thread(th):
+    """Raise KeyboardInterrupt inside another thread (delivered at its next Python step, within ~50 ms
+    while flying: hold() sleeps in 0.05 s slices)."""
+    import ctypes
+
+    ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(th.ident), ctypes.py_object(KeyboardInterrupt))
+
+
+def fly(args, ui):
     import logging
 
     import cv2  # noqa: F401  - fail here, not silently inside the video thread
@@ -338,21 +452,24 @@ def run(args):
     if not args.ground and rec["meta"]["battery"] < args.min_battery:
         print(f"battery below {args.min_battery}% -> not flying")
         return
-    hud = {"phase": "starting"}
+    hud = ui["hud"] if ui is not None else {"phase": "starting"}
     threading.Thread(target=log_state, args=(tello, rec, stop), daemon=True).start()
 
     # One OpenCV/FFmpeg reader for both the recorder and the preview: djitellopy's PyAV reader
     # and a second cv2.VideoCapture cannot both bind UDP 11111. The grab()-drain in VideoStream
     # also stops decoder backlog from inflating the measured video delay over a long flight.
-    tello.streamon()
     stream = None
     try:
-        stream = VideoStream(tello.get_udp_video_address(), fps=args.video_fps).start()
-        threading.Thread(target=log_video, args=(stream, rec, stop), daemon=True).start()
-        if args.preview:
-            threading.Thread(target=preview_loop, args=(stream, hud, stop, args.preview_scale), daemon=True).start()
+        stream = open_video(tello, args.video_fps)
     except Exception as e:  # a video problem must never stop the flight or the telemetry run
-        print(f"video unavailable ({e}) - continuing with telemetry only")
+        print(f"video unavailable ({e})")
+    if stream is None:
+        print("continuing with telemetry only")
+    else:
+        threading.Thread(target=log_video, args=(stream, rec, stop), daemon=True).start()
+    if ui is not None:  # the main thread draws it
+        ui["stream"] = stream
+        ui["video"].set()
     time.sleep(3.0)  # let the video decoder start
 
     rec["meta"]["rtt"] = []

@@ -1,6 +1,6 @@
 """Which cameras this Mac has, with the index cv2.VideoCapture(index) opens and their names (no new dependencies).
 
-    opencv_cameras()   [(0, "MacBook Pro Camera", "<uniqueID>"), (1, "Arthur's iPhone Camera", ...)]
+    opencv_cameras()   [(0, "MacBook Pro Camera", "<uniqueID>"), (1, "Kite's iPhone Camera", ...)]
     system_cameras()   names AVFoundation's device discovery reports (what ffmpeg -f avfoundation lists)
     find_camera("iphone") -> (index, name), or (None, name) for a camera only PyAV/ffmpeg can open
 

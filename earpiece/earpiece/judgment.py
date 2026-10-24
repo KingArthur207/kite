@@ -14,7 +14,8 @@ Guardrails, all enforced here and not left to the prompt:
   * At most one call every `min_gap_s`, none when hazards and scene are
     unchanged, never on the audio thread, and a slow or failed call is dropped
     without a word. A call still unanswered after `hedge_s` is raced by a
-    second identical one; a reply cut off at MAX_TOKENS is never spoken.
+    second identical one; a reply cut off at MAX_TOKENS
+    keeps only its first complete sentence (after the same checks), never a partial one.
   * The same line is never said twice within RECENT_SPEECH_S.
 
 Tune with scripts/judgment_eval.py (real Claude over data/scenarios/*.jsonl).
@@ -27,6 +28,7 @@ import math
 import re
 import threading
 import time
+import unicodedata
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -36,7 +38,7 @@ from .events import PRIORITY_RANK
 
 MODEL = "claude-haiku-5-5"
 MAX_SAY = 90
-MAX_TOKENS = 60          # one short line; a reply cut off at this cap is dropped, never spoken half-said
+MAX_TOKENS = 60          # one short line; a capped reply keeps only its first complete sentence, never half-said
 UPGRADE_TO = ("hazard", "nav", "answer", "info")   # "critical" stays with deterministic code
 MAX_HEARD = 120         # each recent_speech line is cut to this (it is untrusted text, and tokens)
 RECENT_SPEECH_S = 15.0   # what the walker heard this recently goes in the snapshot, so Claude doesn't repeat it
@@ -83,26 +85,137 @@ priority is below "hazard" more urgent, start the line with "!" and its key, lik
 # and hazard descriptions ("car turning in", "crowd on the crossing") stay allowed.
 _NEG = r"(?<!\bdon't )(?<!\bdo not )(?<!\bnever )"          # "Don't cross yet." is a hold, not a go
 _FORBIDDEN = re.compile(
-    rf"\b{_NEG}(?:go|cross|crosses|crossed|walk|walks|step|move|moves|keep|advance|head)\b"
+    rf"\b{_NEG}(?:go|cross|crosses|crossed|walk|walks|step|move|moves|keep|advance)\b"
+    rf"|\b{_NEG}head\b(?![\s-]*(?:height|level|high|room|on)\b)"   # "low awning at head height" is a warning
     r"|\b(?<!\bthe )(?<!\ba )crossing\b"                     # "start crossing", not "on the crossing"
     r"|\b(?:proceed\w*|continu\w*|carry\s+on|clear\w*|empty|free|open|fine|good|great|okay|ok|alright"
     r"|all\s+right|all\s+set|green|safe\w*|nothing|nobody|no\s+one|no\s+(?:cars?|traffic|vehicles?|bikes?))\b"
     r"|\byou\s+(?:can|may|could|should|are|'re)\b|\byou're\b"
     r"|\b(?:no|don't|do\s+not|needn't)\s+(?:longer\s+)?need\b|\bdon't\s+(?:stop|wait|hold)\b"
-    r"|\b(?:reroute|re-route|detour|route|instead|other\s+(?:way|side))\b",
+    r"|\b(?:reroute|re-route|detour|route|instead|other\s+(?:way|side))\b"
+    # Found by evals/corpus.json (tests/test_safety_evals.py). Permission without a banned word:
+    r"|\b(?:start|begin|resume|get|try|be)\s+(?:walking|moving|going|crossing|stepping|on\s+your\s+way)\b"
+    r"|\blet'?s\s+(?:roll|move|ride|bounce|do\s+(?:this|it))\b|\b(?:hurry|rush|dash|sprint|onward\w*)\b"
+    r"|\brun\s+(?:for\s+it|across|now)\b|\b(?:off|away)\s+you\b|\bup\s+you\s+get\b|\bhit\s+it\b"
+    r"|(?:^|[^\w\s']\s*)forward\b|\bforward\s+now\b|\b(?:your|my)\s+(?:turn|chance|move|cue|moment|go)\b"
+    r"|\bright\s+of\s+way\b|\bwav(?:e|es|ed|ing)\s+you\b|\byield\w*\s+(?:to\s+|for\s+)?you\b|\bstopped\s+for\s+you\b"
+    r"|(?:^|[^\w\s']\s*)(?:and\s+|all\s+|ok\w*\s+)?(?:now|done|over|ready)\W*$"   # a bare "Now!" / "...now." / "Done."
+    # all-clears
+    r"|\bno\s+(?:obstacles?|hazards?|danger|risk|threats?|body|cyclists?|people|pedestrians)\b"
+    r"|\bzero\s+(?:cars?|traffic|vehicles?)\b|\bnot\s+a\s+(?:car|soul|vehicle|bike|person)\b"
+    r"|\b(?:unobstruct\w*|unblock\w*|deserted)\b|\b(?:all|road'?s?|street'?s?|traffic|it'?s|everything'?s?)\s+(?:is\s+)?quiet\b"
+    r"|\b(?:traffic|cars?|vehicles?|everyone|they)\s+(?:has|have|is|are|'s|'re)?\s*(?:all\s+|now\s+)*(?:stopped|halted|yielding)\b"
+    # stop-clearing
+    r"|\b(?:ignor\w*|disregard\w*|never\s*mind|relax\w*|unpause\w*|resum\w*|needn'?t)\b|\bforget\s+(?:the|that|it|about)\b"
+    r"|\bfalse\s+(?:alarm|alert|positive)\b|\b(?:was|were|is)\s+(?:a\s+)?(?:mistake|wrong|an?\s+error|false)\b"
+    r"|\b(?:don't|do\s+not|no|nothing\s+to)\s+worr\w*|\bback\s+to\s+normal\b|\b(?:passed|gone)\b"
+    r"|\b(?:stop|wait|warning|hold|danger|alert|alarm|hazard|threat|obstacle)(?:'s|\s+is|\s+has|\s+was|\s+been)*\s+(?:now\s+)?"
+    r"(?:over|done|lifted|ended|finished|cancel\w*|off|removed|cleared|resolved|past)\b"
+    r"|\b(?:cancel\w*|lift)\s+(?:the\s+)?(?:stop|wait|warning|hold)\b"
+    r"|\b(?:done|enough|finished|no\s+more)\s+(?:waiting|holding|stopping)\b"
+    # reroutes
+    r"|\b(?:turn|bear|veer|swing|shift|edge|sidestep|pivot|skirt|hug|cut|switch|back|double)\s+"
+    r"(?:left|right|wide|around|across|over|back|up|to|the|sides?|sidewalks?)\b|\b(?:retrac|backtrack)\w*"
+    r"|\b(?:use|take|try|follow)\s+(?:the|a|an|another|this|that)\b|\bstay\s+(?:to\s+the\s+)?(?:left|right)\b"
+    r"|\b(?:alternat\w*|different|another|next)\s+(?:route|way|path|crossing|crosswalk|sidewalk|side|street|block|corner)\b"
+    r"|\bchange\s+(?:direction|course|sides?|lanes?)\b|\bvia\b"
+    # the same in the other languages a model might slip into (non-Latin scripts are refused outright)
+    r"|\b(?:cruz\w*|cruce|adelante|vamos|vamonos|sigue|siga|camin\w*|despejad\w*|segur\w*|libre|puedes?|andale"
+    r"|vas-y|allez\w*|travers\w*|avancez|avance|c'est\s+bon|degag\w*|voie|geh\w*|los|frei|sicher|weiter|kannst"
+    r"|vai|avanti|attravers\w*|libera|pode|atravess\w*|chalo|jao)\b"
+    # common misspellings the near-miss check can't reach
+    r"|\b(?:go{2,}|clr|cleer|crs|kross\w*|noone|alrite|aight|aite|okie|okey|oki|kk|gr8|gud)\b",
     re.I)
+
+# Lookalike letters a voice reads as Latin: Cyrillic, Greek, and small capitals.
+_CONFUSABLE = str.maketrans(
+    "асеорхуіѕјԁһӏԛԝАВСЕНІЈКМОРЅТХУԜαβεικνορτυχΑΒΕΗΙΚΜΝΟΡΤΥΧΖᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘʀꜱᴛᴜᴠᴡʏᴢ",
+    "aceopxyisjdhlqwABCEHIJKMOPSTXYWabeikvoptuxABEHIKMNOPTYXZabcdefghijklmnoprstuvwyz")
+_LEET = {"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"}
+_NEAR = ("cross", "clear", "safe", "walk", "proceed", "continue", "nothing", "empty", "green")
+
+
+def fold(text: str) -> str:
+    """What a listener would hear, as plain lowercase text: fullwidth, math and circled letters become
+    ASCII (NFKD), accents, zero-width and bidi characters go, lookalike Cyrillic/Greek letters become
+    Latin, markdown inside words and leetspeak between letters are undone, and s p a c e d or
+    d.o.t.t.e.d single letters are joined. Every filter checks this, not the raw text."""
+    t = re.sub(r"(?<![a-z])(?:[a-z][ .\-])+[a-z](?![a-z])", lambda m: re.sub(r"[ .\-]", "", m.group()), _chars(text))
+    return " ".join(t.split())
+
+
+def _chars(text: str) -> str:
+    t = unicodedata.normalize("NFKD", text.replace("’", "'").replace("‘", "'"))
+    t = "".join(c for c in t if unicodedata.category(c) not in ("Mn", "Me", "Cf")).translate(_CONFUSABLE).lower()
+    t = re.sub(r"(?<=[^\W_])[*_`~]+(?=[^\W_])", "", t)            # c**ross, w_alk
+    t = re.sub(r"[*_`~#>|\[\]()<>{}\"]+", " ", t)
+    for _ in range(4):                                           # cr055 -> cro55 -> cros5 -> cross
+        t, n = re.subn(r"(?<=[a-z])[0134578@$]|[0134578@$](?=[a-z])", lambda m: _LEET.get(m.group(), m.group()), t)
+        if not n:
+            break
+    return t
+
+
+_SPELLED = ("go", "cross", "walk", "safe", "clear", "ahead", "nothing", "green", "empty", "cars", "turn",
+            "good", "okay", "move", "step", "proceed", "continu", "keep", "free", "open", "fine")
+
+
+def _spelled_out(text: str) -> bool:
+    """A word spelled letter by letter ("g o a h e a d", "c-r-o-s-s") still says the word."""
+    for run in re.findall(r"(?<![a-z])(?:[a-z][\s.\-]+){2,}[a-z](?![a-z])", _chars(text)):
+        joined = re.sub(r"[\s.\-]", "", run)
+        if any(w in joined for w in _SPELLED):
+            return True
+    return False
+
+
+def _near_miss(word: str) -> bool:
+    """One adjacent swap, one dropped or one extra letter (not the first) from a key word:
+    "corss", "saef", "cler", "walkk". Substitutions are not counted ("wall", "save", "clean" are words)."""
+    for k in _NEAR:
+        if word == k or word[0] != k[0] or abs(len(word) - len(k)) > 1:
+            continue
+        if len(word) == len(k):
+            d = [i for i in range(len(k)) if word[i] != k[i]]
+            if len(d) == 2 and d[1] == d[0] + 1 and word[d[0]] == k[d[1]] and word[d[1]] == k[d[0]]:
+                return True
+        else:
+            long, short = (word, k) if len(word) > len(k) else (k, word)
+            if any(long[:i] + long[i + 1:] == short for i in range(1, len(long))):
+                return True
+    return False
+
+
+def _foreign(folded: str) -> bool:
+    """A letter outside the Latin script after folding: Kite speaks English, and a line the filter
+    can't read is a line it can't vouch for."""
+    return any(c.isalpha() and not unicodedata.name(c, "").startswith("LATIN") for c in folded)
 
 # A model that explains why it is quiet ("- Nothing to flag.", "Staying quiet, the car is parked.")
 # has said nothing; that is silence, not a line to speak.
 _META = re.compile(r"^[-(\[*]|\b(?:silen\w*|quiet|no\s+warning|nothing\s+to|no\s+need|not\s+needed|none"
                    r"|no\s+comment|no\s+action|n/a)\b", re.I)
-_HOLD = re.compile(r"\b(?:wait|stop|hold|don't|do\s+not|never)\b", re.I)   # these lines may cut in
+_FIRST_SENTENCE = re.compile(r".*?[.!?](?=\s|$)")   # a capped reply is trusted only up to its first full stop
+_HOLD =re.compile(r"\b(?:wait|stop|hold|don't|do\s+not|never)\b", re.I)   # these lines may cut in
 
 
 def forbidden(text: str) -> bool:
     """True when a line could be heard as permission to move, an all-clear, a reroute or a cleared
-    stop. Shared with the caregiver inbox: nothing from Claude or the dashboard may say these."""
-    return bool(_FORBIDDEN.search(" ".join(text.replace("\u2019", "'").split())))
+    stop. Shared with the caregiver inbox: nothing from Claude or the dashboard may say these.
+    Checked on the folded text (homoglyphs, zero-width, markdown, s p a c i n g undone), also with
+    stretched letters squeezed ("gooo", "crosss"), plus near-miss spellings of the key words."""
+    t = fold(text)
+    if _foreign(t) or _spelled_out(text):
+        return True
+    for v in {t, re.sub(r"([a-z])\1{2,}", r"\1\1", t), re.sub(r"([a-z])\1{2,}", r"\1", t)}:
+        if _FORBIDDEN.search(v) or any(_near_miss(w) for w in re.findall(r"[a-z]{3,}", v)):
+            return True
+    return False
+
+
+def visible(text: str) -> str:
+    """The line as it will be spoken: invisible format characters (zero-width, bidi) removed."""
+    return "".join(c for c in text if unicodedata.category(c) != "Cf")
 
 
 class TooLate(Exception):
@@ -156,7 +269,7 @@ def validate(inp, hazards: dict[str, str]) -> tuple[str | None, tuple[str, str] 
     if not isinstance(inp, dict):
         return None, None, False, ["input is not an object"]
     say = inp.get("say")
-    say = " ".join(say.split()) if isinstance(say, str) else ""
+    say = " ".join(visible(say).split()) if isinstance(say, str) else ""
     if len(say) > MAX_SAY:
         rejected.append(f"say too long ({len(say)})")
         say = ""
@@ -313,7 +426,12 @@ class Judgment:
             self.log(f"[judgment] dropped: answered in {ms:.0f} ms, too late to be useful")
             return "late"
         reply = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
-        if resp.stop_reason != "end_turn" or not reply.strip():
+        if resp.stop_reason == "max_tokens":       # cut off: only a complete first sentence is safe; it still goes through validate()
+            m = _FIRST_SENTENCE.match(" ".join(reply.split()))
+            reply = m.group(0) if m else ""
+        elif resp.stop_reason != "end_turn":
+            reply = ""
+        if not reply.strip():
             self.log(f"[judgment] no decision ({resp.stop_reason}, {ms:.0f} ms): {reply[:80]!r}")
             return "none"
         hazards = {h["key"]: h.get("priority") or "hazard" for h in snap.get("hazards") or [] if h.get("key")}

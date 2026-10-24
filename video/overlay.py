@@ -16,7 +16,7 @@ badge. Needs opencv-python and numpy; ffmpeg (brew install ffmpeg) for H.264 and
 
 --seg puts translucent street segmentation under all of that (walkable ground green, road grey, people
 orange, vehicles purple), the walker's corridor outline and a "walkable ahead" readout. It comes from
-sim/seg_standin.py, a STAND-IN until Rex's streetseg lands (ultralytics + weights/yolo26n-sem-ade20k.pt).
+sim/seg_standin.py, a STAND-IN until the streetseg perception package lands (ultralytics + weights/yolo26n-sem-ade20k.pt).
 --events is optional: without it there are no cues, which suits a --seg only render.
 """
 

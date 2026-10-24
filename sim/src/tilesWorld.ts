@@ -36,9 +36,11 @@ type P = [number, number];
 export function buildTilesWorld(opts: {
   walkers: () => { x: number; n: number }[]; cameras: THREE.Camera[]; capture: THREE.WebGLRenderer;
   detector: "tiles" | "osm"; debug?: boolean;
+  scriptedCorner?: boolean;
+  manualLevel?: boolean;   // shots: the caller levels once (level()) instead of every RESAMPLE_S, so the ground never jumps
 }) {
   fenceSelfCheck();
-  const world = buildOsmWorld({ walkers: opts.walkers });
+  const world = buildOsmWorld({ walkers: opts.walkers, scriptedCorner: opts.scriptedCorner });
   const { scene, osmMeshes } = world;
   const tilesLayer = new THREE.Group();    // tiles, the gray under-plane and blob shadows
   scene.add(tilesLayer);
@@ -186,13 +188,14 @@ export function buildTilesWorld(opts: {
     detector: opts.detector,
     tilesStats: () => ({ ...stats, captureLeaks, fit: { ...fit }, rootY: root.position.y, progress: tiles.loadProgress, visible: tiles.visibleTiles.size }),
     heightAt,
+    level,
     update(dt: number) {
       world.update(dt);
       const w = opts.walkers()[0];
       if (w) cutAt.value.set(w.x, 1, -w.n);
       for (const { actor, blob } of blobs) blob.position.set(actor.position.x, 0.03, actor.position.z);
       t += dt;
-      if (t > nextLevel && t < RESAMPLE_FOR_S) { nextLevel = t + RESAMPLE_S; level(); }
+      if (!opts.manualLevel && t > nextLevel && t < RESAMPLE_FOR_S) { nextLevel = t + RESAMPLE_S; level(); }
       attribution(t);
     },
     /** Call once per frame after the cameras move, before rendering. */

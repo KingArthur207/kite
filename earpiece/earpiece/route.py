@@ -15,6 +15,15 @@ the route is the median of recent fixes and only ever moves forward, every
 announcement is said at most once, and "off the route" has to hold for seconds,
 not samples. Bearings sent to the beacon are in the walker's frame, so they need
 a heading; without one Kite sends no beacon rather than a wrong one.
+
+Walking back the way they came is caught separately ("You're walking away from the
+route. Turn around."), from where recent fixes sit behind the progress point and the
+direction the walker is really moving, so a GPS wobble while standing still never
+counts. Google is asked as little as possible: reroutes are spaced at least 20 s
+apart and capped at 5 per 10 minutes (the beacon points straight at the destination
+while one waits), quota errors back off for a minute, and errors that retrying can't
+fix are not retried. Whenever there are no directions the walker hears so once, and
+the beacon still points at the place.
 """
 
 from __future__ import annotations
@@ -48,6 +57,22 @@ class RouteError(RuntimeError):
 
 class NoKey(RouteError):
     """No GOOGLE_MAPS_API_KEY: retrying cannot help."""
+
+
+class RouteDenied(RouteError):
+    """400/401/403: the key or the request is wrong, and will still be wrong in a minute."""
+
+
+class RouteQuota(RouteError):
+    """429 / RESOURCE_EXHAUSTED: wait longer before asking again."""
+
+
+class NoRoute(RouteError):
+    """Google answered, but there is no walking route between the two points."""
+
+
+class RouteUnavailable(RouteError):
+    """Timeout, no network, or a 5xx: worth retrying soon."""
 
 
 # ====================================================================== route data
@@ -124,7 +149,7 @@ def parse_routes(data: dict, label: str | None = None, destination: LatLng | Non
     """A computeRoutes response -> Route. Raises RouteError when there is no usable route."""
     routes = data.get("routes") or []
     if not routes:
-        raise RouteError("no walking route found")
+        raise NoRoute("no walking route found")
     r = routes[0]
     steps: list[Step] = []
     for leg in r.get("legs") or []:
@@ -165,15 +190,33 @@ def fetch_routes(origin: LatLng, destination: LatLng | str, key: str, timeout: f
     import httpx
     body = {"origin": _waypoint(origin), "destination": _waypoint(destination), "travelMode": "WALK",
             "languageCode": "en-US", "units": "METRIC"}
-    r = httpx.post(ROUTES_URL, json=body, timeout=timeout,
-                   headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": FIELD_MASK})
+    try:
+        r = httpx.post(ROUTES_URL, json=body, timeout=timeout,
+                       headers={"X-Goog-Api-Key": key, "X-Goog-FieldMask": FIELD_MASK})
+    except httpx.TimeoutException:
+        raise RouteUnavailable(f"Routes API timed out after {timeout:g}s") from None
+    except httpx.TransportError as e:
+        raise RouteUnavailable(f"Routes API unreachable ({type(e).__name__})") from None
     if r.status_code != 200:
         try:
             why = (r.json().get("error") or {}).get("status") or r.reason_phrase
         except (ValueError, AttributeError):
             why = r.reason_phrase
-        raise RouteError(f"Routes API {r.status_code} {why}")
-    return r.json()
+        raise error_for(r.status_code, why)
+    try:
+        return r.json()
+    except ValueError:
+        raise RouteUnavailable("Routes API sent a response that is not JSON") from None
+
+
+def error_for(status: int, why: str) -> RouteError:
+    """An HTTP failure -> the RouteError subclass that says whether retrying can help."""
+    msg = f"Routes API {status} {why}"
+    if status == 429 or why == "RESOURCE_EXHAUSTED":
+        return RouteQuota(msg)
+    if status in (400, 401, 403, 404):
+        return RouteDenied(msg)
+    return RouteUnavailable(msg)
 
 
 def compute_route(origin: LatLng, destination: LatLng | str, key: str | None = None,
@@ -271,6 +314,10 @@ class RouteFollower:
     BACK_ON_M = 15.0        # hysteresis: back within this resets the off-route clock
     OFF_ROUTE_S = 8.0
     ARRIVE_M = 8.0
+    UTURN_M = 12.0          # this far back along the route...
+    UTURN_S = 3.0           # ...for this long, while actually walking away from it: "turn around"
+    UTURN_WINDOW_S = 4.0
+    UTURN_RESET_M = 5.0
     SNAP_BACK_M = 25.0      # how far behind progress a fix may still match the route
     MAX_SPEED_MPS = 3.0     # progress never runs ahead faster than this (plus STEP_SLACK_M a fix)
     STEP_SLACK_M = 2.0
@@ -316,6 +363,11 @@ class RouteFollower:
         self._last_beacon = -1e9
         self.heading: float | None = None
         self._track_h: float | None = None
+        self.straight = False           # a straight-line stand-in for a real route
+        self._recent_xy: deque[tuple[float, tuple[float, float]]] = deque(maxlen=64)
+        self._uturn_since: float | None = None
+        self._uturn_said = False
+        self._uturns = 0
         self._lock = threading.Lock()
 
     def _maneuver(self, i: int, s: float) -> _Maneuver:
@@ -425,12 +477,50 @@ class RouteFollower:
             return
 
         self._announce(out)
+        if cross <= self.OFF_ROUTE_M:
+            self._recent_xy.append((now, xy))
+            self._check_uturn(now, out)
 
         if rel is not None and now - self._last_beacon >= self.BEACON_MIN_S:
             self._last_beacon = now
             ax, ay = self.point_at(aim)
             dist = math.hypot(ax - here[0], ay - here[1]) + (self.length - aim)
             out.append((self.on_beacon, (round(rel, 1), round(dist, 1), self.label)))
+
+    def _route_dir(self) -> tuple[float, float] | None:
+        """Unit direction of the route where the walker is."""
+        a = min(self.progress, max(0.0, self.length - 5.0))
+        (ax, ay), (bx, by) = self.point_at(a), self.point_at(a + 5.0)
+        n = math.hypot(bx - ax, by - ay)
+        return None if n < 1e-6 else ((bx - ax) / n, (by - ay) / n)
+
+    def _check_uturn(self, now: float, out: list) -> None:
+        """Walking back the way they came (or the wrong way from the start): say so once
+        per episode. Progress never moves backwards, so this is measured separately: how
+        far behind the progress point the recent fixes sit along the route, and whether
+        the walker is really moving away (from the track, so standing still never counts)."""
+        u = self._route_dir()
+        recent = [p for t, p in self._recent_xy if now - t <= self.UTURN_WINDOW_S]
+        if u is None or len(recent) < 3:
+            return
+        px, py = self.point_at(self.progress)
+        back = -median((x - px) * u[0] + (y - py) * u[1] for x, y in recent)
+        if back < self.UTURN_RESET_M:
+            self._uturn_since, self._uturn_said = None, False
+            return
+        moving = geo.heading_from_track(self._track)
+        away = moving is not None and abs(geo.relative_bearing(moving, self.frame.heading_of(*u))) >= 120
+        if back < self.UTURN_M or not away:
+            if back < self.UTURN_M:
+                self._uturn_since = None
+            return
+        if self._uturn_since is None:
+            self._uturn_since = now
+        elif now - self._uturn_since >= self.UTURN_S and not self._uturn_said:
+            self._uturn_said = True
+            self._uturns += 1
+            out.append((self.on_guidance, ("You're walking away from the route. Turn around.",
+                                           f"{self.prefix}:uturn:{self._uturns}", 6.0)))
 
     def _track_heading(self) -> float | None:
         """Walking direction from the fixes, smoothed: a heading from GPS displacement swings
@@ -512,7 +602,8 @@ class RouteFollower:
         return {"destination": self.label, "remaining_m": round(max(0.0, self.length - self.progress)),
                 "next": m.primary if m else "arrive",
                 "next_in_m": round((m.s if m else self.length) - self.progress),
-                "off_route": self.off_route, "rerouting": self.rerouting, "arrived": self.done}
+                "off_route": self.off_route, "rerouting": self.rerouting, "arrived": self.done,
+                "wrong_way": self._uturn_said}
 
 
 # ====================================================================== the app's live route
@@ -522,8 +613,13 @@ class RouteGuide:
     guidance / beacon message, so route cues are spoken, mirrored and logged exactly like
     ones from any other producer."""
 
-    RETRY_S = 15.0
+    RETRY_S = 15.0          # timeouts, no network, 5xx
+    QUOTA_RETRY_S = 60.0    # 429: asking again sooner only burns more quota
     MAX_ATTEMPTS = 3
+    REROUTE_MIN_S = 20.0    # at most one reroute request this often...
+    REROUTE_MAX = 5         # ...and this many per window; meanwhile the beacon points straight there
+    REROUTE_WINDOW_S = 600.0
+    OFF_ROUTE_REPEAT_S = 60.0   # "You're off the route" is not repeated sooner than this
 
     def __init__(self, emit: Callable[[Msg], None], event: Callable[[str, dict], None] | None = None,
                  log: Callable[[str], None] = print, key: str | None = None):
@@ -538,6 +634,10 @@ class RouteGuide:
         self._busy = False
         self._attempts = 0
         self._retry_at = 0.0
+        self._reroutes: deque[float] = deque()
+        self._told_no_directions = False
+        self._off_route_said = -1e9
+        self.stats = {"requests": 0, "failures": 0, "reroutes": 0, "reroutes_delayed": 0}
         self._lock = threading.Lock()
 
     @property
@@ -551,7 +651,8 @@ class RouteGuide:
             self.destination, self.label = (float(destination[0]), float(destination[1])), label
             self.follower = None
             self._attempts, self._retry_at, self._pending = 0, 0.0, True
-        self._maybe_route(time.monotonic())
+            self._told_no_directions = False
+        self._maybe_route()
 
     def cancel(self) -> None:
         with self._lock:
@@ -570,7 +671,7 @@ class RouteGuide:
         f = self.follower
         if f is not None:
             f.update(pos["lat"], pos["lng"], pos.get("heading"), now, pos.get("accuracy"))
-        self._maybe_route(now)
+        self._maybe_route()
 
     def summary(self) -> dict | None:
         f = self.follower
@@ -579,40 +680,58 @@ class RouteGuide:
         return {"destination": self.label, "state": "routing"} if self.destination else None
 
     # ------------------------------------------------------------ internals
-    def _maybe_route(self, now: float) -> None:
+    def _maybe_route(self) -> None:
+        # Retry and rate-limit times are wall-clock (monotonic) even when positions carry
+        # their own timestamps (the sim, replays, tests).
         with self._lock:
-            if not self._pending or self._busy or self.last is None or now < self._retry_at:
+            if (not self._pending or self._busy or self.last is None or self.destination is None
+                    or time.monotonic() < self._retry_at):
                 return
             self._pending, self._busy = False, True
             self._attempts += 1
+            self.stats["requests"] += 1
             job = (self._gen, (self.last["lat"], self.last["lng"]), self.destination, self.label,
                    self._attempts)
         threading.Thread(target=self._route, args=job, name="route", daemon=True).start()
+
+    def _retry_delay(self, e: Exception) -> float | None:
+        """Seconds before asking Google again, or None when asking again cannot help."""
+        if isinstance(e, (NoKey, RouteDenied, NoRoute)):
+            return None
+        return self.QUOTA_RETRY_S if isinstance(e, RouteQuota) else self.RETRY_S
 
     def _route(self, gen: int, origin: LatLng, dest: LatLng, label: str | None, attempt: int) -> None:
         try:
             r = compute_route(origin, dest, key=self.key, label=label)
         except Exception as e:
             self.log(f"[route] no route ({type(e).__name__}: {e})")
+            delay = self._retry_delay(e)
             with self._lock:
                 self._busy = False
+                self.stats["failures"] += 1
                 if gen != self._gen:
                     return
-                if attempt < self.MAX_ATTEMPTS and not isinstance(e, NoKey):
-                    self._pending, self._retry_at = True, time.monotonic() + self.RETRY_S
-            self.event("route", {"state": "failed", "error": type(e).__name__})
-            if attempt == 1:
+                if attempt < self.MAX_ATTEMPTS and delay is not None:
+                    self._pending, self._retry_at = True, time.monotonic() + delay
+                tell = not self._told_no_directions
+                self._told_no_directions = True
+                replace = attempt == 1 and (self.follower is None or not self.follower.straight)
+            self.event("route", {"state": "failed", "error": type(e).__name__,
+                                 "retry_s": delay if attempt < self.MAX_ATTEMPTS else None})
+            if tell:
                 # Soundscape's answer to "no directions": a beacon straight at the place, so the
-                # walker still knows which way it is. Replaced if a retry gets a real route.
-                self._say(fit(f"I couldn't get walking directions. The beacon points straight at "
-                              f"{label or 'your destination'}."), gen)
+                # walker still knows which way it is. Said once per destination, however many
+                # retries and reroutes fail after it; replaced if a retry gets a real route.
+                self._say(no_directions_text(label, e), gen)
+            if replace:
                 self._follow(straight_route(origin, dest, label), gen, label, fallback=True)
             return
         with self._lock:
             self._busy = False
         self._follow(r, gen, label)
 
-    def _follow(self, r: Route, gen: int, label: str | None, fallback: bool = False) -> None:
+    def _follow(self, r: Route, gen: int, label: str | None, fallback: bool = False,
+                state: str | None = None) -> None:
         with self._lock:
             if gen != self._gen:
                 return                            # cancelled or replaced while we were routing
@@ -621,12 +740,13 @@ class RouteGuide:
                 on_beacon=lambda b, d, lab: self._beacon(b, d, lab, gen),
                 on_reroute=lambda: self._reroute(gen), on_arrived=lambda lab: self._arrived(lab, gen),
                 label=label, key_prefix=f"route{gen}")
+            f.straight = fallback
             if fallback:
                 f.OFF_ROUTE_M = math.inf          # streets never follow a straight line
-                f.started = True                  # the apology above was the start
+                f.started = True                  # the apology (or the off-route line) was the start
         pts = r.points()
         step = max(1, len(pts) // 200)
-        self.event("route", {"state": "fallback" if fallback else "started", "label": label,
+        self.event("route", {"state": state or ("fallback" if fallback else "started"), "label": label,
                              "distance_m": round(r.distance_m), "duration_s": r.duration_s,
                              "points": [[round(a, 6), round(b, 6)] for a, b in pts[::step] + pts[-1:]]})
         self.log(f"[route] {'straight line' if fallback else 'walking route'}: {round(r.distance_m)} m, "
@@ -639,8 +759,14 @@ class RouteGuide:
         return gen == self._gen
 
     def _guidance(self, text: str, key: str, ttl: float, gen: int) -> None:
-        if self._live(gen):
-            self.emit(Msg("guidance", "route", text=text, key=key, ttl=ttl, priority="nav"))
+        if not self._live(gen):
+            return
+        if key.endswith(":off-route"):
+            now = time.monotonic()
+            if now - self._off_route_said < self.OFF_ROUTE_REPEAT_S:
+                return                            # said a minute ago: the walker knows
+            self._off_route_said = now
+        self.emit(Msg("guidance", "route", text=text, key=key, ttl=ttl, priority="nav"))
 
     def _say(self, text: str, gen: int) -> None:
         if self._live(gen):
@@ -651,14 +777,34 @@ class RouteGuide:
             self.emit(Msg("beacon", "route", bearing=bearing, distance=distance, label=label))
 
     def _reroute(self, gen: int) -> None:
+        """Off the route: ask for a new one from here, but never more often than
+        REROUTE_MIN_S nor more than REROUTE_MAX times per REROUTE_WINDOW_S. While a request
+        has to wait, the beacon points straight at the destination."""
+        now = time.monotonic()
         with self._lock:
             if gen != self._gen:
                 return
             self._gen += 1                        # the old follower's cues stop here
+            new_gen = self._gen
+            while self._reroutes and now - self._reroutes[0] >= self.REROUTE_WINDOW_S:
+                self._reroutes.popleft()
+            wait = 0.0
+            if self._reroutes:
+                wait = max(wait, self._reroutes[-1] + self.REROUTE_MIN_S - now)
+            if len(self._reroutes) >= self.REROUTE_MAX:
+                wait = max(wait, self._reroutes[0] + self.REROUTE_WINDOW_S - now)
+            self._reroutes.append(now + wait)
+            self.stats["reroutes"] += 1
+            if wait > 0:
+                self.stats["reroutes_delayed"] += 1
             self.follower = None
-            self._attempts, self._retry_at, self._pending = 0, 0.0, True
-        self.event("route", {"state": "rerouting"})
-        self._maybe_route(time.monotonic())
+            self._attempts, self._retry_at, self._pending = 0, now + wait, True
+            last, dest, label = self.last, self.destination, self.label
+        self.event("route", {"state": "rerouting", "wait_s": round(wait, 1)})
+        if wait > 0 and last is not None and dest is not None:
+            self._follow(straight_route((last["lat"], last["lng"]), dest, label), new_gen, label,
+                         fallback=True, state="holding")
+        self._maybe_route()
 
     def _arrived(self, label: str | None, gen: int) -> None:
         if not self._live(gen):
@@ -671,3 +817,12 @@ class RouteGuide:
             if gen == self._gen:
                 self.destination, self.follower = None, None
         self.event("route", {"state": "arrived", "label": label})
+
+
+def no_directions_text(label: str | None, e: Exception | None = None) -> str:
+    """What the walker hears when Google can't help: short, and always says what the beacon
+    is doing, so silence is never the only answer."""
+    who = label if label and len(label.split()) <= 4 else "your destination"
+    lead = "No walking route found." if isinstance(e, NoRoute) else "No directions right now."
+    return f"{lead} The beacon points to {who}."
+

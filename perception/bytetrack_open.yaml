@@ -1,0 +1,9 @@
+# ByteTrack for the open-vocabulary model. Ultralytics' default starts a track only at score 0.25, but
+# rare street objects score lower (a parked scooter at 6 m: 0.16-0.2), so new tracks start at 0.15 here.
+tracker_type: bytetrack
+track_high_thresh: 0.15
+track_low_thresh: 0.08
+new_track_thresh: 0.15
+track_buffer: 30
+match_thresh: 0.8
+fuse_score: True

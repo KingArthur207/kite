@@ -4,12 +4,19 @@ import {
   WALKER_RADIUS, WALK_SPEED, TURN_SPEED, RELAY_URL, EARPIECE_URL, FRAME_FPS, POSITION_HZ, toLatLng,
 } from "./config";
 import { buildWorld } from "./world";
-import { buildOsmWorld, type WorldExtras } from "./osmWorld";
+import { buildOsmWorld, route, type WorldExtras } from "./osmWorld";
+import { droneTarget, stepDrone, type DronePose } from "./droneLook";
 import { buildRealWorld } from "./realWorld";
+import { buildPhotoWorld, addWallLabelKey, photoWalls } from "./photoWorld";
 import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
 import { clampToFence } from "./fence";
+import { SHOTS } from "./shots";
+import { startShot, shotCam } from "./shot";
+import { colliderOverlay } from "./colliders";
+import { look2, createPost } from "./look2";
+import { startCompare } from "./compare";
 
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
@@ -19,6 +26,16 @@ import { clampToFence } from "./fence";
 // Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
 // ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
+// ?shot=<name>: film a shot for the demo video (shots.ts, shot.ts, scripts/record_shot.py). The shot's query
+// defaults (world, metrics settings) fill in whatever the URL leaves out; sockets stay offline, debug off.
+const shotName = query.get("shot");
+const shot = shotName === null ? null : SHOTS[shotName];
+if (shotName !== null && !shot) throw new Error(`unknown ?shot=${shotName}; one of ${Object.keys(SHOTS).join(", ")}`);
+if (shot) {
+  for (const [k, v] of Object.entries({ ...shot.query, relay: "", ear: "" })) if (!query.has(k)) query.set(k, v);
+  query.delete("debug");
+}
+const scriptedCorner = shot?.carAtZebra !== undefined;   // the shot drives the corner's car itself
 const metricsOn = query.get("metrics") === "1";
 // Capture frames get the Tello camera model in Python (sim/tello_cam.py, applied by sim/frames.py); ?cam=raw turns it
 // off. The flag rides on the pose messages. The screen view is never modelled.
@@ -29,7 +46,7 @@ const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
 const cams = [droneCam, chestCam]; // index = camera id on the wire
 // ?debug=1: T swaps the on-screen drone view for a north-up view from TOP_VIEW_M over the walker,
 // low enough that its footprint (about 110 x 150 m) stays inside the tiles geofence.
-const TOP_VIEW_M = 120;
+const TOP_VIEW_M = Number(query.get("top")) || 120;   // ?top=<m> lowers it (collider screenshots)
 const debug = query.get("debug") === "1";
 const topCam = new THREE.PerspectiveCamera(50, aspect, 1, 1000);
 let topView = false;
@@ -47,9 +64,10 @@ const capture = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer
 capture.setPixelRatio(1);
 capture.setSize(CAM_W, CAM_H, false);
 
-// ?world=real (default): the Blender-built street with Street View facades from the local public/local/moss_real.glb,
+// ?world=photo (opt-in): OSM Moss with Street View photo walls from public/local/facades_*/manifest.json.
+// ?world=real (default otherwise): the Blender-built street from the local public/local/moss_real.glb,
 // falling back to the textured OSM street when that file is missing.
-let worldName = metricsOn ? "moss" : query.get("world") ?? "real";   // ?world=tiles for Google 3D (looks crumpled at street level)
+let worldName = metricsOn ? "moss" : query.get("world") ?? "moss";   // default: textured OSM street (city data + dressing); ?world=real (Blender GLB), ?world=photo and ?world=tiles are opt-in until the team approves one
 if (worldName === "tiles" && !TILES_KEY) {
   console.warn("[sim] no VITE_GOOGLE_MAPS_API_KEY (run sh sim/tiles_env.sh); using ?world=moss");
   worldName = "moss";
@@ -58,14 +76,17 @@ const walkers = () => [walker];                                       // cars yi
 const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () => void; view?: (m: "screen" | "capture") => void } =
   worldName === "placeholder" ? buildWorld()
   : worldName === "tiles" ? buildTilesWorld({
-    walkers, cameras: [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
+    walkers, cameras: shot ? [shotCam] : [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
+    scriptedCorner, manualLevel: !!shot,
     detector: query.get("detector") === "tiles" ? "tiles" : "osm",   // OSM capture by default: YOLO recall on tile frames is far lower (PR #41)
   })
-  : worldName === "real" ? buildRealWorld({ actors: !metricsOn, walkers })
-  : buildOsmWorld({ actors: !metricsOn, walkers });
+  : worldName === "photo" ? buildPhotoWorld({ actors: !metricsOn, walkers, scriptedCorner })
+  : worldName === "real" ? buildRealWorld({ actors: !metricsOn, walkers, scriptedCorner })
+  : buildOsmWorld({ actors: !metricsOn, walkers, scriptedCorner });
 world.tune?.(capture);   // tone mapping, colour space and shadows; the screen renderer gets the same
 if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
 const { scene } = world;
+if (worldName === "photo" && world.overlay) addWallLabelKey(world.overlay);   // L: wall labels on screen
 
 // Walker: (x east, n north), heading in compass degrees (0 = north, 90 = east).
 const walker = { x: 0, n: 0, heading: 0, ...world.spawn };
@@ -75,21 +96,33 @@ const body = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0x4a6fa5 }),
 );
 scene.add(body);
-const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }) : null;
+const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }, query) : null;
+if (shot) body.visible = false;   // the shot has its own walker model
+// ?colliders=1: every collider and the walker's circle, drawn on screen only (colliders.ts).
+const colliders = query.get("colliders") === "1" && world.walls ? colliderOverlay(scene, world.walls(0, 0, Infinity) as number[][], WALKER_RADIUS) : null;
 
 function forward() {
   const h = THREE.MathUtils.degToRad(walker.heading);
   return { x: Math.sin(h), z: -Math.cos(h) }; // three.js z points south
 }
 
+// The drone follows behind the walker's head, and scouts corners on the route (droneLook.ts).
+let drone: DronePose = { x: walker.x, n: walker.n, y: HEAD_TOP + DRONE_ABOVE_HEAD, heading: walker.heading };
+let droneScouting = false, lastPlaced = performance.now();
+
 function placeCameras() {
   if (worldName === "tiles") Object.assign(walker, clampToFence(walker.x, walker.n, FENCE_INSET_M));
   const f = forward();
   const wx = walker.x, wz = -walker.n;
   body.position.set(wx, HEAD_TOP / 2, wz);
-  const droneY = HEAD_TOP + DRONE_ABOVE_HEAD;
-  droneCam.position.set(wx - f.x * DRONE_BEHIND, droneY, wz - f.z * DRONE_BEHIND);
-  droneCam.lookAt(droneCam.position.x + f.x, droneY, droneCam.position.z + f.z);
+  const now = performance.now();
+  const target = droneTarget(walker, worldName === "placeholder" ? [] : route, HEAD_TOP + DRONE_ABOVE_HEAD, DRONE_BEHIND);
+  drone = stepDrone(drone, target, Math.min(0.2, (now - lastPlaced) / 1000));
+  droneScouting = target.scouting;
+  lastPlaced = now;
+  const dh = THREE.MathUtils.degToRad(drone.heading);
+  droneCam.position.set(drone.x, drone.y, -drone.n);
+  droneCam.lookAt(drone.x + Math.sin(dh), drone.y, -drone.n - Math.cos(dh));
   const chestOut = 0.3; // just in front of the body capsule
   chestCam.position.set(wx + f.x * chestOut, CHEST_HEIGHT, wz + f.z * chestOut);
   chestCam.lookAt(chestCam.position.x + f.x, CHEST_HEIGHT, chestCam.position.z + f.z);
@@ -108,12 +141,18 @@ world.tune?.(renderer);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setScissorTest(true);
 view.appendChild(renderer.domElement);
-const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
-window.addEventListener("resize", resize);
-resize();
+// ?look=2 (look2.ts): AO, grade and SMAA on the main view and shots of the textured Moss world. Capture frames stay plain.
+const postReady = look2 && worldName === "moss" ? createPost(renderer, scene) : Promise.resolve(null);
+let post: ((cam: THREE.Camera) => void) | null = null;
+void postReady.then((p) => { post = p; }).catch((e) => console.error("[look2] post-processing off", e));
+const resize = () => renderer.setSize(view.clientWidth, view.clientHeight);
+if (!shot) { window.addEventListener("resize", resize); resize(); }
+// ?compare=1 (compare.ts): Street View beside the sim, synced to the drone camera.
+const compare = query.get("compare") === "1" && !shot && !metricsOn
+  ? startCompare({ walker, canvas: renderer.domElement, view }) : null;
 
 function drawScreen() {
-  const W = window.innerWidth, H = window.innerHeight;
+  const W = view.clientWidth, H = view.clientHeight;
   renderer.setScissor(0, 0, W, H);
   renderer.setClearColor(0x000000);
   renderer.clear();
@@ -123,12 +162,15 @@ function drawScreen() {
   renderer.setScissor(x, y, w, h);
   world.view?.("screen");                          // tiles on (they may be off for ?detector=osm capture)
   if (world.overlay) world.overlay.visible = true; // screen only, never in camera frames
-  renderer.render(scene, topView ? topCam : worldName === "tiles" ? chaseCam : droneCam);
+  if (colliders) { colliders.update(world.solids(), walker); colliders.group.visible = true; }
+  const cam = topView ? topCam : worldName === "tiles" ? chaseCam : droneCam;
+  if (post) post(cam); else renderer.render(scene, cam);
   const iw = w * 0.25, ih = iw / aspect, pad = 10;
   renderer.setViewport(x + w - iw - pad, y + pad, iw, ih);
   renderer.setScissor(x + w - iw - pad, y + pad, iw, ih);
   renderer.render(scene, chestCam);
   if (world.overlay) world.overlay.visible = false;
+  if (colliders) colliders.group.visible = false;
 }
 
 // --- sockets
@@ -162,7 +204,11 @@ setInterval(() => {
              lat, lng, x: walker.x, y: walker.n });
   const camHeights = { drone: HEAD_TOP + DRONE_ABOVE_HEAD, chest: CHEST_HEIGHT };
   for (const [camera, cam_height] of Object.entries(camHeights)) {
-    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0, cam_model: camModel });
+    // x, y, heading are the walker's. The drone also sends where it is and which way it looks (cam_*):
+    // it is 1 m behind the walker while following and somewhere else while scouting a corner.
+    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0, cam_model: camModel,
+                 ...(camera === "drone" ? { cam_height: +drone.y.toFixed(2), cam_x: +drone.x.toFixed(2), cam_y: +drone.n.toFixed(2),
+                                            cam_heading: +drone.heading.toFixed(1), scouting: droneScouting } : {}) });
   }
 }, 1000 / POSITION_HZ);
 
@@ -187,6 +233,7 @@ window.addEventListener("blur", () => keys.clear());
 
 // --- movement + collision (AABB on the ground plane)
 let collisions = 0;
+const SLIDE_DEG = [20, -20, 40, -40, 60, -60];   // step deflections tried when the straight step is blocked
 let touching = false;
 let status = "";
 let lastDebug = -1e9;
@@ -205,19 +252,30 @@ function step(dt: number) {
   const dir = (keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0);
   const boxes = world.solids();
   const here = hits(walker.x, walker.n, boxes);
-  let blocked = false;
+
   let moved = false;
   if (dir !== 0) {
-    const f = forward();
-    const nx = walker.x + f.x * dir * WALK_SPEED * dt;
-    const nn = walker.n - f.z * dir * WALK_SPEED * dt;
+    const f = forward(), d = dir * WALK_SPEED * dt;
     // Block only on boxes we aren't already inside, so a car that drove into us can't pin us.
-    blocked = hits(nx, nn, boxes).some((b) => !here.includes(b));
-    if (!blocked) { walker.x = nx; walker.n = nn; moved = true; }
+    const free = (dx: number, dn: number) => !hits(walker.x + dx, walker.n + dn, boxes).some((b) => !here.includes(b));
+    const blocked = !free(f.x * d, -f.z * d);
+    // Glancing contact slides along the obstacle (the step turned up to 60 degrees, shortened by the cosine)
+    // instead of stopping dead: brushing a trunk or a curb no longer freezes the walker.
+    const slide = blocked ? SLIDE_DEG.map((a) => THREE.MathUtils.degToRad(a)).find((a) => {
+      const c = Math.cos(a), s = Math.sin(a);
+      return free((f.x * c + f.z * s) * d * c, (-f.z * c + f.x * s) * d * c);
+    }) : 0;
+    if (slide !== undefined) {
+      const c = Math.cos(slide), s = Math.sin(slide);
+      walker.x += (f.x * c + f.z * s) * d * c;
+      walker.n += (-f.z * c + f.x * s) * d * c;
+      moved = true;
+    }
   }
   // Count each new contact once; the 10 cm margin stops creeping up to a wall from re-counting.
   const contact = hits(walker.x, walker.n, boxes, WALKER_RADIUS + 0.1).length > 0;
   if (contact && !touching) collisions++;
+  if (colliders) (window as unknown as { __kiteContacts: unknown }).__kiteContacts = hits(walker.x, walker.n, boxes, WALKER_RADIUS + 0.1);
   touching = contact;
 
   const s = moved ? "walking" : "stopped";
@@ -233,7 +291,7 @@ function drawHud() {
     `lat/lng: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n` +
     `relay ${relay.open ? "on" : "off"}   earpiece ${ear.open ? "on" : "off"}   ${status}\n` +
     (black ? "BLACK SCREEN (V to reveal)\n" : "") +
-    `\narrows walk/turn   B black screen   V reveal\nH  DEBUG: send one fake crowd hazard${dbg}`;
+    `\narrows walk/turn   B black screen   V reveal${worldName === "photo" ? "   L wall labels" : ""}\nH  DEBUG: send one fake crowd hazard${dbg}`;
 }
 
 let last = performance.now();
@@ -246,11 +304,12 @@ function frame(now: number) {
   world.updateTiles?.();
   view.classList.toggle("hidden", black);
   if (!black) drawScreen();
+  compare?.frame();
   if (metrics) hud.textContent = metrics.hud(); else drawHud();
   requestAnimationFrame(frame);
 }
-placeCameras();
-requestAnimationFrame(frame);
+if (shot) startShot({ name: shotName!, shot, scene, renderer, world, worldName, walker, metrics, place: placeCameras, post: postReady });
+else { placeCameras(); requestAnimationFrame(frame); }
 
 // Tell anyone wiring this up which numbers the cameras use.
 console.info(`[sim] camera ${CAM_W}x${CAM_H}, vfov ${VFOV_DEG.toFixed(2)}°, eye ${EYE_HEIGHT} m`);

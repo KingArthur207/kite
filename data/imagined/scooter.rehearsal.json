@@ -1,0 +1,14 @@
+{
+  "scene": "scooter",
+  "frames_with_objects": 72,
+  "kinds": [
+    "vehicle"
+  ],
+  "first_seen_s": 0.0,
+  "closest_m": 42.19,
+  "would_stop": false,
+  "kite_said": [
+    "8.3s Obstacle detection paused."
+  ],
+  "kite_should": "a low obstacle ahead; the chest camera's job, the drone can't see it"
+}

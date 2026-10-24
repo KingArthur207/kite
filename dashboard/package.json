@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check": "node --experimental-strip-types --no-warnings src/timeline.check.ts && node --experimental-strip-types --no-warnings src/view.check.ts",
     "preview": "vite preview",
     "spacetime:generate": "spacetime generate --lang typescript --out-dir src/module_bindings --module-path spacetimedb -y",
     "spacetime:publish": "spacetime publish --module-path spacetimedb --server maincloud kite-sync-pl6rp -y",

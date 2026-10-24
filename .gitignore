@@ -45,3 +45,9 @@ logs/
 
 # Street View-derived facades, model and screenshots stay local, never committed or published
 sim/public/local/
+
+# Grok Imagine clips and rehearsal outputs (regenerate with scripts/imagine_scenes.py);
+# the stills, manifest and rehearsal summaries are committed
+data/imagined/*.mp4
+data/imagined/*.wav
+data/imagined/*.jsonl

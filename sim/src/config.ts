@@ -1,6 +1,6 @@
 // Sim constants. World frame: x = meters east, y = up, z = meters south (north is -z).
 
-export const FX = 1000;                 // Tello focal length in px; Arthur's calibration replaces this
+export const FX = 1000;                 // Tello focal length in px; the Tello calibration replaces this
 export const CAM_W = 960;
 export const CAM_H = 720;
 export const VFOV_DEG = (2 * Math.atan(CAM_H / 2 / FX) * 180) / Math.PI;
@@ -31,3 +31,8 @@ export function toLatLng(east: number, north: number) {
     lng: ORIGIN.lng + east / (mPerDegLat * Math.cos((ORIGIN.lat * Math.PI) / 180)),
   };
 }
+
+/** Inverse of toLatLng: sim metres (x east, y north). */
+export const toSim = ({ lat, lng }: { lat: number; lng: number }) => ({
+  x: (lng - ORIGIN.lng) * 111320 * Math.cos((ORIGIN.lat * Math.PI) / 180), y: (lat - ORIGIN.lat) * 111320,
+});

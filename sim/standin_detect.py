@@ -1,7 +1,7 @@
 """Stand-in until streetseg lands; same events, same FrameSource.
 
 YOLO11n boxes -> earpiece events, so "real detector on sim frames -> beep in AirPods"
-works before Rex's streetseg exists. Swap this file out; nothing downstream changes.
+works before the streetseg perception package exists. Swap this file out; nothing downstream changes.
 
     python sim/standin_detect.py --download                  # once, fetches weights/yolo11n.pt
     python sim/standin_detect.py                             # sim chest + drone via sim/relay.py
@@ -9,8 +9,10 @@ works before Rex's streetseg exists. Swap this file out; nothing downstream chan
     python sim/standin_detect.py --source webcam:iPhone --show   # live chest camera, by name or index (kite.sources)
     python sim/standin_detect.py --source streetview:route --camera drone --jsonl sv.jsonl --no-send   # real imagery
 
-chest camera -> `obstacles` (every frame, ~8-10 Hz) + `heartbeat` when empty
-drone camera -> `hazard` crowd / vehicle (3-frame onset, silent ttl expiry) + `scene` every 10 s
+chest camera -> `obstacles` (every frame, ~8-10 Hz) + `heartbeat` when empty; static things stay in them for a
+                while after they leave the view (world_frame.ObstacleMemory); --world adds YOLO-World street classes
+drone camera -> `hazard` crowd / vehicle (3-frame onset, silent ttl expiry) + `scene` every 10 s; a car closing
+                on the crossing ahead -> `hazard` vehicle/corner, state wait (world_frame.CornerWatch)
 
 Geometry assumes pitch 0 and square pixels (fy = fx): bearing from bbox centre x,
 distance from the bbox bottom row on flat ground, else from a typical object height.
@@ -33,20 +35,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from earpiece.events import clock_phrase, distance_phrase  # noqa: E402  (needs numpy, scipy)
 import live_walk  # noqa: E402
+import world_frame  # noqa: E402
 
 WEIGHTS = ROOT / "weights" / "yolo11n.pt"
+# Open vocabulary for the chest camera (--world): street things COCO has no class for. `--download --world` bakes
+# this vocabulary into WORLD_WEIGHTS once (it needs CLIP then); at runtime nothing is fetched.
+WORLD_BASE = ROOT / "weights" / "yolov8s-worldv2.pt"
+WORLD_WEIGHTS = ROOT / "weights" / "yolov8s-worldv2-street.pt"
+WORLD_KIND = {"trash can": "bin", "bin": "bin", "sign": "sign", "pole": "pole", "bollard": "bollard",
+              "fire hydrant": "fire_hydrant", "bench": "bench", "scooter": "scooter", "stroller": "stroller"}
+WORLD_CONF = 0.3        # sim: the street's trash cans score 0.7; the metric's plain green box at most 0.23
 DEFAULT_FX = 1000.0
 LIVE_FX = 700.0             # iPhone 1x / MacBook camera at 960 wide (~69 deg across); calibrate with --fx
 DEFAULT_HEIGHT = {"chest": 1.2, "drone": 2.0}     # sim: CHEST_HEIGHT, HEAD_TOP + DRONE_ABOVE_HEAD
 DRONE_BEHIND_M = 1.0
 MIN_D, MAX_D = 0.3, 50.0
 GROUND_MIN_PX = 12          # bbox bottom must be this far below the horizon to trust ground geometry
-EDGE_PX = 8                 # bbox this close to the bottom edge counts as cut off
+EDGE_PX = 16                # bbox this close to the bottom (or top) edge counts as cut off (YOLO boxes stop
+                            # a few px short of the edge: at 8 px one person flickered 1.3 m / 3.2 m)
+PERSON_W = 0.45             # m, a person's box width face-on; only used when head and feet are both out of frame
 
 KIND = {"person": "person", "bicycle": "bike", "car": "vehicle", "motorcycle": "vehicle",
         "bus": "vehicle", "truck": "vehicle", "fire hydrant": "fire_hydrant", "parking meter": "pole",
-        "bench": "bench", "dog": "dog", "chair": "chair", "potted plant": "plant", "suitcase": "suitcase"}
-TYPICAL_H = {"person": 1.7, "bike": 1.1, "vehicle": 1.5, "bus": 3.0, "truck": 3.0}
+        "bench": "bench", "dog": "dog", "chair": "chair", "potted plant": "plant", "suitcase": "suitcase",
+        **WORLD_KIND}
+TYPICAL_H = {"person": 1.7, "bike": 1.1, "vehicle": 1.5, "bus": 3.0, "truck": 3.0, "bin": 1.0, "sign": 0.5,
+             "pole": 3.0, "bollard": 0.9, "fire_hydrant": 0.8, "bench": 0.9, "scooter": 1.1, "stroller": 1.0}
 
 # drone hazard rules
 CROWD_N, CROWD_NEAR, CROWD_FAR, CROWD_HALF_ANGLE = 3, 1.0, 15.0, 35.0
@@ -75,9 +89,10 @@ def distance_m(y_bottom: float, box_h: float, cam_height: float, fx: float = DEF
                height: int = 720, real_h: float = 1.7, pitch: float = 0.0, y_top: float | None = None) -> float:
     """Flat-ground distance from the bbox bottom row; size-based when the foot point is
     at or above the horizon (or too close to it to be stable). Clamped to [0.3, 50] m.
-    Pass y_top when the box is cut off by the bottom edge (a person close to a chest camera):
-    the feet are below the frame, so the bottom row and box height only bound the distance
-    from above, and the top row (head at real_h) gives it when the object is taller than the camera."""
+    Pass y_top when the box is cut off by the bottom or the top edge (a person close to a chest camera):
+    the object is taller in the image than its box, so the bottom row and box height only bound the
+    distance from above, and the top row (head at real_h, or above it) gives it when the object is
+    taller than the camera."""
     stable = math.atan(GROUND_MIN_PX / fx)
     a = below_horizon(y_bottom, fx, height, pitch)
     size_d = real_h * fx / max(box_h, 1.0)
@@ -98,6 +113,15 @@ def drone_to_walker(bearing: float, distance: float, behind: float = DRONE_BEHIN
     return math.degrees(math.atan2(lat, fwd)), math.hypot(fwd, lat)
 
 
+def drone_obj_to_walker(o: dict, pose: dict | None) -> tuple[float, float]:
+    """Drone object -> (bearing, distance) from the walker. While the drone scouts a corner its pose says where it
+    is and which way it looks (cam_x, cam_y, cam_heading); else it is DRONE_BEHIND_M behind, looking the same way."""
+    if pose and "cam_x" in pose and world_frame.walker_of(pose):
+        x, y = world_frame.to_world(world_frame.drone_cam(pose), o["bearing"], o["distance"])
+        return world_frame.to_walker(world_frame.walker_of(pose), x, y)
+    return drone_to_walker(o["bearing"], o["distance"])
+
+
 def objects_from_boxes(boxes, fx: float, cam_height: float, width: int, height: int,
                        pitch: float = 0.0) -> list[dict]:
     """boxes: [(x1, y1, x2, y2, coco_name, conf, track_id|None)] -> earpiece objects."""
@@ -107,8 +131,14 @@ def objects_from_boxes(boxes, fx: float, cam_height: float, width: int, height: 
         if kind is None:
             continue
         real_h = TYPICAL_H.get(name, TYPICAL_H.get(kind, 1.0))
-        cut = y2 >= height - EDGE_PX
-        d = distance_m(y2, y2 - y1, cam_height, fx, height, real_h, pitch, y_top=y1 if cut else None)
+        cut, top_cut = y2 >= height - EDGE_PX, y1 <= EDGE_PX
+        # Head above the frame: the top row still bounds the distance, even when the bottom row looks like feet
+        # (a box ending 9 px above the edge read 3.2 m for someone at 1.3 m; live_walk_bench).
+        d = distance_m(y2, y2 - y1, cam_height, fx, height, real_h, pitch, y_top=y1 if cut or top_cut else None)
+        if cut and top_cut and kind == "person":
+            # head and feet both out of frame: no row can say how close (at 15 deg down on 960x540 every distance
+            # under 1.65 m read 1.65, so "Stop" never fired). Shoulder width still can.
+            d = max(MIN_D, min(d, PERSON_W * fx / max(x2 - x1, 1.0)))
         out.append({"id": str(tid if tid is not None else i), "kind": kind,
                     "bearing": round(bearing_deg((x1 + x2) / 2, fx, width), 1),
                     "distance": round(d, 2), "confidence": round(float(conf), 2), "cut_off": cut})
@@ -146,7 +176,7 @@ def drone_hazards(objs: list[dict], lateral: live_walk.RangeFilter | None = None
     for o in objs:
         if o["kind"] == "person" and o["cut_off"]:
             continue
-        b, d = drone_to_walker(o["bearing"], o["distance"])
+        b, d = drone_obj_to_walker(o, pose)
         if o["kind"] == "person" and CROWD_NEAR <= d <= CROWD_FAR and abs(b) <= CROWD_HALF_ANGLE:
             people.append((b, d))
         elif o["kind"] == "vehicle" and abs(b) < 90 and d <= VEHICLE_RANGE:
@@ -207,14 +237,21 @@ class HazardGate:
 
 
 # ------------------------------------------------------------------ runtime
-def download() -> None:
+def download(world: bool = False) -> None:
     from ultralytics.utils.downloads import attempt_download_asset
     WEIGHTS.parent.mkdir(exist_ok=True)
     print(attempt_download_asset(str(WEIGHTS)))
+    if world:
+        from ultralytics import YOLOWorld
+        print(attempt_download_asset(str(WORLD_BASE)))
+        m = YOLOWorld(str(WORLD_BASE))
+        m.set_classes(list(WORLD_KIND))         # CLIP text encoder, only here
+        m.save(str(WORLD_WEIGHTS))
+        print(WORLD_WEIGHTS)
 
 
-def detect(model, frame, track: bool) -> list[tuple]:
-    kw = dict(verbose=False, conf=0.35, imgsz=640)
+def detect(model, frame, track: bool, conf: float = 0.35) -> list[tuple]:
+    kw = dict(verbose=False, conf=conf, imgsz=640)
     r = (model.track(frame, persist=True, **kw) if track else model.predict(frame, **kw))[0]
     b = r.boxes
     if b is None or len(b) == 0:
@@ -247,6 +284,7 @@ def main() -> None:
     ap.add_argument("--list-cameras", action="store_true", help="print the cameras (index, name, size) and exit")
     ap.add_argument("--camera", choices=("chest", "drone", "both"), default="both")
     ap.add_argument("--relay", default="ws://127.0.0.1:5020/sub")
+    ap.add_argument("--ear-port", type=int, default=5010, help="earpiece UDP port")
     ap.add_argument("--fx", type=float, help=f"focal length in px at 960 wide (default {DEFAULT_FX:.0f}, "
                                               f"{LIVE_FX:.0f} for a live camera)")
     ap.add_argument("--cam-height", type=float, help="override camera height (m); sim uses its pose")
@@ -257,6 +295,13 @@ def main() -> None:
     ap.add_argument("--person-height", type=float, help="height of the person who steps in (default 1.7 m)")
     ap.add_argument("--stop-m", type=float, default=live_walk.STOP_M, help="chest: critical inside this range")
     ap.add_argument("--depth", action="store_true", help="chest: Depth Anything fallback for close non-YOLO things")
+    ap.add_argument("--world", action="store_true", help="chest: also YOLO-World for bins, signs, poles, bollards ... "
+                                                         "(--download --world fetches it; needs CLIP for that step: "
+                                                         "--with 'clip @ git+https://github.com/ultralytics/CLIP.git')")
+    ap.add_argument("--world-every", type=int, default=1, help="--world: every Nth chest frame (~11 ms on mps)")
+    ap.add_argument("--no-memory", action="store_true", help="chest: forget obstacles as soon as they leave the view")
+    ap.add_argument("--crossing", help="x,y of the crossing ahead in the pose's metres, for the corner car watch "
+                                       "(default 0,0 on sim frames: the Moss/Howard zebra)")
     ap.add_argument("--show", action="store_true", help="reveal window: live chest view, r = replay last 20 s")
     ap.add_argument("--no-blur", action="store_true", help="--show: do not pixelate heads")
     ap.add_argument("--device", default=None, help="mps / cpu (default: mps if available)")
@@ -267,7 +312,7 @@ def main() -> None:
     ap.add_argument("--max-seconds", type=float, default=0, help="stop after this long (0 = forever)")
     a = ap.parse_args()
     if a.download:
-        download()
+        download(a.world)
         return live_walk.download_depth() if a.depth else None
     if a.list_cameras:
         from kite.sources.open import list_cameras
@@ -291,6 +336,9 @@ def main() -> None:
         TYPICAL_H["person"] = a.person_height
     if not WEIGHTS.exists():
         sys.exit(f"missing {WEIGHTS}; run: python sim/standin_detect.py --download")
+    if a.world and not WORLD_WEIGHTS.exists():
+        sys.exit(f"missing {WORLD_WEIGHTS}; run: python sim/standin_detect.py --download --world")
+    crossing = tuple(float(v) for v in a.crossing.split(",")) if a.crossing else None if a.source else (0.0, 0.0)
 
     import cv2
     import numpy as np
@@ -305,8 +353,8 @@ def main() -> None:
     if a.show and cams != ("chest",):
         sys.exit("--show is the chest view; use --camera chest")
     models = {c: YOLO(str(WEIGHTS)) for c in cams}           # one tracker per camera
-    ear = EarpieceClient(host=os.environ.get("KITE_EARPIECE_HOST", "127.0.0.1"),
-                         port=int(os.environ.get("KITE_EARPIECE_PORT", "5010")), source="standin")
+    world = YOLO(str(WORLD_WEIGHTS)) if a.world and "chest" in cams else None
+    ear = EarpieceClient(host=os.environ.get("KITE_EARPIECE_HOST", "127.0.0.1"), port=a.ear_port, source="standin")
     jsonl = open(a.jsonl, "w") if a.jsonl else None
     t0 = time.monotonic()
 
@@ -344,11 +392,17 @@ def main() -> None:
 
     gate, lateral, last_scene, writer = HazardGate(), live_walk.RangeFilter(), -SCENE_EVERY, None
     still = StillVehicles()
+    memory = None if a.no_memory else world_frame.ObstacleMemory()
+    corner, chest_n, corner_on = world_frame.CornerWatch(crossing), 0, False
     n, infer_s, warm = 0, 0.0, None
     rf, depth = live_walk.RangeFilter(), live_walk.DepthFallback(device) if a.depth else None
     reveal = live_walk.Reveal() if a.show else None
     fps, fps_t, fps_n, was_stop = 0.0, time.monotonic(), 0, False
     print(f"[standin] cams={cams} device={device} -> {ear.addr} source={a.source or a.relay}", flush=True)
+    for m in [*models.values(), *([world] if world else [])]:   # the first call takes seconds (mps kernels):
+        m.predict(np.zeros((540, 960, 3), np.uint8), verbose=False, imgsz=640)   # pay it before the walk
+    t0 = time.monotonic()                 # video t=0 is now: the bench lines frames up with speech by this
+    print(f"[standin] t0_wall={time.time():.3f}", flush=True)
     try:
         while True:
             if a.max_seconds and time.monotonic() - t0 > a.max_seconds:
@@ -373,12 +427,15 @@ def main() -> None:
                     img = cv2.resize(img, (960, round(img.shape[0] * 960 / img.shape[1])))
                 frames = {"chest": img}
             elif srcs is None:
-                for _ in range(step - 1):
-                    cap.grab()
+                want = fidx + step - 1
+                if not a.fast:      # behind real time: skip to the current frame, as a live camera would
+                    want = max(want, int((time.monotonic() - t0) * vfps))
+                while fidx < want and cap.grab():
+                    fidx += 1
                 ok, img = cap.read()
                 if not ok:
                     break
-                t = fidx * step / vfps
+                t = fidx / vfps
                 fidx += 1
                 if not a.fast:
                     lag = t - (time.monotonic() - t0)
@@ -415,11 +472,16 @@ def main() -> None:
                 cpitch = -pc["pitch"] if pc.get("source") == "streetview" else a.pitch
                 objs = objects_from_boxes(boxes, cfx, cam_h, w, h, cpitch)
                 if c == "chest":
+                    chest_n += 1
+                    if world is not None and chest_n % max(1, a.world_every) == 0:
+                        wboxes = [(*b[:6], b[6] if b[6] is None else f"w{b[6]}")      # own track ids
+                                  for b in detect(world, img, True, WORLD_CONF)]
+                        objs, boxes = objs + objects_from_boxes(wboxes, cfx, cam_h, w, h, cpitch), boxes + wboxes
                     extra = depth(img, cfx, cam_h, cpitch, objs) if depth else None
-                    objs = live_walk.chest_step(objs, rf, t, a.stop_m)
-                    if extra:
-                        extra = live_walk.chest_step([extra], rf, t, a.stop_m)[0]
-                    sent = objs + ([extra] if extra else [])
+                    raw = objs + ([extra] if extra else [])
+                    if memory is not None:
+                        raw = memory.step(raw, pc, t)
+                    objs = sent = live_walk.chest_step(raw, rf, t, a.stop_m)
                     emit({"type": "obstacles", "source": "standin-chest", "seq": n,
                           "objects": live_walk.to_event_objects(sent)}, t)
                     if not sent:
@@ -441,6 +503,15 @@ def main() -> None:
                     for ev in gate.step(drone_hazards(objs, lateral, t, pc, still), t):
                         emit({**ev, "source": "standin-drone"}, t)
                         print(f"[standin] t={t:.1f} hazard {ev['kind']}: {ev['text']}", flush=True)
+                    cam = world_frame.drone_cam(pc)
+                    cars = [(o["id"], *world_frame.to_world(cam, o["bearing"], o["distance"]))
+                            for o in objs if o["kind"] == "vehicle"] if cam else []
+                    ev = corner.step(cars, pc, t)
+                    if ev:
+                        emit({**ev, "source": "standin-drone"}, t)
+                        if not corner_on:
+                            print(f"[standin] t={t:.1f} hazard corner: {ev['text']}", flush=True)
+                    corner_on = bool(ev)
                     if t - last_scene >= SCENE_EVERY:
                         last_scene = t
                         cnt = {}

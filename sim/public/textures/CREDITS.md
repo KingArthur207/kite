@@ -15,5 +15,7 @@ All from Poly Haven (https://polyhaven.com), CC0 1.0 (public domain, no attribut
 | `siding` | [white_planks_clean](https://polyhaven.com/a/white_planks_clean) | 1K | wood siding (rotated to run horizontally, tinted) |
 | `shutter` | [painted_metal_shutter](https://polyhaven.com/a/painted_metal_shutter) | 1K | garage and roll-up doors |
 | `roof` | [tarred_gravel](https://polyhaven.com/a/tarred_gravel) | 1K | flat roofs |
+| `bark` | [bark_platanus](https://polyhaven.com/a/bark_platanus) | 1K colour, 512 normal | street tree trunks and branches |
+| `polewood` | [rough_wood](https://polyhaven.com/a/rough_wood) | 512 | wooden utility poles and crossarms |
 | `urban_street_01_1k.hdr` | [urban_street_01](https://polyhaven.com/a/urban_street_01) | 1K HDR | image-based lighting and reflections |
 | `sky_puresky.jpg` | [kloofendal_48d_partly_cloudy_puresky](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) | tonemapped JPG, 4096x2048 | visible sky |
