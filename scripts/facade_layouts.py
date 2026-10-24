@@ -5,6 +5,7 @@ everything measured from them stay local, never committed).
     $U python scripts/facade_layouts.py rectify [ids]                       # fronts
     $U --with anthropic python scripts/facade_layouts.py extract [ids]
     $U --with anthropic python scripts/facade_layouts.py review [ids]       # optional second look
+    $U python scripts/facade_layouts.py ground                              # sidewalk to y 0 in an existing JSON
     $U python scripts/facade_layouts.py rectify --sides; ... extract [ids] --sides   # exposed side walls
     $U --with playwright python scripts/facade_layouts.py compare [ids]     # needs a vite on :5191 (cd sim; npx vite --port 5191)
     $U python scripts/facade_layouts.py --selftest
@@ -23,6 +24,8 @@ extract: Claude reads each rectified image (with its metre scale) and returns th
   "<id>:s<edge>"). Fronts that don't validate are left out (the sim draws them procedurally). ANTHROPIC_API_KEY
   from .env, never printed.
 review: Claude sees its layout drawn over the photo and returns a corrected one (kept only if it validates).
+ground: the photos' y 0 sits 0.1-2 m under the real sidewalk; extract and review already ground each layout (the lowest
+  garage door or entry is the sidewalk, doors and garages start there: no invented steps); this re-grounds an old file.
 compare: sim renders of each front (sim/facadecam.html?look=2, square cameras in strips) under the rectified
   Street View front, in out/facades_cmp/<id>.jpg.
 
@@ -303,6 +306,13 @@ def grid(tex, L, H, base=0.0):
 
 # ---------------------------------------------------------------- extract (Claude) and validate
 FRONT_INTRO = "This is a rectified, straight-on photo of ONE building front on Moss St, San Francisco"
+# OpenStreetMap merged a row of buildings into one footprint (260354450: 34 m, two apartment blocks): read them all,
+# else the front came back with one block's openings and the sim drew the rest as a blank wall.
+WIDE_INTRO = ("This is a rectified, straight-on photo of a {W:.0f} m stretch of street front on Moss St, San Francisco. "
+              "OpenStreetMap has it as one building but it may be SEVERAL buildings side by side: treat them all as one "
+              "front, list every opening across the whole width (not just the biggest building), and set x0/x1 to "
+              "the ends of the whole row")
+WIDE_IDS = {260354450}
 SIDE_INTRO = ("This is the SIDE wall of one building on Moss St, San Francisco (the wall facing along the street, seen "
               "obliquely from the street and rectified straight-on). Below about {Z0:.1f} m it is behind the "
               "neighbouring building or hidden; describe only what is on this wall above that (windows, bay windows, "
@@ -313,7 +323,7 @@ single Street View panorama. Trees, cars, poles and wires may stand in front of 
 areas (often at the left or right end, or at the top) were not seen by the camera. It is {W:.2f} m wide: x runs 0 to \
 {W:.2f} m left to right, y runs {Y0:.1f} (image bottom; 0 is the sidewalk) to {H:.2f} m (the image top). The second image is the \
 same photo with a labelled 1 m grid (yellow x, magenta y). Neighbouring buildings may show at the left or right end: \
-describe only the building that fills most of the image.
+describe only the front(s) named above.
 
 Return ONLY a JSON object, no prose:
 {{"x0": left edge of this building's front (0 if it runs into an unseen area at the left), "x1": right edge (likewise {W:.2f}),
@@ -402,6 +412,37 @@ def validate(lay, W, H, side=False):
     return errs
 
 
+AT_GRADE = ("garage", "door")
+
+
+def ground(lay):
+    """Puts the sidewalk at y 0. The rectified photos' y 0 is the panorama's ground plane, which sits 0.1-2 m under
+    the real sidewalk along Moss (it slopes; Street View camera heights vary), so Claude's openings come back lifted
+    by that much and every door got a staircase in the sim. Garage doors and entries meet the sidewalk, so the
+    lowest of them is the datum: everything moves down by it, and doors and garages start at 0 (a raised entry is
+    an opening down to the sidewalk with the steps behind it). In place; returns the datum removed (also kept,
+    cumulative, in lay["datum"]). Idempotent."""
+    ops = lay.get("openings") or []
+    low = [o["y0"] for o in ops if o["type"] in AT_GRADE]
+    d = min(low) if low else 0.0
+    if d > 0.0:
+        for o in ops:
+            o["y0"], o["y1"] = max(0.0, o["y0"] - d), o["y1"] - d
+            if o.get("spring") is not None:
+                o["spring"] = o["spring"] - d
+        for f in lay.get("floors") or []:
+            f["y0"], f["y1"] = max(0.0, f["y0"] - d), f["y1"] - d
+        if lay.get("cornice"):
+            lay["cornice"] = {k: v - d for k, v in lay["cornice"].items()}
+        lay["belts"] = [y - d for y in lay.get("belts") or [] if y - d > 0.5]
+        lay["roofline"] = lay["roofline"] - d
+        lay["datum"] = round(lay.get("datum", 0.0) + d, 3)
+    for o in ops:
+        if o["type"] in AT_GRADE:
+            o["y0"] = 0.0
+    return d
+
+
 def load_key():
     for line in (MAIN / ".env").read_text().splitlines():
         m = re.match(r"\s*(?:export\s+)?ANTHROPIC_API_KEY\s*=\s*['\"]?([^'\"\s]+)", line)
@@ -448,7 +489,7 @@ def extract(ids=None, side=False):
             print(f"{key}: barely seen ({f['clean']:.0%}), left procedural")
             continue
         W, H, Y0 = f["width"], f["img_top"], f.get("img_base", 0.0)
-        intro = SIDE_INTRO.format(Z0=f["z0"]) if side else FRONT_INTRO
+        intro = SIDE_INTRO.format(Z0=f["z0"]) if side else WIDE_INTRO.format(W=W) if int(key) in WIDE_IDS else FRONT_INTRO
         text, usage = ask(client, name, W, H, Y0, intro)
         calls += 1
         lay, errs = None, ["no JSON object in the answer"]
@@ -477,12 +518,14 @@ def extract(ids=None, side=False):
                 group.pop(key, None)
                 print(f"{key}: plain")
                 continue
+        ground(lay)
         lay.update(width=W, img_top=H, a=f["a"], b=f["b"], depth=f["depth"], z0=f.get("z0", 0.0))
         group[key] = lay
         kinds = {}
         for o in lay["openings"]:
             kinds[o["type"]] = kinds.get(o["type"], 0) + 1
-        print(f"{key}: ok, roofline {lay['roofline']} m, {len(lay.get('floors') or [])} floors, {kinds}")
+        print(f"{key}: ok, roofline {lay['roofline']} m, {len(lay.get('floors') or [])} floors, {kinds}, "
+              f"sidewalk {lay.get('datum', 0.0):.2f} m up the photo")
         draw_overlay(name, lay, W, H, Y0)
     out["note"] = ("Moss St facade layouts read from Street View (scripts/facade_layouts.py; local only, never commit). "
                    "Metres along the front from its left end as seen from the street (a -> b, moss.json frame), "
@@ -516,9 +559,10 @@ def review(ids=None):
             continue
         f = meta[key]
         W, H = f["width"], f["img_top"]
-        keep = {k: lay[k] for k in ("width", "img_top", "a", "b", "depth", "z0") if k in lay}
+        keep = {k: lay[k] for k in ("width", "img_top", "a", "b", "depth", "z0", "datum") if k in lay}
         shown = {k: v for k, v in lay.items() if k not in keep}
-        text = REVIEW.format(layout=json.dumps(shown), W=W, H=H, Y0=0.0)
+        dt = lay.get("datum", 0.0)   # the layout is grounded: the photo spans y -datum .. H - datum in its frame
+        text = REVIEW.format(layout=json.dumps(shown), W=W, H=H - dt, Y0=-dt)
         r = client.messages.create(model=MODEL, max_tokens=6000, messages=[{"role": "user", "content": [
             img(WORK / "rect" / f"{key}.jpg"), img(WORK / "overlay" / f"{key}.jpg"), {"type": "text", "text": text}]}])
         calls += 1
@@ -533,6 +577,7 @@ def review(ids=None):
             print(f"{key}: review invalid, kept the first reading ({errs[0]})")
             continue
         new.update(keep)
+        ground(new)
         out["buildings"][key] = new
         draw_overlay(key, new, W, H)
         print(f"{key}: reviewed, {len(lay['openings'])} -> {len(new['openings'])} openings")
@@ -544,6 +589,8 @@ def draw_overlay(bid, lay, W, H, Y0=0.0):
     import cv2
     img = cv2.imread(str(WORK / "rect" / f"{bid}.jpg"))
     h, w = img.shape[:2]
+    Y0 -= lay.get("datum", 0.0)   # the layout's sidewalk sits that far up the photo (ground)
+    H -= lay.get("datum", 0.0)
     px = lambda x, y: (int(round(x / W * w)), int(round(h - (y - Y0) / (H - Y0) * h)))   # noqa: E731
     col = {"window": (255, 200, 0), "bay": (0, 0, 255), "door": (0, 255, 0), "garage": (255, 0, 255), "storefront": (0, 255, 255)}
     for o in lay["openings"]:
@@ -632,11 +679,23 @@ if __name__ == "__main__":
                          "openings": [win(1, 3.5, 0, 2.4, "garage"), win(4.5, 5.5, 0.5, 2.6, "door")]}, 7.5, 12) == []
         assert validate({"x0": 0, "x1": 7.5, "roofline": 10, "floors": [{"y0": 0, "y1": 3}],
                          "openings": [win(1, 1.3, 0, 0.5, "door")]}, 7.5, 12)              # a 30 x 50 cm door isn't
+        g = {"roofline": 10.0, "floors": [{"y0": 0.0, "y1": 3.7}], "cornice": {"y0": 9.5, "y1": 10.0}, "belts": [3.7],
+             "openings": [win(1, 3.5, 0.7, 3.1, "garage"), win(4.5, 5.5, 1.6, 4.0, "door"), win(1, 2, 4.7, 6.2)]}
+        assert abs(ground(g) - 0.7) < 1e-9 and abs(g["roofline"] - 9.3) < 1e-9 and g["datum"] == 0.7   # garage meets the sidewalk
+        assert [o["y0"] for o in g["openings"]] == [0.0, 0.0, 4.0] and abs(g["openings"][1]["y1"] - 3.3) < 1e-9   # door: no stoop
+        assert ground(g) == 0.0 and g["datum"] == 0.7                                                 # idempotent
         print("selftest ok")
     elif cmd == "extract":
         extract(args or None, side="--sides" in sys.argv)
     elif cmd == "review":
         review(args or None)
+    elif cmd == "ground":   # re-ground the layouts already in OUT_JSON (no Claude calls)
+        out = json.loads(OUT_JSON.read_text())
+        for group in ("buildings", "sides"):
+            for key, lay in out.get(group, {}).items():
+                d = ground(lay)
+                print(f"{key}: sidewalk {d:+.2f} m (total {lay.get('datum', 0.0):.2f}), roofline {lay['roofline']:.2f}")
+        OUT_JSON.write_text(json.dumps(out, indent=1))
     elif cmd == "compare":
         compare(args or None, url=opt("--url"), tag=opt("--tag", ""))
     elif cmd == "fronts":

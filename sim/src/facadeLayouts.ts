@@ -4,7 +4,7 @@
 // each rectangular, round-arched or segmental-arched, with garage styles (roll-up, panel, iron gate), plus the floors,
 // cornice and belt courses. The front becomes one wall with real holes in it: a reveal (the recess) around each
 // opening, the glass, door or shutter set back in it, a casing around it that never runs into a neighbour's, and
-// projecting angled bays where the layout has them. Fronts without a layout keep the procedural facade (osmFacades).
+// projecting angled bays where the layout has them. Moss fronts without a layout stay plain walls (osmFacades).
 import * as THREE from "three";
 import { Geo } from "./osmLook";
 
@@ -80,18 +80,18 @@ const EDGE = 0.04;             // holes stay this far inside the wall outline (t
 const BAY_D = 0.7;             // SF angled bay depth
 const BELT_H = 0.16, BELT_OUT = 0.06;
 const CORNICE_OUT = 0.32, BRACKET_PITCH = 0.9, CORNICE_MAX = 1.0;
-const STOOP_MIN_RISE = 0.25, STOOP_D = 1.0, STOOP_MIN_D = 0.45;
 const GATE_BAR = 0.11;         // m between gate bars
 const ARC_SEGS = 14;
 const DARK = new THREE.Color(0x2a2b2d), IRON = new THREE.Color(0x141414), INTERIOR = new THREE.Color(0x34322f);
 const ARCH_GLASS = new THREE.Color(0x8a99a6);   // the arched top of a window (plain glass, reflections over a lighter tint)
-const DOORS = [0x7a2e2a, 0x24324a, 0x1e1e1e, 0x2f5a46, 0x5b3b2a];
+// Doors are mostly behind gates or glass in Street View, and the layouts don't read their colour: one dark neutral
+// (a random palette pick put red and green doors where there are none).
+const DOOR = new THREE.Color(0x2b2a28);
 
 export interface FrontCtx {
   b: { id: number; h: number }; lay: FacadeLayout;
   wall: Geo; trim: Geo; color: THREE.Color; trimColor: THREE.Color; garageColor?: THREE.Color;
   segs: [P, P][];                              // the footprint edges making up the front, each left to right
-  walkRoom: (p: P) => number;                 // m free in front of the wall at p before the demo walk's clearance
   /** Draws an angled bay x0..x1 along a wall (at: along-wall t, out z -> point), y0..y1 high, windows at heights ys. */
   bay: (at: (t: number, z?: number) => P, x0: number, x1: number, y0: number, y1: number, ys: number[]) => void;
 }
@@ -107,8 +107,9 @@ export class LayoutFronts {
   constructor(private mats: { glass: THREE.Material; shutter: THREE.MeshStandardMaterial; panels: THREE.MeshStandardMaterial }) {}
 
   /** Draw one front: the layout's openings onto the footprint edges that make it up (ctx.segs, each left to right
-   *  seen from the street; most fronts are one straight wall, some step back). Returns stoop collision segments and
-   *  garage doors (for parked-car clearances). */
+   *  seen from the street; most fronts are one straight wall, some step back). Returns the garage doors (for
+   *  parked-car clearances). No steps are drawn: the layouts put every door at the sidewalk (scripts/facade_layouts.py
+   *  ground), and a staircase the photo doesn't show is worse than none. */
   front(ctx0: FrontCtx) {
     const l0 = ctx0.lay;
     const fx = l0.b[0] - l0.a[0], fy = l0.b[1] - l0.a[1], FL = Math.hypot(fx, fy);
@@ -119,16 +120,14 @@ export class LayoutFronts {
     const lay = shift ? { ...l0, openings: l0.openings.map((o) => ({ ...o, x0: o.x0 - shift, x1: o.x1 - shift })) } : l0;
     const ctx = { ...ctx0, lay };
     const proj = (p: P) => ((p[0] - lay.a[0]) * fx + (p[1] - lay.a[1]) * fy) / FL;   // along the photo's line
-    const stoops: [number, number, number, number][] = [];
     const garages: { p: P; u: P; out: P; w: number }[] = [];
     for (const [A, C] of ctx.segs) {
       const tA = proj(A), tC = proj(C);
       if (tC - tA < 0.3) continue;
       const r = this.segment(ctx, A, C, tA, tC);
-      stoops.push(...r.stoops);
       garages.push(...r.garages);
     }
-    return { stoops, garages };
+    return { garages };
   }
 
   /** One straight piece of a front: wall A -> C, showing the layout between tA and tC (metres along the photo). */
@@ -151,7 +150,6 @@ export class LayoutFronts {
     const holes = apart(ops.filter((o) => o.type !== "bay"));
     const bays = ops.filter((o) => o.type === "bay");
     const floors = lay.floors.map((f) => ({ y0: Y(f.y0), y1: Y(f.y1) }));
-    const rnd = mulberry(ctx.b.id);
 
     // Wall with the holes cut out.
     const shape = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(L, 0), new THREE.Vector2(L, H), new THREE.Vector2(0, H)]);
@@ -159,7 +157,6 @@ export class LayoutFronts {
     for (const p of paths) shape.holes.push(new THREE.Path(p.map(([x, y]) => new THREE.Vector2(x, y)).reverse()));
     F.shape(ctx.wall, new THREE.ShapeGeometry(shape), 0.0, [0, 0, 1], color, (x, y) => [x, y]);
 
-    const stoops: [number, number, number, number][] = [];
     const garages: { p: P; u: P; out: P; w: number }[] = [];
     holes.forEach((o, i) => {
       const path = paths[i], R = RECESS[o.type];
@@ -172,8 +169,7 @@ export class LayoutFronts {
         const sw = Math.min(w + 2 * c + 2 * SILL_OVER, w + 2 * casingWidth(o, holes, L, H, true));
         F.box(ctx.trim, (o.x0 + o.x1) / 2 - sw / 2, (o.x0 + o.x1) / 2 + sw / 2, o.y0 - SILL_H, o.y0, -0.02, SILL_D, frameCol);
       }
-      this.infill(F, o, path, R, frameCol, ctx, rnd, color);
-      if (o.type === "door" && o.y0 > STOOP_MIN_RISE) stoops.push(...this.stoop(F, ctx, o));
+      this.infill(F, o, path, R, frameCol, ctx);
       if (o.type === "garage") garages.push({ p: F.at((o.x0 + o.x1) / 2), u, out, w });
     });
 
@@ -202,10 +198,10 @@ export class LayoutFronts {
         for (let t = 0.3; t < L - 0.2; t += BRACKET_PITCH) F.box(ctx.trim, t - 0.06, t + 0.06, Math.max(y0, y1 - 0.6), y1 - 0.3, 0, CORNICE_OUT - 0.04, trimColor);
       }
     }
-    return { stoops, garages };
+    return { garages };
   }
 
-  private infill(F: Frame, o: Opening, path: P[], R: number, frameCol: THREE.Color, ctx: FrontCtx, rnd: () => number, wall: THREE.Color) {
+  private infill(F: Frame, o: Opening, path: P[], R: number, frameCol: THREE.Color, ctx: FrontCtx) {
     const w = o.x1 - o.x0, cx = (o.x0 + o.x1) / 2;
     const shape = new THREE.Shape(path.map(([x, y]) => new THREE.Vector2(x, y)));
     const spring = springLine(o);
@@ -233,8 +229,7 @@ export class LayoutFronts {
       return;
     }
     if (o.type === "door") {
-      const dc = new THREE.Color(DOORS[Math.floor(rnd() * DOORS.length)]);
-      F.shape(this.doors, new THREE.ShapeGeometry(shape), -R, [0, 0, 1], dc, (x, y) => [x - o.x0, y - o.y0]);
+      F.shape(this.doors, new THREE.ShapeGeometry(shape), -R, [0, 0, 1], DOOR, (x, y) => [x - o.x0, y - o.y0]);
       if (spring < o.y1 - 0.02) {   // fanlight over the door
         const cap = new THREE.Shape(path.filter(([, y]) => y >= spring - 1e-6).map(([x, y]) => new THREE.Vector2(x, y)));
         F.shape(this.archGlass, new THREE.ShapeGeometry(cap), -R + 0.01, [0, 0, 1], ARCH_GLASS, (x, y) => [x, y]);
@@ -253,7 +248,6 @@ export class LayoutFronts {
       F.shape(geo, new THREE.ShapeGeometry(shape), -R, [0, 0, 1], tint,
         style === "panel" ? (x, y) => [(x - o.x0) / w, (y - o.y0) / (spring - o.y0)] : (x, y) => [x, y]);
     }
-    void wall;
   }
 
   /** Iron security gate filling an opening's outline: frame, vertical bars, two rails. */
@@ -263,17 +257,6 @@ export class LayoutFronts {
     for (const y of [o.y0 + 0.08, o.y0 + (spring - o.y0) * 0.45, spring - 0.06]) F.box(this.iron, o.x0, o.x1, y - 0.02, y + 0.02, z, z + 0.025, IRON);
     F.box(this.iron, o.x0, o.x0 + 0.04, o.y0, spring, z, z + 0.03, IRON);
     F.box(this.iron, o.x1 - 0.04, o.x1, o.y0, spring, z, z + 0.03, IRON);
-  }
-
-  /** Steps up to a raised door, stopping short of the demo walk. */
-  private stoop(F: Frame, ctx: FrontCtx, o: Opening): [number, number, number, number][] {
-    const t0 = o.x0 - 0.15, t1 = o.x1 + 0.15, rise = o.y0;
-    const depth = Math.min(STOOP_D + 0.3 * Math.max(0, Math.round(rise / 0.18) - 3), ctx.walkRoom(F.at((t0 + t1) / 2)));
-    if (depth < STOOP_MIN_D) return [];
-    const n = Math.max(1, Math.round(rise / 0.18));
-    for (let k = 0; k < n; k++) F.box(ctx.trim, t0, t1, 0, (rise * (k + 1)) / n, 0, (depth * (n - k)) / n, new THREE.Color(0xc4c1ba));
-    const s = [F.at(t0), F.at(t0, depth), F.at(t1, depth), F.at(t1)];
-    return [0, 1, 2].map((k) => [...s[k], ...s[k + 1]] as [number, number, number, number]);
   }
 
   finish(scene: THREE.Object3D) {
@@ -368,11 +351,6 @@ export function gaps(lo: number, hi: number, cuts: [number, number][]) {
   }
   if (hi > t + 0.05) out.push([t, hi]);
   return out.filter(([a, b]) => b > a + 0.05);
-}
-
-function mulberry(seed: number) {
-  let s = seed >>> 0;
-  return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
 /** A wall's local frame: t along it from A (u), y up, z out of it. World: x east, y up, z south. */
