@@ -114,7 +114,7 @@ class _Receiver:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         if rcvbuf:
             self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
-        self.sock.bind(("0.0.0.0", port))
+        self.sock.bind(("0.0.0.0", port))  # nosec B104: the Tello sends video from its own Wi-Fi network
         self.sock.settimeout(0.2)
         self.rcvbuf = self.sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
         self.packets: list[tuple[float, bytes]] = []
@@ -343,7 +343,7 @@ def run(args) -> int:
     drone = (args.host, args.cmd_port)
     try:
         cmd = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        cmd.bind(("0.0.0.0", args.local_cmd_port))
+        cmd.bind(("0.0.0.0", args.local_cmd_port))  # nosec B104: replies come from the Tello's network
         cmd.settimeout(5.0)
         video = _Receiver(args.video_port, rcvbuf=args.rcvbuf)
     except OSError as e:

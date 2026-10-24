@@ -540,7 +540,7 @@ class Trainer:
 
         self.run_dir.mkdir(parents=True, exist_ok=True)
         if self.state_path.exists():
-            st = pickle.loads(self.state_path.read_bytes())
+            st = pickle.loads(self.state_path.read_bytes())  # nosec B301: our own resume file in run_dir
             old = {k: st["cfg"].get(k) for k in RESUME_KEYS}
             new = {k: self.cfg.get(k) for k in RESUME_KEYS}
             if st.get("version") != STATE_VERSION or old != new:
