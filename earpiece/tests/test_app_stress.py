@@ -1,7 +1,6 @@
 """End-to-end: the whole earpiece over real UDP and WebSocket sockets, plus abuse."""
 
 import json
-import math
 import os
 import random
 import socket
@@ -11,10 +10,8 @@ import time
 import numpy as np
 import pytest
 
-from conftest import free_port, wait_for
-from earpiece.app import Earpiece
+from conftest import wait_for
 from earpiece.client import EarpieceClient
-from earpiece.config import Cfg
 
 
 def client(app, source="webcam"):
@@ -264,7 +261,6 @@ def test_walk_signal_needs_to_hold_but_dont_walk_is_instant(app):
     time.sleep(1.0)
     assert "Walk signal is on." not in spoken(app)
     # a real change, reported steadily: announced after it holds
-    t0 = time.time()
     for _ in range(10):
         c.hazard("crosswalk", state="walk", bearing=0, distance=6)
         time.sleep(0.1)

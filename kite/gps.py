@@ -212,7 +212,7 @@ def read_csv(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
     for r in rows[1:]:
         if len(r) < len(keys):
             continue
-        get = lambda f: r[col[f]] if col[f] is not None else None  # noqa: E731
+        get = lambda f: r[col[f]] if col[f] is not None else None  # noqa: E731, B023 (used at once)
         lat, lng, ts = _num(get("lat")), _num(get("lng")), get("time")
         if lat is None or lng is None or not ts or not ts.strip():
             continue

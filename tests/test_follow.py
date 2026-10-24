@@ -769,7 +769,7 @@ def check_sim(log, cfg=FollowCfg(), tol_m=1.0):
 
 def test_closed_loop_moss_walk_at_0_5_m_s_with_max_rc_50():
     log = run_sim(speed=0.5, max_rc=50)
-    dist = check_sim(log)
+    check_sim(log)
     assert abs(log[-1]["dist"] - 1.2) < 0.3  # settles back behind the walker once they stop
     assert max(abs(r["rc"][1]) for r in log) <= 50
 

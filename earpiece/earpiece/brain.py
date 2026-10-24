@@ -465,7 +465,6 @@ class Brain:
 
     # ------------------------------------------------------------------ Claude
     async def _ask_llm(self, text: str) -> None:
-        import anthropic
 
         gen = self._gen
         c = self.context()

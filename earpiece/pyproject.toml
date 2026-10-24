@@ -37,3 +37,6 @@ include = ["earpiece*"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = ["slow: benchmarks, long property runs and soak runs (deselect with -m 'not slow')"]
+
+[tool.ruff]
+extend = "../pyproject.toml"
