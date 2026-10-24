@@ -31,6 +31,6 @@ recordings/
 # Claude Code agent worktrees
 .claude/worktrees/
 
-# Demo video: stock clips and renders stay local
+# Stock clips and demo renders stay local (Pexels/Mixkit), never committed
 clips/
 out/

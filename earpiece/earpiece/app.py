@@ -25,7 +25,8 @@ from .beacon import Beacon
 from .brain import Actions, Brain
 from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
-from .events import Msg, clock_phrase, distance_phrase
+from .events import PRIORITY_RANK, Msg, clock_phrase, distance_phrase
+from .judgment import Judgment
 from .listen import Listener
 from .memory import MemoryStore
 from .mixer import Engine
@@ -78,6 +79,8 @@ class Earpiece:
                                                  self.stop_speaking, self.ear_check,
                                                  remember=self.remember, recall=self.recall),
                            self.say, self.cfg.anthropic_key, log=log)
+        self.judgment = Judgment(self.context, self.say, self.upgrade_hazard, self._event,
+                                 api_key=self.cfg.anthropic_key if self.cfg.judgment else None, log=log)
         self._noted_places: set[str] = set()
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
         self.gestures = Gestures(self.gesture, log=log)
@@ -134,6 +137,7 @@ class Earpiece:
             return
         self._stop.set()
         self._stopped = True
+        self.judgment.stop()
         self.listener.stop()
         self.battery.stop()
         self.speaker.cancel_all(keep_critical=False)
@@ -211,7 +215,10 @@ class Earpiece:
         elif t == "say":
             self.say(msg.text, msg.priority, key=msg.key, ttl=msg.ttl)
         elif t == "scene":
+            fresh = self.scene is None or self.scene[0] != msg.text
             self.scene = (msg.text, now)
+            if fresh:
+                self.judgment.notify()
         elif t == "position":
             self.position = {k: v for k, v in msg.data.items() if v is not None}
             place = self.position.get("place")
@@ -276,10 +283,26 @@ class Earpiece:
             dist = f", {distance_phrase(msg.distance)}" if msg.distance is not None else ""
             text = f"{(msg.kind or 'hazard').replace('_', ' ').capitalize()}{where}{dist}."
         self.hazards[key] = {"kind": msg.kind, "state": msg.state, "text": text, "bearing": msg.bearing,
-                             "distance": msg.distance, "until": now + ttl, "t": now}
+                             "distance": msg.distance, "until": now + ttl, "t": now, "priority": msg.priority}
         if changed and text:
             self.say(text, msg.priority, key=f"hazard:{key}:{msg.state}", ttl=min(ttl, 8.0))
         self._event("hazard", {"key": key, "state": msg.state, "text": text})
+        if changed:                                # spoken above first: Claude only ever adds to it
+            self.judgment.notify()
+
+    def upgrade_hazard(self, key: str, priority: str) -> bool:
+        """Judgment layer hook: raise (never lower) an existing hazard's priority and say it again."""
+        h = self.hazards.get(key)
+        if h is None or priority not in PRIORITY_RANK or priority == "critical":
+            return False
+        if PRIORITY_RANK[priority] >= PRIORITY_RANK.get(h.get("priority") or "hazard", len(PRIORITY_RANK)):
+            return False
+        h["priority"] = priority
+        if h.get("text"):
+            self.say(h["text"], priority, key=f"hazard:{key}:upgrade", ttl=4.0)
+        self._event("hazard", {"key": key, "state": h.get("state"), "text": h.get("text"),
+                               "priority": priority, "upgraded_by": "judgment"})
+        return True
 
     def _status(self, msg: Msg) -> None:
         prev_state = self.drone.get("state")
@@ -534,8 +557,9 @@ class Earpiece:
         return {
             "nearby": nearby,
             "perception_ok": self.perception_ok is not False,
-            "hazards": [{k: v for k, v in h.items() if k in ("kind", "state", "text", "bearing", "distance")}
-                        for h in self.hazards.values()],
+            "hazards": [{"key": key, **{k: v for k, v in h.items()
+                                        if k in ("kind", "state", "text", "bearing", "distance", "priority")}}
+                        for key, h in list(self.hazards.items())],
             "route": {"label": b.label, "bearing": b.bearing, "distance": b.distance,
                       "region": b.region} if b.active else None,
             "last_instruction": None if self.last_guidance is None else {
@@ -565,6 +589,7 @@ class Earpiece:
                        "mic": self.listener.device_name, **self.listener.stats},
             "brain": {"online": self.brain.online, **{k: v for k, v in self.brain.stats.items()
                                                       if k != "first_sentence_ms"}},
+            "judgment": {"online": self.judgment.online, **self.judgment.stats},
             "net": dict(self.transport.stats) if self.transport else None,
             "battery": self.battery.last if out else None,
             "memory": self.memory.summary(),

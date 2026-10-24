@@ -63,6 +63,8 @@ def cmd_run(a) -> int:
     if a.mic:
         cfg.listen.input_substr = a.mic
     cfg.listen.hands_free = a.hands_free
+    if a.no_judgment:
+        cfg.judgment = False
     app = Earpiece(cfg, output="null" if a.null else "device", log=_log, output_device=a.output)
     if a.spacetime or cfg.net.spacetime_enabled:
         from .spacetime import CaregiverInbox, SpacetimeBridge
@@ -199,6 +201,7 @@ def main(argv=None) -> int:
     r.add_argument("--bind", default="127.0.0.1", help="0.0.0.0 to accept events from the LAN")
     r.add_argument("--udp-port", type=int, default=5010)
     r.add_argument("--ws-port", type=int, default=5011)
+    r.add_argument("--no-judgment", action="store_true", help="turn off the Claude judgment layer (also KITE_JUDGMENT=0)")
     r.add_argument("--spacetime", action="store_true", help="mirror events to SpacetimeDB (SPACETIME_HOST) and speak caregiver messages from it")
     rr = sub.add_parser("render", help="render a scenario or a JSONL timeline to a WAV file")
     rr.add_argument("scenario", nargs="?", choices=["walk", "car", "dropout", "crowd"])
