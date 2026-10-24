@@ -52,3 +52,8 @@ data/imagined/*.mp4
 data/imagined/*.wav
 data/imagined/*.jsonl
 phone/.state/
+
+# phone-app: Expo generates the native folders (npx expo prebuild); commit the source only
+phone-app/ios/
+phone-app/android/
+.expo/
