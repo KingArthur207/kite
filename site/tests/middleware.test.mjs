@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { onRequest, quality, wantsMarkdown, pagePath, PAGES } from "../functions/_middleware.js";
+import { onRequest, quality, wantsMarkdown, pagePath, PAGES, SECURITY_HEADERS } from "../functions/_middleware.js";
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 
@@ -114,4 +114,63 @@ test("existing Vary values are kept", async () => {
   ctx.next = async () => { const r = await next(); const h = new Headers(r.headers); h.set("Vary", "Accept-Encoding"); return new Response(r.body, { status: r.status, headers: h }); };
   const res = await onRequest(ctx);
   assert.equal(res.headers.get("Vary"), "Accept-Encoding, Accept");
+});
+
+// The `/*` block of public/_headers, as {name: value}.
+function headersFile() {
+  const out = {};
+  let inAll = false;
+  for (const line of readFileSync(join(PUBLIC, "_headers"), "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    if (!/^\s/.test(line)) { inAll = line.trim() === "/*"; continue; }
+    if (inAll) { const i = line.indexOf(":"); out[line.slice(0, i).trim()] = line.slice(i + 1).trim(); }
+  }
+  return out;
+}
+
+test("the middleware's security headers are exactly public/_headers' `/*` block", () => {
+  const file = headersFile();
+  assert.ok(Object.keys(file).length >= 6);
+  assert.deepEqual(SECURITY_HEADERS, file);
+});
+
+for (const [path, accept, status] of [["/how", "text/markdown", 200], ["/nope", "text/markdown", 404],
+                                      ["/", "text/html", 200], ["/nope", "text/html", 404]]) {
+  test(`${path} (${accept}) carries every security header: _headers never reaches a Function's response`, async () => {
+    const res = await onRequest(context(path, accept));
+    assert.equal(res.status, status);
+    for (const [k, v] of Object.entries(headersFile())) assert.equal(res.headers.get(k), v, k);
+  });
+}
+
+test("a security header the asset already has is kept, not overwritten", async () => {
+  const ctx = context("/", "text/html");
+  const next = ctx.next;
+  ctx.next = async () => { const r = await next(); const h = new Headers(r.headers); h.set("X-Frame-Options", "SAMEORIGIN"); return new Response(r.body, { status: r.status, headers: h }); };
+  const res = await onRequest(ctx);
+  assert.equal(res.headers.get("X-Frame-Options"), "SAMEORIGIN");
+});
+
+test("other methods go straight to the next handler", async () => {
+  const ctx = context("/", "text/markdown", "POST");
+  let called = false;
+  ctx.next = async () => { called = true; return new Response("no", { status: 405 }); };
+  const res = await onRequest(ctx);
+  assert.ok(called);
+  assert.equal(res.status, 405);
+});
+
+test("odd Accept headers never throw and never pick Markdown by accident", () => {
+  for (const a of ["", ",,,", ";q=1", "text/markdown;q=abc", "text/markdown;q=-1", "text/markdown;q=5", "*/*;q=", "a".repeat(10000)]) {
+    assert.doesNotThrow(() => wantsMarkdown(a), a.slice(0, 20));
+  }
+  assert.equal(wantsMarkdown("text/markdown;q=abc"), false);   // an unreadable q counts as 0
+  assert.equal(wantsMarkdown("text/markdown;q=-1"), false);
+  assert.equal(quality("text/markdown;q=5", "text/markdown"), 1);   // clamped to 1
+});
+
+test("odd path shapes are not pages", () => {
+  for (const p of ["//how", "/how.html.html", "/HOW", "/how%2F", "/constructor", "/__proto__", "/hasOwnProperty", "/toString"]) {
+    assert.equal(pagePath(p), null, p);
+  }
 });
