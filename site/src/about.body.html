@@ -1,0 +1,27 @@
+  <main id="main">
+    <header class="page-head">
+      <p class="hand kicker"><span class="hl-sky">who, why and what's real</span></p>
+      <h1>About <em>Kite.</em></h1>
+      <p class="lede">Kite is an assistive navigation aid for blind and low-vision people who walk city streets on their own. A four-person student team built it in 36 hours at Cal Hacks 13.0 in San Francisco, in October 2026.</p>
+    </header>
+
+    <section class="section prose">
+      <h2>What it is</h2>
+      <p>A white cane reports the street one step at a time. A guide dog looks ahead, stops at curbs and refuses to step out in front of a car, but fewer than 10,000 guide dogs work in the US for about a million blind Americans. Kite tries to do a guide dog's jobs with things you can buy: a small DJI Tello drone flies about 30 cm above and behind the walker's head and watches the street ahead, a camera on the chest watches the ground at their feet, and AirPods turn both into sound. Beeps come from the direction of each obstacle and speed up as it gets closer; a calm voice says "Stop." first and only says the way is clear when plain, tested code is sure.</p>
+
+      <h2>What works today, and what doesn't</h2>
+      <ul>
+        <li><b>Real and running:</b> the earpiece (spatial beeps, the beacon toward the next turn, the speech queue, stop and wait), Cartesia voice in and out with offline fallbacks, Claude's careful judgment calls, scene descriptions and reading text aloud, Moss memory of the walker's places, walking directions, and the SpacetimeDB caregiver dashboard with two-way messages.</li>
+        <li><b>A stand-in:</b> obstacle detection uses an off-the-shelf detector (YOLO11n) while a dedicated street model is finished.</li>
+        <li><b>Simulated:</b> the 41-second walk on the home page is a simulated street rendered by the real earpiece code. Drones aren't allowed to fly at the venue, so the drone's view at our table is recorded footage.</li>
+        <li><b>Not a medical device:</b> Kite is a hackathon prototype. It has not been tested with blind travellers or orientation and mobility instructors yet, and it should not be relied on for a real walk.</li>
+      </ul>
+
+      <h2>How it's built</h2>
+      <p>Python and a real-time Rust audio engine on the walker's laptop; TypeScript for the browser simulation and the caregiver dashboard. Cartesia is Kite's voice and ears, Claude its judgment, SpacetimeDB the live state every device and the caregiver share, and Moss its memory of the walker's places. Grok powers a voice line for caregivers and generates street scenes we can't safely film. Every decision that can hurt someone runs in deterministic code first; AI may only make Kite more careful.</p>
+
+      <h2>Open source</h2>
+      <p>The code is MIT licensed at <a href="https://github.com/KingArthur207/kite">github.com/KingArthur207/kite</a>. Questions or problems: see <a href="/contact">Contact</a>. What the site and the earpiece collect: see <a href="/privacy">Privacy</a>.</p>
+    </section>
+  </main>
+

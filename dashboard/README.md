@@ -85,3 +85,16 @@ npm run spacetime:publish:local
 printf 'VITE_SPACETIMEDB_HOST=ws://localhost:3000\n' > .env.local
 npm run dev
 ```
+
+## Caregiver message signing
+
+The `event` table is public and `push` takes calls from any identity, so the earpiece checks caregiver
+messages itself. Put one random value in the repo `.env` as `KITE_CAREGIVER_TOKEN` and the same value in
+`dashboard/.env.local` as `VITE_KITE_CAREGIVER_TOKEN`. The dashboard then adds `ts` and `sig`
+(HMAC-SHA256 of `ts:text`) to each message, and the earpiece speaks only signed messages under 2 minutes
+old. The value ends up in the page's JS, so serve the dashboard only on the demo laptop. If neither side
+sets a token, messages are still accepted.
+
+Either way, the earpiece drops any message that could be heard as permission to move ("go", "cross",
+"you can", "clear" and so on), always speaks at priority `info`, and ignores the row's `key` and `ttl`.
+The module is unchanged, so there is nothing to republish.

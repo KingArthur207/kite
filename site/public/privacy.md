@@ -1,0 +1,29 @@
+# Privacy.
+
+short version: very little
+
+What this website collects, and what the Kite earpiece does with camera frames, audio and location. Last updated October 24, 2026.
+
+## This website
+
+- No accounts, no forms, no cookies, no analytics and no advertising trackers.
+- The site is hosted on Cloudflare Pages, which processes standard request data (such as IP address and browser user agent) to serve and protect the site, under Cloudflare's own privacy policy.
+- Fonts load from Google Fonts, so your browser sends a request to Google when a page loads.
+- The audio clips and images are served from this site; nothing you play or click is recorded.
+
+## The Kite earpiece
+
+- **Camera frames** are processed on the walker's laptop. A single frame is sent to Anthropic's Claude API only when the walker asks "what's in front of me?" or "read this", or when scene descriptions are turned on. Frames and video are never sent to the caregiver dashboard.
+- **Voice:** after an AirPod press (or the optional wake word), the walker's speech is streamed to Cartesia to be transcribed, and Kite's replies are sent to Cartesia as text to be spoken. Questions that need an answer go to Claude as text.
+- **Memories** such as "remember this place as the bench" are stored in the walker's Moss index and in a local file on the laptop.
+- **Caregiver sharing** is off unless the walker turns it on. When it is on, the walker's position, the hazards Kite reports, what Kite says and the text of what the walker says are shared through SpacetimeDB so a caregiver can follow the walk on a map. Video is never shared. "Clear run" on the dashboard deletes the walk's events.
+- **Caregiver voice line:** if a caregiver uses it, their speech is processed by xAI's Grok voice service on the caregiver's own computer.
+- API keys stay on the device in a local file and are never sent anywhere except to the service they belong to.
+
+## Questions
+
+Ask through [Contact](https://trykite.pages.dev/contact). Kite is a hackathon prototype; if it ever becomes a product, this page will change before any new data is collected.
+
+---
+
+Kite · https://trykite.pages.dev/privacy · Pages: [Home](https://trykite.pages.dev/) · [How it works](https://trykite.pages.dev/how) · [For judges](https://trykite.pages.dev/judges) · [About](https://trykite.pages.dev/about) · [Contact](https://trykite.pages.dev/contact) · [Privacy](https://trykite.pages.dev/privacy) · [llms.txt](https://trykite.pages.dev/llms.txt) · [Sitemap](https://trykite.pages.dev/sitemap.xml)

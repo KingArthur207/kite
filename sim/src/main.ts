@@ -6,6 +6,7 @@ import {
 import { buildWorld } from "./world";
 import { buildOsmWorld, type WorldExtras } from "./osmWorld";
 import { buildRealWorld } from "./realWorld";
+import { buildPhotoWorld, addWallLabelKey, photoWalls } from "./photoWorld";
 import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
@@ -20,6 +21,9 @@ import { clampToFence } from "./fence";
 // ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
 const metricsOn = query.get("metrics") === "1";
+// Capture frames get the Tello camera model in Python (sim/tello_cam.py, applied by sim/frames.py); ?cam=raw turns it
+// off. The flag rides on the pose messages. The screen view is never modelled.
+const camModel = query.get("cam") === "raw" ? "raw" : "tello";
 const aspect = CAM_W / CAM_H;
 const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
 const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
@@ -44,9 +48,10 @@ const capture = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer
 capture.setPixelRatio(1);
 capture.setSize(CAM_W, CAM_H, false);
 
-// ?world=real (default): the Blender-built street with Street View facades from the local public/local/moss_real.glb,
+// ?world=photo (opt-in): OSM Moss with Street View photo walls from public/local/facades_*/manifest.json.
+// ?world=real (default otherwise): the Blender-built street from the local public/local/moss_real.glb,
 // falling back to the textured OSM street when that file is missing.
-let worldName = metricsOn ? "moss" : query.get("world") ?? "real";   // ?world=tiles for Google 3D (looks crumpled at street level)
+let worldName = metricsOn ? "moss" : query.get("world") ?? "moss";   // default: textured OSM street (city data + dressing); ?world=real (Blender GLB), ?world=photo and ?world=tiles are opt-in until Eddy approves one
 if (worldName === "tiles" && !TILES_KEY) {
   console.warn("[sim] no VITE_GOOGLE_MAPS_API_KEY (run sh sim/tiles_env.sh); using ?world=moss");
   worldName = "moss";
@@ -58,11 +63,13 @@ const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () =>
     walkers, cameras: [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
     detector: query.get("detector") === "tiles" ? "tiles" : "osm",   // OSM capture by default: YOLO recall on tile frames is far lower (PR #41)
   })
+  : worldName === "photo" ? buildPhotoWorld({ actors: !metricsOn, walkers })
   : worldName === "real" ? buildRealWorld({ actors: !metricsOn, walkers })
   : buildOsmWorld({ actors: !metricsOn, walkers });
 world.tune?.(capture);   // tone mapping, colour space and shadows; the screen renderer gets the same
 if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
 const { scene } = world;
+if (worldName === "photo" && world.overlay) addWallLabelKey(world.overlay);   // L: wall labels on screen
 
 // Walker: (x east, n north), heading in compass degrees (0 = north, 90 = east).
 const walker = { x: 0, n: 0, heading: 0, ...world.spawn };
@@ -159,7 +166,7 @@ setInterval(() => {
              lat, lng, x: walker.x, y: walker.n });
   const camHeights = { drone: HEAD_TOP + DRONE_ABOVE_HEAD, chest: CHEST_HEIGHT };
   for (const [camera, cam_height] of Object.entries(camHeights)) {
-    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0 });
+    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0, cam_model: camModel });
   }
 }, 1000 / POSITION_HZ);
 
@@ -230,7 +237,7 @@ function drawHud() {
     `lat/lng: ${lat.toFixed(6)}, ${lng.toFixed(6)}\n` +
     `relay ${relay.open ? "on" : "off"}   earpiece ${ear.open ? "on" : "off"}   ${status}\n` +
     (black ? "BLACK SCREEN (V to reveal)\n" : "") +
-    `\narrows walk/turn   B black screen   V reveal\nH  DEBUG: send one fake crowd hazard${dbg}`;
+    `\narrows walk/turn   B black screen   V reveal${worldName === "photo" ? "   L wall labels" : ""}\nH  DEBUG: send one fake crowd hazard${dbg}`;
 }
 
 let last = performance.now();

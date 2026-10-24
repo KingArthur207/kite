@@ -19,7 +19,22 @@ const DEFAULT_HAZARD_TTL_S = 20;
 const BEACON_TTL_S = 30;
 const MAX_MESSAGE = 200;
 const EVENT_TABLE_CAP = 500;   // the module keeps the newest 500 events
-const QUICK_MESSAGES = ["I'm on my way.", 'Call me when you can.', 'Take your time, no rush.'];
+// The earpiece drops any message that could be heard as permission to move ("you can", "go", "clear"...),
+// so the quick ones avoid those words.
+const QUICK_MESSAGES = ["I'm on my way.", 'Call me when you get there.', 'Take your time, no rush.'];
+// Same value as KITE_CAREGIVER_TOKEN on the earpiece. With it set, the earpiece speaks only messages signed
+// with it. It ships in this page's JS, so serve the dashboard only on the demo laptop.
+const CAREGIVER_TOKEN: string = import.meta.env.VITE_KITE_CAREGIVER_TOKEN ?? '';
+
+// HMAC-SHA256(token, `${ts}:${text}`) as hex: earpiece/earpiece/spacetime.py CaregiverInbox checks it.
+async function signMessage(text: string): Promise<{ ts: number; sig: string } | Record<string, never>> {
+  if (!CAREGIVER_TOKEN) return {};
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(CAREGIVER_TOKEN), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const ts = Date.now();
+  const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(`${ts}:${text}`)));
+  return { ts, sig: Array.from(mac, b => b.toString(16).padStart(2, '0')).join('') };
+}
 const SHOWN_MESSAGES = 3;
 const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
 // Moment colours on the map; stops are always red.
@@ -152,9 +167,12 @@ function App() {
   const send = (raw: string) => {
     const text = raw.trim().slice(0, MAX_MESSAGE);
     if (!text || sending) return;
-    const msg = { type: 'say', source: 'caregiver', priority: 'info', text, key: `caregiver-${Date.now()}` };
     setSending(true);
-    push({ type: 'say', source: 'caregiver', priority: 'info', payload: JSON.stringify(msg) })
+    signMessage(text)
+      .then(sig => {
+        const msg = { type: 'say', source: 'caregiver', priority: 'info', text, key: `caregiver-${Date.now()}`, ...sig };
+        return push({ type: 'say', source: 'caregiver', priority: 'info', payload: JSON.stringify(msg) });
+      })
       .then(() => setDraft(''))
       .catch(err => alert(`Message not sent: ${err}`))
       .finally(() => setSending(false));

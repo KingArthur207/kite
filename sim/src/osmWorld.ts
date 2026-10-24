@@ -6,6 +6,7 @@ import { spawnMossActors } from "./mossActors";
 import { addSkyAndSun, tuneRenderer } from "./osmLook";
 import { buildFacades, type Building } from "./osmFacades";
 import { buildStreets, ribbon, type StreetData } from "./osmStreet";
+import { buildStreetDressing } from "./streetDressing";
 
 type P = [number, number];
 type Quad = P[];
@@ -57,14 +58,15 @@ function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
 }
 
 /** actors: false leaves the street empty (metrics mode). walkers: people the cars must yield to.
+ *  skipWalls: building walls left out (`${id}:${edge}`), the photo world draws them.
  *  osmMeshes is the drawn street (ground, roads, buildings); the tiles world shows it to the capture cameras only. */
-export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: number; n: number }[] } = {}) {
+export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: number; n: number }[]; skipWalls?: Set<string> } = {}) {
   const scene = new THREE.Scene();
   // Sun shadows cover the demo walk and the corner; the sky HDRI lights everything else.
   addSkyAndSun(scene, { x: 15, n: -25 }, 160);
   const visible = new THREE.Group();
   scene.add(visible);
-  const { garages, windows } = buildFacades(visible, data.buildings, data.road_quads);
+  const { garages, windows } = buildFacades(visible, data.buildings, data.road_quads, opts.skipWalls);
   buildStreets(visible, data, garages);
   console.info(`[osmWorld] ${data.buildings.length} buildings, ${windows} windows and doors, ${garages.length} garages`);
 
@@ -74,6 +76,7 @@ export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: num
     const g = (b as { ground?: number[][] }).ground ?? b.pts;
     for (let k = 0; k + 1 < g.length; k++) walls.push([...g[k], ...g[k + 1]] as Wall);
   }
+  walls.push(...buildStreetDressing(visible, data, garages));   // parked cars, trees, poles, signs: they collide too
 
   // Planned demo walk, drawn faintly on screen only (main.ts hides it for camera frames).
   const overlay = new THREE.Group();

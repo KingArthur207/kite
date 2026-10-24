@@ -3,7 +3,7 @@
 #
 #   scripts/check.sh            everything: tests, lint, build, security
 #   scripts/check.sh quick      earpiece tests (Rust engine), Rust lint, secret scan of the working tree
-#   scripts/check.sh <step>...  any of: earpiece rust drone dashboard secrets audit
+#   scripts/check.sh <step>...  any of: earpiece rust drone dashboard site secrets audit
 #
 # Needs: uv, cargo, npm. Optional: gitleaks and cargo-audit (brew install gitleaks; cargo install cargo-audit).
 # Exit code is non-zero if any step failed; every step still runs.
@@ -68,6 +68,12 @@ step_dashboard() {
   run "spacetime module typecheck" bash -c "cd '$ROOT/dashboard/spacetimedb' && npm ci --silent && npx tsc --noEmit -p ."
 }
 
+step_site() {
+  bold "site (generated pages in sync, Markdown negotiation, 404s, structured data)"
+  run "site pages rebuilt from site/src" bash -c "cd '$ROOT' && python3 site/tools/build_pages.py >/dev/null && git diff --quiet -- site/public || { echo 'site/public is stale: run python3 site/tools/build_pages.py and commit'; exit 1; }"
+  run "site tests" bash -c "cd '$ROOT' && node --test site/tests/*.test.mjs"
+}
+
 step_secrets() {
   bold "secret scan (gitleaks)"
   if ! command -v gitleaks >/dev/null; then skip "gitleaks" "not installed: brew install gitleaks"; return; fi
@@ -91,11 +97,11 @@ step_audit() {
 }
 
 case "${1:-all}" in
-  all)   step_earpiece; step_rust; step_drone; step_dashboard; step_secrets; step_audit ;;
-  quick) step_earpiece quick; step_rust quick; step_secrets quick ;;
+  all)   step_earpiece; step_rust; step_drone; step_dashboard; step_site; step_secrets; step_audit ;;
+  quick) step_earpiece quick; step_rust quick; step_site; step_secrets quick ;;
   *)     for s in "$@"; do
            case "$s" in
-             earpiece|rust|drone|dashboard|secrets|audit) "step_$s" ;;
+             earpiece|rust|drone|dashboard|site|secrets|audit) "step_$s" ;;
              *) echo "check: unknown step '$s'" >&2; exit 2 ;;
            esac
          done ;;

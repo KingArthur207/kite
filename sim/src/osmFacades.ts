@@ -85,7 +85,8 @@ function paneGeometry(k: Kind) {
   return g;
 }
 
-export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQuads: Quad[]) {
+/** skip: walls drawn elsewhere (photo facades), as `${building id}:${edge index}`; they get no wall, windows or cornice. */
+export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQuads: Quad[], skip = new Set<string>()) {
   const glass = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.06, metalness: 0.65, envMapIntensity: 1.3 });
   const trimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.65 });
   const doorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
@@ -157,6 +158,7 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
       if (L < 0.05) return;
       const u: P = [(c[0] - a[0]) / L, (c[1] - a[1]) / L];
       const out: P = area > 0 ? [u[1], -u[0]] : [-u[1], u[0]];
+      if (skip.has(`${b.id}:${i}`)) { s0 += L; return; }
       const n3 = new THREE.Vector3(out[0], 0, -out[1]);
       g.quad([v3(a, 0), v3(c, 0), v3(c, b.h), v3(a, b.h)], n3, [[s0, 0], [s0 + L, 0], [s0 + L, b.h], [s0, b.h]], color);
       s0 += L;

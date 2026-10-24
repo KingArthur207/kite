@@ -1,12 +1,17 @@
 // Kite site: the walk player (waveform, live captions) and the sound legend.
+// Each page has only some of these, so every part checks that its elements exist.
 (() => {
+  // the kite in the hero keeps flying unless the visitor asked for less motion
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.querySelectorAll("svg.scene").forEach((s) => s.pauseAnimations && s.pauseAnimations());
+  }
   const audio = document.getElementById("walk");
   const btn = document.getElementById("play");
   const canvas = document.getElementById("wave");
   const marks = document.getElementById("marks");
   const caption = document.getElementById("caption");
   const transcript = document.getElementById("transcript");
-  const label = { critical: "STOP", hazard: "WARNING", nav: "DIRECTIONS", system: "STATUS", answer: "ANSWER", info: "INFO" };
+  const label = { critical: "stop", hazard: "warning", nav: "directions", system: "status", answer: "answer", info: "info" };
   let data = null;
   let current = -1;
 
@@ -59,14 +64,23 @@
         caption.innerHTML = "";
         const who = document.createElement("span");
         who.className = "who" + (s.priority === "critical" ? " critical" : "");
-        who.textContent = `${fmt(s.t)} · ${label[s.priority] || "KITE"}`;
+        who.textContent = `${fmt(s.t)} · ${label[s.priority] || "kite"}`;
         caption.append(who, document.createTextNode(`“${s.text}”`));
       } else if (t > 0.2) {
-        caption.innerHTML = '<span class="who">LISTEN</span>Beeps from the direction of what’s ahead; faster means closer.';
+        caption.innerHTML = '<span class="who">listen</span>Beeps from the direction of what’s ahead; faster means closer.';
       }
     }
   }
 
+  const clip = new Audio();
+  let active = null;
+  function stopChip() {
+    clip.pause();
+    if (active) active.classList.remove("playing");
+    active = null;
+  }
+
+  if (audio && btn && canvas) {
   btn.addEventListener("click", () => {
     stopChip();
     if (audio.paused) audio.play(); else audio.pause();
@@ -82,22 +96,17 @@
     if (audio.paused) audio.play();
   });
   window.addEventListener("resize", () => draw(data ? audio.currentTime / data.duration : 0));
+  load();
+  }
 
   // ---------------------------------------------------------------- sound legend
-  const clip = new Audio();
-  let active = null;
-  function stopChip() {
-    clip.pause();
-    if (active) active.classList.remove("playing");
-    active = null;
-  }
   document.querySelectorAll(".chip").forEach((chip) => {
     chip.setAttribute("aria-label", `Play: ${chip.textContent}`);
     chip.addEventListener("click", () => {
       const same = active === chip;
       stopChip();
       if (same) return;
-      audio.pause();
+      if (audio) audio.pause();
       clip.src = `/assets/audio/${chip.dataset.src}.m4a`;
       clip.play();
       active = chip;
@@ -105,6 +114,4 @@
     });
   });
   clip.addEventListener("ended", stopChip);
-
-  load();
 })();

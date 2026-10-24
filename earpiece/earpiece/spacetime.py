@@ -26,6 +26,8 @@ Earpiece.handle, capped at priority "info".
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import math
 import os
@@ -37,7 +39,8 @@ import time
 import httpx
 
 from .config import _load_env
-from .events import PRIORITY_RANK, BadMessage, parse
+from .events import BadMessage, parse
+from .judgment import forbidden
 
 DEFAULT_HOST = "https://maincloud.spacetimedb.com"
 DEFAULT_DB = "kite-sync-pl6rp"
@@ -52,6 +55,8 @@ MAX_CALLS_PER_S = 5.0                # global ceiling on reducer calls; KITE_SPA
 CAREGIVER = "caregiver"
 CAREGIVER_PREFIX = "Message from your caregiver: "
 CAREGIVER_SQL = "SELECT * FROM event WHERE source = 'caregiver'"   # fixed query, no inputs
+CAREGIVER_TTL_S = 20.0               # waits out an answer or a nav line; older than this it is stale
+CAREGIVER_MAX_AGE_S = 120.0          # a signed row older than this (or a replay of one) is ignored
 POLL_S = 1.0
 MIN_POLL_S = 0.5                     # SQL reads cost credits too: never poll faster than 2 Hz
 MAX_BACKOFF_S = 30.0
@@ -145,6 +150,27 @@ def encode_payload(obj: dict, limit: int = MAX_PAYLOAD) -> str:
     return _dumps({"type": obj.get("type"), "source": obj.get("source"), "truncated": True, "bytes": len(s)})
 
 
+def sql_rows(reply: list) -> list[dict]:
+    """The HTTP SQL endpoint's reply (one statement per entry) as plain dicts keyed by column."""
+    out = []
+    for stmt in reply:
+        names = [(e.get("name") or {}).get("some") for e in stmt["schema"]["elements"]]
+        out += [dict(zip(names, row)) for row in stmt["rows"]]
+    return out
+
+
+def row_time(v) -> float | None:
+    """A row's `t` column (a Timestamp, sent as [micros since the epoch]) in epoch seconds."""
+    while isinstance(v, (list, tuple)) and v:
+        v = v[0]
+    if isinstance(v, dict):
+        v = next(iter(v.values()), None)
+    try:
+        return int(v) / 1e6
+    except (TypeError, ValueError):
+        return None
+
+
 class SpacetimeBridge:
     def __init__(self, host: str | None = None, db: str | None = None, source: str = "unknown", log=print,
                  *, throttle_s: float | None = None, max_calls_per_s: float | None = None,
@@ -206,6 +232,21 @@ class SpacetimeBridge:
                 self.stats["dropped"] += 1
                 return
         self.stats["backlog"] = self._q.unfinished_tasks
+
+    def send_now(self, obj: dict, http: httpx.Client, tries: int = 2) -> bool:
+        """Deliver one event on the caller's thread and report whether it landed.
+
+        Same path as the worker (token bucket, retries, module checks), for callers that must
+        know the outcome, such as the caregiver voice line confirming a message was sent."""
+        if obj.get("type") not in TYPES:
+            return False
+        sent = self.stats["sent"]
+        self._deliver(http, obj, tries=tries)
+        return self.stats["sent"] > sent
+
+    def take_token(self) -> None:
+        """Spend one call from this bridge's token bucket (for SQL reads that share the budget)."""
+        self._take_token()
 
     def flush(self, timeout: float = 10.0) -> bool:
         """Wait until everything queued has been sent (for scripts that exit right after)."""
@@ -343,17 +384,31 @@ class CaregiverInbox:
     Rows already in the table at startup are skipped. Runs on its own daemon thread, so a slow
     or dead network never touches the audio loop; errors are logged a few times and backed off.
     Earpiece.handle does not mirror caregiver events back, so nothing loops.
+
+    The `event` table is public and `push` is open to any identity, so a row is untrusted:
+      * its text goes through the same permission filter as Claude's judgment (rejected, logged,
+        never spoken: nobody on this channel can say "safe to cross" or "go");
+      * priority is always "info", key is "caregiver-<row id>" (a row can't replace a queued
+        safety line) and ttl is CAREGIVER_TTL_S, whatever the row says;
+      * with KITE_CAREGIVER_TOKEN set (same value as the dashboard's VITE_KITE_CAREGIVER_TOKEN),
+        only rows signed with it are spoken: payload `ts` (ms) and `sig` = hex
+        HMAC-SHA256(token, f"{ts}:{text}"), no older than CAREGIVER_MAX_AGE_S. A signature, not
+        the token itself, because every payload is readable by anyone who can read the table.
     """
 
     def __init__(self, handle, host: str | None = None, db: str | None = None, log=print,
-                 interval: float = POLL_S, start: bool = True):
+                 interval: float = POLL_S, start: bool = True, token: str | None = None):
         self.host, self.db = _host_db(host, db)
         self.handle = handle
         self.log = log
         self.interval = max(interval, MIN_POLL_S)
         self.last_id: int | None = None          # None until the first successful poll
-        self.stats = {"polls": 0, "spoken": 0, "bad": 0, "failed": 0}
+        self.stats = {"polls": 0, "spoken": 0, "bad": 0, "failed": 0, "rejected": 0, "unsigned": 0}
         self._token: str | None = None
+        self.secret = (os.environ.get("KITE_CAREGIVER_TOKEN", "") if token is None else token).strip()
+        if not self.secret:
+            log("[caregiver] KITE_CAREGIVER_TOKEN not set: anyone who can reach the database can send "
+                "messages (they are still filtered and capped at info)")
         if start:
             threading.Thread(target=self._run, name="caregiver-inbox", daemon=True).start()
 
@@ -383,11 +438,16 @@ class CaregiverInbox:
                       content=CAREGIVER_SQL + newer,  # nosec B608
                       headers={"Authorization": f"Bearer {self._token}"})
         r.raise_for_status()
-        out = []
-        for stmt in r.json():
-            names = [(e.get("name") or {}).get("some") for e in stmt["schema"]["elements"]]
-            out += [(int(row[names.index("id")]), str(row[names.index("payload")])) for row in stmt["rows"]]
-        return out
+        return [(int(row["id"]), str(row["payload"])) for row in sql_rows(r.json())]
+
+    def _signed(self, d: dict) -> bool:
+        ts, sig, text = d.get("ts"), d.get("sig"), d.get("text")
+        if not isinstance(ts, int) or not isinstance(sig, str) or not isinstance(text, str):
+            return False
+        if abs(time.time() - ts / 1000) > CAREGIVER_MAX_AGE_S:
+            return False
+        want = hmac.new(self.secret.encode(), f"{ts}:{text}".encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(want, sig)
 
     def poll(self, http: httpx.Client) -> None:
         rows = sorted(self.fetch(http))
@@ -408,9 +468,19 @@ class CaregiverInbox:
             if msg.type != "say":                 # only words flow back; no controls, no hazards
                 self.stats["bad"] += 1
                 continue
+            if self.secret and not self._signed(json.loads(payload)):
+                self.stats["unsigned"] += 1
+                self.log(f"[caregiver] ignored row {rid}: not signed with KITE_CAREGIVER_TOKEN, or stale")
+                continue
+            if forbidden(msg.text):               # same rule as Claude: no permission, all-clear or reroute
+                self.stats["rejected"] += 1
+                self.log(f"[caregiver] rejected row {rid}, not spoken (sounds like permission to move): "
+                         f"{msg.text!r}")
+                continue
             msg.source = CAREGIVER
-            if PRIORITY_RANK[msg.priority] < PRIORITY_RANK["info"]:
-                msg.priority = "info"             # can never outrank or interrupt a safety cue
+            msg.priority = "info"                 # never outranks or interrupts a safety cue; "system" never expires
+            msg.key = f"caregiver-{rid}"          # a row's own key could replace a queued safety line
+            msg.ttl = CAREGIVER_TTL_S             # survives a long answer or a nav line instead of the 6 s default
             msg.text = CAREGIVER_PREFIX + msg.text
             self.stats["spoken"] += 1
             self.handle(msg)
