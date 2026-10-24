@@ -42,9 +42,34 @@ Voice requests come back over the WebSocket, already resolved:
 
 The full message contract is in `earpiece/events.py`. Bearings are degrees in the wearer's frame (0 ahead, +90 right); distances are metres.
 
+## Two ways to wear it
+
+- **Indoors, or wherever a drone can't fly:** the body camera alone. Obstacle beeps, "what's in front of me?", and "read this" (menus, signs, books, screens) read aloud.
+- **Outdoors:** the drone above and behind the head adds the route, crowds, crossings and the waypoint beacon.
+
+With no perception stream, the earpiece grabs one frame from the local camera only when asked (`KITE_CAMERA=<index>`, or `off`; install the `camera` extra). macOS asks for Camera permission for the terminal the first time.
+
+## Voice commands
+
+| Say | What happens |
+|---|---|
+| "Read this" / "what does the sign say" | Claude transcribes the text in front of the body camera; Cartesia reads it sentence by sentence |
+| "What's in front of me?" | Claude describes the body camera frame; offline, the obstacle tracks answer |
+| "Take me to my coffee shop" / "the nearest pharmacy" / "the end of the street" | Resolved through Moss, Google Places, or sent as a relative target |
+| "Remember this place as the bench" / "remember that the curb is tall" | Saved to Moss memory |
+| "Stop" / "repeat" / "pause" / "louder" / "mute the beeps" | Handled locally, offline |
+
+## Safety rules in code
+
+Claude's judgment layer (`judgment.py`) may only add caution: a filter discards any reply that would clear a stop, move the walker or reroute. After a "Stop.", only deterministic code says "Path is clear. You can continue.", and only once the way has stayed clear for 1.5 s with perception alive.
+
+## Credits and limits
+
+Characters sent to Cartesia are counted across runs in `earpiece/.cache/cartesia_usage.json`; past `KITE_CARTESIA_CHAR_BUDGET` (default 150,000) only urgent speech uses the neural voice. Phrase warm-up runs one request at a time (our plan allows two in flight).
+
 ## Controls
 
-AirPods stem: once = talk, twice = repeat, three times = pause guidance (safety warnings stay on). Keyboard fallback: Enter / `r` / `p`, plus `t <words>` to type a command.
+AirPods (or any Bluetooth headphones' play button): once = talk, twice = repeat, three times = pause guidance (safety warnings stay on). Keyboard fallback: Enter / `r` / `p`, plus `t <words>` to type a command.
 
 ## Layout
 
