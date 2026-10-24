@@ -1,11 +1,19 @@
 """Audio beacon toward the next waypoint (after Microsoft Soundscape's design).
 
 The navigation side sends the waypoint's bearing relative to the wearer and its
-distance. The beacon ticks from that direction, Soundscape's 4-region scheme:
-    |bearing| <= 15 deg  bright double tick  ("on course")
-    15 - 55 deg          tick from that side
-    55 - 125 deg         lower tick from that side ("turn")
-    > 125 deg            distinct two-tone, "behind you"
+distance. The beacon pings from that direction, Soundscape's 4-region scheme
+(apps/ios/GuideDogs/Code/Audio/Protocols/DynamicAudioEngineAsset.swift, the
+4-asset selector: +-15 / 55 / 125 deg):
+    |bearing| <= 15 deg  bright double ping  ("on course")
+    15 - 55 deg          ping from that side
+    55 - 125 deg         lower, dull ping from that side ("turn")
+    > 125 deg            distinct falling two-tone, "behind you"
+Soundscape switches assets abruptly at the region edges. Here the ping's
+brightness also follows a raised-cosine curve of |bearing| (sounds.
+beacon_brightness: flat on axis, 0 at 55 deg), so turning toward the waypoint
+is heard as a continuous "warmer" gradient with the double ping as the on-target
+accent: continuous feedback plus an on-target ping beat a lone on-target ping
+for blind walkers turning (Ahmetovic et al., IJHCS 177, 2023).
 Distance is encoded by tempo (slower far away, faster when close), never by
 loudness, so the beacon stays audible. It ducks under sonar warnings, goes quiet
 while speech plays, and announces arrival once (with hysteresis so walking back
@@ -26,12 +34,13 @@ from .mixer import Engine
 
 
 REGIONS = ("on", "near", "side", "behind")      # ordered by |bearing|
+BEHIND_MIN_PERIOD_S = 0.9
 _WARM: dict[tuple[str, int, int], np.ndarray] = {}   # pre-rendered at startup, never evicted
 
 
-def _mono_sound(region: str, rate: int) -> np.ndarray:
-    mono = {"on": sounds.beacon_on_course, "near": sounds.beacon_off_course,
-            "side": lambda: sounds.knock(880, 0.08, 0.4), "behind": sounds.beacon_behind}[region]()
+def _mono_sound(region: str, bearing_q: int, rate: int) -> np.ndarray:
+    """The beacon cue for (region, 5-degree bearing): brightness depends only on |bearing|."""
+    mono = sounds.beacon_tick(region, float(bearing_q))
     if rate != sounds.RATE:
         from scipy.signal import resample_poly
         import math
@@ -47,7 +56,7 @@ def _beacon_sound(region: str, bearing_q: int, rate: int) -> np.ndarray:
 
 @lru_cache(maxsize=512)
 def _beacon_render(region: str, bearing_q: int, rate: int) -> np.ndarray:
-    return spatial.render(_mono_sound(region, rate), float(bearing_q), rate)
+    return spatial.render(_mono_sound(region, bearing_q, rate), float(bearing_q), rate)
 
 
 def region_of(bearing: float, cfg: BeaconCfg) -> str:
@@ -65,7 +74,8 @@ def region_of(bearing: float, cfg: BeaconCfg) -> str:
 def prewarm(cfg: BeaconCfg, rate: int) -> int:
     """Pre-render every (region, 5-degree bearing) pair tick() can ask for: a bearing
     rounds to bq from within +-2.5 deg, so each bq gets the regions spanned by that
-    interval. One batched native render per region. Returns the number of cues."""
+    interval. One batched native render per (region, |bearing|), since the mono cue
+    depends only on those. Returns the number of cues."""
     want: dict[str, list[int]] = {r: [] for r in REGIONS}
     for bq in spatial.BEARINGS_5DEG:
         lo = REGIONS.index(region_of(max(0.0, abs(bq) - 2.5), cfg))
@@ -74,11 +84,11 @@ def prewarm(cfg: BeaconCfg, rate: int) -> int:
             want[r].append(bq)
     n = 0
     for region, bqs in want.items():
-        if not bqs:
-            continue
-        for bq, st in zip(bqs, spatial.render_many(_mono_sound(region, rate), bqs, rate)):
-            _WARM[(region, bq, rate)] = st
-            n += 1
+        for mag in sorted({abs(bq) for bq in bqs}):
+            group = [bq for bq in bqs if abs(bq) == mag]
+            for bq, st in zip(group, spatial.render_many(_mono_sound(region, mag, rate), group, rate)):
+                _WARM[(region, bq, rate)] = st
+                n += 1
     return n
 
 
@@ -159,7 +169,13 @@ class Beacon:
         self.region = region
         bq = int(round(self.bearing / 5.0) * 5)
         snd = _beacon_sound(region, bq, self.engine.rate)
-        step = self.engine.samples(self._period())
+        period = self._period()
+        if region == "behind":
+            # "turn around" carries no distance; repeating a 275 ms cue every 0.45 s would be
+            # 60 % duty cycle and pure nagging (BBeep, CHI 2019: denser alerts annoyed more
+            # without changing behaviour), so it never repeats faster than BEHIND_MIN_PERIOD_S.
+            period = max(period, BEHIND_MIN_PERIOD_S)
+        step = self.engine.samples(period)
         if self._next is None:
             self._next = self.engine.now + self.engine.samples(0.05)
         horizon = self.engine.now + self.engine.samples(0.06)
