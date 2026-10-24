@@ -338,6 +338,23 @@ h1 em { color: var(--indigo); font-weight: 400; }
 .cast { margin-top: auto; padding: 6px 0 22px; }
 .scene-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .scene-svg .kbot { animation: bob 2.6s ease-in-out infinite; transform-box: fill-box; }
+/* Kite in the comic is both the kite character and the drone: the two flip into each other every 1.8 s */
+.scene-svg .kb-kite, .scene-svg .kb-drone { transform-box: fill-box; transform-origin: center; animation: kb-flip 3.6s ease-in-out infinite; }
+.scene-svg .kb-drone { animation-delay: -1.8s; }
+.scene-svg .kb-prop { fill: none; stroke: #1D2B6B; stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: spin .16s linear infinite; }
+.scene-svg .kb-prop.back { opacity: .55; }
+.scene-svg .kb-tail { display: none; }
+@keyframes kb-flip {
+  0%, 42% { opacity: 1; transform: scaleX(1); }
+  50% { opacity: 0; transform: scaleX(0.05); }
+  51%, 91% { opacity: 0; transform: scaleX(0.05); }
+  100% { opacity: 1; transform: scaleX(1); }
+}
+/* no motion: the drone alone, flying a tiny kite on a string */
+@media (prefers-reduced-motion: reduce) {
+  .scene-svg .kb-kite { display: none; }
+  .scene-svg .kb-tail { display: inline; }
+}
 .who-walker { width: 46px; height: auto; }
 .who-kite { width: 52px; height: auto; animation: bob 2.6s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translateY(-5px) rotate(3deg); } }
