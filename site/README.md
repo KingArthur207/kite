@@ -11,4 +11,4 @@ The site at **https://trykite.pages.dev**: three static pages (`/`, `/how`, `/ju
 - `og/og.html` is the social preview card; screenshot it to `public/assets/og.png` at 1200x630. `og/social.html` is the same card at 1280x640 for the GitHub repo preview (`docs/img/social-preview.png`).
 
 Deploy with `scripts/deploy-site.sh`: it rebuilds, runs the tests, and deploys `public/` with `functions/` from inside `site/` (wrangler only picks up `./functions` from the directory it runs in).
-There is no automatic deploy: the repo has no GitHub Actions (they cost Arthur real money), so deploy by hand with the command above.
+There is no automatic deploy: the repo has no hosted CI runners, so deploy by hand with the command above.
