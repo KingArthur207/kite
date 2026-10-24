@@ -294,7 +294,7 @@ h1 em { color: var(--indigo); font-weight: 400; }
 .btn.primary:hover { box-shadow: 5px 5px 0 var(--verm); }
 
 /* ------------------------------------------------------------ hero sketch */
-.hero.split-hero { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); }
+@media (min-width: 901px) { .hero.split-hero { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); } }
 .sketch { margin: 0; position: relative; }
 .sketch svg { width: 100%; height: auto; display: block; overflow: hidden; }
 .sketch .pen { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -395,3 +395,84 @@ mark { background: none; color: inherit; padding: 0 2px;
 .badge { text-decoration: none; color: var(--ink); font: 600 13.5px var(--sans); letter-spacing: 0; padding: 7px 12px; gap: 7px; }
 .badge::before { display: none; }
 .badge:hover { background: var(--ink); color: var(--paper); }
+
+/* ------------------------------------------------------------ phones and the home page */
+/* phones keep the page links: they wrap onto a second row under the brand */
+@media (max-width: 760px) {
+  .nav { flex-wrap: wrap; row-gap: 0; padding: 6px 14px 4px; }
+  .links { display: flex; order: 3; width: 100%; margin: 0 -8px; justify-content: space-between; }
+  .links a { padding: 8px 8px 10px; font-size: 13px; }
+}
+@media (max-width: 400px) { .links a::before { content: none; } }
+/* the hero lines up with the sections below, and the walk player starts right under it */
+.hero.split-hero { max-width: calc(var(--wrap) + 40px); }
+.split-hero h1 { font-size: clamp(44px, 4.9vw, 70px); }
+.split-hero .for { font-size: 16px; }
+@media (max-width: 900px) { .split-hero h1 { font-size: clamp(44px, 8vw, 72px); } }
+#hear { padding-top: 40px; }
+/* the walk player's speaker label, handwritten instead of caps */
+.caption .who { font: 600 20px/1.1 var(--hand); letter-spacing: 0; color: var(--indigo); margin-bottom: 4px; }
+@media (max-width: 600px) {
+  .player { padding: 22px 18px; }
+  .player h2 { font-size: 24px; line-height: 1.2; }
+  .play { width: 58px; height: 58px; }
+  .play svg { width: 24px; height: 24px; }
+  .caption { font-size: 19px; }
+  .kicker.center { font-size: 23px; }
+  .kicker.center .arrow { display: none; }
+}
+
+/* ------------------------------------------------------------ /judges: Kite in 30 seconds */
+.brief { margin: 28px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 0; overflow: hidden; }
+.brief > div { padding: 22px 22px 24px; border-left: 1.5px dashed rgba(29, 43, 107, 0.2); }
+.brief > div:first-child { border-left: 0; }
+.brief dt { font: 600 22px/1.1 var(--hand); color: var(--verm); margin-bottom: 8px; transform: rotate(-1.5deg); transform-origin: left; }
+.brief dd { margin: 0; font-size: 15.5px; line-height: 1.5; color: var(--ink); }
+.brief .try { background: #FFE9F2; }
+.brief .try dt { color: var(--indigo); }
+.brief-foot { margin: 16px 0 0; color: var(--muted); font-size: 15px; max-width: 860px; }
+.brief-foot a { color: var(--indigo); font-weight: 600; }
+.tracks-intro { padding-top: 90px; }
+.tracks-intro .display { font-size: clamp(32px, 4.2vw, 48px); }
+.tracks-intro .lede { margin: 12px 0 0; max-width: 640px; }
+.tracks-intro + .tracks-body { padding-top: 0; }
+.tracks-body > .group-title:first-child { margin-top: 44px; }
+@media (max-width: 1000px) {
+  .brief { grid-template-columns: 1fr 1fr; }
+  .brief > div:nth-child(3) { border-left: 0; }
+  .brief > div:nth-child(n+3) { border-top: 1.5px dashed rgba(29, 43, 107, 0.2); }
+}
+@media (max-width: 600px) {
+  .brief { grid-template-columns: 1fr; }
+  .brief > div { border-left: 0; padding: 16px 18px 18px; }
+  .brief > div + div { border-top: 1.5px dashed rgba(29, 43, 107, 0.2); }
+  .page-head { padding-top: 44px; }
+  .track { padding: 22px 18px 20px; }
+}
+
+/* ------------------------------------------------------------ contrast */
+/* handwritten text uses a slightly deeper pink than the strokes, so it reads at 4.5:1 on paper */
+:root { --verm-ink: #C8287A; }
+.hand, .label, .group-title, .brief dt, .caption .who.critical { color: var(--verm-ink); }
+.sketch .note, .sketch .beep { fill: var(--verm-ink); }
+.sketch .note.blue-ink { fill: var(--indigo); }
+
+/* ------------------------------------------------------------ plain reading pages (about, contact, privacy, 404) */
+.prose > * { max-width: 760px; }
+.prose h2 { font-size: clamp(26px, 3vw, 34px); margin: 40px 0 12px; }
+.prose h2:first-child { margin-top: 0; }
+.prose p, .prose li { color: var(--muted); font-size: 17.5px; }
+.prose ul { padding-left: 20px; display: grid; gap: 10px; }
+.prose b { color: var(--ink); }
+.prose a { color: var(--indigo); }
+.prose code { font: 400 14.5px var(--mono); background: var(--sky); padding: 1px 5px; border-radius: 4px; color: var(--ink); }
+.page-head + .section.prose { padding-top: 48px; }
+
+/* Grok Imagine stills on the SpaceXAI card */
+.imagined { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; }
+.imagined figure { margin: 0; background: #fff; border: 1.5px solid var(--ink); border-radius: 6px; padding: 6px 6px 4px; }
+.imagined figure:nth-child(odd) { transform: rotate(-0.8deg); }
+.imagined figure:nth-child(even) { transform: rotate(0.7deg); }
+.imagined img { width: 100%; height: auto; display: block; border-radius: 3px; }
+.imagined figcaption { font: 600 18px var(--hand); color: var(--verm-ink, #C8287A); text-align: center; padding-top: 2px; }
+@media (max-width: 700px) { .imagined { grid-template-columns: 1fr; } .imagined figure { transform: none !important; } }
