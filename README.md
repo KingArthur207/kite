@@ -45,6 +45,7 @@ What is real and what is simulated, as of this commit:
 | `scripts/replay.py` | Replays a JSONL of events into the earpiece, and optionally into SpacetimeDB |
 | `scripts/audit.py` | Pre-submission check: secrets, `.env`, repo visibility, README, large files, model weights |
 | `scripts/netcheck.py` | Checks this laptop's setup: the earpiece over UDP and WebSocket, SpacetimeDB, internet to Claude, Cartesia and Google, and which keys are set |
+| `scripts/demo.sh` | Starts and stops the whole demo (`sim`, `live`, `replay`, `status`, `stop`), with logs in `logs/` |
 | `scripts/offline.sh` | Switches to a local SpacetimeDB server when the internet is gone (`scripts/offline.sh off` undoes it) |
 | `scripts/sim_metrics.py` | Runs sim metrics mode headless and prints collision counts |
 | `data/sample_walk.jsonl` | A recorded 40-second walk in the earpiece event format |
@@ -61,6 +62,14 @@ You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv
 ```bash
 cp .env.example .env    # CARTESIA_API_KEY, ANTHROPIC_API_KEY, GOOGLE_MAPS_API_KEY, ...
 ```
+
+After the installs in steps 1 to 3 (the venv and `npm install` in `dashboard/` and `sim/`), one command runs the whole demo in the background and `scripts/demo.sh stop` ends it:
+
+```bash
+scripts/demo.sh sim        # or: live <camera-index>, replay <file.jsonl>, status, stop
+```
+
+`docs/demo-runbook.md` has the flags. The steps below start each piece by hand.
 
 1. Earpiece (terminal 1):
 

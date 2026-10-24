@@ -35,3 +35,6 @@ data/models/
 # Stock clips and demo renders stay local (Pexels/Mixkit), never committed
 clips/
 out/
+
+# scripts/demo.sh logs and pids
+logs/
