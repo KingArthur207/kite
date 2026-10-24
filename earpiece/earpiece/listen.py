@@ -162,7 +162,7 @@ class CartesiaSTT:
         import websockets
         async with websockets.connect(self.URL.format(m=self.model, r=self.rate),
                                       additional_headers={"X-API-Key": self.key},
-                                      open_timeout=4, max_size=None) as ws:
+                                      open_timeout=4, max_size=1 << 20) as ws:   # transcripts are small JSON
             text = ""
             covered = 0.0
             done = asyncio.Event()

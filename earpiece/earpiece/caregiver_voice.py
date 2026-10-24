@@ -36,6 +36,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from urllib.parse import urlencode
 
 import httpx
 
@@ -804,10 +805,13 @@ def _xai_key() -> str | None:
     return os.environ.get("XAI_API_KEY") or None
 
 
+MAX_FRAME = 16 << 20    # one realtime event; audio deltas are a few KB, so this only stops a runaway frame
+
+
 async def _connect(url: str, key: str):
     from websockets.asyncio.client import connect
     return await connect(url, additional_headers={"Authorization": f"Bearer {key}"},
-                         max_size=None, open_timeout=10, ping_interval=20)
+                         max_size=MAX_FRAME, open_timeout=10, ping_interval=20)
 
 
 async def run_line(a, log=_log) -> int:
@@ -837,7 +841,7 @@ async def run_line(a, log=_log) -> int:
     if not key:
         log("[caregiver-line] XAI_API_KEY is not set (repo-root .env). Use --dry-run to test the tools.")
         return 2
-    url = f"{XAI_URL}?model={a.model}"
+    url = f"{XAI_URL}?{urlencode({'model': a.model})}"
     from websockets.exceptions import WebSocketException
     try:
         ws = await _connect(url, key)
