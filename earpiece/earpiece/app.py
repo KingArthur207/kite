@@ -12,6 +12,7 @@ Safety policy in one place:
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 import time
 from collections import deque
@@ -32,6 +33,9 @@ from .output import DeviceOutput, NullOutput, RustDeviceOutput
 from .sonar import Sonar
 from .speech import Speaker
 from .transport import Transport
+
+# Inbound types handle() mirrors itself; _event() skips them to avoid double rows.
+_MIRRORED_INBOUND = {"guidance", "hazard"}
 
 
 def _stereo(mono: np.ndarray) -> np.ndarray:
@@ -156,14 +160,26 @@ class Earpiece:
         self.events.append(obj)
         if self.transport is not None:
             self.transport.publish(obj)
+        if kind not in _MIRRORED_INBOUND:          # those already went out in _mirror()
+            self._bridge(obj)
+
+    def _bridge(self, obj: dict) -> None:
         for b in self.bridges:
             try:
                 b.publish(obj)
             except Exception as e:
                 self.log(f"[bridge] {type(e).__name__}: {e}")
 
+    def _mirror(self, msg: Msg) -> None:
+        """Every validated inbound event goes to the bridges (SpacetimeDB) as-is."""
+        d = dataclasses.asdict(msg)
+        d.update(d.pop("data"))                   # position/status fields back at the top level
+        self._bridge({k: v for k, v in d.items() if v not in (None, "", [], {})})
+
     # ================================================================== inbound events
     def handle(self, msg: Msg) -> None:
+        if self.bridges:
+            self._mirror(msg)
         now = time.monotonic()
         t = msg.type
         if t in ("obstacles", "obstacle"):

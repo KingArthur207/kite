@@ -36,6 +36,7 @@ const MAX_PAYLOAD = 16 * 1024;
 const TYPES = new Set([
   'obstacles', 'hazard', 'guidance', 'beacon', 'position', 'status', 'scene', 'say',
   'heartbeat', 'control', 'memory', 'spoken', 'heard', 'voice_request', 'caregiver_alert',
+  'gesture', 'output',
 ]);
 const PRIORITIES = new Set(['critical', 'hazard', 'nav', 'answer', 'info', 'system', '']);
 const IDENT = /^[\w.:-]{1,64}$/;
