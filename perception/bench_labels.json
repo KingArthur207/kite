@@ -1,0 +1,78 @@
+{
+  "_about": "Hand labels for perception/bench.py: one point (x, y in the frame resized to 960 wide) inside each street object that matters to a walker, and its kind. A detector names an item when one of its boxes contains the point; 'right kind' also needs the kind. fx: 700 for phone-like photos, 1000 for sim renders (sim/src/config.ts at 960 wide). key = in or next to the walking path.",
+  "data/imagined/scooter.jpg": {"camera": "chest", "fx": 700, "items": [
+    {"kind": "e_scooter", "at": [495, 230], "key": true},
+    {"kind": "pole", "at": [455, 120], "key": true},
+    {"kind": "pole", "at": [20, 145]},
+    {"kind": "vehicle", "at": [272, 158]}]},
+  "data/imagined/doorway.jpg": {"camera": "chest", "fx": 700, "items": [
+    {"kind": "person", "at": [630, 280], "key": true},
+    {"kind": "bike", "at": [348, 255]}]},
+  "data/imagined/oncoming.jpg": {"camera": "chest", "fx": 700, "items": [
+    {"kind": "person", "at": [495, 330], "key": true},
+    {"kind": "person", "at": [40, 300]},
+    {"kind": "person", "at": [145, 290]},
+    {"kind": "person", "at": [270, 300]},
+    {"kind": "pole", "at": [507, 110]}]},
+  "data/imagined/cyclist.jpg": {"camera": "chest", "fx": 700, "items": [
+    {"kind": "bike", "at": [330, 345], "key": true},
+    {"kind": "person", "at": [300, 225], "key": true},
+    {"kind": "pole", "at": [312, 70]}]},
+  "data/imagined/car_turning.jpg": {"camera": "chest", "fx": 700, "items": [
+    {"kind": "vehicle", "at": [665, 240], "key": true},
+    {"kind": "curb", "at": [300, 410], "key": true},
+    {"kind": "pole", "at": [224, 120]}]},
+  "docs/img/seg-sidewalk.png": {"camera": "drone", "fx": 700, "items": [
+    {"kind": "person", "at": [500, 270], "key": true},
+    {"kind": "tree", "at": [615, 260], "key": true},
+    {"kind": "tree", "at": [850, 300], "key": true},
+    {"kind": "pole", "at": [600, 190]},
+    {"kind": "vehicle", "at": [730, 230]}]},
+  "sim/docs/street_dressing_poles.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "pole", "at": [325, 300], "key": true},
+    {"kind": "vehicle", "at": [600, 480], "key": true},
+    {"kind": "vehicle", "at": [480, 455]},
+    {"kind": "person", "at": [490, 405]},
+    {"kind": "e_scooter", "at": [440, 440]}]},
+  "sim/docs/street_dressing_sw_sidewalk.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "tree", "at": [598, 420], "key": true},
+    {"kind": "fire_hydrant", "at": [518, 460], "key": true},
+    {"kind": "person", "at": [42, 440]},
+    {"kind": "vehicle", "at": [230, 430]}]},
+  "sim/docs/street_dressing_howard.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "trash_can", "at": [655, 540], "key": true},
+    {"kind": "tree", "at": [572, 420], "key": true},
+    {"kind": "tree", "at": [520, 400]},
+    {"kind": "vehicle", "at": [830, 360]}]},
+  "sim/docs/street_dressing_corner_se.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "person", "at": [335, 560], "key": true},
+    {"kind": "vehicle", "at": [650, 525]},
+    {"kind": "vehicle", "at": [800, 480]},
+    {"kind": "pole", "at": [715, 250]},
+    {"kind": "person", "at": [862, 400]}]},
+  "sim/docs/osm_facades_howard.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "tree", "at": [640, 420], "key": true},
+    {"kind": "tree", "at": [560, 380]},
+    {"kind": "vehicle", "at": [705, 380]},
+    {"kind": "pole", "at": [668, 340]}]},
+  "sim/docs/osm_facades_corner_chest.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "person", "at": [222, 400], "key": true},
+    {"kind": "curb", "at": [700, 525], "key": true}]},
+  "sim/docs/osm_facades_spawn.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "vehicle", "at": [90, 520], "key": true},
+    {"kind": "person", "at": [480, 390]},
+    {"kind": "person", "at": [285, 385]},
+    {"kind": "pole", "at": [300, 270]}]},
+  "sim/docs/street_dressing_spawn.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "vehicle", "at": [140, 540], "key": true},
+    {"kind": "vehicle", "at": [330, 470]},
+    {"kind": "person", "at": [480, 390]},
+    {"kind": "fire_hydrant", "at": [200, 410]}]},
+  "sim/docs/hybrid_capture_osm_chest.jpg": {"camera": "chest", "fx": 1000, "items": [
+    {"kind": "person", "at": [480, 390], "key": true},
+    {"kind": "vehicle", "at": [850, 380]},
+    {"kind": "curb", "at": [500, 520], "key": true}]},
+  "sim/docs/hybrid_capture_osm_drone.jpg": {"camera": "drone", "fx": 1000, "items": [
+    {"kind": "person", "at": [480, 460], "key": true},
+    {"kind": "vehicle", "at": [820, 420], "key": true}]}
+}
