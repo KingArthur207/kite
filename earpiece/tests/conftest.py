@@ -9,7 +9,7 @@ from earpiece.app import Earpiece
 from earpiece.config import Cfg
 
 # Tests never touch the network voices or real devices unless a test asks for it.
-os.environ.pop("ANTHROPIC_API_KEY", None)
+LIVE_ANTHROPIC_KEY = os.environ.pop("ANTHROPIC_API_KEY", None)   # kept only for opt-in live tests
 
 
 @pytest.fixture

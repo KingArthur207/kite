@@ -8,6 +8,7 @@ Rules (config.SafetyCfg):
   * altitude ceiling/floor: rc climb is cut above max_altitude_m (and pushed down), descent is cut below
     min_altitude_m; discrete up/down moves that would cross a limit are refused
   * battery below min_battery_pct, or flight time above max_flight_s -> land
+  * a land that was asked for (any reason) but failed / was never sent while it still flies is re-sent every 2 s
   * no new video frame for frame_timeout_s, or stale telemetry -> hover (rc 0) until they come back
 The mission code keeps working through the wrapper; refused commands report 'error: safety ...'.
 """
@@ -51,6 +52,8 @@ class SafetyGovernor(Drone):
                 return self._land(f"battery {tel.battery_pct:.0f}% < {c.min_battery_pct:.0f}%")
             if now - self._takeoff_t > c.max_flight_s:
                 return self._land(f"flight time > {c.max_flight_s:.0f} s")
+            if self.land_requested:  # e.g. the 'l' key during a Wi-Fi drop: keep asking until it is down
+                return self._land("requested")
             frame_stale = last_frame_t is None or now - last_frame_t > c.frame_timeout_s
             tel_stale = now - tel.t > c.telemetry_timeout_s
             if frame_stale or tel_stale:
@@ -94,9 +97,9 @@ class SafetyGovernor(Drone):
         self._land_sent = time.time()
         self.inner.land()
 
-    def emergency(self) -> None:
+    def emergency(self) -> bool | None:
         self._event("EMERGENCY")
-        self.inner.emergency()
+        return self.inner.emergency()
 
     def stop(self) -> None:
         self.inner.stop()

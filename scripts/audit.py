@@ -30,7 +30,7 @@ SECRET_PATTERNS = {
     "private key": re.compile(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY"),
     # NAME=value in .env style, NAME being *KEY / *TOKEN / *SECRET / *PASSWORD
     "env-style secret": re.compile(
-        r"^[+\s]*(?:export\s+)?[A-Z0-9_]*(?:API_KEY|_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*['\"]?[A-Za-z0-9_\-./+]{12,}",
+        r"^[+\s]*(?:export\s+)?[A-Z0-9_]*(?:API_KEY|_KEY|TOKEN|SECRET|PASSWORD)\s*=\s*['\"]?(?!os\.|getenv|environ|process\.env|None\b|self\.|cfg\.|config\.)[A-Za-z0-9_\-./+]{12,}",
         re.M),
     # api_key = "...." in code
     "quoted api_key/secret": re.compile(
@@ -123,7 +123,7 @@ def check_public() -> None:
     elif out == "false":
         record("PASS", "repo is public")
     else:
-        record("FAIL", "repo is public", f"{REPO} is private (Settings > Danger Zone > Change visibility)")
+        record("WARN", "repo is public", f"{REPO} is private; Eddy decides when to make it public (judges need access to the code)")
 
 
 def check_readme() -> None:
@@ -152,7 +152,8 @@ def selftest() -> int:
              "CARTESIA_API_KEY=sk_car_" + "c" * 20, "-----BEGIN OPENSSH " + "PRIVATE KEY-----",
              'api_key = "' + "d" * 24 + '"']
     clean = ["ANTHROPIC_API_KEY=", 'api_key=os.environ.get("X")',
-             'voice_id: str = "47c38ca4-5f35-497b-b1a3-415245fb35e1"']
+             'voice_id: str = "47c38ca4-5f35-497b-b1a3-415245fb35e1"',
+             'LIVE_ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY")', "TOKEN = None"]
     assert all(scan(s) for s in leaks), [s for s in leaks if not scan(s)]
     assert not any(scan(s) for s in clean), [s for s in clean if scan(s)]
     print("audit selftest ok")

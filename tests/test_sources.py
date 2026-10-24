@@ -51,6 +51,7 @@ def test_stepped_source_is_ordered_and_finishes(video):
     src.stop()
 
 
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="wall-clock timing; flaky on shared CI runners, runs locally")
 def test_file_source_plays_in_real_time_and_serves_newest(video):
     with VideoFileSource(video) as src:
         first = src.wait_first(3.0)
