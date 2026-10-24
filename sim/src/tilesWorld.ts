@@ -7,8 +7,8 @@
 // - Tiles are geofenced to Moss St plus the Howard corner (fence.ts): tiles outside are never
 //   requested (LoadRegionPlugin mask; every download is also checked against the fence and counted
 //   in tilesStats().fenceViolations), tile pixels outside are discarded, the walker is clamped inside.
-// - detector "tiles" (default): the capture cameras (frames to relay.py and the detector) see the tiles.
-// - detector "osm" (?detector=osm): the fallback hybrid for the general Map Tiles policy, which lists
+// - detector "tiles" (?detector=tiles): the capture cameras (frames to relay.py and the detector) see the tiles.
+// - detector "osm" (default): the hybrid; also covers for the general Map Tiles policy, which lists
 //   object detection as a prohibited use. Tiles on screen only; capture renders show the OSM meshes.
 //   main.ts calls view("capture") before each capture render and view("screen") before the screen
 //   render, and every tile mesh counts any draw by the capture renderer in tilesStats().captureLeaks.

@@ -12,8 +12,8 @@ import { clampToFence } from "./fence";
 
 // ?world=tiles (default when VITE_GOOGLE_MAPS_API_KEY is set): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
-// tilesWorld.ts and docs/google-permission.md). The capture cameras see the tiles too; ?detector=osm
-// keeps them on OSM Moss and shows tiles on screen only. ?world=moss: Moss St from OSM boxes
+// tilesWorld.ts and docs/google-permission.md). By default the capture cameras render OSM Moss (YOLO recall on tile
+// frames is far lower) and tiles show on screen only; ?detector=tiles puts tiles in capture too. ?world=moss: Moss St from OSM boxes
 // everywhere. ?world=placeholder: the old box world.
 // Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
 // ?relay= and ?ear= override the socket URLs (empty = offline).
@@ -53,7 +53,7 @@ const world: ReturnType<typeof buildWorld> & WorldExtras & { updateTiles?: () =>
   worldName === "placeholder" ? buildWorld()
   : worldName === "tiles" ? buildTilesWorld({
     walkers, cameras: [...cams, chaseCam, ...(debug ? [topCam] : [])], capture, debug,
-    detector: query.get("detector") === "osm" ? "osm" : "tiles",
+    detector: query.get("detector") === "tiles" ? "tiles" : "osm",   // OSM capture by default: YOLO recall on tile frames is far lower (PR #41)
   })
   : buildOsmWorld({ actors: !metricsOn, walkers });
 if ("tilesStats" in world) (window as unknown as { __kiteTiles: unknown }).__kiteTiles = world;
