@@ -173,7 +173,7 @@ The sim emits no hazards from its own object list. Hazards come from the real de
 
 To the relay (`ws://127.0.0.1:5020/pub`):
 - Binary frames, 8 fps per camera: 1 byte camera id (0 drone, 1 chest), then JPEG bytes.
-- Pose as JSON text at 5 Hz, once per camera: `{"type":"pose","camera":"drone","x":..,"y":..,"heading":..,"cam_height":..,"pitch":0}`.
+- Pose as JSON text at 5 Hz, once per camera: `{"type":"pose","camera":"drone","x":..,"y":..,"heading":..,"cam_height":..,"pitch":0,"cam_model":"tello"}`. `cam_model` is `raw` when the page has `?cam=raw`.
 
 Subscribers on `/sub` get the same messages. On connect they first get the latest frame and pose for each camera.
 
@@ -189,6 +189,57 @@ pose = src.pose                    # latest pose for this camera, or None
 ```
 
 Needs `websockets`, `numpy` and `opencv-python`.
+
+## Tello camera model
+
+The capture renderer draws clean, sharp, perfectly exposed frames, and a Tello doesn't. `SimFrameSource("drone")` now runs every drone frame through `tello_cam.py` before handing it over: lens distortion, motion blur from the turn rate, a soft lens, vignetting, auto-exposure that adapts over about 1.5 s, shot and read noise, a washed-out, slightly green colour response, and one JPEG pass at quality 40 for the 8x8 blockiness of the Tello's H.264. The link is modelled too: frames arrive 100 to 200 ms late, about 3% are dropped and 2% repeat the previous frame. `.pose` is not delayed, the same way the Tello's state stream runs ahead of its video. Rolling-shutter skew is in the model but off by default.
+
+The screen view is never modelled, and neither is the chest camera (it isn't a Tello). `?cam=raw` on the sim URL turns the model off; the flag travels in the pose messages. `SimFrameSource(..., raw=True)` does the same from Python. The detector code doesn't change.
+
+All parameters are in `public/tello_camera_model.json`. Lens distortion comes from `data/tello_camera.json` once `kite.calibrate` has written one with `dist`. Until then it uses the community Tello calibration (fx 921, k1 -0.033, k2 0.105) that circulates in Tello ArUco projects, which we haven't verified. The distortion is applied around the sim's own focal length (`config.ts` FX = 1000) so the field of view stays the same; set FX from the calibration separately. Every other number is a guess until it is fitted to real footage (below). `python sim/tello_cam.py` runs its self-check.
+
+### YOLO with the model off and on
+
+`yolo_check.py --cam both` scores the same grab twice, so both columns see identical scenes. Moss world, yolo11n, Oct 24, 657 frames (drone 328, chest 329), recall of visible instances:
+
+| drone camera | model off | model on |
+|---|---|---|
+| car | 130/212 = 61%, mean conf 0.74 | 133/212 = 63%, mean conf 0.76 |
+| person | 103/403 = 26%, mean conf 0.55 | 111/403 = 28%, mean conf 0.54 |
+| car < 10 m | 11/19 | 17/19 |
+| person > 20 m | 83/382 | 90/382 |
+
+The chest camera is unmodelled, so its numbers are identical in both columns (car 63%, person 31%). Detection went up slightly instead of down. The likely reason is that the raw renders are aliased and over-sharp, and the softness and the exposure gain bring the low-poly people and cars closer to what YOLO was trained on. So the current guesses don't make the sim harder for the detector. Whether the real Tello does is the open question, and only a real recording can answer it.
+
+## Sim-to-real gap (`scripts/sim_real_gap.py`)
+
+```
+# raw sim drone frames (the tool applies the camera model itself)
+uv run --no-project --with playwright --with ultralytics --with opencv-python-headless \
+    python sim/yolo_check.py --url "http://localhost:5199/?cam=raw" --frames out/sim_raw --out out
+# real vs sim raw vs sim + model: image stats and YOLO confidence by estimated distance
+uv run --no-project --with ultralytics --with opencv-python-headless \
+    python scripts/sim_real_gap.py --real recordings/<take> --sim out/sim_raw
+# tune the model JSON to the real stats
+... python scripts/sim_real_gap.py --real recordings/<take> --sim out/sim_raw --fit
+```
+
+It reports sharpness (Laplacian variance), noise (Immerkaer estimate), brightness, contrast, saturation, R/G and B/G, vignetting (corner/centre), blockiness (step across 8 px block edges / step elsewhere) and the colour-histogram distance to the real frames. It also runs YOLO person/car on both sides, binned by a distance estimated from box height, since real footage has no ground truth. `--fit` runs coordinate descent over 11 parameters (exposure target, contrast, black level, saturation, R and B gains, softness, read and shot noise, JPEG quality, vignette) and writes the JSON (`--fit-out` to write somewhere else).
+
+No Tello recording exists yet, so it was tried on a stock clip standing in for real footage (Mixkit 134, "A man being followed walking in a city", 1280x720 cropped to 960x720, in the gitignored `clips/`). Medians over 40 frames each:
+
+| stat | stock clip | sim raw | sim + model | sim + fitted |
+|---|---|---|---|---|
+| brightness | 75.7 | 84.9 | 114.2 | 102.9 |
+| sharpness | 17.4 | 689.9 | 96.2 | 58.6 |
+| noise | 0.43 | 1.47 | 0.45 | 0.27 |
+| blockiness | 1.08 | 1.22 | 1.88 | 1.52 |
+| saturation | 95.5 | 65.0 | 37.1 | 75.0 |
+| R/G | 0.77 | 1.07 | 1.00 | 0.93 |
+| colour hist distance | 0 | 0.36 | 0.46 | 0.33 |
+| gap score (fit objective) | 0 | 395 | 442 | 156 |
+
+The stock clip is a warm, saturated, smooth H.264 phone video and doesn't look like a Tello. The hand-set model moves the sim away from it on colour, and the fit pulls it back. That shows the tool works. It doesn't show the model is right. The stats also depend on the scene, so the fit means the most on Tello footage of a street like Moss. **Re-run `sim_real_gap.py --fit` on the first Tello recording** (a `kite.record` take works as `--real` directly), commit the fitted `public/tello_camera_model.json`, then re-run `yolo_check.py --cam both`.
 
 ## Scene descriptions (Claude)
 

@@ -19,6 +19,9 @@ import { clampToFence } from "./fence";
 // ?relay= and ?ear= override the socket URLs (empty = offline).
 const query = new URLSearchParams(location.search);
 const metricsOn = query.get("metrics") === "1";
+// Capture frames get the Tello camera model in Python (sim/tello_cam.py, applied by sim/frames.py); ?cam=raw turns it
+// off. The flag rides on the pose messages. The screen view is never modelled.
+const camModel = query.get("cam") === "raw" ? "raw" : "tello";
 const aspect = CAM_W / CAM_H;
 const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
 const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
@@ -155,7 +158,7 @@ setInterval(() => {
              lat, lng, x: walker.x, y: walker.n });
   const camHeights = { drone: HEAD_TOP + DRONE_ABOVE_HEAD, chest: CHEST_HEIGHT };
   for (const [camera, cam_height] of Object.entries(camHeights)) {
-    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0 });
+    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0, cam_model: camModel });
   }
 }, 1000 / POSITION_HZ);
 

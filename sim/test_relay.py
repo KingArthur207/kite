@@ -48,7 +48,7 @@ def check(pub, sub) -> None:
         return
     sys.path.insert(0, str(HERE))
     from frames import SimFrameSource
-    src = SimFrameSource("drone", f"ws://127.0.0.1:{PORT}/sub")
+    src = SimFrameSource("drone", f"ws://127.0.0.1:{PORT}/sub", raw=True)   # the camera model has its own check (tello_cam.py)
     time.sleep(0.5)                      # connected; it got the cached latest frame + pose
     ok, img = src.read()
     assert ok and img.shape == (720, 960, 3) and img[0, 0, 2] > 200, "bad frame"
@@ -58,6 +58,19 @@ def check(pub, sub) -> None:
     assert src.read() == (False, None)
     src.release()
     print("SimFrameSource OK")
+
+    tello = SimFrameSource("drone", f"ws://127.0.0.1:{PORT}/sub")   # camera model on (the default)
+    time.sleep(0.5)
+    tello.timeout = 0.3
+    tello.read()                         # the relay's cached frame, if the link didn't drop it
+    tello.timeout = 2.0
+    sent = time.monotonic()
+    for _ in range(5):                   # a few, since the simulated link drops some
+        pub.send(bytes([0]) + jpeg)
+    ok, img = tello.read()
+    assert ok and img.shape == (720, 960, 3) and time.monotonic() - sent >= 0.09, "no delayed Tello frame"
+    tello.release()
+    print("SimFrameSource with the Tello camera model OK")
 
 
 if __name__ == "__main__":
