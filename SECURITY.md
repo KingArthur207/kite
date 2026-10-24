@@ -38,13 +38,21 @@ All of them run locally with `scripts/check.sh` (or one at a time: `scripts/chec
 | Check | What it catches | Step |
 |---|---|---|
 | gitleaks | committed keys and tokens, anywhere in history | `secrets` |
-| pip-audit | known CVEs in Python dependencies | `audit` |
-| bandit (medium and above) | risky Python patterns | `audit` |
-| npm audit (high and above) | known CVEs in the dashboard and SpacetimeDB module | `audit` |
+| pip-audit | known CVEs in Python dependencies (earpiece and drone venvs) | `audit` |
+| bandit (medium and above) | risky Python patterns in `earpiece/`, `kite/`, `perception/`, `earpiece/evals/`, `site/tools/` and `scripts/`; each accepted finding carries `# nosec <id>` and its reason | `audit` |
+| npm audit (high and above) | known CVEs in the dashboard and SpacetimeDB module (the site has no npm dependencies) | `audit` |
 | cargo audit | RustSec advisories for the Rust audio engine | `audit` |
-| ruff (bug-finding rules, config in `pyproject.toml`) | unused names, undefined names, likely bugs | `lint` |
+| ruff (bug-finding rules, config in `pyproject.toml`) | unused and undefined names, dropped asyncio tasks, likely bugs, in every Python directory | `lint` |
+| shellcheck | quoting and logic bugs in the shell scripts | `lint` |
+| bidi scan | Trojan Source: bidirectional control characters hidden in source | `lint` |
+| `node --check` | syntax errors in the site's Functions and browser JS, which have no build step | `lint` |
 
 `scripts/check.sh hooks` installs a pre-commit hook that runs ruff and gitleaks on what you stage.
+
+## The site
+
+- `site/public/_headers` sets HSTS, a strict Content-Security-Policy (own scripts and media only, Google Fonts for type), `X-Frame-Options: DENY`, `nosniff`, a Referrer-Policy and a Permissions-Policy that turns off camera, microphone and location.
+- Cloudflare Pages does not apply `_headers` to responses a Pages Function builds, so `site/functions/_middleware.js` adds the same headers to the Markdown pages and 404s it serves; a test checks the two sets are identical.
 
 ## SpacetimeDB and the dashboard
 
@@ -61,4 +69,6 @@ These are known and accepted for the hackathon demo. Revisit them before Kite is
 - **The CSP needs `'unsafe-eval'`**, because the SpacetimeDB SDK builds its serializers with `Function()` (from the schema, never from row data). It only applies to production builds; `scripts/demo.sh` runs the Vite dev server, which has none.
 - **The sim's Google key ships in its page** (`VITE_GOOGLE_MAPS_API_KEY`) by design. Restrict it by HTTP referrer in the Google Cloud console.
 - **LAN mode trusts the LAN.** With `--bind 0.0.0.0`, any machine on the network can send UDP events, which carry no Origin and no signature. Use it only on a network you control.
+- **Hugging Face depth weights are not pinned to a revision.** `python -m perception --download` fetches them by name; at run time they load with `local_files_only`, so nothing is fetched during a walk. Pinning would invalidate the caches already downloaded; do it when the weights are next refreshed.
+- **Some dev scripts cache in `/tmp`** (Street View tiles, open-data pulls). They run by hand on a single-user laptop; bandit's /tmp, fixed-URL and all-interfaces checks are skipped for `scripts/` only.
 - **Claude can still be talked into a setting change.** Content can't pose as the wearer, but a model can still be swayed by what it reads, and the `control` tool can pause guidance or mute the beeps. Neither setting silences a critical warning, and "resume" or "beeps on" undoes it.
