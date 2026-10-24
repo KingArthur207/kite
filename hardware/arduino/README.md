@@ -8,6 +8,7 @@ USB cable, and the computer prints it. No processing yet.
 | **Arduino UNO Q** (ours) | [`hello_unoq/hello_unoq.ino`](hello_unoq/hello_unoq.ino) | On the UNO Q, `Serial` is the microcontroller's pin 0/1 UART and never reaches USB-C. `Monitor` from the `Arduino_RouterBridge` library goes through the board's Linux side to USB-C. |
 | Uno R3/R4, Nano, Mega, Leonardo, ESP32, ESP8266 | [`hello/hello.ino`](hello/hello.ino) | Plain `Serial` at 115200 baud. |
 | **UNO Q on a battery, over Wi-Fi** | [`unoq_wifi/`](unoq_wifi/README.md) | No cable or IDE after a one-time setup: its Linux side sends hello through the internet (works on eduroam). |
+| **UNO Q to the computer: text both ways and video** | [`unoq_link/`](unoq_link/README.md) | One-line install on the board (`curl -fsSL https://trykite.pages.dev/unoq/install.sh \| sh`); `kite_link.py` on the computer finds it by itself. Supersedes `unoq_wifi/`. |
 
 Both compile with `arduino-cli` (UNO Q: `arduino:zephyr:unoq`; Uno/Nano/Leonardo: `arduino:avr:*`).
 
