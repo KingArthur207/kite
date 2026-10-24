@@ -9,7 +9,7 @@ import { look2 } from "./look2";
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** A canvas texture drawn once. */
-function canvasTex(size: number, draw: (g: CanvasRenderingContext2D, s: number) => void, srgb = true) {
+export function canvasTex(size: number, draw: (g: CanvasRenderingContext2D, s: number) => void, srgb = true) {
   const c = document.createElement("canvas");
   c.width = c.height = size;
   draw(c.getContext("2d")!, size);
