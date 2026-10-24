@@ -370,6 +370,17 @@ def _no_frame_detail(stats: dict, first_frame_s: float) -> str:
             "drone; macOS: Local Network access for the terminal app. Then: python -m kite.video_doctor")
 
 
+def _reader_counters(stats: dict, seconds: float) -> str:
+    """One line of the raw reader's counters, to tell a weak link (few packets) from a decoder problem (packets but
+    few frames, errors, resyncs)."""
+    if "datagrams" not in stats:
+        return ""
+    sec = max(seconds, 1e-6)
+    keys = ("frames_decoded", "corrupt_frames", "decode_errors", "resyncs", "queue_drops", "skipped_bytes", "keyframe_seen")
+    return (f"; reader: {stats['datagrams'] / sec:.0f} packets/s, {stats.get('bytes', 0) / sec / 1024:.0f} KB/s, "
+            + ", ".join(f"{k} {stats.get(k)}" for k in keys) + (f", last error {stats['last_error']}" if stats.get("last_error") else ""))
+
+
 def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[Check]:
     """First frame, fps, frame size and (in the same window) the telemetry rate."""
     try:
@@ -389,11 +400,13 @@ def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[
     detail = f"first frame after {wait:.1f} s, {fps:.1f} fps over {measure_s:g} s"
     if stats.get("backend"):
         detail += f" ({stats['backend']} reader)"
+    since_start = time.monotonic() - t_wait
     if fps < FPS_NO_GO:
-        out.append(Check("video", NO_GO, f"{detail}: frozen, the governor would keep hovering", data))
+        out.append(Check("video", NO_GO, f"{detail}: frozen, the governor would keep hovering"
+                         + _reader_counters(stats, since_start), data))
     elif fps < FPS_WARN:
         out.append(Check("video", WARN, f"{detail}: under {FPS_WARN:.0f} fps (weak link? move closer, away from "
-                         "other 2.4 GHz Wi-Fi)", data))
+                         "other 2.4 GHz Wi-Fi)" + _reader_counters(stats, since_start), data))
     else:
         out.append(Check("video", GO, detail, data))
     size = (first.width, first.height)
