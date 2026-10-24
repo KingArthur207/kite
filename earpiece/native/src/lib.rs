@@ -16,6 +16,7 @@
 
 mod mixer;
 pub mod sonar;
+mod sonar_py;
 pub mod spatial;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -633,6 +634,8 @@ fn fractional_delay<'py>(
 #[pymodule]
 fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
+    m.add_class::<sonar_py::PySonar>()?;
+    m.add_class::<sonar_py::TrackState>()?;
     m.add_function(wrap_pyfunction!(render_binaural, m)?)?;
     m.add_function(wrap_pyfunction!(render_binaural_batch, m)?)?;
     m.add_function(wrap_pyfunction!(fractional_delay, m)?)?;

@@ -317,8 +317,34 @@ class Sonar:
             self.speak(f"{name}, {clock_phrase(t.bearing)}.", "hazard", key=f"label:{t.id}", ttl=1.5)
 
     def summary(self) -> list[dict]:
-        return [{"id": t.id, "kind": t.kind, "bearing": round(t.bearing, 1), "distance": round(t.distance, 2),
-                 "urgency": round(t.urgency, 2), "ttc": None if math.isinf(t.ttc) else round(t.ttc, 2),
-                 "critical": t.critical, "active": t.active,
-                 "closing_speed": None if t.closing_speed is None else round(t.closing_speed, 2)}
-                for t in sorted(self.tracks.values(), key=lambda t: -t.urgency)]
+        return summarize(self.tracks.values())
+
+
+def summarize(tracks) -> list[dict]:
+    """Dashboard/brain view of the tracks, most urgent first (shared by both engines)."""
+    return [{"id": t.id, "kind": t.kind, "bearing": round(t.bearing, 1), "distance": round(t.distance, 2),
+             "urgency": round(t.urgency, 2), "ttc": None if math.isinf(t.ttc) else round(t.ttc, 2),
+             "critical": t.critical, "active": t.active,
+             "closing_speed": None if t.closing_speed is None else round(t.closing_speed, 2)}
+            for t in sorted(tracks, key=lambda t: -t.urgency)]
+
+
+def use_rust(cfg: SonarCfg) -> bool:
+    """KITE_SONAR_ENGINE (SonarCfg.engine): "rust", "python", or "auto" = rust when built."""
+    from . import rust_sonar
+    choice = (cfg.engine or "auto").strip().lower()
+    if choice not in ("auto", "rust", "python"):
+        raise ValueError(f"sonar engine must be rust, python or auto, not {cfg.engine!r}")
+    if choice == "rust" and not rust_sonar.available():
+        raise RuntimeError("sonar.engine='rust' but kite_audio is not built with the sonar "
+                           "(maturin develop --release -m native/Cargo.toml)")
+    return choice == "rust" or (choice == "auto" and rust_sonar.available())
+
+
+def create(engine: Engine, cfg: SonarCfg, speak: Callable[..., object] | None = None, log=print):
+    """The selected sonar: the Rust decision core (rust_sonar.RustSonar) or this module's Sonar.
+    Both take the same inputs and produce the same cue stream."""
+    if use_rust(cfg):
+        from .rust_sonar import RustSonar
+        return RustSonar(engine, cfg, speak=speak, log=log)
+    return Sonar(engine, cfg, speak=speak, log=log)
