@@ -3,7 +3,7 @@
 #
 #   scripts/check.sh            everything: tests, lint, build, security
 #   scripts/check.sh quick      earpiece tests (Rust engine, in parallel), Python and Rust lint, site, secret scan
-#   scripts/check.sh <step>...  any of: earpiece rust drone dashboard site lint secrets audit
+#   scripts/check.sh <step>...  any of: earpiece rust drone hardware dashboard site lint secrets audit
 #   scripts/check.sh hooks      install a git pre-commit hook (ruff + gitleaks on what you stage, ~2 s)
 #
 # Needs: uv, cargo, npm. Optional: gitleaks and cargo-audit (brew install gitleaks; cargo install cargo-audit).
@@ -84,6 +84,19 @@ step_drone() {
   run "sim stand-in geometry self-check" bash -c "cd '$ROOT' && '$PY' sim/test_standin_geometry.py"
 }
 
+step_hardware() {
+  bold "hardware (UNO Q link: ruff, shellcheck, tests, published installer in sync)"
+  local d="$ROOT/hardware/arduino/unoq_link"
+  run "ruff, unoq link" uvx -q ruff check "$d"
+  if command -v shellcheck >/dev/null; then
+    run "shellcheck, unoq link" shellcheck "$d/install.sh" "$d/e2e_local.sh"
+  else
+    skip "shellcheck" "not installed: brew install shellcheck"
+  fi
+  run "site/public/unoq in sync" python3 "$d/publish.py" --check
+  run "unoq link tests" uvx -q --with pillow pytest -q -p no:cacheprovider "$d/tests"
+}
+
 step_dashboard() {
   bold "dashboard (build, module typecheck)"
   run "dashboard build" bash -c "cd '$ROOT/dashboard' && npm ci --silent && npm run -s build"
@@ -152,12 +165,12 @@ step_audit() {
 }
 
 case "${1:-all}" in
-  all)   step_earpiece; step_rust; step_drone; step_dashboard; step_site; step_lint; step_secrets; step_audit ;;
-  quick) step_earpiece quick; step_rust quick; step_lint; step_site; step_secrets quick ;;
+  all)   step_earpiece; step_rust; step_drone; step_hardware; step_dashboard; step_site; step_lint; step_secrets; step_audit ;;
+  quick) step_earpiece quick; step_rust quick; step_hardware; step_lint; step_site; step_secrets quick ;;
   hooks) install_hooks ;;
   *)     for s in "$@"; do
            case "$s" in
-             earpiece|rust|drone|dashboard|site|lint|precommit|secrets|audit) "step_$s" ;;
+             earpiece|rust|drone|hardware|dashboard|site|lint|precommit|secrets|audit) "step_$s" ;;
              *) echo "check: unknown step '$s'" >&2; exit 2 ;;
            esac
          done ;;
