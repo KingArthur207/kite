@@ -51,3 +51,4 @@ sim/public/local/
 data/imagined/*.mp4
 data/imagined/*.wav
 data/imagined/*.jsonl
+phone/.state/
