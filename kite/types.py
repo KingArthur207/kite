@@ -1,4 +1,4 @@
-"""Shared data types (ported from vigil's reachglass/types.py: the drone and video parts).
+"""Shared data types: the drone and video parts of jerkgt13's reachglass/types.py (github.com/nathanwuzhao/jerkgt13).
 
 Conventions used by every module
 --------------------------------

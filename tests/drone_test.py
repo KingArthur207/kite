@@ -20,13 +20,12 @@ Run:      python tests/drone_test.py                        # full flight (~2 mi
           python tests/drone_test.py --analyze results/tello_latency_<stamp>.json
           python tests/drone_test.py --ground --preview --video-backend opencv   # another video reader
 
-Video goes through one of kite's newest-frame readers (--video-backend, default auto = kite.config's per-platform
-profile): raw = kite.sources.tello_raw.RawTelloStream (its own UDP socket + PyAV's bare H.264 decoder, no FFmpeg
-network code; the macOS default), pyav = PyAVStream (FFmpeg udp:// + h264 demuxer; the default elsewhere), opencv =
-the team's VideoStream (OpenCV/FFmpeg, nobuffer + low_delay). Each decodes every frame but converts at most
---decode-fps per second, so latency does not grow over the flight. The recorder and the preview window share
-that one reader. --video-bitrate / --video-resolution / --video-fps set the drone's stream (Tello SDK setbitrate /
-setresolution / setfps) before streamon; nothing is sent unless given.
+Video goes through one of kite's newest-frame readers (--video-backend): pyav = PyAVStream (FFmpeg udp:// + h264
+demuxer; the default), opencv = the team's VideoStream (OpenCV/FFmpeg, nobuffer + low_delay), raw =
+kite.sources.tello_raw.RawTelloStream (its own UDP socket + PyAV's bare H.264 decoder), auto = raw on macOS. Each
+decodes every frame but converts at most --decode-fps per second, so latency does not grow over the flight. The
+recorder and the preview window share that one reader. --video-bitrate / --video-resolution / --video-fps set the
+drone's stream (Tello SDK setbitrate / setresolution / setfps) before streamon; nothing is sent unless given.
 Safety:   3 x 3 m clear space, prop guards, battery >= 30 %. Ctrl+C lands.
 
 The state stream is ~10 Hz, so one measurement is quantised to ~100 ms; the mean over repeats is better
@@ -124,7 +123,8 @@ def open_video(tello, fps, backend="raw", tries=3):
             print(f"video try {i + 1}/{tries}: {e}")
     n, size = probe_video_packets(tello)
     if n is None:
-        print(f"video: {size}. Quit it: lsof -nP -iUDP:{tello.vs_udp_port}")
+        print(f"video: {size}. Find it: lsof -nP -iUDP:{tello.vs_udp_port} (macOS/Linux), "
+              f"netstat -ano -p udp | findstr {tello.vs_udp_port} (Windows)")
     elif n:
         print(f"video: the drone IS sending ({n} packets, {size // 1024} KB in 3 s), but the {backend} reader could "
               "not decode it. Try --video-backend raw, or record the packets: python -m kite.video_doctor")
@@ -229,6 +229,9 @@ def preview_loop(ui, done, scale):
             seq, img, ts = stream.read_seq(copy=True)  # we draw on it, so take a copy
             if img is None or seq == last:
                 cv2.waitKey(1)
+                # closed with X: checked here too, before the next imshow (which would reopen it on Windows)
+                if last != -1 and cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
+                    break
                 time.sleep(0.005)
                 continue
             last = seq
@@ -496,6 +499,25 @@ def interrupt_thread(th):
     ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(th.ident), ctypes.py_object(KeyboardInterrupt))
 
 
+def _drop_binary_reply_noise(record) -> bool:
+    """djitellopy logs an ERROR when the Tello answers with one of its binary packets (they start with 0xCC); it
+    then retries the command, so the line only looks alarming."""
+    return "can't decode byte" not in record.getMessage()
+
+
+def quiet_ffmpeg() -> None:
+    """Hide FFmpeg's decoder chatter (\"non-existing PPS 0 referenced\", \"no frame!\", \"error while decoding MB\"):
+    it is printed until the first keyframe and after every lost packet, and the report already measures the video.
+    --ffmpeg-log brings it back."""
+    os.environ.setdefault("OPENCV_FFMPEG_LOGLEVEL", "-8")  # OpenCV's bundled FFmpeg: quiet (read when it starts)
+    try:
+        import av.logging
+
+        av.logging.set_level(av.logging.PANIC)  # PyAV's FFmpeg (pyav and raw readers)
+    except Exception:
+        pass
+
+
 def fly(args, ui):
     import logging
 
@@ -508,6 +530,7 @@ def fly(args, ui):
     stream_class(args.video_backend)
 
     Tello.LOGGER.setLevel(logging.WARNING)  # otherwise every rc packet is printed
+    Tello.LOGGER.addFilter(_drop_binary_reply_noise)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     rec = {"meta": {"stamp": stamp, "args": vars(args)}, "state": [], "video": [], "events": []}
     stop = threading.Event()
@@ -555,11 +578,16 @@ def fly(args, ui):
     else:
         print("taking off - Ctrl+C lands")
         try:
+            # armed before the takeoff is sent: a Ctrl+C during the climb or a lost 'ok' must still land it
+            # (safe_land below and djitellopy's end() both land only when is_flying)
+            tello.is_flying = True
             reply, t0, t1 = timed_cmd(tello, "takeoff", timeout=20)
             if not (reply and reply.lower().startswith("ok")):
-                # never run the step sequence on a drone that did not confirm it is airborne
+                # never run the step sequence on a drone that did not confirm it is airborne; still on the ground
+                # (h < 30 cm, e.g. a refused takeoff): nothing to land
+                if float((tello.get_current_state() or {}).get("h", 0) or 0) < 30:
+                    tello.is_flying = False
                 raise RuntimeError(f"takeoff not confirmed (reply {reply!r})")
-            tello.is_flying = True
             rec["meta"]["takeoff"] = t1 - t0
             hud["phase"] = "hover"
             hold(tello, [0, 0, 0, 0], 2.0)
@@ -637,14 +665,19 @@ def build_parser():
     p.add_argument("--min-battery", type=int, default=30)
     p.add_argument("--preview", action="store_true", help="show the live camera feed in a window during the run")
     p.add_argument("--preview-scale", type=float, default=1.0, help="scale the preview window, e.g. 0.5 (default 1.0)")
-    p.add_argument("--decode-fps", type=int, default=30, help="decode cap in fps; frames arriving faster are dropped, not queued (default 30)")
+    p.add_argument("--decode-fps", type=int, default=60, help="decode cap in fps; frames arriving faster are dropped, "
+                   "not queued (default 60: it must sit above the ~30 fps stream, a cap of 30 drops ~40 %% of frames "
+                   "to arrival jitter)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="video reader: pyav (default), opencv, or kite's own UDP readers raw (bare H.264 decoder), "
-                        "socket (big receive buffer) and auto = raw on macOS, pyav elsewhere")
+                   help="video reader: pyav (default), opencv, raw (kite's own UDP reader) or auto (raw on macOS, "
+                        "pyav elsewhere)")
     add_video_link_args(p)
     p.add_argument("--drop-corrupt", action="store_true",
                    help="raw reader: hold the last clean frame through packet loss instead of showing smears")
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
+    p.add_argument("--simple", action="store_true", help="short flight: one + and one - step per axis, no forward/back "
+                   "moves (same as --trials 1 --forward 0, about 45 s in the air)")
+    p.add_argument("--ffmpeg-log", action="store_true", help="show FFmpeg's decoder messages (hidden by default)")
     p.add_argument("--analyze", metavar="JSON", help="re-analyse a saved run without flying")
     p.add_argument("--out", default="results")
     return p
@@ -657,11 +690,15 @@ def parse_args(argv=None):
     p = build_parser()
     args = p.parse_args(argv)
     args.video_backend = resolve_video_backend(args.video_backend)
+    if args.simple:
+        args.trials, args.forward = 1, 0
     return p, args
 
 
 def main(argv=None):
     p, args = parse_args(argv)
+    if not args.ffmpeg_log:
+        quiet_ffmpeg()
     global DROP_CORRUPT
     DROP_CORRUPT = args.drop_corrupt
     if not args.analyze:

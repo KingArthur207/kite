@@ -420,11 +420,11 @@ def test_replay_real_tello_capture_through_the_raw_reader(capsys):
 
 # ------------------------------------------------------------------ the backend profile
 def test_auto_backend_is_raw_on_macos_and_pyav_elsewhere():
-    assert DroneCfg().video_backend == "pyav" and VIDEO_BACKENDS == ("auto", "raw", "socket", "pyav", "opencv")
+    assert DroneCfg().video_backend == "pyav" and VIDEO_BACKENDS == ("auto", "raw", "pyav", "opencv")
     assert resolve_video_backend("auto", "darwin") == "raw"
     assert resolve_video_backend("auto", "linux") == "pyav" and resolve_video_backend("auto", "win32") == "pyav"
     assert resolve_video_backend(None, "darwin") == "pyav"  # the default: kite's own readers are opt-in
-    for b in ("raw", "socket", "pyav", "opencv"):
+    for b in ("raw", "pyav", "opencv"):
         assert resolve_video_backend(b, "darwin") == b and resolve_video_backend(b.upper(), "linux") == b
     with pytest.raises(ValueError):
         resolve_video_backend("gstreamer")
@@ -455,7 +455,7 @@ def test_tello_video_source_and_drone_resolve_auto(platform):
     assert make_tello(Config(drone=DroneCfg(video_backend="auto")), dry_run=True).video_backend == want(platform)
     assert make_tello(Config(drone=DroneCfg(video_backend="opencv")), dry_run=True).video_backend == "opencv"
     assert stream_class("raw") is RawTelloStream and stream_class("pyav") is PyAVStream
-    assert stream_class("opencv") is VideoStream and stream_class("socket").__name__ == "SocketStream"
+    assert stream_class("opencv") is VideoStream
 
 
 @pytest.fixture
@@ -556,7 +556,7 @@ def test_drone_test_picks_the_profile(platform):
     _, args = dt.parse_args([])
     assert args.video_backend == "pyav"  # the default: kite's own readers are opt-in
     assert dt.parse_args(["--video-backend", "auto"])[1].video_backend == want(platform)
-    for b in ("raw", "socket", "pyav", "opencv"):
+    for b in ("raw", "pyav", "opencv"):
         assert dt.parse_args(["--video-backend", b])[1].video_backend == b
     with pytest.raises(SystemExit):
         dt.parse_args(["--video-backend", "gstreamer"])

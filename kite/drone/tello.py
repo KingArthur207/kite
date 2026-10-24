@@ -1,5 +1,10 @@
-"""DJI Tello adapter (djitellopy for commands + state, kite's TelloVideoSource for video: video_backend picks the reader,
-default pyav; kite's own UDP readers raw / socket / auto (raw on macOS) are opt-in, see kite.config.resolve_video_backend).
+"""DJI Tello adapter: djitellopy for commands + state, TelloVideoSource for video (DroneCfg.video_backend picks the
+reader: pyav by default, opencv, or kite's raw UDP reader; "auto" = raw on macOS).
+
+jerkgt13's reachglass/drone/tello.py (github.com/nathanwuzhao/jerkgt13). kite's changes, each from a failure found
+in tests or on the drone: Wi-Fi drops never raise (link_error), emergency() reports a packet it could not send,
+close() lands a takeoff still in progress, set_speed() changes nothing while busy, intervals use time.monotonic(),
+and the drone's address is a setting (host).
 
 Discrete commands are NON-BLOCKING: the command is sent, and busy() polls djitellopy's reply list
 (filled by its UDP receiver thread) with a per-command timeout. After stop() the late reply of the
@@ -43,11 +48,10 @@ STOP_SETTLE_S = 1.0  # after 'stop', replies within this window belong to the st
 STREAMON_TRIES, VIDEO_WAIT_S = 4, 3.0  # streamon is re-sent until video packets arrive
 RC_GATE_S = 0.0015  # djitellopy drops an rc closer than 1 ms to the previous one: wait this long instead
 RC_HOLD_S = 0.6  # dead-man: a non-zero stick not refreshed for this long gets one rc 0 0 0 0 (the loop runs at 10 Hz)
-NO_VIDEO = ("the Tello answers commands but sends no video to UDP {port}. Close the Tello phone app and take the "
-            "phone off the drone's Wi-Fi (while the app is connected the drone streams to the phone), then restart "
-            "the drone. On Windows also allow Python through the firewall (inbound UDP 8890 and {port}); on macOS "
-            "allow incoming connections for Python and give your terminal app Local Network access "
-            "(System Settings > Privacy & Security).")
+NO_VIDEO = ("the Tello answers commands but sends no video to UDP {port}. Make sure no other device or app is "
+            "connected to the drone's Wi-Fi, then restart the drone. Windows: allow Python through the firewall on "
+            "Private AND Public networks (inbound UDP 8890 and {port}). macOS: allow incoming connections for "
+            "Python and give the terminal app Local Network access (System Settings > Privacy & Security).")
 
 
 def video_link_commands(bitrate: str | None = None, resolution: str | None = None, fps: str | None = None) -> list[str]:
@@ -154,7 +158,8 @@ class TelloDrone(Drone):
         if self._tello is None:
             from djitellopy import Tello
 
-            Tello.LOGGER.setLevel(logging.WARNING)  # otherwise every rc packet is printed
+            if Tello.LOGGER.level < logging.WARNING:  # otherwise every rc packet is printed (a quieter level set by
+                Tello.LOGGER.setLevel(logging.WARNING)  # the caller stays)
             self._tello = Tello(self._host)
         self._tello.connect()
         log.info("connected, battery %s%%", self._state().get("bat"))
@@ -173,8 +178,9 @@ class TelloDrone(Drone):
                 if video_packets_arrive(port, VIDEO_WAIT_S):
                     break
             except OSError as e:
-                raise RuntimeError(f"UDP port {port} is held by another program ({e}): close other Tello scripts "
-                                   f"and tools (find it with: lsof -nP -iUDP:{port})") from None
+                raise RuntimeError(f"UDP port {port} is held by another program ({e}): close other Tello scripts and "
+                                   f"tools (find it with: lsof -nP -iUDP:{port} on macOS/Linux, "
+                                   f"netstat -ano -p udp | findstr {port} on Windows)") from None
             log.warning("no video packets yet (%d/%d), re-sending streamon", i + 1, STREAMON_TRIES)
         else:
             raise RuntimeError(NO_VIDEO.format(port=port))
@@ -184,7 +190,8 @@ class TelloDrone(Drone):
     def close(self) -> None:
         self._closing.set()
         try:
-            if self._flying and not self.dry_run:
+            taking_off = self._pending is not None and self._pending.cmd == "takeoff"  # airborne before its 'ok'
+            if (self._flying or taking_off) and not self.dry_run:
                 self._send("land")
                 self._tello.is_flying = True  # djitellopy's end() lands again as a safety net
         finally:
@@ -224,7 +231,7 @@ class TelloDrone(Drone):
     def _send(self, cmd: str) -> bool:
         wait = MIN_GAP_S - (time.monotonic() - self._last_send)
         if wait > 0:
-            time.sleep(min(wait, MIN_GAP_S))
+            time.sleep(wait)
         self.log.append((time.time(), cmd))
         ok = True
         if self.dry_run and not cmd.endswith("?") and cmd not in ("command", "streamon", "streamoff"):
@@ -242,7 +249,7 @@ class TelloDrone(Drone):
         # cannot be taken as the answer to THIS command.
         wait = self._ignore_until - time.monotonic()
         if wait > 0 and not self.dry_run:
-            time.sleep(min(wait, STOP_SETTLE_S))
+            time.sleep(wait)
         self._ignore_until = 0.0
         self._replies().clear()  # anything queued now is stale
         self._rc_live = False  # a discrete command replaces the stick
@@ -277,6 +284,8 @@ class TelloDrone(Drone):
         self._pending = None
         self._result = "ok"
         self._flying = False
+        if self._tello is not None:
+            self._tello.is_flying = False  # as djitellopy's own emergency(): its end() must not send 'land' afterwards
         return True
 
     def rc(self, lr: int, fb: int, ud: int, yaw: int) -> None:
@@ -373,10 +382,16 @@ class TelloDrone(Drone):
     def _complete(self, result: str) -> None:
         p = self._pending
         self._pending = None
-        if p is not None and p.cmd == "land" and result != "ok" and not self.dry_run:
+        # kite: never judge by height when the command did not even leave the laptop (Wi-Fi down): nothing happened
+        sent = not result.startswith("error: not sent")
+        if p is not None and p.cmd == "land" and result != "ok" and sent and not self.dry_run:
             h = self.telemetry().height_m
             if h is not None and h <= 0.2:
                 result = "ok"  # the reply was lost / 'error' because it is already down: it has landed
+        if p is not None and p.cmd == "takeoff" and result == "error: timeout" and not self.dry_run:
+            h = self.telemetry().height_m
+            if h is not None and h >= 0.3:
+                result = "ok"  # kite: the 'ok' was lost but it is up: count it as flying so every landing path applies
         self._result = result
         if p is None:
             return
@@ -393,8 +408,8 @@ class TelloDrone(Drone):
         return self._result
 
     def set_speed(self, cm_s: int) -> None:
+        self._start(f"speed {int(cm_s)}", 5.0, 0.2)  # raises while busy: change nothing then
         self.move_speed_cm_s = int(cm_s)
-        self._start(f"speed {int(cm_s)}", 5.0, 0.2)
 
     def temperature_c(self) -> float | None:
         """Highest board temperature from the state stream ('temph', C), None if not reported."""

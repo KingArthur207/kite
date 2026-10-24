@@ -1,0 +1,20 @@
+# Drone layer (kite/): everything the Tello tools and tests need, on macOS, Windows or Linux.
+#
+#   python -m venv .venv
+#   source .venv/bin/activate     (Windows PowerShell: .venv\Scripts\activate; if scripts are blocked, run once:
+#                                  Set-ExecutionPolicy -Scope CurrentUser RemoteSigned)
+#   pip install -r requirements.txt
+#
+# Then: python tests/drone_test.py --ground --preview, python -m kite.video_doctor, python -m kite.preflight (macOS).
+# Python 3.12. The earpiece has its own environment: see earpiece/README.md.
+# Versions in the comments are the ones tested together on macOS (Apple Silicon).
+
+-e .[dev]             # the kite package itself (editable) + its test extras from pyproject.toml (pytest, hypothesis, ...)
+
+numpy>=1.26           # tested 2.5.4
+opencv-python>=4.9    # tested 5.0.0: preview windows, webcam, the optional OpenCV video reader
+av>=12                # tested 19.0.2: PyAV, decodes the Tello's H.264 (raw and pyav readers)
+djitellopy>=2.5       # tested 2.5.0: Tello commands and state
+
+# Follow mode only (large download): uncomment, then fetch the weights as kite/follow.py explains.
+# ultralytics>=8.3    # tested 8.4.185

@@ -148,10 +148,10 @@ def test_streamon_is_resent_until_video_packets_arrive(fast_video_check):
     d.close()
 
 
-def test_no_video_packets_gives_the_phone_app_diagnosis(fast_video_check):
+def test_no_video_packets_gives_the_no_video_diagnosis(fast_video_check):
     fake = StreamingFakeTello(free_udp_port(), stream_on_nth=None)
     d = TelloDrone(tello=fake, dry_run=True)
-    with pytest.raises(RuntimeError, match="phone app"):
+    with pytest.raises(RuntimeError, match="sends no video"):
         d.connect()
     assert fake.streamons == tello_mod.STREAMON_TRIES
     d.close()
@@ -544,6 +544,75 @@ def test_governor_hovers_when_video_or_telemetry_goes_stale_and_recovers():
     gov.rc(0, 40, 0, 0)
     assert fake.rcs[-1] == (0, 40, 0, 0)
     assert gov.check(now + 5.0, now + 5.0) == "hover"  # telemetry that stops updating also means hover
+
+
+class _LinkFake:
+    """The djitellopy surface TelloDrone needs; sends raise like a dropped Wi-Fi link when `down`."""
+
+    def __init__(self, h_cm=10):
+        self.down, self.sent, self.is_flying = False, [], False
+        self.state = {"h": h_cm, "tof": h_cm, "bat": 80}
+        self.udp = {"responses": []}
+
+    def send_command_without_return(self, cmd):
+        if self.down:
+            raise OSError(51, "Network is unreachable")
+        self.sent.append(cmd)
+
+    def get_own_udp_object(self):
+        return self.udp
+
+    def get_current_state(self):
+        return self.state
+
+
+def test_a_land_that_never_left_the_laptop_is_not_counted_as_landed_even_low_down():
+    fake = _LinkFake(h_cm=10)  # 0.1 m: under the 0.2 m "it is already down" rule
+    d = TelloDrone(tello=fake, video=False)
+    d._flying = fake.is_flying = True
+    fake.down = True
+    d.land()
+    assert d.last_result().startswith("error: not sent")
+    assert d.flying and fake.is_flying  # still flying: the governor, close() and djitellopy's end() keep trying
+    fake.down = False
+    d.land()
+    assert "land" in fake.sent
+
+
+def test_a_takeoff_whose_ok_was_lost_counts_as_flying_once_it_is_up():
+    fake = _LinkFake(h_cm=80)
+    d = TelloDrone(tello=fake, video=False)
+    d.takeoff()
+    d._complete("error: timeout")  # the 'ok' never came back
+    assert d.last_result() == "ok" and d.flying and fake.is_flying  # so every landing path applies
+
+
+def test_a_refused_takeoff_on_the_ground_stays_on_the_ground():
+    fake = _LinkFake(h_cm=0)
+    d = TelloDrone(tello=fake, video=False)
+    d.takeoff()
+    d._complete("error: battery low")
+    assert d.last_result() == "error: battery low" and not d.flying
+
+
+def test_an_rc_that_djitellopy_would_throttle_is_not_taken_as_news_about_the_link():
+    class Throttling(_LinkFake):
+        TIME_BTW_RC_CONTROL_COMMANDS = 0.001  # djitellopy's real gate
+        last_rc_control_timestamp = 0.0
+
+        def send_rc_control(self, *v):
+            if time.time() - self.last_rc_control_timestamp > self.TIME_BTW_RC_CONTROL_COMMANDS:
+                self.last_rc_control_timestamp = time.time()
+                self.send_command_without_return("rc {} {} {} {}".format(*v))
+
+    fake = Throttling()
+    d = TelloDrone(tello=fake, video=False)
+    fake.down = True
+    d.rc(0, 10, 0, 0)  # sent, fails: the link is down
+    assert d.link_error is not None
+    fake.last_rc_control_timestamp = time.time()
+    d.rc(0, 10, 0, 0)  # inside djitellopy's gate: kite waits it out and really sends, so the failure is seen
+    assert d.link_error is not None
 
 
 def test_nan_or_future_frame_and_telemetry_stamps_mean_hover():

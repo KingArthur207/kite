@@ -1,4 +1,5 @@
-"""Configuration: nested dataclasses with defaults (ported from vigil's reachglass/config.py: drone + safety).
+"""Configuration: nested dataclasses with defaults. The drone and safety sections are jerkgt13's reachglass/config.py
+(github.com/nathanwuzhao/jerkgt13); kite additions are marked "kite:".
 
     cfg = Config()
     cfg = Config(drone=DroneCfg(kind="dry_run"), safety=SafetyCfg(max_rc=70))
@@ -11,8 +12,13 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 
-VIDEO_BACKENDS = ("auto", "raw", "socket", "pyav", "opencv")
-DEFAULT_VIDEO_BACKEND = "pyav"  # kite's own UDP readers (raw, socket, auto) are opt-in until they run on a real Tello
+# kite: the Tello H.264 reader is a setting (every drone command's --video-backend choices come from here).
+#   pyav    FFmpeg's udp:// + h264 demuxer, djitellopy's decoder (jerkgt13's default; works on Windows)
+#   opencv  the team's OpenCV VideoStream (tests/drone_test.py's original reader)
+#   raw     kite's own UDP socket + PyAV's bare H.264 decoder (kite/sources/tello_raw.py)
+#   auto    raw on macOS, pyav elsewhere
+VIDEO_BACKENDS = ("auto", "raw", "pyav", "opencv")
+DEFAULT_VIDEO_BACKEND = "pyav"
 # Tello SDK 2.0+ video link settings (kite.drone.tello.apply_video_link): None sends nothing, the drone keeps its own
 VIDEO_BITRATES = ("auto", "1", "2", "3", "4", "5")  # setbitrate 0..5, Mbps (0 = auto)
 VIDEO_RESOLUTIONS = ("high", "low")  # setresolution: 720p / 480p
@@ -20,12 +26,8 @@ VIDEO_STREAM_FPS = ("high", "middle", "low")  # setfps
 
 
 def resolve_video_backend(backend: str | None = None, platform: str | None = None) -> str:
-    """The Tello H.264 reader to use. None: DEFAULT_VIDEO_BACKEND, "pyav" (FFmpeg's udp:// + h264 demuxer,
-    djitellopy's way). "opencv" is the team's VideoStream. Opt-in until they have run against a real Tello: "raw"
-    (kite/sources/tello_raw.py: kite's own UDP socket + PyAV's bare H.264 decoder), "socket"
-    (kite/sources/socket_stream.py: kite's UDP socket + PyAV's parser, big receive buffer) and "auto", the
-    per-platform profile: "raw" on macOS (on a Mac both FFmpeg udp:// readers got the packets but never a frame),
-    "pyav" elsewhere."""
+    """The reader that will actually run: None -> DEFAULT_VIDEO_BACKEND, "auto" -> this platform's. ValueError if
+    unknown."""
     b = (backend or DEFAULT_VIDEO_BACKEND).lower()
     if b not in VIDEO_BACKENDS:
         raise ValueError(f"video backend {backend!r}: use one of {', '.join(VIDEO_BACKENDS)}")
@@ -59,7 +61,7 @@ def video_link_argv(args) -> str:
 
 @dataclass
 class SafetyCfg:
-    max_rc: int = 50  # clamp on every rc channel (stick 50 ~ 0.5 m/s forward: raise it to keep up with a walk)
+    max_rc: int = 50  # clamp on every rc channel
     min_altitude_m: float = 0.5
     max_altitude_m: float = 2.3
     min_battery_pct: float = 20.0
@@ -83,14 +85,11 @@ class SafetyCfg:
 @dataclass
 class DroneCfg:
     kind: str = "tello"  # tello | dry_run
+    host: str = "192.168.10.1"  # kite: the drone's address (the tests point it at kite.testing's emulator)
     move_speed_cm_s: int = 50  # speed for discrete moves ('speed' command)
     yaw_sign: int = 1  # +1 if telemetry yaw grows with `cw`
     video_fps: int = 60  # reader retrieve cap: must sit above the ~30 fps stream (equal drops ~40 % of frames)
-    # Tello H.264 reader (kite.config.resolve_video_backend): pyav (FFmpeg udp:// + h264 demuxer, djitellopy's
-    # decoder) or opencv (the team's VideoStream); kite's own UDP readers are opt-in until they have run against a
-    # real Tello: raw (tello_raw.py, bare H.264 decoder), socket (socket_stream.py, PyAV's parser, big receive
-    # buffer) and auto (raw on macOS, where the FFmpeg udp:// readers showed no image, pyav elsewhere).
-    video_backend: str = DEFAULT_VIDEO_BACKEND
+    video_backend: str = DEFAULT_VIDEO_BACKEND  # kite: see VIDEO_BACKENDS above
     # Tello video link, sent after `command` and before `streamon` (None: not sent, the drone keeps its default).
     # Older firmware answers "error": logged once, never fatal. A weak or crowded link: video_bitrate "2" or "1",
     # video_resolution "low" (docs/internal/windows-drone.md, "If the drone video is corrupted").
@@ -99,7 +98,6 @@ class DroneCfg:
     video_stream_fps: str | None = None  # VIDEO_STREAM_FPS (video_fps above is the laptop-side reader cap)
     # camera-to-laptop video delay (s). After a discrete move/rotation, only frames arriving later than
     # "command done + video_lag_s" show the new view. Measure it with tests/drone_test.py.
-    # vigil 2026-09-26 run: video 6 +/- 78 ms (yaw) and 21 +/- 40 ms (forward move) behind telemetry, worst 85 ms
     video_lag_s: float = 0.25
 
 

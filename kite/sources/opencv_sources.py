@@ -1,4 +1,7 @@
-"""OpenCV-backed frame sources: the Tello UDP stream, a webcam, and a video file."""
+"""OpenCV-backed frame sources: the Tello UDP stream, a webcam, and a video file.
+
+jerkgt13's reachglass/sources/opencv_sources.py (github.com/nathanwuzhao/jerkgt13); kite additions are marked "kite:".
+"""
 
 from __future__ import annotations
 
@@ -12,26 +15,11 @@ from ..types import Frame
 from .base import FrameSource
 
 TELLO_UDP_URL = "udp://@0.0.0.0:11111"
-from ..config import VIDEO_BACKENDS  # noqa: E402,F401  (re-exported: every Tello command's --video-backend choices)
-
-
-def _readonly(img: np.ndarray) -> np.ndarray:
-    """Frames are shared between consumers: forbid in-place drawing (copy before annotating)."""
-    img.flags.writeable = False
-    return img
 
 
 def stream_class(backend: str):
-    """The reader class for a resolved video backend (all share constructor(url, fps=, open_timeout_ms=,
-    read_timeout_ms=), start(), read_seq(copy=), stop())."""
-    if backend == "raw":
-        from .tello_raw import RawTelloStream
-
-        return RawTelloStream
-    if backend == "socket":
-        from .socket_stream import SocketStream
-
-        return SocketStream
+    """kite: the reader class for a resolved video backend (kite.config.VIDEO_BACKENDS). All of them share
+    constructor(url, fps=, open_timeout_ms=, read_timeout_ms=), start(), read_seq(copy=), stop()."""
     if backend == "pyav":
         from .pyav_stream import PyAVStream
 
@@ -40,15 +28,22 @@ def stream_class(backend: str):
         from .video_stream import VideoStream
 
         return VideoStream
-    raise ValueError(f"video backend {backend!r}: use raw, socket, pyav or opencv")
+    if backend == "raw":
+        from .tello_raw import RawTelloStream
+
+        return RawTelloStream
+    raise ValueError(f"video backend {backend!r}: use pyav, opencv or raw")
+
+
+def _readonly(img: np.ndarray) -> np.ndarray:
+    """Frames are shared between consumers: forbid in-place drawing (copy before annotating)."""
+    img.flags.writeable = False
+    return img
 
 
 class TelloVideoSource(FrameSource):
-    """The Tello's H.264 stream, read by one of four backends (DroneCfg.video_backend, kite.config.resolve_video_backend):
-    "pyav" (FFmpeg's udp:// + h264 demuxer, djitellopy's decoder; the default), "opencv" (the team's OpenCV
-    VideoStream), and kite's own UDP readers, opt-in until tested on a real Tello: "raw" (UDP socket + PyAV's bare
-    H.264 decoder, tello_raw.py; "auto" picks it on macOS) and "socket" (UDP socket with a big receive buffer +
-    PyAV's parser, socket_stream.py).
+    """The Tello's H.264 stream, decoded by PyAV (backend "pyav", default: djitellopy's decoder), by the team's
+    OpenCV VideoStream (backend "opencv") or by kite's own UDP reader (backend "raw"; "auto" = raw on macOS).
 
     The drone must already have been told `streamon` (the drone adapter does that). Only one reader
     can bind UDP 11111: every consumer shares this source.
@@ -67,7 +62,7 @@ class TelloVideoSource(FrameSource):
                  backend: str | None = None):
         from ..config import resolve_video_backend
 
-        self.url, self.fps, self.backend = url, fps, resolve_video_backend(backend)  # ValueError if unknown
+        self.url, self.fps, self.backend = url, fps, resolve_video_backend(backend)  # kite: ValueError if unknown
         # FFmpeg open/read timeout. It must outlast the wait for a clean keyframe: nothing decodes before one, and
         # the Tello sends them seconds apart (a lost packet costs a whole one). With 5 s / 3 s the capture was
         # aborted before its first keyframe on a weak link, and a timed-out capture never delivers again.
@@ -79,7 +74,6 @@ class TelloVideoSource(FrameSource):
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.reconnects = 0
-        self.last_error: str | None = None  # why the last open failed (socket: the port is held)
 
     def start(self) -> TelloVideoSource:
         if self._thread is None:
@@ -89,20 +83,19 @@ class TelloVideoSource(FrameSource):
         return self
 
     def stats(self) -> dict:
-        """The current reader's counters (raw backend: datagrams, frames, decode errors, ...), {} otherwise."""
+        """kite: the current reader's counters (raw backend: datagrams, frames, decode errors, ...) for the checks."""
         with self._lock:
             stream = self._stream
         fn = getattr(stream, "stats", None)
-        out = fn() if fn is not None else {}
-        return {"backend": self.backend, "reconnects": self.reconnects, **out}
+        return {"backend": self.backend, "reconnects": self.reconnects, **(fn() if fn is not None else {})}
 
     def _run(self) -> None:
         Stream = stream_class(self.backend)
+
         while not self._stop.is_set():
             try:
                 stream = Stream(self.url, fps=self.fps, open_timeout_ms=self.timeout_ms, read_timeout_ms=self.timeout_ms).start()
-            except RuntimeError as e:  # nothing decodable before the open timeout, or the port is held: try again
-                self.last_error = str(e)
+            except RuntimeError:  # nothing decodable before the open timeout: try again
                 self._stop.wait(0.5)
                 continue
             with self._lock:
@@ -119,14 +112,6 @@ class TelloVideoSource(FrameSource):
                 self._stream = None
                 self._offset += max(stream.read_seq(copy=False)[0], 0)
             stream.stop()  # its thread leaves grab() within the read timeout -> safe to release
-
-    def diagnosis(self) -> str | None:
-        """Why there is no picture, when the reader can tell (socket backend), else the last open error."""
-        with self._lock:
-            stream = self._stream
-        if stream is not None and hasattr(stream, "diagnose"):
-            return stream.diagnose()
-        return self.last_error
 
     def read(self) -> Frame | None:
         with self._lock:
