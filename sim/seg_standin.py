@@ -1,10 +1,10 @@
 """STAND-IN until streetseg lands: walkable-ground segmentation for the drone view.
 
-Rex's `streetseg` owns perception (spec 5.3). This file exists so the demo video's "Waymo-style"
-overlay (walkable ground, people, vehicles) doesn't wait on it. It uses the model family Rex picked
+The `streetseg` package owns perception (spec 5.3). This file exists so the demo video's "Waymo-style"
+overlay (walkable ground, people, vehicles) doesn't wait on it. It uses the model family streetseg picked
 (Ultralytics YOLO26n semantic segmentation) and keeps a small interface so his model drops in:
 
-    seg = Segmenter()                  # or Rex's, with the same segment() and process()
+    seg = Segmenter()                  # or streetseg's, with the same segment() and process()
     s = seg.segment(frame)             # BGR -> {"masks": {sidewalk, road, crosswalk, person, vehicle}, "walkable": {...}}
     events = seg.process(frame, camera, pose)   # -> earpiece `scene` events (context only, never a stop)
 

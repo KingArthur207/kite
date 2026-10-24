@@ -77,7 +77,7 @@ Anti-goals (failure even if it technically works)
 ## 3. Constraints
 
 - Cal Hacks rules: no copying pre-made team code into the repo. VIGIL (HackGT 13) ideas can be rewritten, not pasted. Open-source libraries are fine.
-- Team cap is 4. Aneesh hosts and can advise but not build, and he won't be at the apartment in the morning.
+- Team cap is 4. Our host can advise but not build, and won't be at our base in the morning.
 - Laptops are macOS on Apple Silicon, no NVIDIA GPU. ASUS lends 30 GX10s at the venue; we don't plan to use one, since YOLO11n runs at about 40 fps on a Mac.
 - Each judging table is shared by 2 or 3 teams (hacker guide), so the live walk has 3 or 4 m of aisle, in a crowded hall.
 - The Tello is the standard model: its own Wi-Fi access point, no internet on that link, no GPS, one controller at a time.
@@ -161,7 +161,7 @@ So the live path is direct: every producer uses `EarpieceClient`, pointed at `12
 
 SpacetimeDB holds the shared state everyone else watches: the earpiece mirrors every event it receives and speaks, and the sim, drone laptop and dashboard subscribe to it. Default design, Eddy's to change: one `event` table (`id`, `type`, `source`, `priority`, `payload` as JSON, `t`) plus a `latest` table keyed by `(type, source)`. Python writes over HTTP (`POST /v1/database/kite-sync-pl6rp/call/<reducer>`, see `dashboard/README.md`). The dashboard shows the walker on a map, the route, active hazards and status, read only from Spacetime. For the Spacetime track, the pitch line is: "every device on the walk, and the caregiver, shares one live world state."
 
-Networks: we build at Aneesh's apartment on its Wi-Fi. Maincloud, Claude and Cartesia need internet, not just a shared network; with Maincloud, two machines don't even need to be on the same network, only online. At judging the whole demo (sim, detector, earpiece, dashboard) runs on one laptop, so the only network question there is internet for those three cloud services, from the venue Wi-Fi ("Cal Hacks 13.0", per the hacker guide). Fallbacks, tested by Saturday freeze: cached Cartesia phrases plus macOS `say` for speech, a local `spacetime start --listen-addr 127.0.0.1:3000` instance with the same module, and the deterministic cues (sonar, `critical`, `dont_walk`) working with Claude unreachable. (Spec author's call.)
+Networks: we build at our base on its Wi-Fi. Maincloud, Claude and Cartesia need internet, not just a shared network; with Maincloud, two machines don't even need to be on the same network, only online. At judging the whole demo (sim, detector, earpiece, dashboard) runs on one laptop, so the only network question there is internet for those three cloud services, from the venue Wi-Fi ("Cal Hacks 13.0", per the hacker guide). Fallbacks, tested by Saturday freeze: cached Cartesia phrases plus macOS `say` for speech, a local `spacetime start --listen-addr 127.0.0.1:3000` instance with the same module, and the deterministic cues (sonar, `critical`, `dont_walk`) working with Claude unreachable. (Spec author's call.)
 
 The dashboard shows the walker on a map, the current route, active hazards and drone or sim status. It shows no camera video (privacy).
 
@@ -171,7 +171,7 @@ Caregiver messages (built, PR #8): the dashboard sends a short message to the wa
 
 One pipeline, three frame sources: `process(frame, camera, pose) -> events`, where `frame` is BGR 960×720, `camera` holds fx and fy, and `pose` is the camera's height and pitch.
 
-- The drone or sim view gets street segmentation, Waymo-demo style: walkable ground, people, vehicles, signals. Rex's first version (`rexheng/videotesting` PR #2) uses YOLO26n-sem (Cityscapes) for segmentation, YOLO26n for boxes, an optional crossing-sign checkpoint, and Depth Anything V2 Small for the chest camera's close obstacles. Model choice is Rex's, including Roboflow RF-DETR if it does better.
+- The drone or sim view gets street segmentation, Waymo-demo style: walkable ground, people, vehicles, signals. Rex's first version (PR #2 in his `videotesting` repo) uses YOLO26n-sem (Cityscapes) for segmentation, YOLO26n for boxes, an optional crossing-sign checkpoint, and Depth Anything V2 Small for the chest camera's close obstacles. Model choice is Rex's, including Roboflow RF-DETR if it does better.
 - Output is earpiece events (section 5.1): `hazard` and `scene` from the drone or sim view, `obstacles` from the chest camera. Not the VIGIL glasses' `turn` of -1, 0 or +1: Kite has no glasses. A suggested direction ("bear left") goes out as a `say` with priority `nav`, or as a hint the judgment layer can use.
 - Stops are immediate (blocked ground, red light, something large and close). A new direction has to hold for a few frames. A person cut off by the bottom edge is the walker, not a crowd.
 - Frame sources: a video file, sim frames, the webcam, the live Tello. Arthur's `kite/sources/` readers cover file, webcam and Tello behind one `FrameSource.read()`.
@@ -252,7 +252,7 @@ These were the kickoff prompts on Friday night. The owner table above is current
 - Karthik: "Read the spec sections 5.1, 5.2, 5.6 and 7. Add the Claude judgment layer to the earpiece under the safety rule in 5.6, cache the fixed Cartesia phrases, and mirror every received and spoken event to SpacetimeDB through the existing bridge hook. Done when `python -m earpiece run --sim walk` and a replayed JSONL both sound right on laptop speakers."
 - Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
 
-## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
+## 8. The shoot (Sat Oct 24, the corner we shot at: Moss St at Howard)
 
 The run sheet for the morning is `docs/internal/shoot-day.md`: the timeline, positions, who records what, props, backups and the commands for after the take.
 
@@ -260,7 +260,7 @@ Location: Moss Street at Howard Street, SoMa (OSM way 8916291). Moss is a one-wa
 
 Route: the meeting said to start at the SE end of Moss. Start instead on the NE sidewalk of Moss about 70 m before Howard, walk NW to the corner, turn left, cross Moss on the zebra, and stop about 20 m along Howard's south sidewalk. We never cross Howard. The whole of Moss would take over 5 minutes at 0.6 m/s, which is the entire battery, so we skip the first two thirds. With a second charged battery, start at the SE end. The crossing is uncontrolled, so there is no signal to read: the drone's job there is spotting a car turning in from Howard, and Kite says to stop and wait. That fits section 4. The sim's origin is the zebra crossing node, so sim and real lat/lng line up.
 
-We have one charged Tello battery and no charger until someone buys a USB-C to Micro-USB cable in the morning (the Tello charges its battery in the drone over Micro-USB). Aneesh won't be at the apartment in the morning, so confirm tonight that we can still reach the corner and our gear.
+We have one charged Tello battery and no charger until someone buys a USB-C to Micro-USB cable in the morning (the Tello charges its battery in the drone over Micro-USB). Our host won't be at our base in the morning, so confirm tonight that we can still reach the corner and our gear.
 
 - Don't fly before the shoot. Ground checks only, kept short, because streaming video drains the battery too. Skip the stick 60 and 100 speed test; the walker just walks slowly.
 - 7:00 AM: one scripted take on the one battery, about 5 minutes, landing at 20 to 30%. It has to count: rehearse the route on foot first, with the drone still off.
@@ -329,5 +329,5 @@ Made in this spec, change them by editing it: webcam `obstacles` go to the earpi
 - Target kit, if needed: a USB-C to Micro-USB cable if Rex doesn't bring one (he said he would), a phone chest mount or clip, two sleep masks, wipes. Eddy brings over-ear Bluetooth headphones.
 - fx calibration for our Tello (Arthur, if battery allows). The sim uses 1000 until then.
 - Tape the width of the Moss crossing on site; the sim assumes 6.1 m.
-- Fill in the Google rep name in `docs/google-permission.md`.
-- Who walks at the shoot, and whether the crew can reach the corner and the gear at 7 AM without Aneesh.
+- Fill in the Google representative's role in `docs/google-permission.md`.
+- Who walks at the shoot, and whether the crew can reach the corner and the gear at 7 AM without our host.

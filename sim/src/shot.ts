@@ -275,8 +275,8 @@ export function startShot(opts: {
     if (shot.walk) stepWalker(0);
     opts.place();
     await Promise.all([...loads, modelsSettled()]);
-    const w = window as unknown as { __kiteLook?: string; __kiteReal?: string };
-    while (w.__kiteLook !== "ready" || w.__kiteReal === "loading") await sleep(100);
+    const w = window as unknown as { __kiteLook?: string; __kiteReal?: string; __kitePhoto?: string };
+    while (w.__kiteLook !== "ready" || w.__kiteReal === "loading" || w.__kitePhoto === "loading") await sleep(100);
     await sleep(800);   // let late model callbacks add their actors before frame 0
     if (tiles) {
       // Level the tiles once, then never again during the shot, so the ground can't jump between frames.

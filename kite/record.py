@@ -54,7 +54,7 @@ from pathlib import Path
 
 from .config import Config
 from .sources.base import FrameSource
-from .sources.opencv_sources import SteppedVideoSource
+from .sources.opencv_sources import VIDEO_BACKENDS, SteppedVideoSource
 from .types import Frame
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -612,7 +612,8 @@ def main(argv: list[str] | None = None) -> int:
                    "SafetyCfg.max_rc = 50; default 30)")
     p.add_argument("--pulse", type=float, default=1.0, help="seconds one key press drives a stick (default 1.0)")
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds (default: Ctrl+C)")
-    p.add_argument("--video-backend", choices=["pyav", "opencv"], default=None, help="Tello H.264 decoder")
+    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
+                   help="Tello H.264 decoder (default: socket on macOS, else pyav)")
     p.add_argument("--follow", action="store_true", help="with --fly: g toggles follow mode (needs the 'follow' extra "
                    "and data/models/yolo11n.pt, see kite/follow.py)")
     p.add_argument("--follow-behind", type=float, default=None, help="follow distance behind the head, m (1.2)")

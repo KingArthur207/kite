@@ -1,0 +1,16 @@
+{
+  "scene": "oncoming",
+  "frames_with_objects": 72,
+  "kinds": [
+    "person",
+    "vehicle"
+  ],
+  "first_seen_s": 0.0,
+  "closest_m": 1.92,
+  "would_stop": false,
+  "kite_said": [
+    "3.9s Person, ahead.",
+    "7.4s Obstacle detection paused."
+  ],
+  "kite_should": "beeps from ahead that speed up as she closes in, then 'Stop.'"
+}

@@ -11,7 +11,7 @@
   const marks = document.getElementById("marks");
   const caption = document.getElementById("caption");
   const transcript = document.getElementById("transcript");
-  const label = { critical: "STOP", hazard: "WARNING", nav: "DIRECTIONS", system: "STATUS", answer: "ANSWER", info: "INFO" };
+  const label = { critical: "stop", hazard: "warning", nav: "directions", system: "status", answer: "answer", info: "info" };
   let data = null;
   let current = -1;
 
@@ -64,10 +64,10 @@
         caption.innerHTML = "";
         const who = document.createElement("span");
         who.className = "who" + (s.priority === "critical" ? " critical" : "");
-        who.textContent = `${fmt(s.t)} · ${label[s.priority] || "KITE"}`;
+        who.textContent = `${fmt(s.t)} · ${label[s.priority] || "kite"}`;
         caption.append(who, document.createTextNode(`“${s.text}”`));
       } else if (t > 0.2) {
-        caption.innerHTML = '<span class="who">LISTEN</span>Beeps from the direction of what’s ahead; faster means closer.';
+        caption.innerHTML = '<span class="who">listen</span>Beeps from the direction of what’s ahead; faster means closer.';
       }
     }
   }
