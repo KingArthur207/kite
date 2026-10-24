@@ -11,12 +11,13 @@ the only one that can fly it: --fly adds keyboard control in this same process, 
 SafetyGovernor (stick clamp, altitude band, battery / flight-time landing, hover on stale video or telemetry).
 Without --fly the drone is opened with dry_run=True and NO motion command can ever be sent.
 
-Keys (with --fly, typed in this terminal; one key at a time):
+Keys (with --fly, typed in this terminal; one key at a time; arrow / function keys are ignored):
     t takeoff     l land     space hover (all sticks to 0)
     w/s forward/back   a/d left/right   r/f up/down   q/e turn left/right
     A move key drives that stick at --speed for --pulse seconds; holding it (key repeat) keeps it going, so letting
     go stops the drone within --pulse seconds. Press ! twice within 1 s for EMERGENCY (motors off: the drone falls).
-    Ctrl+C lands (with --fly) and stops recording; a second Ctrl+C while landing is ignored.
+    Ctrl+C lands (with --fly) and stops recording; a second Ctrl+C while landing is ignored. Ctrl+Z, Ctrl+\\ and
+    Ctrl+S do nothing while flying (they would suspend, kill or freeze the program with the drone in the air).
     g (with --follow) toggles follow mode; any other key (and Ctrl+C) cancels it first, then acts as usual.
 
 Output: <out>/<YYYYmmdd_HHMMSS>_<source>/
@@ -35,6 +36,7 @@ and telemetry on it. src_t is the source's own arrival stamp for the frame (time
 from __future__ import annotations
 
 import argparse
+import codecs
 import csv
 import json
 import math
@@ -122,23 +124,61 @@ class FileReplay(FrameSource):
 
 
 class TerminalKeys:
-    """Keys typed in this terminal, without Enter (cbreak mode: Ctrl+C still raises KeyboardInterrupt)."""
+    """Keys typed in this terminal, without Enter (cbreak mode: Ctrl+C still raises KeyboardInterrupt).
+
+    read() returns printable ASCII only. Escape sequences are dropped whole, also when split across reads: an arrow key
+    is ESC [ A..D, and its last letter would otherwise fly the drone (Up -> 'a' = left, Left -> 'd' = right). Ctrl+Z
+    (suspend), Ctrl+\\ (quit without landing) and Ctrl+S (output freeze, which blocks print() and so the rc keep-alive)
+    are disabled while the keys are active.
+    """
+
+    ESC_TIMEOUT_S = 0.1  # an unfinished sequence older than this (a lone Escape key) does not swallow the next key
+
+    def __init__(self, fd: int | None = None):
+        self._fd = fd
+        self._dec = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+        self._esc = ""  # "" | "esc" (after ESC) | "csi" (after ESC [) | "ss3" (after ESC O)
+        self._esc_t = 0.0
 
     def __enter__(self) -> TerminalKeys:
         import termios
         import tty
 
-        self._fd = sys.stdin.fileno()
+        if self._fd is None:
+            self._fd = sys.stdin.fileno()
         self._old = termios.tcgetattr(self._fd)
         tty.setcbreak(self._fd)
+        a = termios.tcgetattr(self._fd)
+        off = os.fpathconf(self._fd, "PC_VDISABLE")
+        for name in ("VSUSP", "VDSUSP", "VQUIT"):  # VDSUSP (Ctrl+Y, delayed suspend) exists on macOS only
+            i = getattr(termios, name, None)
+            if i is not None:
+                a[6][i] = off if isinstance(a[6][i], int) else bytes([off])
+        a[0] &= ~termios.IXON
+        termios.tcsetattr(self._fd, termios.TCSANOW, a)
         return self
 
     def read(self) -> str:
         import select
 
-        if select.select([self._fd], [], [], 0)[0]:
-            return os.read(self._fd, 64).decode(errors="ignore")
-        return ""
+        if not select.select([self._fd], [], [], 0)[0]:
+            return ""
+        out, now = [], time.monotonic()
+        for ch in self._dec.decode(os.read(self._fd, 64)):
+            if self._esc and now - self._esc_t > self.ESC_TIMEOUT_S:
+                self._esc = ""  # the Escape key on its own: a terminal sends a whole sequence at once
+            if ch == "\x1b":
+                self._esc, self._esc_t = "esc", now
+            elif self._esc == "esc":
+                self._esc = {"[": "csi", "O": "ss3"}.get(ch, "")  # anything else: Meta/Option+key, dropped
+            elif self._esc == "csi":
+                if "\x40" <= ch <= "\x7e":
+                    self._esc = ""  # final byte of ESC [ ... (A-D arrows, ~ for F5/PgUp/...)
+            elif self._esc == "ss3":
+                self._esc = ""  # ESC O A..D (application-mode arrows), ESC O P (F1)
+            elif " " <= ch <= "~":
+                out.append(ch)
+        return "".join(out)
 
     def __exit__(self, *exc) -> None:
         import termios
@@ -227,8 +267,11 @@ class Recorder:
     def _event(self, msg: str, quiet: bool = False, **extra) -> None:
         rec = {"t_mono": round(time.monotonic(), 6), "t_wall": round(time.time(), 6), "event": msg, **extra}
         if self._events is not None:
-            self._events.write(json.dumps(rec) + "\n")
-            self._events.flush()
+            try:  # a full disk must not raise into the control loop (that would end the flight)
+                self._events.write(json.dumps(rec) + "\n")
+                self._events.flush()
+            except (OSError, ValueError) as e:
+                self.writer_error = self.writer_error or f"events.jsonl: {e!r}"
         if not quiet:  # quiet: events.jsonl only (follow's 10 Hz decisions)
             print(f"  >> {msg}" + (f" {extra}" if extra else ""), flush=True)
 
@@ -329,9 +372,11 @@ class Recorder:
         k = ch.lower()
         if ch == "!":
             if now - self._bang_t < 1.0:
-                d.emergency()
-                self._cmd = None
-                self._event("EMERGENCY (motors off)")
+                if d.emergency() is False:  # the packet could not be sent: it is still flying
+                    self._event("EMERGENCY NOT SENT (Wi-Fi down): press ! twice again")
+                else:
+                    self._cmd = None
+                    self._event("EMERGENCY (motors off)")
             else:
                 self._bang_t = now
                 print("  >> press ! again within 1 s for EMERGENCY", flush=True)
@@ -359,6 +404,8 @@ class Recorder:
             why = "it already landed in this run: restart the recorder to fly again"
         elif self.last_frame_t is None or time.time() - self.last_frame_t > 1.0:
             why = "no live video (the safety governor would only hover)"
+        elif time.time() - d.telemetry().t > self.safety.telemetry_timeout_s:
+            why = "no live telemetry (the safety governor would only hover)"
         elif bat is None or float(bat) <= self.safety.min_battery_pct:
             why = f"battery {bat}% (lands at {self.safety.min_battery_pct:.0f}%)"
         if why:
@@ -448,6 +495,9 @@ class Recorder:
             line += f" | {state} rc {' '.join(str(v) for v in self._sent_rc)} | {action}"
             if self.follow is not None:
                 line += f" | {self.follow.status()}"
+        link = getattr(getattr(self.drone, "inner", self.drone), "link_error", None)
+        if link:
+            line += f" | WI-FI DOWN ({link})"
         if self.writer_error:
             line += f" | {self.writer_error}"
         return line

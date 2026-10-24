@@ -375,6 +375,16 @@ class FollowController:
 
 
 # ------------------------------------------------------------------ live follow inside kite.record
+def _link_error(drone) -> str | None:
+    """TelloDrone.link_error behind any wrapper (SafetyGovernor.inner): set while Wi-Fi sends fail."""
+    d = drone
+    while d is not None:
+        if getattr(d, "link_error", None):
+            return d.link_error
+        d = getattr(d, "inner", None)
+    return None
+
+
 class FollowMode:
     """Tracker thread + controller for kite.record --fly --follow.
 
@@ -458,6 +468,8 @@ class FollowMode:
             why = "landing"
         elif getattr(drone, "hovering_for_safety", False):
             why = "safety hover"
+        elif _link_error(drone):
+            why = f"Wi-Fi down ({_link_error(drone)})"
         elif self.last_frame_t is None or now - self.last_frame_t > 1.0:
             why = "no live video"
         elif tr is None or not tr.confirmed or tr.age(now) > self.cfg.fresh_s or not tr.touches_bottom:
@@ -494,6 +506,8 @@ class FollowMode:
             self.cancel(f"safety {action}")
         elif not drone.flying or busy or getattr(drone, "land_requested", False):
             self.cancel("not flying / busy / landing")
+        elif _link_error(drone):  # rc cannot reach it; never resume on its own when the link comes back
+            self.cancel(f"Wi-Fi down ({_link_error(drone)})")
         if not self.active:
             return (0, 0, 0, 0)
         tr = self._snapshot()

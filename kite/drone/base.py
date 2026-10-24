@@ -32,8 +32,8 @@ class Drone(ABC):
     def land(self) -> None: ...
 
     @abstractmethod
-    def emergency(self) -> None:
-        """Motors off NOW. The drone falls."""
+    def emergency(self) -> bool | None:
+        """Motors off NOW. The drone falls. False if the command could not be sent (nothing changed)."""
 
     @abstractmethod
     def rc(self, lr: int, fb: int, ud: int, yaw: int) -> None:

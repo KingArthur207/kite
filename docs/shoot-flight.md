@@ -41,10 +41,16 @@ Positions: the walker starts on the NE sidewalk of Moss about 70 m before Howard
 5. Hold `r` until `h` in the status line reads the walker's height plus 0.3 m (about 2.0 m for a 1.7 m walker). The safety ceiling is 2.3 m.
 6. Rex starts the walk. Hold `w` to follow at the walker's pace; the drone tops out around 0.5 m/s at `--speed 50`, so the walker goes slowly (0.5 to 0.7 m/s). Small `a`/`d` to stay behind their head, `q`/`e` to turn with them at the corner.
 7. Space hovers at once. `l` lands. Ctrl+C lands and stops recording; keep clear until it is down.
+   - Letting go of a move key keeps the stick on for up to `--pulse` (1 s), about 0.5 m at speed 50. Tap space the moment the walker stops.
 
 Keys: `t` takeoff, `l` land, space hover, `w`/`s` forward/back, `a`/`d` left/right, `r`/`f` up/down, `q`/`e` turn, `!!` emergency (motors off, it falls: only if it is about to hit someone).
+Arrow keys, function keys, Ctrl+Z, Ctrl+\\ and Ctrl+S do nothing while flying (they used to move or stop the program). Capitals work like lowercase.
 
 The drone also acts on its own: it lands at 20% battery or after 7 minutes in the air, and it hovers if video or telemetry stalls for 1 s (the status line says so). After a safety hover, press the move key again.
+
+If the status line says `WI-FI DOWN`, the drone keeps hovering (it may hold its last stick until it hears from the laptop, and lands itself after 15 s of silence). Stop walking, keep within 3 to 5 m, don't hold a move key, and wait for it to clear; then press the key again. Before flying, turn off Auto-Join for other known Wi-Fi networks so macOS rejoins the Tello. If `telemetry stale -> hover` stays while the Wi-Fi is fine, press `l` and restart the recorder.
+
+`t` is refused without live video or telemetry. If the drone is visibly up but the status isn't `FLYING` about 8 s after `t`, press `l`. A land that fails is re-sent every 2 s on its own.
 
 Land by 30% if the take is done, or when Rex calls it. To fly again in the same morning, restart the recorder.
 
@@ -65,5 +71,5 @@ Code: `kite/follow.py`. Tested in a simulation only; it has never flown. Set up 
 
 1. Rehearse on the morning's take, no drone: `python -m kite.follow --source recordings/<dir> --overlay`. It writes `follow_dry_run.csv` (the rc that follow would have sent on each frame) and `follow_dry_run.mp4` (the walker box, the target row, the sticks) into the take's folder. Check that the box stays on the walker, `yaw` has the same sign as the walker's offset (right is +), and `fb` goes up when the walker pulls away.
 2. Fly: `python -m kite.record --source tello --out recordings --fly --follow`. Take off, climb to the walker's height plus 0.3 m, and get behind them by hand. The status line shows `follow off (walker conf .. box ..)` once it sees a person cut off by the bottom edge. Then press `g`.
-3. Any key cancels follow first: space hovers, `w`/`a`/... take over, `l` lands. If it loses the walker for 0.5 s it hovers (rc 0), beeps and waits. It never searches. It picks the walker up again once they're back at the bottom edge.
+3. Any key cancels follow first: space hovers, `w`/`a`/... take over, `l` lands. If it loses the walker for 0.5 s it hovers (rc 0), beeps and waits. It never searches. It picks the walker up again once they are back at the bottom edge. A safety hover or `WI-FI DOWN` switches follow off for good: press `g` again once it clears.
 4. Knobs: `--follow-behind 1.5` shows more of the head and shoulders, which helps if the detector misses a bare head. `--follow-height` sets the altitude to hold (default: the height when you press `g`). The drone can't go faster than `SafetyCfg.max_rc` (50 is about 0.5 m/s), so the walker keeps to 0.5 m/s.

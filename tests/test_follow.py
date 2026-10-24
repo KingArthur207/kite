@@ -303,6 +303,37 @@ def test_walker_lost_hovers_and_says_so(tmp_path):
     assert rcs[-1] == (0, 0, 0, 0)
 
 
+def test_wifi_down_refuses_and_cancels_follow():
+    """TelloDrone.link_error (a send failed) behind the governor: no start, and a running follow stops for good."""
+    fake = FakeTello()
+    tello = TelloDrone(tello=fake, video=False)
+    drone = SafetyGovernor(tello, Config().safety)
+    drone.connect()
+    tello._flying = True
+    time.sleep(0.25)
+    frames = LiveImage()
+    events = []
+    follow = FollowMode(frames, lambda: WalkerOnTheRight(), FollowCfg(), CAM, max_rc=50,
+                        log=lambda msg, quiet=False, **kw: events.append((msg, kw))).start_tracker()
+    try:
+        t_end = time.time() + 3
+        while not (follow.ready and follow.track and follow.track.confirmed) and time.time() < t_end:
+            time.sleep(0.02)
+        tello.link_error = "[Errno 51] Network is unreachable"
+        assert "Wi-Fi down" in follow.start(drone) and not follow.active
+        tello.link_error = None
+        assert follow.start(drone) is None and follow.active
+        assert follow.tick(drone)[3] > 0  # walker on the right: yaw right
+        tello.link_error = "[Errno 55] No buffer space available"
+        assert follow.tick(drone) == (0, 0, 0, 0) and not follow.active
+        tello.link_error = None
+        assert follow.tick(drone) == (0, 0, 0, 0)  # the link is back: stays off until g
+        assert events[-1] == ("follow off", {"reason": "Wi-Fi down ([Errno 55] No buffer space available)"})
+    finally:
+        follow.close()
+        fake.end()
+
+
 # ------------------------------------------------------------------ rehearsal on a file (open loop)
 class DriftingWalker:
     """Fake detector for a 960x720 clip: the walker drifts right and away, frame by frame."""
