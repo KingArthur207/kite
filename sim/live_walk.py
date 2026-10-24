@@ -12,6 +12,8 @@ import time
 from collections import deque
 
 STOP_M = 1.6            # something in the corridor this close -> critical ("Stop.")
+DEPTH_STOP_M = 2.2      # ... for a depth-only "obstacle": its distance is the least certain (on the sim's plain bin,
+                        # depth read ~2.0 m from 2.3 m in to 1.2 m), so it gets a longer stop zone
 CORRIDOR_M = 0.7        # half-width of the walker's path, a bit wider than the earpiece's 0.55 + 0.25 margin
 STOP_TTC = 0.8          # s; the earpiece goes critical at ttc <= 1.0 s, so a stop is sent as ttc 0.8
 MEDIAN_N = 3            # frames in the distance median (each adds ~0.1 s of lag)
@@ -20,8 +22,11 @@ BANNER_HOLD = 1.5       # s the STOP banner stays up after the last critical fra
 REPLAY_S = 20.0
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf"
 DEPTH_SIZE = (336, 252)  # w, h (multiples of 14); ~18 ms on an M5 with mps
-DEPTH_BAND = 0.2        # centre band: +-20 % of the width either side of the middle
-DEPTH_FILL = 0.08       # fraction of the band that must be close and not floor
+GROUND_EPS = 0.2        # m: depth points lower than this are ground, curb steps included
+HEAD_CLEAR = 2.0        # m: higher than this the walker passes under
+DEPTH_CORRIDOR = 0.4    # m half-width for depth points: body and margin (Moss's walls run ~0.5 m off the path)
+DEPTH_MIN_FRAC = 0.005  # fraction of the depth map that must be above-ground mass in the corridor
+SCALE_PCT = 85          # percentile of depth / flat-floor depth below the horizon that sets the depth scale
 
 
 # ------------------------------------------------------------------ smoothing and the stop zone
@@ -73,7 +78,7 @@ def chest_step(objs: list[dict], filt: RangeFilter, t: float, stop_m: float = ST
     out = []
     for o in objs:
         d, v = filt.update(o["id"], t, o["distance"])
-        stop = is_stop(o["bearing"], d, v, stop_m)
+        stop = is_stop(o["bearing"], d, v, max(stop_m, DEPTH_STOP_M) if o["kind"] == "obstacle" else stop_m)
         if stop:
             v = max(v or 0.0, d / STOP_TTC)
         out.append({**o, "distance": round(d, 2), "closing_speed": None if v is None else round(v, 2),
@@ -96,19 +101,70 @@ def floor_depth(rows: int, fx: float, cam_height: float, pitch: float):
     return z
 
 
+def ground_scale(depth, floor) -> float:
+    """Metric depth models misjudge scale outdoors (sim frames: 0.76x to 1.48x). Along a ray below the horizon the
+    ground is the farthest thing it can hit, so a high percentile of depth / flat-floor depth there is the scale."""
+    import numpy as np
+    floor = np.broadcast_to(floor, depth.shape)
+    m = np.isfinite(floor) & (floor < 10.0)
+    if not m.any():
+        return 1.0
+    r = (depth / np.where(m, floor, 1.0))[m]
+    return float(np.clip(np.percentile(r, SCALE_PCT), 0.5, 2.0))
+
+
+def side_walls(nonground, below, a, xc, cam_height: float):
+    """Columns whose nearest non-ground thing is a wall beside the path, not in it. Each column's foot (the lowest
+    non-ground row below the horizon) gives its distance on flat ground and so its true sideways offset, which a
+    depth model gets wrong on a wall seen edge-on (it read a wall 0.5 m to the side as 1 m ahead). Columns cut off
+    by the bottom edge have no foot; a run of them at the image's side belongs to the wall next to it."""
+    import numpy as np
+    h, w = nonground.shape
+    nb = nonground & below
+    has = nb.any(axis=0)
+    y0 = h - 1 - np.argmax(nb[::-1], axis=0)
+    cut = has & (y0 >= h - 1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        foot = cam_height / np.tan(a[y0])
+    # 0.85: the foot row is quantised at depth-map resolution; Moss's wall, 0.5 m off, read 0.40 at the image edge
+    wall = has & ~cut & (np.abs(foot * xc) > 0.85 * DEPTH_CORRIDOR)
+    for cols in (range(w - 1, -1, -1), range(w)):           # from the right edge, then from the left
+        run = []
+        for u in cols:
+            if cut[u]:
+                run.append(u)
+                continue
+            if wall[u]:
+                wall[run] = True
+            break
+    return wall
+
+
 def center_obstacle(depth, fx: float, cam_height: float, pitch: float, max_d: float = 2.5) -> dict | None:
-    """Metric depth map (h, w) -> one obstacle when something that is not floor and is closer
-    than max_d fills DEPTH_FILL of the centre band. fx is in depth-map pixels."""
+    """Metric depth map (h, w) -> one obstacle when above-ground mass sits in the walker's corridor within max_d.
+    Every pixel goes to 3D with the camera's height and pitch (scale fixed by ground_scale). Ground and curb steps
+    (under GROUND_EPS), things over HEAD_CLEAR and walls beside the path (side_walls) drop out; what is left within
+    DEPTH_CORRIDOR of the path and closer than max_d must fill DEPTH_MIN_FRAC of the map. fx in depth-map pixels."""
     import numpy as np
     h, w = depth.shape
-    lo, hi = int(w * (0.5 - DEPTH_BAND)), int(w * (0.5 + DEPTH_BAND))
-    band = depth[:, lo:hi]
-    close = (band < 0.75 * floor_depth(h, fx, cam_height, pitch)[:, None]) & (band < max_d)
-    if close.mean() < DEPTH_FILL:
+    p = math.radians(pitch)
+    yc = ((np.arange(h) - h / 2) / fx)[:, None]
+    xc = (np.arange(w) - w / 2) / fx
+    a = p + np.arctan(yc[:, 0])
+    z = depth / ground_scale(depth, floor_depth(h, fx, cam_height, pitch)[:, None])
+    height = cam_height - z * (yc * math.cos(p) + math.sin(p))
+    fwd = z * (math.cos(p) - yc * math.sin(p))
+    lat = z * xc[None, :]
+    nonground = height >= GROUND_EPS
+    wall = side_walls(nonground, (a > 0.02)[:, None], a, xc, cam_height)
+    mass = nonground & (height < HEAD_CLEAR) & (fwd > 0) & (fwd <= max_d) & (np.abs(lat) <= DEPTH_CORRIDOR) \
+        & ~wall[None, :]
+    if mass.mean() < DEPTH_MIN_FRAC:
         return None
-    cx = lo + float(np.nonzero(close)[1].mean())
-    return {"id": "depth", "kind": "obstacle", "bearing": round(math.degrees(math.atan((cx - w / 2) / fx)), 1),
-            "distance": round(float(np.percentile(band[close], 20)), 2), "confidence": 0.6, "cut_off": False}
+    d = float(np.percentile(fwd[mass], 20))
+    b = math.degrees(math.atan2(float(np.median(lat[mass])), d))
+    return {"id": "depth", "kind": "obstacle", "bearing": round(b, 1), "distance": round(d, 2), "confidence": 0.6,
+            "cut_off": False}
 
 
 class DepthFallback:
@@ -122,6 +178,7 @@ class DepthFallback:
         self.model = AutoModelForDepthEstimation.from_pretrained(DEPTH_MODEL, local_files_only=True).to(device).eval()
         self.mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
         self.std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
+        self.prev = False       # 2-frame onset: one frame's depth noise (a wall edge) must not stop the walker
 
     def __call__(self, img, fx: float, cam_height: float, pitch: float, objs: list[dict]) -> dict | None:
         import cv2
@@ -130,7 +187,8 @@ class DepthFallback:
         with self.torch.no_grad():
             depth = self.model(pixel_values=(t - self.mean) / self.std).predicted_depth[0].cpu().numpy()
         o = center_obstacle(depth, fx * depth.shape[1] / img.shape[1], cam_height, pitch)
-        if o is None:
+        onset, self.prev = self.prev, o is not None
+        if o is None or not onset:
             return None
         # YOLO already has it: one sound per thing
         if any(abs(p["bearing"] - o["bearing"]) < 20 and p["distance"] < o["distance"] + 0.7 for p in objs):

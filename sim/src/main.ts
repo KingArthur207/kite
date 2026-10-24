@@ -4,7 +4,8 @@ import {
   WALKER_RADIUS, WALK_SPEED, TURN_SPEED, RELAY_URL, EARPIECE_URL, FRAME_FPS, POSITION_HZ, toLatLng,
 } from "./config";
 import { buildWorld } from "./world";
-import { buildOsmWorld, type WorldExtras } from "./osmWorld";
+import { buildOsmWorld, route, type WorldExtras } from "./osmWorld";
+import { droneTarget, stepDrone, type DronePose } from "./droneLook";
 import { buildRealWorld } from "./realWorld";
 import { buildPhotoWorld, addWallLabelKey, photoWalls } from "./photoWorld";
 import { reconnectingSocket } from "./net";
@@ -105,14 +106,23 @@ function forward() {
   return { x: Math.sin(h), z: -Math.cos(h) }; // three.js z points south
 }
 
+// The drone follows behind the walker's head, and scouts corners on the route (droneLook.ts).
+let drone: DronePose = { x: walker.x, n: walker.n, y: HEAD_TOP + DRONE_ABOVE_HEAD, heading: walker.heading };
+let droneScouting = false, lastPlaced = performance.now();
+
 function placeCameras() {
   if (worldName === "tiles") Object.assign(walker, clampToFence(walker.x, walker.n, FENCE_INSET_M));
   const f = forward();
   const wx = walker.x, wz = -walker.n;
   body.position.set(wx, HEAD_TOP / 2, wz);
-  const droneY = HEAD_TOP + DRONE_ABOVE_HEAD;
-  droneCam.position.set(wx - f.x * DRONE_BEHIND, droneY, wz - f.z * DRONE_BEHIND);
-  droneCam.lookAt(droneCam.position.x + f.x, droneY, droneCam.position.z + f.z);
+  const now = performance.now();
+  const target = droneTarget(walker, worldName === "placeholder" ? [] : route, HEAD_TOP + DRONE_ABOVE_HEAD, DRONE_BEHIND);
+  drone = stepDrone(drone, target, Math.min(0.2, (now - lastPlaced) / 1000));
+  droneScouting = target.scouting;
+  lastPlaced = now;
+  const dh = THREE.MathUtils.degToRad(drone.heading);
+  droneCam.position.set(drone.x, drone.y, -drone.n);
+  droneCam.lookAt(drone.x + Math.sin(dh), drone.y, -drone.n - Math.cos(dh));
   const chestOut = 0.3; // just in front of the body capsule
   chestCam.position.set(wx + f.x * chestOut, CHEST_HEIGHT, wz + f.z * chestOut);
   chestCam.lookAt(chestCam.position.x + f.x, CHEST_HEIGHT, chestCam.position.z + f.z);
@@ -194,7 +204,11 @@ setInterval(() => {
              lat, lng, x: walker.x, y: walker.n });
   const camHeights = { drone: HEAD_TOP + DRONE_ABOVE_HEAD, chest: CHEST_HEIGHT };
   for (const [camera, cam_height] of Object.entries(camHeights)) {
-    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0, cam_model: camModel });
+    // x, y, heading are the walker's. The drone also sends where it is and which way it looks (cam_*):
+    // it is 1 m behind the walker while following and somewhere else while scouting a corner.
+    relay.json({ type: "pose", camera, x: walker.x, y: walker.n, heading: walker.heading, cam_height, pitch: 0, cam_model: camModel,
+                 ...(camera === "drone" ? { cam_height: +drone.y.toFixed(2), cam_x: +drone.x.toFixed(2), cam_y: +drone.n.toFixed(2),
+                                            cam_heading: +drone.heading.toFixed(1), scouting: droneScouting } : {}) });
   }
 }, 1000 / POSITION_HZ);
 
