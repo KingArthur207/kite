@@ -1,6 +1,6 @@
-// Street dressing for Moss St and the Howard corner, none of it in OSM: parked cars along Moss's NE
-// curb with gaps at driveways, the hydrant and the corners; street trees in pits on Moss's SW
-// sidewalk and both Howard sidewalks; wooden utility poles with sagging wires and service drops;
+// Street dressing for Moss St and the Howard corner, none of it in OSM: parked cars and a motorcycle
+// along Moss's SW curb (Street View: the NE curb is NO PARKING with driveways) with gaps at driveways,
+// the hydrant and the corners; DataSF street trees, and plane trees and banner poles on Howard; wooden utility poles with sagging wires and service drops;
 // no-parking and street-name signs; a hydrant, curbside carts, a litter can and a scooter;
 // sidewalk joints, driveway cuts, stains, asphalt patches, tar seal and utility covers; and a
 // brighter, Street View-like daylight. Static props return wall segments for the collision path in
@@ -11,10 +11,10 @@ import { loadCar, type CarName } from "./actors";
 import { WALKER_RADIUS } from "./config";
 import { pbr, seeded } from "./osmLook";
 import { inPoly, inQuad, segDist, type Garage } from "./osmFacades";
-import { along, nearestOnRoads, offsetPts, type StreetData } from "./osmStreet";
+import { along, curbOffsets, howardLightSpots, nearestOnRoads, offsetPts, type StreetData } from "./osmStreet";
 import {
-  LeafSoup, blobTexture, cartGeo, coverTexture, hydrantGeo, leafTexture, limb, litterCanGeo, mulchTexture,
-  noParkingTexture, scooterGeo, signPostGeo, streetNameTexture, streetTree, wireGeo,
+  LeafSoup, blobTexture, cartGeo, coverTexture, hydrantGeo, leafTexture, limb, litterCanGeo, medallionTexture, motorcycleGeo, mulchTexture,
+  noParkingTexture, planterGeo, scooterGeo, signPostGeo, streetNameTexture, streetTree, wireGeo,
 } from "./streetProps";
 
 type P = [number, number];
@@ -23,8 +23,13 @@ type Data = StreetData & { route: P[] };
 
 const CURB_H = 0.15;
 const ROUTE_CLEAR = WALKER_RADIUS + 0.2;   // m: free gap kept between any prop and the demo route
-const PARK_FROM_CURB = 1.0;                // m: parked car centre to curb face
+const PARK_FROM_CURB = 1.25;               // m: parked car centre to curb face (mirrors just clear of the curb)
 const POLE_EVERY = 30, POLE_H = 10.5, ARM_H = 9.6, COMM_H = 7.2;
+const NE_TREE_MAX_H = 6, NE_TREE_MAX_CROWN = 1.3;   // m: Moss NE trees in Street View
+const PLANE_EVERY = 9, PLANE_REACH = 75;           // m: Howard plane tree spacing, and how far from the corner
+const MEDALLION_R = 1.9, MEDALLION_AHEAD = 6, MEDALLION_OFFSET = 0.6;   // m: radius, NW of the spawn, left of the centreline
+const STRING_LIGHTS = 4, STRING_FROM = 22, STRING_STEP = 5, STRING_H = 6.2, BULB_EVERY = 0.7;   // m, from the zebra
+const MAX_PLANTERS = 6, PLANTER_STEP = 5;   // m between tries along the NE sidewalk
 const AREA = { w: -60, e: 130, s: -135, n: 60 };   // where dressing goes: Moss and the Howard corner
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
 const add = (a: P, b: P, k = 1): P => [a[0] + b[0] * k, a[1] + b[1] * k];
@@ -161,7 +166,7 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   const place = (g: THREE.BufferGeometry, p: P, y: number, u: P = [1, 0]) =>
     g.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(u[1], u[0])).setPosition(p[0], y, -p[1]));
   const mossU = (p: P) => nearestOnRoads([moss], p).u;
-  const mossCurb = (side: 0 | 1, inset: number) => offsetPts(moss.pts, side ? moss.curbs[1] + inset : moss.curbs[0] - inset);
+  const mossCurb = (side: 0 | 1, inset: number) => offsetPts(moss.pts, curbOffsets(moss, side, inset));
 
   // --- utility poles along Moss's SW curb: crossarm with three primaries, two comms cables lower
   // down, a cobra-head light, a transformer on every other pole, service drops to the houses.
@@ -220,35 +225,53 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
 
   // --- street trees in pits: Moss SW sidewalk, both Howard sidewalks.
   const leaves = new LeafSoup();
-  const tree = (p: P, seed: number, h: number) => {
+  const tree = (p: P, seed: number, h: number, size: { crownR?: number; trunkR?: number } = {}) => {
     const rnd = seeded(seed);
     const y = ys(p), u = mossU(p);
-    batch.put(M.bark, streetTree(v3(p, y), h, seed, leaves));
+    batch.put(M.bark, streetTree(v3(p, y), h, seed, leaves, size));
     batch.put(M.mulch, place(new THREE.PlaneGeometry(1.0, 1.0).rotateX(-Math.PI / 2).translate(0, 0.006, 0), p, y, u));
     for (const s of [-1, 1]) for (const o of [0, 1]) {   // thin steel edge around the basin
       const e = o ? new THREE.BoxGeometry(1.04, 0.02, 0.03).translate(0, 0.01, s * 0.51) : new THREE.BoxGeometry(0.03, 0.02, 1.04).translate(s * 0.51, 0.01, 0);
       batch.put(M.metal, place(e, p, y, u));
     }
-    batch.segs.push(...boxSegs(p, u, 0.2, 0.2));
+    const half = size.trunkR ? Math.max(0.1, size.trunkR * 1.15 + 0.03) : 0.2;   // the trunk's base
+    batch.segs.push(...boxSegs(p, u, half, half));
     return rnd;
   };
   let seed = 100;
-  // DataSF's street tree inventory (moss.json furniture) puts real trees at their surveyed spots in osmStreet.ts;
-  // only invent trees when that inventory isn't there.
-  const inventoryTrees = data.furniture.some((f) => f.kind === "tree");
+  // DataSF's street tree inventory (moss.json furniture): real trees at their surveyed spots, sized from
+  // the inventory's height and trunk diameter, crown width from the inventory (else by species). Invent trees
+  // on Moss only without it. Street View shows Moss's NE trees as young and slim, so they're capped there.
+  const inventory = data.furniture.filter((f) => f.kind === "tree" && !/stump/i.test(f.tags.species ?? ""));
+  for (const f of inventory) {
+    const p: P = [f.x, f.y];
+    const nearMoss = nearestOnRoads([moss], p);
+    const mossNE = nearMoss.d < 9 && nearMoss.side > 0;
+    const h = Math.min(Number(f.tags.height_m) || 6, mossNE ? NE_TREE_MAX_H : Infinity);
+    const dbh = Number(f.tags.dbh_in) * 0.0254;   // trunk diameter at breast height, m
+    const crown = Number(f.tags.crown_r_m) || crownRadius(f.tags.species ?? "", h);
+    props.push({ p, r: 0.5 });
+    tree(p, f.id, h, { crownR: mossNE ? Math.min(crown, NE_TREE_MAX_CROWN) : crown, trunkR: dbh > 0 ? Math.max(0.05, dbh / 2) : undefined });
+  }
+  // Howard's tall plane trees with big crowns (Street View), in the gaps between inventory trees and lights.
+  const lights = howardLightSpots(data, garages).map((l) => l.p);
+  for (const r of howard) for (const side of [0, 1] as const) {
+    for (const { p: base, u } of along(offsetPts(r.pts, side ? r.curbs[1] + 0.75 : r.curbs[0] - 0.75), 3 + side * 4, PLANE_EVERY)) {
+      const rnd = seeded(seed++);
+      const ok = (p: P) => Math.hypot(p[0], p[1]) < PLANE_REACH && clear(p, 0.5) && !inventory.some((f) => Math.hypot(f.x - p[0], f.y - p[1]) < 6) &&
+        !lights.some((q) => dist(q, p) < 3) && !data.furniture.some((f) => Math.hypot(f.x - p[0], f.y - p[1]) < 1);
+      const p = [0, 1.5, -1.5, 3].map((k) => add(base, u, k)).find(ok);   // slide along the curb past meters and pits
+      if (!p) continue;
+      props.push({ p, r: 0.5 });
+      tree(p, seed * 17, 11 + rnd() * 3, { crownR: 4 + rnd() * 0.8, trunkR: 0.2 });
+    }
+  }
+  const inventoryTrees = inventory.length > 0;
   if (!inventoryTrees) for (const { p } of along(mossCurb(0, 0.65), 5, 8.5)) {
     const rnd = seeded(seed++);
     if (rnd() < 0.3 || !clear(p, 0.5) || poles.some((o) => dist(o.p, p) < 3)) continue;
     props.push({ p, r: 0.5 });
     tree(p, seed * 13, 6 + rnd() * 1.5);
-  }
-  if (!inventoryTrees) for (const r of howard) for (const side of [0, 1] as const) {
-    for (const { p } of along(offsetPts(r.pts, side ? r.curbs[1] + 0.85 : r.curbs[0] - 0.85), 4 + side * 5, 10)) {
-      const rnd = seeded(seed++);
-      if (!clear(p, 0.5) || data.furniture.some((f) => Math.hypot(f.x - p[0], f.y - p[1]) < 2.5)) continue;
-      props.push({ p, r: 0.5 });
-      tree(p, seed * 17, 7.5 + rnd() * 2);
-    }
   }
 
   // --- signs, hydrant, carts, litter can, scooter.
@@ -274,9 +297,9 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   };
   const mossLen = moss.pts.slice(1).reduce((s, b, i) => s + dist(moss.pts[i], b), 0);
   const zebraS = sOn(moss.pts, [0, 0]);
-  for (const s of [zebraS + 12, zebraS + 70]) {
-    const at = spot(mossCurb(0, 0.3), s, 0.1);
-    if (at) signAt(at.p, [-at.u[0], -at.u[1]], noParkingTexture(), 0.32, 0.32, 2.6);
+  for (const s of [zebraS + 12, zebraS + 66]) {   // NO PARKING on the NE curb, facing walkers coming up from the SE
+    const at = spot(mossCurb(1, 0.3), s, 0.1);
+    if (at) signAt(at.p, at.u, noParkingTexture(), 0.32, 0.4, 2.7);
   }
   {
     const at = spot(mossCurb(0, 0.35), zebraS + 4, 0.1);
@@ -331,6 +354,41 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
     props.push({ p: scooter.p, r: 0.55 });
   }
 
+  // --- Street View details on Moss: the brick-paver medallion in the roadway just NW of the spawn,
+  // string lights zigzagging across mid-block, and planters on the NE sidewalk where the walk leaves room.
+  const spawnS = sOn(moss.pts, data.route[0]);
+  const med = [...along(offsetPts(moss.pts, MEDALLION_OFFSET), spawnS - MEDALLION_AHEAD, 1e9)][0];
+  if (med) {
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(MEDALLION_R, 64).rotateX(-Math.PI / 2).translate(med.p[0], 0.006, -med.p[1]),
+      new THREE.MeshStandardMaterial({ map: medallionTexture(), roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+    disc.receiveShadow = true;
+    root.add(disc);
+  }
+  const bulbs: THREE.BufferGeometry[] = [];
+  const sw = mossCurb(0, 2.0), ne = mossCurb(1, 1.5);
+  for (let k = 0; k < STRING_LIGHTS; k++) {
+    const s = zebraS + STRING_FROM + k * STRING_STEP;
+    const a = [...along(k % 2 ? ne : sw, s, 1e9)][0], b = [...along(k % 2 ? sw : ne, s + STRING_STEP, 1e9)][0];
+    if (!a || !b) continue;
+    const A = v3(a.p, STRING_H), B = v3(b.p, STRING_H + 0.3);
+    const span = A.distanceTo(B), w = wireGeo(A, B, 0.05 * span, 0.008, Math.round(span / BULB_EVERY));
+    batch.put(M.wire, w.mesh);
+    for (const q of w.line.slice(1, -1)) {
+      batch.put(M.wire, limb(q, q.clone().add(new THREE.Vector3(0, -0.12, 0)), 0.006, 0.006, 3));
+      bulbs.push(new THREE.SphereGeometry(0.055, 8, 6).translate(q.x, q.y - 0.17, q.z));
+    }
+  }
+  if (bulbs.length) root.add(new THREE.Mesh(mergeGeometries(bulbs)!,
+    new THREE.MeshStandardMaterial({ color: 0xfff4d6, emissive: 0xffd58a, emissiveIntensity: 0.9, roughness: 0.3 })));
+  let planters = 0;
+  for (const { p, u } of along(mossCurb(1, 1.2), zebraS + 5, PLANTER_STEP)) {
+    if (planters >= MAX_PLANTERS || !clear(p, 0.6) || poles.some((o) => dist(o.p, p) < 2)) continue;
+    batch.put(M.plastic, planterGeo(planters).map((g) => place(g, p, ys(p), u)));
+    batch.segs.push(...boxSegs(p, u, 0.55, 0.23));
+    props.push({ p, r: 0.6 });
+    planters++;
+  }
+
   batch.flush(root, (m) => m !== M.mulch);
   const leafMesh = new THREE.Mesh(leaves.build(), M.leaves);
   leafMesh.castShadow = leafMesh.receiveShadow = true;
@@ -340,38 +398,52 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
   root.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x202020 })));
 
   groundDetail(root, data, garages, moss, howard, { onRoad, onSidewalk, inArea });
-  parkCars(root, data, garages, moss, [...props.map((o) => o.p)], hydrantAt?.p ?? null, batch.segs);
+  const hydrantSW = hydrantAt && nearestOnRoads([moss], hydrantAt.p).side < 0 ? hydrantAt.p : null;
+  parkCars(root, data, garages, moss, hydrantSW, batch.segs);
   return batch.segs;
 }
 
-// --- parked cars: NE curb of Moss, nose SE (Moss is one-way SE), gaps at driveways and corners.
+/** Rough crown radius by species as a fraction of tree height (street trees, pruned for clearance). */
+const CROWN: [RegExp, number][] = [
+  [/tristaniopsis|ginkgo|pyrus|callistemon|dodonaea|pittosporum|lyonothamnus|syagrus|pinus/i, 0.22],
+  [/magnolia|lophostemon|ligustrum|rhaphiolepis|arbutus|elaeocarpus|ceratonia/i, 0.28],
+  [/platanus|ulmus|ficus|celtis|acer|prunus/i, 0.36],
+];
+function crownRadius(species: string, h: number) {
+  return h * (CROWN.find(([re]) => re.test(species))?.[1] ?? 0.3);
+}
+
+// --- parked cars: SW curb of Moss, nose SE (Moss is one-way SE), gaps at driveways and corners, and a
+// motorcycle backed in at an angle about 13 m ahead of the spawn, as in Street View.
 const PARKED: CarName[] = ["sedan", "suv", "sedan2", "sedan", "suv", "sedan2", "sedan"];
 const PAINT = [0xb9bcc0, 0xe9e8e4, 0x15171a, 0x4a4f56, 0x1d2a45, 0x6b1a1e, 0xa9a08c, 0x8d9499, 0xdcdcd8, 0x2a3a2f, 0x2b2d31];
 
-function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: StreetData["roads"][number], _props: P[], hydrant: P | null, segs: Seg[]) {
-  const line = offsetPts(moss.pts, moss.curbs[1] - PARK_FROM_CURB);
+const MOTO_AHEAD = 13;   // m NW of the spawn
+function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: StreetData["roads"][number], hydrant: P | null, segs: Seg[]) {
+  const line = offsetPts(moss.pts, curbOffsets(moss, 0, -PARK_FROM_CURB));   // the surveyed curb, so cars stay in the parking lane
   const len = line.slice(1).reduce((s, b, i) => s + dist(line[i], b), 0);
   const blocked: [number, number][] = [];
   for (const c of data.crossings) if (c.road === moss.id) { const s = sOn(line, [c.x, c.y]); blocked.push([s - 9, s + 7]); }
   for (const g of garages) {
     const near = nearestOnRoads([moss], [g.x, g.n]);
-    if (near.side <= 0 || near.road !== moss || Math.abs(near.side) - moss.curbs[1] > 8) continue;
+    if (near.side >= 0 || near.road !== moss || Math.abs(near.side) + moss.curbs[0] > 8) continue;
     const s = sOn(line, [g.x, g.n]);
     blocked.push([s - g.w / 2 - 0.9, s + g.w / 2 + 0.9]);
   }
   if (hydrant) { const s = sOn(line, hydrant); blocked.push([s - 3, s + 3]); }
   const rnd = seeded(2024);
-  const slots: { s: number; model: CarName; len: number }[] = [];
-  const LEN: Record<string, number> = { sedan: 4.6, sedan2: 4.3, suv: 4.8 };
-  let s = 0, k = 0;
+  const slots: { s: number; model: CarName | "moto"; len: number }[] = [];
+  const LEN: Record<string, number> = { sedan: 4.6, sedan2: 4.3, suv: 4.8, moto: 1.6 };
+  const motoS = sOn(line, data.route[0]) - MOTO_AHEAD;
+  let s = 0, k = 0, moto = false;
   while (s < len) {
-    const model = PARKED[k % PARKED.length], L = LEN[model];
+    const model = !moto && s + 2.5 > motoS ? "moto" : PARKED[k % PARKED.length], L = LEN[model];
     const hit = blocked.find(([a, b]) => s < b && s + L > a);
     if (hit) { s = hit[1] + 0.3; continue; }
-    if (rnd() < 0.12) { s += 5; continue; }       // an empty space now and then
+    if (model !== "moto" && rnd() < 0.12) { s += 5; continue; }       // an empty space now and then
     slots.push({ s: s + L / 2, model, len: L });
     s += L + 0.7 + rnd() * 1.4;
-    k++;
+    if (model === "moto") moto = true; else k++;
   }
   const at = (sv: number) => {
     let s0 = 0;
@@ -389,20 +461,32 @@ function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: Str
     const r2 = seeded(i * 7 + 3);
     const yaw = (r2() - 0.5) * 0.03;
     const u: P = [pose.u[0] * Math.cos(yaw) - pose.u[1] * Math.sin(yaw), pose.u[0] * Math.sin(yaw) + pose.u[1] * Math.cos(yaw)];
-    const p = add(pose.p, [-u[1], u[0]], (r2() - 0.5) * 0.2);
+    const p = add(pose.p, [-u[1], u[0]], (r2() - 0.5) * 0.1);
+    if (slot.model === "moto") {   // backed in, rear wheel toward the curb, about 35 degrees off the kerb line
+      const a = 0.6, mu: P = [u[0] * Math.cos(a) - u[1] * Math.sin(a), u[0] * Math.sin(a) + u[1] * Math.cos(a)];
+      const mp = add(p, [-u[1], u[0]], -0.35);
+      const g = mergeGeometries(motorcycleGeo().map((x) => (x.index ? x.toNonIndexed() : x)))!;
+      g.applyMatrix4(new THREE.Matrix4().makeRotationY(Math.atan2(mu[1], mu[0])).setPosition(mp[0], 0, -mp[1]));
+      const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.3 }));
+      m.castShadow = m.receiveShadow = true;
+      root.add(m);
+      segs.push(...boxSegs(mp, mu, 1.05, 0.4));
+      return;
+    }
     segs.push(...boxSegs(p, u, slot.len / 2, 0.92));
     shadows.rect(add(p, u, slot.len * 0.25), u, 1.0, 0.8, 0.008, [0.12, 0.11, 0.1, 0.35]);   // oil drip under the engine
     const paint = PAINT[Math.floor(r2() * PAINT.length)];
-    loadCar(slot.model).then(({ obj }) => {
+    const model = slot.model;
+    loadCar(model).then(({ obj }) => {
       dressCar(obj, paint);
       obj.position.set(p[0], 0, -p[1]);
       obj.rotation.y = Math.atan2(u[0], -u[1]);
-      obj.name = `parked_${slot.model}`;
+      obj.name = `parked_${model}`;
       root.add(obj);
-    }).catch((e) => console.error(`[streetDressing] parked ${slot.model}`, e));
+    }).catch((e) => console.error(`[streetDressing] parked ${model}`, e));
   });
   root.add(shadows.mesh(blobTexture()));
-  console.info(`[streetDressing] ${slots.length} parked cars along Moss`);
+  console.info(`[streetDressing] ${slots.length} parked vehicles along Moss's SW curb`);
 }
 
 // Low-poly bodies shade flat; creased normals round the panels and keep the hard edges.
@@ -532,7 +616,7 @@ function brightDay(scene: THREE.Scene) {
     o.color.set(0xfff5e8);
     o.shadow.radius = 3;
   });
-  const fill = new THREE.HemisphereLight(0xcfe0ff, 0x8a8478, 0.35);
+  const fill = new THREE.HemisphereLight(0xd6e4ff, 0x9a958c, 0.8);   // Street View shade is bright: walls out of the sun stay pastel
   scene.add(fill);
   fill.castShadow = false;   // osmLook's childadded hook turns shadows on for everything added
   scene.environmentIntensity = 1.0;

@@ -21,14 +21,17 @@ Transcript of what Kite says:
 - 0.5 s (nav): "Head north on Lyon Street for 60 meters."
 - 6.5 s (hazard): "Person, ahead."
 - 8.4 s (critical): "Stop. Person ahead."
+- 11.1 s (hazard): "Path is clear. You can continue."
 - 13.4 s (hazard): "Obstacle, ahead."
 - 15.5 s (critical): "Stop. Obstacle ahead."
 - 18.0 s (hazard): "Don't walk."
-- 22.5 s (hazard): "Walk signal is on."
+- 18.8 s (hazard): "Path is clear. You can continue."
+- 20.9 s (hazard): "Wait. Don't walk signal ahead."
+- 23.1 s (hazard): "Walk signal is on."
 - 25.0 s (nav): "Turn left onto Bay Street."
-- 26.8 s (nav): "Small crowd ahead on the right."
+- 26.6 s (nav): "Small crowd ahead on the right."
 - 30.0 s (system): "Drone battery is at 28 percent."
-- 33.1 s (hazard): "Heads up: The curb at Lyon Street and Bay Street is very tall: step down slowly"
+- 33.0 s (info): "Heads up: The curb at Lyon Street and Bay Street is very tall: step down slowly"
 
 ## A guide dog is wonderful. *Almost nobody has one.*
 

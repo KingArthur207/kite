@@ -1,14 +1,22 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { WalkMap, PRIORITY_COLOR, type LatLng, type Pin, type Pose, type Relative } from './WalkMap';
-import { happenedAt, lastWalk, liveStats, moments as walkMoments, num, parse, speakerOf, str, type Ev, type Moment, type Payload } from './timeline';
-import { Badge, LiveState, Timeline } from './Reveal';
+import {
+  clip, happenedAt, isStopText, lastWalk, liveStats, moments as walkMoments, num, parse, speakerOf, str,
+  type Ev, type Moment, type Payload, type Who,
+} from './timeline';
+import { Badge, LiveState, StopCard, Timeline } from './Reveal';
+import {
+  MAX_MESSAGE, QUIET_S, UNHEARD_AFTER_S, ago, ageS, blockedWord, deliveryOf, direction, facing, freshOf, humanize,
+  linkOf, meters, relative, type Link,
+} from './view';
 import './App.css';
 
 // Caregiver dashboard: live view of the shared Kite world state, plus short messages to the walker
 // (a `say` from source `caregiver`; the earpiece polls for them and speaks them). No camera video (privacy).
 // Press P for presentation mode (the reveal): no raw feed or controls, bigger map, timeline and last line.
+// Every payload is untrusted: it is parsed defensively and rendered as text by React, never as HTML.
 
 // `event` rows have an id, `latest` rows a "type:source" key.
 type Row = { id?: bigint; key?: string; type: string; source: string; priority: string; payload: string; t: { toMillis(): bigint } };
@@ -16,11 +24,13 @@ type Row = { id?: bigint; key?: string; type: string; source: string; priority: 
 const FEED_SIZE = 40;
 const TRAIL_SIZE = 150;
 const DEFAULT_HAZARD_TTL_S = 20;
+const MAX_HAZARD_TTL_S = 120;
+const MAX_HAZARDS = 8;
 const BEACON_TTL_S = 30;
-const MAX_MESSAGE = 200;
+const HELP_FRESH_S = 10 * 60;  // a help request stays on screen this long unless acknowledged
 const EVENT_TABLE_CAP = 500;   // the module keeps the newest 500 events
 // The earpiece drops any message that could be heard as permission to move ("you can", "go", "clear"...),
-// so the quick ones avoid those words.
+// so the quick ones avoid those words (view.check.ts checks them).
 const QUICK_MESSAGES = ["I'm on my way.", 'Call me when you get there.', 'Take your time, no rush.'];
 // Same value as KITE_CAREGIVER_TOKEN on the earpiece. With it set, the earpiece speaks only messages signed
 // with it. It ships in this page's JS, so serve the dashboard only on the demo laptop.
@@ -38,54 +48,78 @@ async function signMessage(text: string): Promise<{ ts: number; sig: string } | 
 const SHOWN_MESSAGES = 3;
 const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
 // Moment colours on the map; stops are always red.
-const PIN_COLOR: Record<string, string> = { stop: '#ef4444', kite: '#2dd4bf', claude: '#e8875f', caregiver: '#4da3ff' };
+const PIN_COLOR: Record<string, string> = { stop: '#ef4444', help: '#ef4444', kite: '#2dd4bf', claude: '#e8875f', caregiver: '#4da3ff' };
 
 const toEv = (r: Row): Ev => ({ id: r.id?.toString() ?? r.key ?? '', type: r.type, source: r.source, priority: r.priority, t: Number(r.t.toMillis()), p: parse(r.payload) });
 const newestFirst = (rows: readonly Ev[]) => [...rows].sort((a, b) => b.t - a.t);
-const m = (v: unknown) => (num(v) != null ? `${num(v)!.toFixed(1)} m` : false);
-const deg = (v: unknown) => (num(v) != null ? `${Math.round(num(v)!)}°` : false);
-const secs = (now: number, t: number) => Math.max(0, Math.round((now - t) / 1000));
-const ago = (now: number, t: number) => `${secs(now, t)}s ago`;
+const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 // Hazards from sample data may carry no priority column; the payload or the type default decides.
 const priorityOf = (e: Ev) => str(e.p.priority) || e.priority || 'hazard';
+const kindOf = (p: Payload) => humanize(clip(p.kind, 40)) || 'hazard';
+const whereOf = (p: Payload) => [meters(p.distance), direction(p.bearing)].filter(Boolean).join(' ');
 
 function summary(type: string, p: Payload): string {
   switch (type) {
     case 'hazard':
-      return [p.kind, p.state, p.text, m(p.distance), deg(p.bearing)]
-        .filter(Boolean).join(' · ');
+      return [kindOf(p), humanize(clip(p.state, 30)), clip(p.text, 120), whereOf(p)].filter(Boolean).join(' · ');
     case 'position':
-      return [p.place, num(p.lat) != null && `${num(p.lat)!.toFixed(5)}, ${num(p.lng)?.toFixed(5)}`,
-        num(p.heading) != null && `hdg ${deg(p.heading)}`].filter(Boolean).join(' · ');
+      return [clip(p.place, 60), num(p.lat) != null && num(p.lng) != null && `${num(p.lat)!.toFixed(5)}, ${num(p.lng)!.toFixed(5)}`,
+        facing(p.heading)].filter(Boolean).join(' · ');
     case 'status':
-      return [p.state, p.battery != null && `${p.battery}%`, p.text].filter(Boolean).join(' · ');
+      return [clip(p.state, 30), num(p.battery) != null && `battery ${Math.round(num(p.battery)!)}%`, clip(p.text, 60)].filter(Boolean).join(' · ');
     case 'beacon':
-      return [p.label, m(p.distance), deg(p.bearing)].filter(Boolean).join(' · ');
+      return [clip(p.label, 60), whereOf(p)].filter(Boolean).join(' · ');
     case 'obstacles':
       return `${Array.isArray(p.objects) ? p.objects.length : 0} objects`;
+    case 'caregiver_alert':
+      return `Help request: ${clip(p.message, 160) || 'no message'}`;
     default:
-      return str(p.text ?? p.action ?? p.kind ?? '');
+      return clip(p.text ?? p.action ?? p.kind ?? '', 160);
   }
 }
 
 const poseOf = (p: Payload): Pose | undefined => {
   const lat = num(p.lat), lng = num(p.lng);
-  return lat != null && lng != null ? { lat, lng, heading: num(p.heading) } : undefined;
+  return lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng, heading: num(p.heading) } : undefined;
 };
+const isPose = (e: Ev) => e.type === 'position' && poseOf(e.p) != null;
 
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 
+const LINK_TEXT: Record<Link, string> = { live: 'Live', connecting: 'Connecting…', reconnecting: 'Reconnecting…', offline: 'Offline' };
+const SAID_BY: Record<Who, string> = { kite: 'Kite said', claude: 'Claude said', caregiver: 'The walker heard your message' };
+
+// Local copies of messages until their row shows up in the event table.
+type Outgoing = { key: string; text: string; at: number; state: 'sending' | 'failed'; error?: string };
+type Note = { kind: 'ok' | 'error'; text: string };
+
+/** Screen reader announcements: the same text twice still gets read (a trailing space toggles). */
+function useAnnouncer() {
+  const [text, setText] = useState('');
+  return [text, (s: string) => setText(prev => (prev === s ? `${s} ` : s))] as const;
+}
+
 function App() {
   const conn = useSpacetimeDB();
-  const [events] = useTable(tables.event);
-  const [latest] = useTable(tables.latest);
+  const [events, eventsReady] = useTable(tables.event);
+  const [latest, latestReady] = useTable(tables.latest);
+  const ready = eventsReady && latestReady;   // false again while reconnecting, though the cached rows stay
   const clear = useReducer(reducers.clear);
   const push = useReducer(reducers.push);
   const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
+  const [outbox, setOutbox] = useState<Outgoing[]>([]);
+  const [note, setNote] = useState<Note>();
   const [now, setNow] = useState(Date.now());
   const [present, setPresent] = useState(() => location.hash === '#present');
   const [focusId, setFocusId] = useState<string>();
+  const [ackHelp, setAckHelp] = useState<string>();
+  const [everLive, setEverLive] = useState(false);
+  const [polite, announce] = useAnnouncer();
+  const [urgent, announceUrgent] = useAnnouncer();
+
+  useEffect(() => { if (conn.isActive) setEverLive(true); }, [conn.isActive]);
+  const link = linkOf(conn.isActive, everLive, conn.connectionError);
+  const live = link === 'live';
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -94,20 +128,29 @@ function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== 'p' || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
-      setPresent(on => !on);
+      if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+      if (e.key.toLowerCase() === 'p') setPresent(on => !on);
+      else if (e.key === 'Escape') setPresent(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  useEffect(() => { history.replaceState(null, '', present ? '#present' : location.pathname + location.search); }, [present]);
+  useEffect(() => {
+    history.replaceState(null, '', present ? '#present' : location.pathname + location.search);
+    document.title = present ? 'Kite: the walk' : 'Kite caregiver dashboard';
+  }, [present]);
 
   // Parse every payload once per table change, not once per render (the clock re-renders every second).
   const sorted = useMemo(() => newestFirst(events.map(toEv)), [events]);
   const latestSorted = useMemo(() => newestFirst(latest.map(toEv)), [latest]);
+  const haveData = ready || sorted.length > 0 || latestSorted.length > 0;
 
-  // Walker: newest position (any source) that has coordinates; its trail comes from the same source.
-  const lastPosRow = latestSorted.find(r => r.type === 'position' && poseOf(r.p));
+  // Walker: newest position (any source) with usable coordinates, from either table, so one bad
+  // payload in `latest` doesn't hide the walker. Its trail comes from the same source.
+  const lastPosRow = useMemo(() => {
+    const a = latestSorted.find(isPose), b = sorted.find(isPose);
+    return a && b ? (a.t >= b.t ? a : b) : a ?? b;
+  }, [latestSorted, sorted]);
   const pos = lastPosRow?.p;
   const pose = pos && poseOf(pos);
   const walkerSource = lastPosRow?.source;
@@ -122,165 +165,291 @@ function App() {
   // The last walk's key moments, oldest first.
   const walk = useMemo(() => lastWalk([...sorted].reverse()), [sorted]);
   const moments: Moment[] = useMemo(() => walkMoments(walk, walkerSource), [walk, walkerSource]);
-  const pins: Pin[] = moments.flatMap(mo => mo.pos ? [{
-    id: mo.id, at: mo.pos, stop: mo.kind === 'stop', label: mo.text,
-    color: PIN_COLOR[mo.kind === 'stop' ? 'stop' : mo.who],
-  }] : []);
+  const walkStart = walk.length ? Math.min(happenedAt(walk[0]), moments[0]?.t ?? Infinity) : undefined;
+  const walkEnd = walk.length ? happenedAt(walk[walk.length - 1]) : undefined;
+  const pins: Pin[] = useMemo(() => moments.flatMap(mo => mo.pos ? [{
+    id: mo.id, at: mo.pos, stop: mo.kind === 'stop' || mo.kind === 'help', label: mo.text,
+    color: PIN_COLOR[mo.kind === 'stop' || mo.kind === 'help' ? mo.kind : mo.who],
+  }] : []), [moments]);
+  const lastStop = useMemo(() => [...moments].reverse().find(m => m.kind === 'stop'), [moments]);
+  const lastHelp = useMemo(() => [...moments].reverse().find(m => m.kind === 'help'), [moments]);
+  const helpOpen = lastHelp && lastHelp.id !== ackHelp && ageS(now, lastHelp.t) < HELP_FRESH_S ? lastHelp : undefined;
 
   // Active hazards: newest per (source, kind) still inside its ttl.
   const hazards = new Map<string, Ev>();
   for (const e of sorted) {
     if (e.type !== 'hazard') continue;
-    const key = `${e.source}:${str(e.p.kind)}`;
+    const key = `${e.source}:${kindOf(e.p)}`;
     if (hazards.has(key)) continue;
-    const ttl = num(e.p.ttl) ?? DEFAULT_HAZARD_TTL_S;
+    const ttl = Math.min(MAX_HAZARD_TTL_S, Math.max(0, num(e.p.ttl) ?? DEFAULT_HAZARD_TTL_S));
     if (now - e.t <= ttl * 1000) hazards.set(key, e);
+    if (hazards.size >= MAX_HAZARDS) break;
   }
   const hazardList = [...hazards.entries()];
   const hazardMarks: Relative[] = hazardList.flatMap(([key, e]) => {
-    const bearing = num(e.p.bearing), distance = num(e.p.distance);
-    return bearing == null || distance == null ? [] :
-      [{ key, bearing, distance, label: [e.p.kind, e.p.state].filter(Boolean).join(' ') || 'hazard', priority: priorityOf(e) }];
+    const rel = relative(e.p);
+    return rel ? [{ key, ...rel, label: [kindOf(e.p), humanize(clip(e.p.state, 30))].filter(Boolean).join(' '), priority: priorityOf(e) }] : [];
   });
 
   const beaconRow = latestSorted.find(r => r.type === 'beacon' && now - r.t <= BEACON_TTL_S * 1000);
   const bp = beaconRow?.p;
-  const beacon: Relative | undefined = bp && bp.active !== false && num(bp.bearing) != null && num(bp.distance) != null
-    ? { key: 'beacon', bearing: num(bp.bearing)!, distance: num(bp.distance)!, label: str(bp.label) || 'Next waypoint', priority: 'nav' }
-    : undefined;
+  const beaconRel = bp && bp.active !== false ? relative(bp) : undefined;
+  const beacon: Relative | undefined = beaconRel && { key: 'beacon', ...beaconRel, label: clip(bp?.label, 40) || 'Next waypoint', priority: 'nav' };
 
   // Shared state: every source that has written anything, with its newest row time and last-minute rate.
   const newestBySource = new Map<string, number>();
   for (const r of latestSorted) if (!newestBySource.has(r.source)) newestBySource.set(r.source, r.t);
-  const live = liveStats(sorted, newestBySource, now);
+  const stats = liveStats(sorted, newestBySource, now);
   // Every kept row is inside the last minute, so older ones were trimmed: the rate is a lower bound.
-  const capped = sorted.length >= EVENT_TABLE_CAP && live.perMin >= sorted.length;
+  const capped = sorted.length >= EVENT_TABLE_CAP && stats.perMin >= sorted.length;
   const statusOf = (source: string) => {
     const st = latestSorted.find(r => r.type === 'status' && r.source === source);
     return st ? summary('status', st.p) : '';
   };
+  const newestT = latestSorted[0]?.t ?? sorted[0]?.t;
+  const quietS = newestT != null ? ageS(now, newestT) : 0;
+  const quiet = live && ready && newestT != null && quietS > QUIET_S;
 
-  const lastSpoken = latestSorted.find(r => ['guidance', 'spoken', 'say'].includes(r.type) && str(r.p.text));
+  const lastSpoken = latestSorted.find(r => ['guidance', 'spoken', 'say'].includes(r.type) && clip(r.p.text));
+  const speaker: Who | undefined = lastSpoken && speakerOf(lastSpoken, sorted);
+  const spokenText = lastSpoken ? clip(lastSpoken.p.text) : '';
 
-  const sent = sorted.filter(e => e.type === 'say' && e.source === 'caregiver').slice(0, SHOWN_MESSAGES);
+  // Announce what changes after the page has loaded (never the backlog): new spoken lines politely,
+  // stops and help requests assertively.
+  const seen = useRef<{ spoken?: string; stop?: string; help?: string }>();
+  useEffect(() => {
+    if (!ready) return;
+    const cur = { spoken: lastSpoken && `${lastSpoken.id}@${lastSpoken.t}`, stop: lastStop?.id, help: lastHelp?.id };
+    const was = seen.current;
+    seen.current = cur;
+    if (!was) return;
+    if (cur.help && cur.help !== was.help && lastHelp) announceUrgent(`The walker asked for help: ${lastHelp.text}`);
+    else if (cur.stop && cur.stop !== was.stop && lastStop) announceUrgent(`Stop. Kite said: ${lastStop.text}`);
+    else if (cur.spoken && cur.spoken !== was.spoken && lastSpoken && speaker && !isStopText(spokenText) && lastSpoken.priority !== 'critical')
+      announce(`${SAID_BY[speaker]}: ${spokenText.replace(/^message from your caregiver:\s*/i, '')}`);
+  }, [ready, lastSpoken?.id, lastSpoken?.t, lastStop?.id, lastHelp?.id]);
 
-  const send = (raw: string) => {
+  // Caregiver messages: the newest few from the table, plus local ones still on their way.
+  const sentRows = sorted.filter(e => e.type === 'say' && e.source === 'caregiver').slice(0, SHOWN_MESSAGES);
+  const arrivedKeys = useMemo(() => new Set(sorted.filter(e => e.type === 'say' && e.source === 'caregiver').map(e => str(e.p.key))), [sorted]);
+  const pending = outbox.filter(o => !arrivedKeys.has(o.key));
+  const sending = pending.some(o => o.state === 'sending');
+  const draftText = draft.trim();
+  const blocked = blockedWord(draftText);
+
+  const send = (raw: string, fromDraft: boolean) => {
     const text = raw.trim().slice(0, MAX_MESSAGE);
-    if (!text || sending) return;
-    setSending(true);
+    if (!text || sending || !live) return;
+    const word = blockedWord(text);
+    if (word) {
+      setNote({ kind: 'error', text: `Not sent. Kite won't read a message with “${word}” aloud, because it could sound like permission to move.` });
+      return;
+    }
+    const key = `caregiver-${Date.now()}`;
+    setOutbox(o => [{ key, text, at: Date.now(), state: 'sending' as const }, ...o].slice(0, 10));
+    setNote(undefined);
     signMessage(text)
       .then(sig => {
-        const msg = { type: 'say', source: 'caregiver', priority: 'info', text, key: `caregiver-${Date.now()}`, ...sig };
+        const msg = { type: 'say', source: 'caregiver', priority: 'info', text, key, ...sig };
         return push({ type: 'say', source: 'caregiver', priority: 'info', payload: JSON.stringify(msg) });
       })
-      .then(() => setDraft(''))
-      .catch(err => alert(`Message not sent: ${err}`))
-      .finally(() => setSending(false));
+      .then(() => {
+        if (fromDraft) setDraft('');
+        setNote({ kind: 'ok', text: "Sent. Kite will read it aloud in the walker's earpiece." });
+      })
+      .catch((err: unknown) => {
+        const name = err instanceof Error ? err.name : '';
+        const error = name === 'UnknownCallResultError'
+          ? 'The connection dropped before SpacetimeDB confirmed it. It may have arrived; check the list before sending again.'
+          : `Not sent: ${err instanceof Error ? err.message : String(err)}`;
+        setOutbox(o => o.map(x => (x.key === key ? { ...x, state: 'failed', error } : x)));
+        setNote({ kind: 'error', text: error });
+      });
   };
 
   const onClear = () => {
-    if (confirm('Clear the event log and latest state for a fresh run?')) clear().catch(err => alert(`Clear failed: ${err}`));
+    if (confirm('Clear the event log and latest state for a fresh run?'))
+      clear().then(() => { setOutbox([]); setFocusId(undefined); })
+        .catch(err => setNote({ kind: 'error', text: `Clear failed: ${err instanceof Error ? err.message : String(err)}` }));
   };
+
+  const waiting = !ready
+    ? (link === 'live' ? 'Loading the walk from SpacetimeDB…' : link === 'offline'
+      ? "Can't reach SpacetimeDB yet. The walk appears here as soon as it connects." : 'Connecting to SpacetimeDB…')
+    : sorted.length === 0 && latestSorted.length === 0
+      ? 'The database is empty. The map appears with the first position event that has lat/lng.'
+      : 'No position with coordinates yet. The map appears as soon as a position event with lat/lng arrives.';
+  const posAge = lastPosRow ? ageS(now, lastPosRow.t) : 0;
 
   return (
     <div className={`app ${present ? 'present' : ''}`}>
       <header>
-        <h1>Kite <span className="muted">{present ? 'what Kite saw and did on your walk' : 'caregiver view'}</span></h1>
-        <span className={`conn ${conn.isActive ? 'ok' : 'bad'}`}>
-          <i />{conn.isActive ? 'Live via SpacetimeDB' : conn.connectionError ? `Disconnected: ${conn.connectionError.message}` : 'Connecting...'}
+        <h1>Kite <span className="subtitle">{present ? 'what Kite saw and did on this walk' : 'caregiver view'}</span></h1>
+        <span className={`conn ${link}`} role="status">
+          <i aria-hidden="true" />{LINK_TEXT[link]}<span className="conn-via"> via SpacetimeDB</span>
         </span>
-        <button className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
-          title="Toggle presentation mode (P)">{present ? 'Exit presentation' : 'Present'} <kbd>P</kbd></button>
-        {!present && <button onClick={onClear} disabled={!conn.isActive}>Clear run</button>}
+        {quiet && present && <span className="quiet-chip">Last update {ago(quietS)}</span>}
+        <span className="header-actions">
+          <button type="button" className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
+            aria-keyshortcuts="P" title="Presentation mode (P, Esc to leave)">{present ? 'Exit presentation' : 'Present'} <kbd aria-hidden="true">P</kbd></button>
+          {!present && <button type="button" onClick={onClear} disabled={!live}>Clear run</button>}
+        </span>
       </header>
 
-      <div className="layout">
+      {link === 'reconnecting' || link === 'offline' ? (
+        <div className="banner warn">
+          {link === 'reconnecting'
+            ? <>Connection to SpacetimeDB lost. {newestT != null ? <>Showing what arrived until {clock(newestT)}. </> : null}Reconnecting automatically.</>
+            : <>Can't reach SpacetimeDB{conn.connectionError?.message ? ` (${clip(conn.connectionError.message, 120)})` : ''}. Retrying automatically.</>}
+        </div>
+      ) : quiet && !present ? (
+        <div className="banner quiet">No device has written for {ago(quietS).replace(' ago', '')}. The walk may be over, or the devices are offline.</div>
+      ) : null}
+
+      {helpOpen && (
+        <div className="banner help">
+          <strong>The walker asked for help</strong> <span>“{helpOpen.text}”</span>
+          <span className="muted">{ago(ageS(now, helpOpen.t))}</span>
+          <span className="banner-actions">
+            {helpOpen.pos && <button type="button" onClick={() => setFocusId(helpOpen.id)}>Show on map</button>}
+            <button type="button" onClick={() => setAckHelp(helpOpen.id)}>Got it</button>
+          </span>
+        </div>
+      )}
+
+      <main className="layout">
         <div className="main-col">
           <WalkMap pose={pose} trail={trail} hazards={hazardMarks} beacon={beacon}
-            freshness={lastPosRow ? ago(now, lastPosRow.t) : ''} pins={pins} focusId={focusId} onPick={setFocusId} />
-          <Timeline moments={moments} walkStart={walk.length ? Math.min(happenedAt(walk[0]), moments[0]?.t ?? Infinity) : undefined} focusId={focusId} onPick={setFocusId} />
+            place={pos ? clip(pos.place, 60) : ''} where={pos ? facing(pos.heading) : ''}
+            freshness={ago(posAge)} fresh={freshOf(posAge)} pins={pins} focusId={focusId} onPick={setFocusId}
+            initialView={present ? 'walk' : 'follow'} waiting={waiting} />
+          <Timeline moments={moments} walkStart={walkStart} walkEnd={walkEnd} focusId={focusId} onPick={setFocusId} />
         </div>
 
-        <aside key={present ? 'present' : 'normal'}>{/* remount: each mode starts scrolled to the top */}
-          <section className="last-spoken">
-            <h2>Last spoken</h2>
-            {lastSpoken ? (
-              <p className="spoken">
-                “{str(lastSpoken.p.text)}”
-                <span className="spoken-meta"><Badge who={speakerOf(lastSpoken, sorted)} /><span className="muted small">{lastSpoken.type} · {ago(now, lastSpoken.t)}</span></span>
-              </p>
-            ) : <p className="muted">Nothing yet.</p>}
-          </section>
-
-          <section className="walker">
-            <h2>Walker</h2>
-            {pos ? (
+        <aside key={present ? 'present' : 'normal'} aria-label="Walk details" tabIndex={0}>{/* remount: each mode starts scrolled to the top */}
+          <section className="last-spoken" aria-labelledby="spoken-h">
+            <h2 id="spoken-h">{present ? 'Kite just said' : 'Last spoken line'}</h2>
+            {lastSpoken && speaker ? (
               <>
-                <div className="big">{str(pos.place) || 'Unknown place'}</div>
-                <div className="muted">
-                  {summary('position', { ...pos, place: undefined })}
-                  {lastPosRow && ` · ${ago(now, lastPosRow.t)}`}
-                </div>
-                {beacon && <div className="beacon-line">Next: <strong>{beacon.label}</strong> · {Math.round(beacon.distance)} m</div>}
+                <p className={`spoken ${isStopText(spokenText) ? 'is-stop' : ''}`}>“{spokenText}”</p>
+                <p className="spoken-meta"><Badge who={speaker} /><span className="muted small">{lastSpoken.type} · {ago(ageS(now, lastSpoken.t))}</span></p>
               </>
-            ) : <p className="muted">No position yet.</p>}
+            ) : <p className="muted">{haveData ? 'Nothing spoken yet.' : 'Loading…'}</p>}
           </section>
 
-          <section>
-            <h2>Active hazards</h2>
-            {hazardList.length === 0 ? <p className="muted">None.</p> : (
+          <StopCard stop={lastStop} walkStart={walkStart} now={now} onPick={setFocusId} focused={focusId === lastStop?.id} />
+
+          {!present && (
+            <section className="walker" aria-labelledby="walker-h">
+              <h2 id="walker-h">Walker</h2>
+              {pos ? (
+                <>
+                  <div className="big">{clip(pos.place, 60) || 'Unknown place'}</div>
+                  <div className="muted">
+                    {summary('position', { ...pos, place: undefined })} · {ago(posAge)}
+                  </div>
+                  {beacon && <div className="beacon-line">Next: <strong>{beacon.label}</strong>, {meters(beacon.distance)} {direction(beacon.bearing)}</div>}
+                </>
+              ) : <p className="muted">{haveData ? 'No position yet.' : 'Waiting for data…'}</p>}
+            </section>
+          )}
+
+          <section aria-labelledby="hazards-h">
+            <h2 id="hazards-h">Active hazards {hazardList.length > 0 && <span className="count-pill">{hazardList.length}</span>}</h2>
+            {hazardList.length === 0 ? <p className="muted">{haveData ? 'None right now.' : 'Waiting for data…'}</p> : (
               <ul className="hazards">
-                {hazardList.map(([key, e]) => (
-                  <li key={key} style={{ borderLeftColor: PRIORITY_COLOR[priorityOf(e)] ?? PRIORITY_COLOR.hazard }}
-                    className={`p-${priorityOf(e)}`}>
-                    <strong>{str(e.p.kind) || 'hazard'}</strong> {summary('hazard', { ...e.p, kind: undefined })}
-                    <div className="muted small">{priorityOf(e)} · {e.source} · {ago(now, e.t)}</div>
-                  </li>
-                ))}
+                {hazardList.map(([key, e]) => {
+                  const pri = priorityOf(e);
+                  const where = whereOf(e.p);
+                  return (
+                    <li key={key} style={{ borderLeftColor: PRIORITY_COLOR[pri] ?? PRIORITY_COLOR.hazard }} className={`p-${pri}`}>
+                      <strong>{kindOf(e.p)}</strong>{where && <span className="hz-where"> · {where}</span>}
+                      {(clip(e.p.text, 140) || clip(e.p.state, 30)) && <div>{clip(e.p.text, 140) || humanize(clip(e.p.state, 30))}</div>}
+                      <div className="muted small">{pri} · {e.source} · {ago(ageS(now, e.t))}</div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>
 
-          <LiveState perMin={live.perMin} capped={capped} sources={live.sources} limit={present ? PRESENT_SOURCES : undefined} statusOf={statusOf} compact={present} />
+          {!present && (
+            <section className="messages" aria-labelledby="msg-h">
+              <h2 id="msg-h">Message the walker</h2>
+              <p className="muted small" id="msg-hint">Kite reads it aloud in the walker's earpiece, after any safety cue. Words that could sound like permission to move (“go”, “cross”, “clear”, “you can”) are never spoken.</p>
+              <form className="message" onSubmit={e => { e.preventDefault(); send(draft, true); }}>
+                <label htmlFor="msg" className="sr-only">Message to the walker</label>
+                <input id="msg" value={draft} onChange={e => setDraft(e.target.value)} maxLength={MAX_MESSAGE} autoComplete="off"
+                  placeholder={live ? 'Type a short message' : 'Paused until reconnected'} disabled={!live}
+                  aria-describedby="msg-hint msg-count msg-blocked" aria-invalid={blocked ? true : undefined} />
+                <button type="submit" disabled={!live || sending || !draftText || !!blocked}>{sending ? 'Sending…' : 'Send'}</button>
+              </form>
+              <div className="msg-under">
+                <span id="msg-blocked" className="blocked">{blocked && `Kite won't speak this: “${blocked}” could sound like permission to move.`}</span>
+                <span id="msg-count" className={`count ${draft.length > MAX_MESSAGE - 20 ? 'near' : ''}`}>
+                  {draft.length} / {MAX_MESSAGE}<span className="sr-only"> characters</span>
+                </span>
+              </div>
+              <div className="quick" role="group" aria-label="Quick replies, sent right away">
+                {QUICK_MESSAGES.map(q => (
+                  <button type="button" key={q} onClick={() => send(q, false)} disabled={!live || sending}>{q}</button>
+                ))}
+              </div>
+              <p className={`send-note ${note?.kind ?? ''}`} role="status">{note?.text}</p>
+              {(pending.length > 0 || sentRows.length > 0) && (
+                <ul className="sent" aria-label="Recent messages">
+                  {pending.map(o => (
+                    <li key={o.key} className={o.state}>
+                      <span className="sent-text">“{clip(o.text)}”</span>
+                      <span className="sent-state">{o.state === 'sending' ? 'Sending…' : o.error}</span>
+                    </li>
+                  ))}
+                  {sentRows.map(e => {
+                    const d = deliveryOf(e, sorted, now);
+                    return (
+                      <li key={e.id} className={d.state}>
+                        <span className="sent-text">“{clip(e.p.text)}”</span>
+                        <span className="sent-state">
+                          {d.state === 'heard' ? <>Heard by the walker at {clock(d.heardAt!)}</>
+                            : d.state === 'unheard' ? <>Sent {ago(ageS(now, e.t))}, not spoken yet after {UNHEARD_AFTER_S} s. Is the earpiece running with <code>--spacetime</code>?</>
+                              : <>Sent {ago(ageS(now, e.t))}, waiting for the earpiece</>}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          )}
+
+          <LiveState perMin={stats.perMin} capped={capped} sources={stats.sources} limit={present ? PRESENT_SOURCES : undefined} statusOf={statusOf} compact={present} />
 
           {!present && (
-            <>
-              <section>
-                <h2>Message the walker</h2>
-                <form className="message" onSubmit={e => { e.preventDefault(); send(draft); }}>
-                  <input value={draft} onChange={e => setDraft(e.target.value)} maxLength={MAX_MESSAGE}
-                    placeholder="Kite reads it aloud" aria-label="Message to the walker" disabled={!conn.isActive} />
-                  <button type="submit" disabled={!conn.isActive || sending || !draft.trim()}>Send</button>
-                </form>
-                <div className="quick">
-                  {QUICK_MESSAGES.map(q => (
-                    <button key={q} onClick={() => send(q)} disabled={!conn.isActive || sending}>{q}</button>
-                  ))}
-                </div>
-                {sent.map(e => (
-                  <div key={e.id} className="muted small">Sent “{str(e.p.text)}” · {ago(now, e.t)}</div>
-                ))}
-              </section>
-
-              <section>
-                <h2>Live feed</h2>
+            <section aria-labelledby="feed-h">
+              <h2 id="feed-h">Live feed <span className="muted small">newest first</span></h2>
+              {sorted.length === 0 ? <p className="muted">{haveData ? 'No events yet.' : 'Loading…'}</p> : (
                 <table className="feed">
+                  <caption className="sr-only">Newest events first</caption>
+                  <thead className="sr-only"><tr><th scope="col">Time</th><th scope="col">Type</th><th scope="col">Source</th><th scope="col">Details</th></tr></thead>
                   <tbody>
                     {sorted.slice(0, FEED_SIZE).map(e => (
                       <tr key={e.id} className={`p-${e.priority} ${e.source === 'caregiver' ? 'caregiver' : ''}`}>
                         <td className="muted">{new Date(e.t).toLocaleTimeString()}</td>
                         <td>{e.type}</td>
-                        <td className="muted">{e.source}</td>
-                        <td>{summary(e.type, e.p)}</td>
+                        <td className="muted src">{e.source}</td>
+                        <td className="detail">{summary(e.type, e.p)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </section>
-            </>
+              )}
+            </section>
           )}
         </aside>
-      </div>
+      </main>
+
+      <div className="sr-only" aria-live="polite" aria-atomic="true">{polite}</div>
+      <div className="sr-only" aria-live="assertive" aria-atomic="true">{urgent}</div>
     </div>
   );
 }

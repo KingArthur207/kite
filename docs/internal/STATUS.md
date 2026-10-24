@@ -1,6 +1,21 @@
 # Kite status
 
-Last updated Sat Oct 24, 4:15 AM PT. Submission Sun 9:00 AM; freeze Sat 8:00 PM.
+Last updated Sat Oct 24, 7:00 AM PT. Submission Sun 9:00 AM; freeze Sat 8:00 PM.
+
+## Overnight (Sat 5 to 7 AM, while the team slept)
+
+Merged:
+- The sim street now looks like its Street View (#79, #85, #86, #91, #99). It uses SF city data: LiDAR heights, surveyed widths and 130 real trees. Added: parking on the SW curb, pastel Victorians with real-depth bays, the medallion, string lights, Howard's plane trees and cycle track, and bricks at real size. The default world is this textured OSM street. Opt-in worlds: `?world=real` (Blender, 25 verified photo walls), `?world=photo` (verified Street View walls) and `?world=tiles` (Google 3D, geofenced).
+- Shot recorder for the demo video (#95). Draft takes are in `out/shots/` (local only). `follow-photo.mp4` is usable. `corner-tiles.mp4` reads well, but the tiles smear.
+- Live walk fixes from a 40-run bench (#81): Stop now fires in 37 of 40 runs, up from 16, with no false stops.
+- Claude judgment: a stricter safety filter that still passes all 24 of 24 warning scenarios. When a reply is cut off, the first full sentence is kept (#69, #75).
+- Socket video reader for the Tello, opt-in with `--video-backend socket` (#92). It did not reproduce the Mac "no image" bug here, but it reports why a picture is missing. Arthur's `fix/mac-video` branch is diagnosing the bug on his laptop.
+- Follow-mode path prediction behind `--follow-predict` (#68). Never flown.
+- Facade scripts for each side of the street (#87, #94). The photos stay local under the Google permission.
+
+The collision result so far: in the sim, Kite gets 3.05 collisions per walk, the same as walking blind (#96). Kite can't see bins or signs, forgets obstacles once they leave view, reads curbs as obstacles, and the turning car comes from outside the cameras. An agent is fixing those four and will measure again. No pitch claim until the number improves.
+
+Delete after the hackathon (Google terms): `/tmp/kite_sv`, `/tmp/kite_sv_sw`, `/tmp/kite_sv_howard` and `sim/public/local/`.
 
 ## Try it now (on Eddy's laptop)
 

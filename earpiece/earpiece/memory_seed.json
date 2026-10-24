@@ -1,5 +1,5 @@
 [
- {"id": "place-home", "kind": "place", "text": "Home: the apartment on Francisco Street", "meta": {"name": "home", "address": "Francisco St, San Francisco", "lat": 37.8012, "lng": -122.4410}},
+ {"id": "place-home", "kind": "place", "text": "Home (demo stand-in, not a real address)", "meta": {"name": "home", "demo": "a public lawn on Marina Green", "lat": 37.8066, "lng": -122.4391}},
  {"id": "place-coffee", "kind": "place", "text": "My usual coffee shop: Blue Bottle Coffee on Chestnut Street", "meta": {"name": "Blue Bottle Coffee", "address": "2453 Chestnut St, San Francisco", "lat": 37.8003, "lng": -122.4410}},
  {"id": "place-palace", "kind": "place", "text": "Palace of Fine Arts, the rotunda by the lagoon (Cal Hacks venue)", "meta": {"name": "Palace of Fine Arts", "address": "3601 Lyon St, San Francisco", "lat": 37.8029, "lng": -122.4484}},
  {"id": "place-bench", "kind": "place", "text": "The bench by the 30 bus stop on Chestnut and Divisadero", "meta": {"name": "the bus stop bench", "lat": 37.8006, "lng": -122.4425}},
