@@ -50,7 +50,7 @@ The guide dog comparison shapes the features. A guide dog leads around obstacles
 
 Why it matters: Guiding Eyes for the Blind puts the cost of raising and training one guide dog at $50,000 (donors pay it, not the blind person), and fewer than 10,000 guide dogs work in the US against about 1 million Americans who are blind. Drop the old "2%" figure: its only traceable source is from about 1990. Sources and caveats are in `docs/research/facts.md`; Rex signs off before they go on a slide.
 
-What makes Kite's approach its own: everything reaches the walker as spatial sound and voice, the drone flies behind and above the walker, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
+What makes Kite's approach its own: everything reaches the walker as spatial sound and voice, the drone flies behind and above the walker (and briefly scouts ahead at corners, see section 11), a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -306,6 +306,8 @@ Decision (Oct 24): no interviews this weekend. The pitch says so plainly and cit
 Made by the team: the drone flies behind and above, not ahead (fix the README, which says "ahead"). The drone is for the demo only. The 7am shoot plus a sim of the same corner. Beeps with direction and pitch plus verbal directions. Cartesia and Spacetime are in.
 
 Also made by the team (Oct 23, 11:50 PM): sim hazards come from the real detector, with realistic models and a chest-height virtual camera; Kite stops and waits instead of detouring.
+
+Corner scout (Eddy, Sat Oct 24, 9:10 AM): the drone stays behind and above the walker, except at a corner on the route, where it flies about 2 m past the corner at about 3 m up, looks down the cross street for cars, then returns behind the walker. A car that's coming holds the walker ("Car approaching the corner.", deterministic, no Claude) until it has passed. This applies to the sim, the POV video and the real flight at the shoot. In the sim (PR #116) it took turning-car hits from 13 of 20 walks blind to 0 of 20.
 
 Also made by the team (Oct 24, 12:55 AM meeting): no Gaussian splat; the real Tello footage of the corner is what makes the demo look real, and the sim uses the OpenStreetMap model of Moss and Howard with glTF cars and people. The judge's live demo was wearing Kite blindfolded at the table (replaced Sat 7:45 AM by the passive POV demo in section 4). The drone flies behind the walker. Filming is on Moss St, ending with the left turn across the zebra crossing. Every code change goes through a PR.
 
