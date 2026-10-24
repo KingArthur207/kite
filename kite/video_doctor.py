@@ -25,6 +25,44 @@ from datetime import datetime
 from pathlib import Path
 
 NAL_NAMES = {1: "slice", 5: "IDR", 6: "SEI", 7: "SPS", 8: "PPS", 9: "AUD"}
+HEALTHY_KB_S = 100  # a Tello streaming normally sends well over this; the starved Mac link gave ~32 KB/s
+
+
+def _cmd(args: list[str], timeout: float = 40.0) -> str:
+    import subprocess
+
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def link_snapshot() -> dict:
+    """macOS: the Wi-Fi link to the drone (channel, PHY mode, rate, MCS, signal/noise), Bluetooth devices connected
+    (they share the 2.4 GHz radio) and AWDL state. Empty elsewhere. Slow (~20 s): system_profiler scans for
+    networks, which takes the radio off-channel, so it never runs while the video is being recorded."""
+    if sys.platform != "darwin":
+        return {}
+    snap: dict = {}
+    try:
+        d = json.loads(_cmd(["system_profiler", "SPAirPortDataType", "-json"]) or "{}")["SPAirPortDataType"][0]
+        for itf in d.get("spairport_airport_interfaces", []):
+            cur = itf.get("spairport_current_network_information")
+            if cur:
+                snap["wifi"] = {k.replace("spairport_network_", "").replace("spairport_", ""): v
+                                for k, v in cur.items() if k != "_name"}
+                break
+    except (ValueError, KeyError, IndexError):
+        pass
+    try:
+        b = json.loads(_cmd(["system_profiler", "SPBluetoothDataType", "-json"]) or "{}")["SPBluetoothDataType"][0]
+        snap["bluetooth_connected"] = [list(x.keys())[0] for x in b.get("device_connected", [])]
+        snap["bluetooth_state"] = b.get("controller_properties", {}).get("controller_state")
+    except (ValueError, KeyError, IndexError):
+        pass
+    awdl = _cmd(["ifconfig", "awdl0"])
+    snap["awdl"] = "active" if "status: active" in awdl else ("inactive" if awdl else "none")
+    return snap
 
 
 class _Receiver:
@@ -206,6 +244,20 @@ def decode_with_opencv(path: Path) -> dict:
 
 def verdict(summary: dict) -> list[str]:
     a, out = summary.get("stream", {}), []
+    link = summary.get("link_after") or summary.get("link_before") or {}
+    if a.get("packets") and a.get("kbytes_per_s", 0) < HEALTHY_KB_S:
+        out.append(f"Only {a['kbytes_per_s']} KB/s of video arrived ({a.get('packets_per_s')} packets/s); a Tello streaming "
+                   f"normally sends well over {HEALTHY_KB_S} KB/s. The radio link is starving the stream: most frames "
+                   "never arrive, so what decodes is smeared. This is the link, not the decoder.")
+        wifi = link.get("wifi", {})
+        if wifi:
+            out.append(f"Mac's link to the drone: {wifi.get('phymode')} on channel {wifi.get('channel')}, rate "
+                       f"{wifi.get('rate')} Mbps, MCS {wifi.get('mcs')}, signal/noise {wifi.get('signal_noise')}.")
+        if link.get("bluetooth_connected"):
+            out.append(f"Bluetooth devices connected: {', '.join(link['bluetooth_connected'])}. They share the 2.4 GHz "
+                       "radio with the Tello's Wi-Fi: disconnect them (or turn Bluetooth off) for the flight.")
+        if link.get("awdl") == "active":
+            out.append("AWDL (AirDrop/Handoff) is active: sudo ifconfig awdl0 down.")
     if not a.get("packets"):
         return ["NO VIDEO PACKETS arrived: the drone never streamed to this laptop (streamon replies: "
                 f"{summary.get('streamon_replies')}). Power-cycle the drone and rejoin its Wi-Fi."]
@@ -251,7 +303,10 @@ def run(args) -> int:
         except UnicodeDecodeError:
             return "binary:" + data[:16].hex()
 
-    summary: dict = {"stamp": stamp, "host": args.host, "platform": sys.platform, "rcvbuf_bytes": video.rcvbuf}
+    if sys.platform == "darwin":
+        print("reading the Wi-Fi link (about 20 s) ...")
+    summary: dict = {"stamp": stamp, "host": args.host, "platform": sys.platform, "rcvbuf_bytes": video.rcvbuf,
+                     "link_before": link_snapshot()}
     try:
         summary["command_reply"] = send("command")
         print(f"command -> {summary['command_reply']}")
@@ -272,6 +327,9 @@ def run(args) -> int:
         print(f"streamon -> {replies}; recording {args.seconds:g} s ...")
         time.sleep(args.seconds)
         summary["streamoff_reply"] = send("streamoff")
+        if sys.platform == "darwin":
+            print("reading the Wi-Fi link (about 20 s) ...")
+            summary["link_after"] = link_snapshot()
     finally:
         video.close()
         cmd.close()
@@ -293,7 +351,8 @@ def run(args) -> int:
                              "opencv_file": decode_with_opencv(raw)}
     summary["verdict"] = verdict(summary)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str) + "\n")
-    print(json.dumps({k: summary[k] for k in ("stream", "decode") if k in summary}, indent=1, default=str))
+    print(json.dumps({k: summary[k] for k in ("link_before", "link_after", "stream", "decode") if k in summary},
+                     indent=1, default=str))
     print("\n".join(["", "VERDICT:"] + [f"- {v}" for v in summary["verdict"]]))
     print(f"\nsaved -> {out}  (send this folder to whoever debugs the video)")
     return 0
