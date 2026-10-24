@@ -35,10 +35,11 @@ const walkerIcon = (heading: number | undefined) => L.divIcon({
   className: 'walker-icon',
   iconSize: [44, 44],
   iconAnchor: [22, 22],
-  html: `<svg viewBox="-22 -22 44 44" width="44" height="44" style="transform: rotate(${heading ?? 0}deg)" aria-hidden="true">
+  // An SVG transform attribute, not a style="" attribute: the production CSP (vite.config.ts) blocks inline styles.
+  html: `<svg viewBox="-22 -22 44 44" width="44" height="44" aria-hidden="true"><g transform="rotate(${heading ?? 0})">
     <circle r="11" fill="#facc15" stroke="#0e1116" stroke-width="3"/>
     ${heading == null ? '' : '<path d="M0 -21 L8 -10 L-8 -10 Z" fill="#facc15" stroke="#0e1116" stroke-width="2"/>'}
-  </svg>`,
+  </g></svg>`,
 });
 
 const beaconIcon = L.divIcon({
