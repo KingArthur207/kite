@@ -207,11 +207,12 @@ def preview_loop(ui, done, scale):
     if stream is None:
         return
     win = "Tello live  -  q closes preview, Ctrl+C in terminal lands"
-    cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     last = -1
-    has_stats = hasattr(stream, "stats")
-    prev, prev_t, last_print, counters = (stream.stats() if has_stats else {}), time.monotonic(), 0.0, ""
+    stats0 = stream.stats() if hasattr(stream, "stats") else {}
+    has_stats = "datagrams" in stats0  # the raw reader's counters (format_rates reads its keys)
+    prev, prev_t, last_print, counters = stats0, time.monotonic(), 0.0, ""
     try:
+        cv2.namedWindow(win, cv2.WINDOW_NORMAL)  # in the try: a HighGUI error closes the preview, never the flight
         while not done.is_set():
             now = time.monotonic()
             if has_stats and now - prev_t >= 1.0:  # the reader's own counters, once a second
