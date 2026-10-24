@@ -3,20 +3,25 @@
 //   mode=kite    walker reacts ONLY to what the earpiece says/does (ws://127.0.0.1:5011), real time
 //   mode=oracle  UPPER BOUND, reacts to ground-truth obstacles 5 m ahead. Never report it as Kite.
 // Params: trials (20), seed (1), speed (sim seconds per real second, blind/oracle only, 300).
+// Runs on the Moss world's demo route with the street emptied; building faces and curbs still block.
 import * as THREE from "three";
 import { WALKER_RADIUS, WALK_SPEED, EARPIECE_URL } from "./config";
+import { route } from "./osmWorld";
+import { Path, mossPaths, carBoxes, type Pose } from "./mossActors";
+import { loadCar, loadPerson } from "./actors";
 
 const REACTION_S = 0.7;     // human reaction time before stopping
 const CLEAR_S = 1.5;        // all-clear time before walking on
-const STUCK_S = 5;          // waiting this long on a static thing = feel around it (cane)
+const STUCK_S = 8;          // waiting this long = a static thing: feel around it (cane). A passing car clears sooner
 const BLOCKED_S = 1;        // pressed against something this long = feel around it
-const SIDE_M = 1.5;         // sidestep width
 const SIDE_LEN = 7;         // meters walked on the sidestep line before rejoining
 const IGNORE_LEN = 3;       // meters after a sidestep where cues are ignored (else static things hold forever)
 const NEAR_MISS_M = 0.5;
 const TRIAL_MAX_S = 150;
 const DT = 0.02;            // fixed step for accelerated modes
-const ORACLE_AHEAD = 5, ORACLE_HALF_W = 0.6, ORACLE_LOOKAHEAD_S = [0, 0.5, 1, 1.5];
+const ORACLE_AHEAD = 5, ORACLE_HALF_W = 0.6, ORACLE_LOOKAHEAD_S = [0, 0.5, 1, 1.5, 2, 2.5, 3];
+// The turning car: speed, seconds from its trigger to the zebra (+- jitter), seconds it drives on after.
+const CAR = { v: 6, lead: 8, jitter: 1.2, after: 10, length: 4.6, width: 1.9, height: 1.5 };
 
 type Mode = "blind" | "kite" | "oracle";
 const LABEL: Record<Mode, string> = {
@@ -25,18 +30,20 @@ const LABEL: Record<Mode, string> = {
   oracle: "ORACLE: upper bound from ground truth, NOT Kite",
 };
 
-// Route in (x east, n north): up the sidewalk, over the crosswalk, around the corner west.
-const ROUTE = [{ x: 0, n: 2 }, { x: 0, n: 41.5 }, { x: -10, n: 41.5 }];
-const SIDE_DIR = [{ x: -1, n: 0 }, { x: 0, n: 1 }];   // per leg: sidestep away from the road
-const LEGS = ROUTE.slice(1).map((b, i) => Math.hypot(b.x - ROUTE[i].x, b.n - ROUTE[i].n));
-const ROUTE_LEN = LEGS.reduce((a, b) => a + b, 0);
+// The Moss demo route: NW up Moss's NE sidewalk, left across the zebra, SW along Howard.
+// Sidestep per leg (sign +1 = left of the walking direction) and how far: Moss's NE sidewalk
+// has about 1 m spare toward the buildings, the zebra and Howard's sidewalk about 1.5 m.
+// ponytail: hand-picked from this route's wall clearances; recheck if the route changes
+const ROUTE = new Path(route);
+const SIDE = [{ sign: -1, m: 1.0 }, { sign: -1, m: 1.5 }, { sign: 1, m: 1.5 }];
+const ROUTE_LEN = ROUTE.len;
 
 function routeAt(s: number) {
-  let i = 0;
-  while (i < LEGS.length - 1 && s > LEGS[i]) s -= LEGS[i++];
-  const a = ROUTE[i], b = ROUTE[i + 1], u = Math.min(1, s / LEGS[i]);
-  const dx = (b.x - a.x) / LEGS[i], dn = (b.n - a.n) / LEGS[i];
-  return { x: a.x + (b.x - a.x) * u, n: a.n + (b.n - a.n) * u, dx, dn, side: SIDE_DIR[i] };
+  const p = ROUTE.at(s);
+  let leg = 0;
+  while (leg < SIDE.length - 1 && s > ROUTE.s[leg + 1]) leg++;
+  const { sign, m } = SIDE[leg];
+  return { ...p, side: { x: -p.dn * sign * m, n: p.dx * sign * m }, left: { x: -p.dn, n: p.dx } };
 }
 
 function mulberry32(a: number) {
@@ -59,16 +66,17 @@ function clearance(x: number, n: number, b: THREE.Box3) {
   return Math.hypot(dx, dz) - WALKER_RADIUS;
 }
 
-// A scripted obstacle: waits at start, starts moving when the walker's route progress hits `trigger`.
+// A scripted obstacle: waits at its start, starts moving when the walker's route progress hits
+// `trigger`, moves for `dur` seconds. `at(k)` is its pose after k seconds of moving.
 interface Obs {
-  name: string; mesh: THREE.Mesh; x0: number; n0: number; vx: number; vn: number;
+  name: string; obj: THREE.Group; y: number; at: (k: number) => Pose; half: number; car: boolean;
   dur: number; trigger: number; t: number; minClear: number; hit: boolean;
 }
 
 export function startMetrics(ctx: {
   walker: { x: number; n: number; heading: number };
   scene: THREE.Scene;
-  solids: () => THREE.Box3[];
+  walls: (x: number, n: number, r: number) => object[];
 }) {
   const q = new URLSearchParams(location.search);
   if (q.get("metrics") !== "1") return null;
@@ -76,56 +84,77 @@ export function startMetrics(ctx: {
   const trials = Math.max(1, Number(q.get("trials")) || 20);
   const seed = Number(q.get("seed")) || 1;
   const speed = mode === "kite" ? 1 : Math.max(1, Number(q.get("speed")) || 300);
-  const { walker, scene } = ctx;
+  const { walker, scene, walls } = ctx;
 
-  // Freeze the ambient world: hide its low movers/props (cars, people, bin), keep buildings as walls.
-  // ponytail: height heuristic on the placeholder world; the splat gets an explicit collision layer.
-  const walls = ctx.solids().filter((b) => b.max.y > 3);
-  scene.traverse((o) => {
-    if (!(o instanceof THREE.Mesh)) return;
-    const b = new THREE.Box3().setFromObject(o);
-    if (b.max.y > 0.5 && b.max.y < 3) o.visible = false;
-  });
-
-  const mk = (geo: THREE.BufferGeometry, color: number, y: number) => {
+  // Visuals only (collision comes from each obstacle's pose): boxes at first, glTF car and people
+  // swapped in once loaded, so the detector in kite mode sees what it would see on the street.
+  const group = (geo: THREE.BufferGeometry, color: number, y: number) => {
+    const g = new THREE.Group();
     const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color }));
     m.position.y = y;
-    scene.add(m);
-    return m;
+    g.add(m);
+    scene.add(g);
+    return g;
   };
-  const meshes = {
-    pedA: mk(new THREE.CapsuleGeometry(0.25, 1.2, 4, 8), 0x7a3e9d, 0.85),
-    bin: mk(new THREE.BoxGeometry(0.6, 1.0, 0.6), 0x2e5e3a, 0.5),
-    head: mk(new THREE.BoxGeometry(1.2, 0.4, 0.3), 0x8b5a2b, 1.65),   // overhanging sign: above cane height
-    car: mk(new THREE.BoxGeometry(4.4, 1.5, 1.8), 0xb22222, 0.75),
-    pedB: mk(new THREE.CapsuleGeometry(0.25, 1.2, 4, 8), 0x3e7a5d, 0.85),
+  const objs = {
+    pedA: group(new THREE.CapsuleGeometry(0.25, 1.2, 4, 8), 0x7a3e9d, 0.85),
+    bin: group(new THREE.BoxGeometry(0.5, 1.0, 0.5), 0x2e5e3a, 0.5),
+    head: group(new THREE.BoxGeometry(1.0, 0.4, 0.3), 0x8b5a2b, 0.2),     // overhanging sign: above cane height
+    car: group(new THREE.BoxGeometry(CAR.width, CAR.height, CAR.length), 0xb22222, CAR.height / 2),
+    pedB: group(new THREE.CapsuleGeometry(0.25, 1.2, 4, 8), 0x3e7a5d, 0.85),
   };
+  const mixers: Partial<Record<keyof typeof objs, THREE.AnimationMixer>> = {};
+  const swap = (g: THREE.Group, obj: THREE.Object3D) => { g.clear(); g.add(obj); };
+  loadCar("sedan").then(({ obj }) => swap(objs.car, obj)).catch((e) => console.error("[metrics] car", e));
+  for (const [k, model] of [["pedA", "man"], ["pedB", "woman"]] as const) {
+    loadPerson(model, false).then(({ obj, mixer }) => { swap(objs[k], obj); mixers[k] = mixer; })
+      .catch((e) => console.error(`[metrics] ${model}`, e));
+  }
+
+  // The car turns in from Howard's left lane and drives through the zebra without yielding.
+  const { turn, zebra } = mossPaths();
+  const carAtZebra = turn.nearest(zebra.x, zebra.y).s;
+  const walkerAtZebra = ROUTE.nearest(zebra.x, zebra.y).s;
 
   // Seeded per trial. Movers are triggered so they arrive near the walker's arrival, +- jitter.
   function makeObstacles(trial: number): Obs[] {
     const r = mulberry32(seed * 1000 + trial);
-    const o = (name: keyof typeof meshes, x0: number, n0: number, vx: number, vn: number, dur: number, trigger: number): Obs =>
-      ({ name, mesh: meshes[name], x0, n0, vx, vn, dur, trigger, t: 0, minClear: Infinity, hit: false });
-    const nA = 6 + 2 * r(), nB = 15 + 2 * r(), nH = 22 + 2 * r(), xP = -(4 + 2 * r());
+    const jit = (w: number) => (r() * 2 - 1) * w;
     const lead = (sAt: number, secs: number) => sAt - WALK_SPEED * secs;   // trigger point in route meters
-    const carT = 6.67 + (r() * 2 - 1) * 1.2;                               // seconds for car to reach x=0
-    const pedBs = 41.5 - 2 + -xP;                                           // route s where walker meets pedB
+    const still = (s: number): Pose => { const p = routeAt(s); return { x: p.x, n: p.n, dx: p.dx, dn: p.dn }; };
+    // Someone crossing the walker's line from `from` m left of it to `to` m right, at v m/s.
+    const crosser = (s: number, from: number, v: number) => {
+      const p = routeAt(s);
+      return (k: number): Pose => {
+        const off = from - v * k;
+        return { x: p.x + p.left.x * off, n: p.n + p.left.n * off, dx: -p.left.x, dn: -p.left.n };
+      };
+    };
+    const o = (name: keyof typeof objs, at: (k: number) => Pose, dur: number, trigger: number, half = 0.25, y = 0): Obs =>
+      ({ name, obj: objs[name], y, at, half, car: name === "car", dur, trigger, t: 0, minClear: Infinity, hit: false });
+    const sA = 17 + 2 * r(), sBin = 44 + 2 * r(), sHead = 56 + 2 * r(), sB = 86 + 2 * r();
+    const car0 = carAtZebra - CAR.v * (CAR.lead + jit(CAR.jitter));
     return [
-      o("pedA", 3, nA, -1, 0, 6, lead(nA - 2, 3 + (r() * 2 - 1) * 0.7)),
-      o("bin", 0, nB, 0, 0, 0, -1),
-      o("head", 0, nH, 0, 0, 0, -1),
-      o("car", -8 * carT, 35, 8, 0, 15, 25),
-      o("pedB", xP, 43.8, 0, -0.9, 4.8, lead(pedBs, 2.56 + (r() * 2 - 1) * 0.7)),
+      // From Moss's far (SW) sidewalk across the road and the walker's line, to a doorway 1.5 m past it.
+      o("pedA", crosser(sA, 8.1, 1.3), 9.6 / 1.3, lead(sA - 2, 8.1 / 1.3 + jit(0.7))),
+      o("bin", () => still(sBin), 0, -1),
+      o("head", () => still(sHead), 0, -1, 0.3, 1.45),
+      o("car", (k) => turn.at(car0 + CAR.v * k), CAR.lead + CAR.jitter + CAR.after, lead(walkerAtZebra, CAR.lead)),
+      // Out of a doorway on Howard's south side, across the walker's line toward the curb.
+      o("pedB", crosser(sB, 1.6, 0.9), 3.2 / 0.9, lead(sB - 2, 1.6 / 0.9 + jit(0.7))),
     ];
   }
-  const pos = (o: Obs, t = o.t) => {
-    const k = Math.min(t, o.dur);
-    return { x: o.x0 + o.vx * k, n: o.n0 + o.vn * k };
+  const poseOf = (o: Obs, dt = 0) => o.at(Math.min(o.t + dt, o.dur));
+  const boxesOf = (o: Obs, dt = 0): THREE.Box3[] => {
+    const p = poseOf(o, dt);
+    if (o.car) return carBoxes(p, CAR.length, CAR.width, CAR.height);
+    const z = -p.n;
+    return [new THREE.Box3(new THREE.Vector3(p.x - o.half, o.y, z - o.half), new THREE.Vector3(p.x + o.half, o.y + (o.y ? 0.4 : 1.8), z + o.half))];
   };
-  const boxOf = (o: Obs, dt = 0) => {
-    const p = pos(o, o.t + dt);
-    o.mesh.position.set(p.x, o.mesh.position.y, -p.n);
-    return new THREE.Box3().setFromObject(o.mesh);
+  const place = (o: Obs) => {
+    const p = poseOf(o);
+    o.obj.position.set(p.x, o.y, -p.n);
+    o.obj.rotation.y = Math.atan2(p.dx, -p.dn);
   };
 
   // --- kite: listen to the earpiece. Alarm = spoken critical/hazard, a critical sonar track,
@@ -157,13 +186,14 @@ export function startMetrics(ctx: {
   const results: any[] = [];
   let trial = 0, obs: Obs[] = [], t = 0, s = 0, side = 0, sideTarget = 0, sideUntil = 0, ignoreUntil = 0;
   let stopped = false, stopAt = Infinity, lastAlarm = -1e9, waited = 0, blockedFor = 0;
-  let touching = new Set<string>(), collisions = 0, done = false;
+  let touching = new Set<object>(), collisions = 0, done = false;
 
   function reset() {
     obs = makeObstacles(trial);
     t = 0; s = 0; side = 0; sideTarget = 0; sideUntil = 0; ignoreUntil = 0;
     stopped = false; stopAt = Infinity; lastAlarm = -1e9; waited = 0; blockedFor = 0;
     touching = new Set(); collisions = 0;
+    obs.forEach(place);
     placeWalker();
   }
   function placeWalker() {
@@ -172,36 +202,38 @@ export function startMetrics(ctx: {
     walker.n = p.n + p.side.n * side;
     walker.heading = ((Math.atan2(p.dx, p.dn) * 180) / Math.PI + 360) % 360;
   }
+  // Everything the walker can touch at (x, n): obstacle boxes (tagged with their obstacle) and walls.
+  function touches(x: number, n: number, ob: { o: Obs; b: THREE.Box3 }[], r: number) {
+    const inBoxes = hits(x, n, ob.map((e) => e.b), r);
+    return [...ob.filter((e) => inBoxes.includes(e.b)), ...walls(x, n, r)];
+  }
 
-  function oracleAlarm(boxes: { o: Obs; b: THREE.Box3 }[]) {
+  function oracleAlarm() {
     const p = routeAt(s);
-    let alarm = false;
-    for (const { o } of boxes) for (const dt of ORACLE_LOOKAHEAD_S) {
-      if (alarm) break;
-      const b = boxOf(o, dt);
+    for (const o of obs) for (const dt of ORACLE_LOOKAHEAD_S) for (const b of boxesOf(o, dt)) {
       // corners of the box in walker frame (along, lateral)
-      const xs = [b.min.x, b.max.x], ns = [-b.min.z, -b.max.z];
       let aMin = Infinity, aMax = -Infinity, lMin = Infinity, lMax = -Infinity;
-      for (const x of xs) for (const n of ns) {
+      for (const x of [b.min.x, b.max.x]) for (const n of [-b.min.z, -b.max.z]) {
         const ex = x - walker.x, en = n - walker.n;
         const a = ex * p.dx + en * p.dn, l = ex * p.dn - en * p.dx;
         aMin = Math.min(aMin, a); aMax = Math.max(aMax, a); lMin = Math.min(lMin, l); lMax = Math.max(lMax, l);
       }
-      alarm = aMax > 0 && aMin < ORACLE_AHEAD && lMax > -ORACLE_HALF_W && lMin < ORACLE_HALF_W;
+      if (aMax > 0 && aMin < ORACLE_AHEAD && lMax > -ORACLE_HALF_W && lMin < ORACLE_HALF_W) return true;
     }
-    for (const { o } of boxes) boxOf(o);   // put meshes back at the present
-    return alarm;
+    return false;
   }
 
   function stepOnce(dt: number) {
     t += dt;
-    for (const o of obs) if (s >= o.trigger && o.dur > 0) o.t += dt;
-    const ob = obs.map((o) => ({ o, b: boxOf(o) }));
-    const boxes = [...walls, ...ob.map((x) => x.b)];
+    for (const o of obs) if (s >= o.trigger && o.dur > 0 && o.t < o.dur) {
+      o.t += dt;
+      mixers[o.name as keyof typeof objs]?.update(dt);
+    }
+    const ob = obs.flatMap((o) => boxesOf(o).map((b) => ({ o, b })));
 
     // Reaction: any alarm starts a stop after REACTION_S; walk on after CLEAR_S of quiet.
     if (mode !== "blind" && s >= ignoreUntil) {
-      const alarm = mode === "oracle" ? oracleAlarm(ob) : performance.now() / 1000 - kiteAlarmAt < 0.3;
+      const alarm = mode === "oracle" ? oracleAlarm() : performance.now() / 1000 - kiteAlarmAt < 0.3;
       if (alarm) { lastAlarm = t; if (!stopped && stopAt === Infinity) stopAt = t + REACTION_S; }
     }
     if (!stopped && t >= stopAt) { stopped = true; waited = 0; }
@@ -212,14 +244,20 @@ export function startMetrics(ctx: {
     }
 
     if (!stopped) {
-      const here = hits(walker.x, walker.n, boxes);
+      const here = touches(walker.x, walker.n, ob, WALKER_RADIUS);
       const lateral = side !== sideTarget;
       const ns = lateral ? s : Math.min(ROUTE_LEN, s + WALK_SPEED * dt);
-      const nside = lateral ? side + Math.sign(sideTarget - side) * Math.min(Math.abs(sideTarget - side), WALK_SPEED * dt) : side;
+      const legSide = routeAt(s).side, step = (WALK_SPEED * dt) / Math.hypot(legSide.x, legSide.n);   // side is 0..1 of the leg's sidestep
+      const nside = lateral ? side + Math.sign(sideTarget - side) * Math.min(Math.abs(sideTarget - side), step) : side;
       const p = routeAt(ns);
       const nx = p.x + p.side.x * nside, nn = p.n + p.side.n * nside;
-      const blocked = hits(nx, nn, boxes).some((b) => !here.includes(b));
-      if (blocked) {
+      // Block only on things we aren't already touching, so a car that drove into us can't pin us.
+      const key = (e: object) => ("o" in e && "b" in e ? (e as { o: Obs }).o : e);
+      const hereKeys = new Set(here.map(key));
+      const blocked = touches(nx, nn, ob, WALKER_RADIUS).some((e) => !hereKeys.has(key(e)));
+      if (blocked && lateral) {
+        sideTarget = side;   // the sidestep ran into something (a wall, a curb): stop there and walk on
+      } else if (blocked) {
         blockedFor += dt;
         if (blockedFor > BLOCKED_S) sidestep();
       } else {
@@ -228,16 +266,20 @@ export function startMetrics(ctx: {
       }
       placeWalker();
     }
+    obs.forEach(place);
 
-    // Collisions: new contact onsets (10 cm margin, as in main.ts), per box. Near-miss per obstacle.
-    const now = new Set<string>();
-    const contacts = hits(walker.x, walker.n, boxes, WALKER_RADIUS + 0.1);
-    for (const b of contacts) {
-      const i = boxes.indexOf(b);
-      const id = i < walls.length ? `wall${i}` : ob[i - walls.length].o.name;
-      now.add(id);
-      if (!touching.has(id)) collisions++;
-      if (i >= walls.length) ob[i - walls.length].o.hit = true;
+    // Collisions (10 cm margin, as in main.ts): each obstacle counts once per walk, since a car's
+    // box chain flickers in and out of contact; walls count each new contact. Near-miss per obstacle.
+    const now = new Set<object>();
+    for (const e of touches(walker.x, walker.n, ob, WALKER_RADIUS + 0.1)) {
+      if ("o" in e && "b" in e) {
+        const o = (e as { o: Obs }).o;
+        if (!o.hit) collisions++;
+        o.hit = true;
+        continue;
+      }
+      now.add(e);
+      if (!touching.has(e)) collisions++;
     }
     touching = now;
     for (const { o, b } of ob) o.minClear = Math.min(o.minClear, clearance(walker.x, walker.n, b));
@@ -247,7 +289,7 @@ export function startMetrics(ctx: {
 
   function sidestep() {
     stopped = false; stopAt = Infinity; blockedFor = 0; waited = 0;
-    sideTarget = SIDE_M; sideUntil = s + SIDE_LEN; ignoreUntil = s + IGNORE_LEN;
+    sideTarget = 1; sideUntil = s + SIDE_LEN; ignoreUntil = s + IGNORE_LEN;
   }
 
   function finishTrial(completed: boolean) {
