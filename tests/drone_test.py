@@ -508,7 +508,7 @@ def quiet_ffmpeg() -> None:
     try:
         import av.logging
 
-        av.logging.set_level(av.logging.PANIC)  # PyAV's FFmpeg (pyav, raw and socket readers)
+        av.logging.set_level(av.logging.PANIC)  # PyAV's FFmpeg (pyav and raw readers)
     except Exception:
         pass
 
@@ -655,8 +655,8 @@ def build_parser():
     p.add_argument("--video-fps", type=int, default=60, help="decode cap in fps; frames arriving faster are dropped, not "
                    "queued (default 60: it must sit above the ~30 fps stream, a cap of 30 drops ~40 %% of frames to jitter)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="video reader: pyav (default), opencv, or kite's own UDP readers raw (bare H.264 decoder), "
-                        "socket (big receive buffer) and auto = raw on macOS, pyav elsewhere")
+                   help="video reader: pyav (default), opencv, raw (kite's own UDP reader) or auto (raw on macOS, "
+                        "pyav elsewhere)")
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
     p.add_argument("--simple", action="store_true", help="short flight: one + and one - step per axis, no forward/back "
                    "moves (same as --trials 1 --forward 0, about 45 s in the air)")

@@ -144,10 +144,10 @@ def test_streamon_is_resent_until_video_packets_arrive(fast_video_check):
     d.close()
 
 
-def test_no_video_packets_gives_the_phone_app_diagnosis(fast_video_check):
+def test_no_video_packets_gives_the_no_video_diagnosis(fast_video_check):
     fake = StreamingFakeTello(free_udp_port(), stream_on_nth=None)
     d = TelloDrone(tello=fake, dry_run=True)
-    with pytest.raises(RuntimeError, match="phone app"):
+    with pytest.raises(RuntimeError, match="sends no video"):
         d.connect()
     assert fake.streamons == tello_mod.STREAMON_TRIES
     d.close()

@@ -252,7 +252,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pulse", type=float, default=0.6, help="seconds a key press drives its stick; holding the key "
                    "keeps it going (default 0.6)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="video reader: pyav (default), opencv, raw, socket, auto")
+                   help="video reader: pyav (default), opencv, raw, auto (raw on macOS)")
     p.add_argument("--min-battery", type=int, default=20, help="refuse to start below this battery %% (default 20)")
     return p
 

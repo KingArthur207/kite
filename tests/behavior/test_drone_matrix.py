@@ -530,12 +530,12 @@ def test_video_port_is_parsed_from_djitellopy_address(clock, video):
     assert video.calls[0][0] == 22222 and d.frame_source().url == "udp://@0.0.0.0:22222"
 
 
-def test_video_never_arriving_raises_the_phone_app_diagnosis_after_all_tries(clock, video):
+def test_video_never_arriving_raises_the_no_video_diagnosis_after_all_tries(clock, video):
     video.arrivals = [False] * STREAMON_TRIES
     d, fake = make(clock, dry_run=True, connect=False, video=True)
     with pytest.raises(RuntimeError) as e:
         d.connect()
-    assert str(e.value) == NO_VIDEO.format(port=11111) and "phone app" in str(e.value)
+    assert str(e.value) == NO_VIDEO.format(port=11111) and "firewall" in str(e.value)
     assert fake.streamons == STREAMON_TRIES and not RecordingSource.instances
     with pytest.raises(RuntimeError, match="video not started"):
         d.frame_source()
@@ -597,7 +597,7 @@ def test_video_packets_arrive_oserror_when_the_port_is_held():
 CLOSE_STATES = ["ground", "taking_off", "flying", "moving", "landing", "landed", "after_emergency"]
 # state -> (live: 'land' sent by close, djitellopy is_flying after close)
 CLOSE_LIVE = {"ground": (False, False), "taking_off": (True, True), "flying": (True, True), "moving": (True, True),
-              "landing": (True, True), "landed": (False, False), "after_emergency": (False, True)}
+              "landing": (True, True), "landed": (False, False), "after_emergency": (False, False)}
 
 
 @pytest.mark.parametrize("dry_run", [False, True], ids=["live", "dry_run"])
@@ -1097,12 +1097,12 @@ def test_dry_run_emergency_succeeds_even_with_wifi_down(clock):
     assert d.emergency() is True and not d.flying and d.link_error is None
 
 
-def test_emergency_leaves_djitellopy_armed(clock):
-    # pinned: emergency() does not clear djitellopy's is_flying, so close()->end() will also send djitellopy's land()
+def test_emergency_disarms_djitellopy(clock):
+    # like djitellopy's own emergency(): is_flying is cleared, so close()->end() never sends 'land' to a fallen drone
     d, fake = make(clock)
     fly(d, fake, clock)
     d.emergency()
-    assert fake.is_flying is True
+    assert fake.is_flying is False
 
 
 # ====================================================================== TelloDrone: rc()

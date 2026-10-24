@@ -1,5 +1,10 @@
-"""DJI Tello adapter (djitellopy for commands + state, kite's TelloVideoSource for video: video_backend picks the reader,
-default pyav; kite's own UDP readers raw / socket / auto (raw on macOS) are opt-in, see kite.config.resolve_video_backend).
+"""DJI Tello adapter: djitellopy for commands + state, TelloVideoSource for video (DroneCfg.video_backend picks the
+reader: pyav by default, opencv, or kite's raw UDP reader; "auto" = raw on macOS).
+
+jerkgt13's reachglass/drone/tello.py (github.com/nathanwuzhao/jerkgt13). kite's changes, each from a failure found
+in tests or on the drone: Wi-Fi drops never raise (link_error), emergency() reports a packet it could not send,
+close() lands a takeoff still in progress, set_speed() changes nothing while busy, intervals use time.monotonic(),
+and the drone's address is a setting (host).
 
 Discrete commands are NON-BLOCKING: the command is sent, and busy() polls djitellopy's reply list
 (filled by its UDP receiver thread) with a per-command timeout. After stop() the late reply of the
@@ -32,11 +37,10 @@ log = logging.getLogger("kite.tello")
 MIN_GAP_S = 0.1  # the Tello drops commands sent closer together than this (djitellopy's TIME_BTW_COMMANDS)
 STOP_SETTLE_S = 1.0  # after 'stop', replies within this window belong to the stop / the cancelled command
 STREAMON_TRIES, VIDEO_WAIT_S = 4, 3.0  # streamon is re-sent until video packets arrive
-NO_VIDEO = ("the Tello answers commands but sends no video to UDP {port}. Close the Tello phone app and take the "
-            "phone off the drone's Wi-Fi (while the app is connected the drone streams to the phone), then restart "
-            "the drone. On Windows also allow Python through the firewall (inbound UDP 8890 and {port}); on macOS "
-            "allow incoming connections for Python and give your terminal app Local Network access "
-            "(System Settings > Privacy & Security).")
+NO_VIDEO = ("the Tello answers commands but sends no video to UDP {port}. Make sure no other device or app is "
+            "connected to the drone's Wi-Fi, then restart the drone. Windows: allow Python through the firewall on "
+            "Private AND Public networks (inbound UDP 8890 and {port}). macOS: allow incoming connections for "
+            "Python and give the terminal app Local Network access (System Settings > Privacy & Security).")
 
 
 def video_packets_arrive(port: int, timeout_s: float) -> bool:
@@ -113,8 +117,9 @@ class TelloDrone(Drone):
                 if video_packets_arrive(port, VIDEO_WAIT_S):
                     break
             except OSError as e:
-                raise RuntimeError(f"UDP port {port} is held by another program ({e}): close other Tello scripts "
-                                   f"and tools (find it with: lsof -nP -iUDP:{port})") from None
+                raise RuntimeError(f"UDP port {port} is held by another program ({e}): close other Tello scripts and "
+                                   f"tools (find it with: lsof -nP -iUDP:{port} on macOS/Linux, "
+                                   f"netstat -ano -p udp | findstr {port} on Windows)") from None
             log.warning("no video packets yet (%d/%d), re-sending streamon", i + 1, STREAMON_TRIES)
         else:
             raise RuntimeError(NO_VIDEO.format(port=port))
