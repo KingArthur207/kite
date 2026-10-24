@@ -14,9 +14,6 @@ type Mode = 'idle' | LinkState;
 const C = {
   bg: '#000000',
   text: '#F2F2F7',
-  dot: '#FFFFFF',
-  dim: '#48484A',
-  footer: 'rgba(235, 235, 245, 0.4)',
 };
 
 const SPOKEN: Record<Mode, string> = {
@@ -109,8 +106,8 @@ export default function App() {
   }, [start, stop]);
 
   const active = mode !== 'idle';
-  const word = mode === 'idle' ? (stopped ? 'Stopped' : 'Tap to start') : WORD[mode];
-  const detail = active ? [acc != null && `±${Math.round(acc)} m`, `${sent} sent`].filter(Boolean).join('  ·  ') : '';
+  const word = mode === 'idle' ? (stopped ? 'Stopped' : 'Ready') : WORD[mode];
+  const sub = SUB[mode === 'idle' && stopped ? 'stopped' : mode];
   const spokenDetail = active ? [acc != null && `accuracy ${Math.round(acc)} metres`, `${sent} sent`].filter(Boolean).join(', ') : '';
 
   return (
@@ -118,50 +115,94 @@ export default function App() {
       style={styles.screen}
       onPress={() => (active ? stop() : start())}
       accessibilityRole="button"
-      accessibilityLabel={`Kite. ${active ? SPOKEN[mode] : `${word}.`}${spokenDetail ? ` ${spokenDetail}.` : ''}`}
+      accessibilityLabel={`Kite. ${active ? SPOKEN[mode] : `${word}. ${sub}`}${spokenDetail ? ` ${spokenDetail}.` : ''}`}
       accessibilityHint={active ? 'Double tap to stop.' : 'Double tap to start.'}
       accessibilityState={{ selected: active, busy: mode === 'searching' || mode === 'lost' }}
     >
       {({ pressed }) => (
         <>
           <StatusBar style="light" />
+          <Text style={styles.brand} maxFontSizeMultiplier={1.3}>
+            Kite
+          </Text>
           <View style={[styles.middle, pressed && styles.pressed]}>
-            <Dot mode={mode} />
-            <Text style={styles.word} maxFontSizeMultiplier={1.5}>
+            <Beacon mode={mode} />
+            <Text style={styles.word} maxFontSizeMultiplier={1.4}>
               {word}
             </Text>
+            <Text style={styles.sub} maxFontSizeMultiplier={1.4}>
+              {sub}
+            </Text>
           </View>
-          <Text style={styles.footer} maxFontSizeMultiplier={1.4}>
-            {detail}
-          </Text>
+          <View style={[styles.card, !active && styles.cardOff]}>
+            <Stat value={active && acc != null ? `±${Math.round(acc)} m` : '—'} label="Accuracy" />
+            <View style={styles.divider} />
+            <Stat value={active ? String(sent) : '—'} label="Sent" />
+          </View>
         </>
       )}
     </Pressable>
   );
 }
 
-// Idle: a dim dot. Searching: the white dot breathes. Connected: solid and still. Lost: a hollow ring.
-function Dot({ mode }: { mode: Mode }) {
-  const breath = useRef(new Animated.Value(1)).current;
+const SUB: Record<Mode | 'stopped', string> = {
+  idle: 'Tap anywhere to begin',
+  stopped: 'Tap anywhere to start again',
+  searching: 'Looking for the Kite computer',
+  connected: 'Sending your location',
+  lost: 'Trying to reach Kite again',
+};
+
+const TINT: Record<Mode, string> = { idle: '#636366', searching: '#FFFFFF', connected: '#30D158', lost: '#FF9F0A' };
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.stat}>
+      <Text style={styles.statValue} maxFontSizeMultiplier={1.3}>
+        {value}
+      </Text>
+      <Text style={styles.statLabel} maxFontSizeMultiplier={1.3}>
+        {label.toUpperCase()}
+      </Text>
+    </View>
+  );
+}
+
+// A ring with a dot in it. Searching: ripples spread out from the dot. Connected: green, still, softly lit.
+// Lost: amber, pulsing slowly. Idle: grey.
+function Beacon({ mode }: { mode: Mode }) {
+  const t = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
-  const breathing = mode === 'searching' && !reduceMotion;
+  const moving = (mode === 'searching' || mode === 'lost') && !reduceMotion;
+  const tint = TINT[mode];
 
   useEffect(() => {
-    breath.setValue(1);
-    if (!breathing) return;
-    const half = { duration: 1000, easing: Easing.inOut(Easing.sin), useNativeDriver: true };
+    t.setValue(0);
+    if (!moving) return;
     const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(breath, { ...half, toValue: 0.25 }),
-        Animated.timing(breath, { ...half, toValue: 1 }),
-      ]),
+      Animated.timing(t, { toValue: 1, duration: mode === 'lost' ? 2400 : 1800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     );
     loop.start();
     return () => loop.stop();
-  }, [breathing, breath]);
+  }, [moving, mode, t]);
 
-  const look = mode === 'idle' ? styles.dim : mode === 'lost' ? styles.ring : styles.solid;
-  return <Animated.View style={[styles.dot, look, { opacity: breath }]} />;
+  const ripple = (delay: number) => {
+    const p = Animated.modulo(Animated.add(t, delay), 1);
+    return {
+      opacity: p.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] }),
+      transform: [{ scale: p.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }) }],
+    };
+  };
+
+  return (
+    <View style={styles.beacon}>
+      <View style={[styles.ring, { borderColor: mode === 'idle' ? '#2C2C2E' : `${tint}33` }]} />
+      {moving && <Animated.View style={[styles.ripple, { borderColor: tint }, ripple(0)]} />}
+      {moving && <Animated.View style={[styles.ripple, { borderColor: tint }, ripple(0.5)]} />}
+      {mode === 'connected' && <View style={[styles.glow, { backgroundColor: `${tint}26` }]} />}
+      <View style={[styles.core, { backgroundColor: tint }]} />
+    </View>
+  );
 }
 
 function useReduceMotion(): boolean {
@@ -174,16 +215,24 @@ function useReduceMotion(): boolean {
   return reduce;
 }
 
-const DOT = 14;
+const RING = 220;
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: C.bg, paddingBottom: 44 },
+  screen: { flex: 1, backgroundColor: C.bg, paddingTop: 64, paddingBottom: 40, paddingHorizontal: 24 },
+  brand: { color: C.text, fontSize: 20, fontWeight: '600', letterSpacing: -0.4 },
   middle: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pressed: { opacity: 0.6 },
-  dot: { width: DOT, height: DOT, borderRadius: DOT / 2, marginBottom: 36 },
-  solid: { backgroundColor: C.dot },
-  dim: { backgroundColor: C.dim },
-  ring: { borderWidth: 1.5, borderColor: C.dot },
-  word: { color: C.text, fontSize: 24, fontWeight: '500', letterSpacing: -0.3, textAlign: 'center' },
-  footer: { color: C.footer, fontSize: 13, textAlign: 'center', fontVariant: ['tabular-nums'], minHeight: 18 },
+  pressed: { opacity: 0.7 },
+  beacon: { width: RING, height: RING, alignItems: 'center', justifyContent: 'center', marginBottom: 48 },
+  ring: { position: 'absolute', width: RING, height: RING, borderRadius: RING / 2, borderWidth: 1 },
+  ripple: { position: 'absolute', width: RING, height: RING, borderRadius: RING / 2, borderWidth: 1.5 },
+  glow: { position: 'absolute', width: 120, height: 120, borderRadius: 60 },
+  core: { width: 32, height: 32, borderRadius: 16 },
+  word: { color: C.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.6, textAlign: 'center' },
+  sub: { color: 'rgba(235, 235, 245, 0.6)', fontSize: 17, marginTop: 8, textAlign: 'center' },
+  card: { flexDirection: 'row', backgroundColor: '#1C1C1E', borderRadius: 20, paddingVertical: 18 },
+  cardOff: { opacity: 0.5 },
+  stat: { flex: 1, alignItems: 'center' },
+  statValue: { color: C.text, fontSize: 22, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  statLabel: { color: 'rgba(235, 235, 245, 0.45)', fontSize: 12, fontWeight: '600', letterSpacing: 0.8, marginTop: 4 },
+  divider: { width: StyleSheet.hairlineWidth, backgroundColor: '#3A3A3C', marginVertical: 4 },
 });
