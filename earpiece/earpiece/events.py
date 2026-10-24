@@ -21,6 +21,8 @@ the wearer's frame (0 ahead, +90 right, -90 left); distances are metres.
     position   {"type":"position","lat":37.80,"lng":-122.45,"heading":270,"place":"Lyon St"}
     status     {"type":"status","source":"drone","battery":34,"state":"following"}
     heartbeat  {"type":"heartbeat","source":"webcam"}
+    scene_image  a camera frame for Claude to describe (WebSocket only: too big for UDP)
+               {"type":"scene_image","camera":"drone","jpeg":"<base64 JPEG, <= 180 KB>"}
     memory     a place / hazard / note for Kite to remember (caregiver dashboard, teammates)
                {"type":"memory","kind":"place","text":"Blue Bottle Coffee on Chestnut","lat":37.8,"lng":-122.44}
     control    {"type":"control","action":"mute_cues"|"unmute_cues"|"pause"|"resume"
@@ -215,6 +217,21 @@ def parse(raw: bytes | str | dict) -> Msg:
         return Msg("status", src, seq, text=_text(d), data=data)
     if t == "heartbeat":
         return Msg("heartbeat", src, seq)
+    if t == "scene_image":
+        b64 = d.get("jpeg")
+        if not isinstance(b64, str) or len(b64) > 250_000:
+            raise BadMessage("jpeg must be a base64 string under ~180 KB")
+        import base64
+        import binascii
+        try:
+            jpeg = base64.b64decode(b64, validate=True)
+        except (binascii.Error, ValueError) as e:
+            raise BadMessage("jpeg is not valid base64") from e
+        if not jpeg.startswith(b"\xff\xd8"):
+            raise BadMessage("not a JPEG")
+        cam = _ident(d.get("camera"), "drone").lower()
+        return Msg("scene_image", src, seq, kind=cam if cam in ("drone", "chest", "sim") else "drone",
+                   data={"jpeg": jpeg})
     if t == "memory":
         kind = str(d.get("kind", "note")).lower()
         if kind not in ("place", "hazard", "note"):

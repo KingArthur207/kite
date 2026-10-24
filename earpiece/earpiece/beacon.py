@@ -25,8 +25,11 @@ from .config import BeaconCfg
 from .mixer import Engine
 
 
-@lru_cache(maxsize=512)
-def _beacon_sound(region: str, bearing_q: int, rate: int) -> np.ndarray:
+REGIONS = ("on", "near", "side", "behind")      # ordered by |bearing|
+_WARM: dict[tuple[str, int, int], np.ndarray] = {}   # pre-rendered at startup, never evicted
+
+
+def _mono_sound(region: str, rate: int) -> np.ndarray:
     mono = {"on": sounds.beacon_on_course, "near": sounds.beacon_off_course,
             "side": lambda: sounds.knock(880, 0.08, 0.4), "behind": sounds.beacon_behind}[region]()
     if rate != sounds.RATE:
@@ -34,7 +37,49 @@ def _beacon_sound(region: str, bearing_q: int, rate: int) -> np.ndarray:
         import math
         g = math.gcd(rate, sounds.RATE)
         mono = resample_poly(mono, rate // g, sounds.RATE // g).astype(np.float32)
-    return spatial.render(mono, float(bearing_q), rate)
+    return mono
+
+
+def _beacon_sound(region: str, bearing_q: int, rate: int) -> np.ndarray:
+    hit = _WARM.get((region, bearing_q, rate))
+    return hit if hit is not None else _beacon_render(region, bearing_q, rate)
+
+
+@lru_cache(maxsize=512)
+def _beacon_render(region: str, bearing_q: int, rate: int) -> np.ndarray:
+    return spatial.render(_mono_sound(region, rate), float(bearing_q), rate)
+
+
+def region_of(bearing: float, cfg: BeaconCfg) -> str:
+    """Soundscape's 4-region scheme on |bearing| (see the module docstring)."""
+    a = abs(spatial.wrap_deg(bearing))
+    if a <= cfg.on_course_deg:
+        return "on"
+    if a <= cfg.near_axis_deg:
+        return "near"
+    if a <= cfg.behind_deg:
+        return "side"
+    return "behind"
+
+
+def prewarm(cfg: BeaconCfg, rate: int) -> int:
+    """Pre-render every (region, 5-degree bearing) pair tick() can ask for: a bearing
+    rounds to bq from within +-2.5 deg, so each bq gets the regions spanned by that
+    interval. One batched native render per region. Returns the number of cues."""
+    want: dict[str, list[int]] = {r: [] for r in REGIONS}
+    for bq in spatial.BEARINGS_5DEG:
+        lo = REGIONS.index(region_of(max(0.0, abs(bq) - 2.5), cfg))
+        hi = REGIONS.index(region_of(min(180.0, abs(bq) + 2.5), cfg))
+        for r in REGIONS[lo:hi + 1]:
+            want[r].append(bq)
+    n = 0
+    for region, bqs in want.items():
+        if not bqs:
+            continue
+        for bq, st in zip(bqs, spatial.render_many(_mono_sound(region, rate), bqs, rate)):
+            _WARM[(region, bq, rate)] = st
+            n += 1
+    return n
 
 
 class Beacon:
@@ -89,14 +134,7 @@ class Beacon:
         return c.period_near_s + (c.period_far_s - c.period_near_s) * x
 
     def classify(self, bearing: float) -> str:
-        a = abs(spatial.wrap_deg(bearing))
-        if a <= self.cfg.on_course_deg:
-            return "on"
-        if a <= self.cfg.near_axis_deg:
-            return "near"
-        if a <= self.cfg.behind_deg:
-            return "side"
-        return "behind"
+        return region_of(bearing, self.cfg)
 
     def tick(self, now: float | None = None, speech_playing: bool = False) -> None:
         now = time.monotonic() if now is None else now

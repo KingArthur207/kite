@@ -89,6 +89,11 @@ class SpeechCfg:
     offline_voice: str = "Samantha"   # macOS `say` voice used without internet
     cache_dir: Path = field(default_factory=lambda: REPO_ROOT / "earpiece" / ".cache" / "tts")
     default_ttl_s: float = 6.0        # navigation speech older than this is dropped, never spoken late
+    # Credit guard: characters sent to Cartesia across ALL runs on this machine (persisted in the
+    # cache dir). Past the budget, only critical/hazard speech may stream; the rest uses cached
+    # phrases or the built-in voice. 0 = no cap.
+    char_budget: int = field(default_factory=lambda: int(os.environ.get("KITE_CARTESIA_CHAR_BUDGET", "150000")))
+    cache_max_chars: int = 120        # lines up to this long are cached: repeat demo runs cost nothing
     dedupe_window_s: float = 4.0
 
 
@@ -110,9 +115,13 @@ class NetCfg:
     udp_port: int = 5010              # fire-and-forget JSON events from perception / nav
     ws_port: int = 5011               # bidirectional JSON (events in, state + voice requests out)
     bind_host: str = "127.0.0.1"
-    spacetime_host: str = "https://maincloud.spacetimedb.com"
-    spacetime_db: str = "kite-sync-pl6rp"
-    spacetime_enabled: bool = False
+    # SpacetimeDB mirror + caregiver inbox: OFF unless `run --spacetime` or KITE_SPACETIME=1,
+    # because every call spends Maincloud credits.
+    spacetime_host: str = field(default_factory=lambda: os.environ.get("SPACETIME_HOST")
+                                or "https://maincloud.spacetimedb.com")
+    spacetime_db: str = field(default_factory=lambda: os.environ.get("SPACETIME_DB") or "kite-sync-pl6rp")
+    spacetime_enabled: bool = field(default_factory=lambda: os.environ.get("KITE_SPACETIME", "").strip()
+                                    .lower() in ("1", "true", "yes", "on"))
 
 
 @dataclass

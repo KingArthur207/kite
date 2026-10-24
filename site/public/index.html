@@ -25,7 +25,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,500;1,8..60,400;1,8..60,500&display=swap" />
   <link rel="stylesheet" href="/styles.css" />
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Kite","applicationCategory":"AccessibilityApplication","operatingSystem":"macOS","description":"A flying guide dog for blind pedestrians: a drone and a chest camera watch the street, and AirPods give directional beeps and voice guidance.","url":"https://trykite.pages.dev/"}
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Kite","applicationCategory":"AccessibilityApplication","operatingSystem":"macOS","description":"A guide dog that flies, for blind pedestrians: a drone and a chest camera watch the street, and AirPods give directional beeps and voice guidance.","url":"https://trykite.pages.dev/"}
   </script>
 </head>
 <body>
@@ -147,6 +147,37 @@
       </div>
     </section>
 
+    <!-- ============================================================ modes -->
+    <section class="section">
+      <div class="split">
+        <h2 class="display">Inside or out, <span class="hl">it sees for you.</span></h2>
+        <p class="side">Where you are decides what Kite uses. The earpiece and the voice are the same either way.</p>
+      </div>
+      <div class="three two">
+        <article class="card topline">
+          <h3>Indoors</h3>
+          <p class="mono label">THE BODY CAMERA ALONE</p>
+          <ul>
+            <li>Beeps for the chair, the door frame, the sign at head height.</li>
+            <li>Point it at a <b>menu, a book, a street sign or a screen</b> and say "read this". Kite reads it to you, line by line.</li>
+            <li>"What's in front of me?" gets a sentence, not a list of boxes.</li>
+          </ul>
+          <p class="without">For anywhere a drone can't fly.</p>
+        </article>
+        <article class="card topline">
+          <h3>Outdoors</h3>
+          <p class="mono label">THE DRONE, PLUS THE BODY CAMERA</p>
+          <ul>
+            <li>The drone watches the route, the crowd at the corner and the car turning in.</li>
+            <li>A beacon ticks toward your next turn; directions arrive on time or not at all.</li>
+            <li>At a hazard Kite stops you, waits, and tells you when the way is clear.</li>
+          </ul>
+          <p class="without">For walking somewhere you need to go.</p>
+        </article>
+      </div>
+      <span class="hand aside right-aside" aria-hidden="true">same earpiece,<br />same voice</span>
+    </section>
+
     <!-- ============================================================ how -->
     <section id="how" class="section">
       <div class="split">
@@ -225,6 +256,8 @@
         <div class="msg kite">Okay, heading to Blue Bottle Coffee.</div>
         <div class="msg you">Bring me to the end of the street.</div>
         <div class="msg kite">Okay, I'll guide you to the end of the street.</div>
+        <div class="msg you">Read this to me.</div>
+        <div class="msg kite">Lunch menu. Margherita pizza, 14 dollars. Caesar salad, 11 dollars.</div>
         <div class="msg you">What's around me?</div>
         <div class="msg kite">A person slightly left, 2 meters; a car at 2 o'clock, 8 meters.</div>
         <div class="msg you">Remember this place as the bench.</div>
@@ -279,6 +312,7 @@
           <p class="mono label">THE JUDGMENT</p>
           <ul>
             <li>Reads the scene and answers "what's around me?" from what Kite actually sees.</li>
+            <li>Reads printed and on-screen text aloud: menus, signs, books, monitors.</li>
             <li>Makes the careful calls ("wait, the crossing is crowded") and is only allowed to make Kite <i>more</i> cautious.</li>
           </ul>
           <p class="without">Without it: beeps with no one to explain them.</p>

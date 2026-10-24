@@ -164,7 +164,7 @@ class Listener:
         self._stop_now = threading.Event()
         self._mic_warned = False
         self.device_name: str | None = None
-        self.stats = {"utterances": 0, "empty": 0, "errors": 0, "last_ms": None}
+        self.stats = {"utterances": 0, "empty": 0, "errors": 0, "last_ms": None, "stt_audio_s": 0.0}
         self._hf_thread: threading.Thread | None = None
         self._hf_stop = threading.Event()
 
@@ -240,6 +240,7 @@ class Listener:
                     b, pending = pending[:block], pending[block:]
                     pcm = (np.clip(b, -1, 1) * 32767).astype("<i2").tobytes()
                     await chunks.put(pcm)
+                    self.stats["stt_audio_s"] += b.size / rate          # Cartesia STT bills audio time
                     ev = ep.push(b)
                     if ev in ("end", "timeout"):
                         result = ev

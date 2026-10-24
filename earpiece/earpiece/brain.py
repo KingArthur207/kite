@@ -69,6 +69,8 @@ class Actions:
     ear_check: Callable[[], None]
     remember: Callable[[str, str], str | None] = lambda kind, text: None
     recall: Callable[[str], list] = lambda query: []
+    describe_front: Callable[[], str | None] = lambda: None   # Claude on the chest camera frame
+    read_text: Callable[[], str | None] = lambda: None        # OCR: read a menu / sign / screen aloud
 
 
 _LOCAL = [
@@ -90,6 +92,8 @@ _LOCAL = [
 _REMEMBER_PLACE = re.compile(r"(?i)^(?:please\s+)?(?:remember|save|mark|bookmark)\s+(?:this place|this spot|"
                              r"this location|where i am|my location|this|here)\s*(?:as|is|called)?\s+(?P<name>.+?)[.!?]*$")
 _REMEMBER_NOTE = re.compile(r"(?i)^(?:please\s+)?(?:remember|note|keep in mind|make a note)\s+(?:that\s+)?(?P<text>.+?)[.!?]*$")
+_READ = re.compile(r"\bread (?:this|that|it|me|the|out|aloud|what)\b|\bread\s*$|\bwhat does (?:this|that|it|the \w+) say\b"
+                   r"|\bwhat(?:'s| is) (?:written|on (?:the|this|that) (?:sign|menu|screen|label|page|board))\b")
 _RECALL = re.compile(r"\bwhat do you (?:remember|know) about\b|\bdo you remember\b")
 _HAZARD_WORDS = re.compile(r"\b(curb|step|stairs?|construction|scaffold\w*|pole|hole|slippery|uneven|broken|"
                            r"crack\w*|ramp|puddle|narrow\w*|tall)\b", re.I)
@@ -187,6 +191,8 @@ class Brain:
         m = _REMEMBER_NOTE.search(o)
         if m and not re.match(r"(?i)^remember (?:this|here)\b", o):
             return ("remember_note", m.group("text").strip())
+        if _READ.search(low):
+            return ("read", None)
         if _RECALL.search(low):
             return ("recall", None)
         if re.search(r"\b(?:take|bring|walk|guide|lead) me back\b|^go back\b", low) and not _NAV.search(o):
@@ -229,12 +235,34 @@ class Brain:
             self.actions.stop_speaking()
         elif name == "ear_check":
             self.actions.ear_check()
+        elif name == "read":
+            threading.Thread(target=self._read, daemon=True).start()
+        elif name == "around" and re.search(r"\b(?:in front|ahead|front of me)\b", low):
+            # spec 7: "what's in front of me?" is answered from the chest camera when possible
+            threading.Thread(target=self._front, args=(low,), daemon=True).start()
         elif name in ("around", "where", "howfar"):
             self.speak(self.offline_answer(low), "answer", ttl=20)
         else:
             msg = self.actions.control(name)
             if msg:
                 self.speak(msg, "answer", ttl=10)
+
+    def _read(self) -> None:
+        try:
+            last = self.actions.read_text()
+        except Exception as e:
+            self.log(f"[brain] reading failed: {e}")
+            last = "Sorry, I couldn't read that."
+        if last:
+            self.speak(last, "answer", ttl=120)
+
+    def _front(self, low: str) -> None:
+        text = None
+        try:
+            text = self.actions.describe_front()
+        except Exception as e:
+            self.log(f"[brain] chest camera description failed: {e}")
+        self.speak(text or self.offline_answer(low), "answer", ttl=20)
 
     # ------------------------------------------------------------------ offline answers
     def offline_answer(self, low: str) -> str:
