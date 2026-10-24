@@ -29,7 +29,7 @@ os.environ.pop("CARTESIA_API_KEY", None)   # never Cartesia: the team plan allow
 
 from earpiece.app import Earpiece  # noqa: E402
 from earpiece.events import parse  # noqa: E402
-from earpiece.judgment import _FORBIDDEN  # noqa: E402
+from earpiece.judgment import forbidden  # noqa: E402
 from earpiece.memory import MemoryStore  # noqa: E402
 from earpiece.sim import jsonl_timeline  # noqa: E402
 
@@ -156,7 +156,7 @@ def main(argv=None) -> int:
             dropped = sum(c["out"] in ("dropped", "late") for c in r["calls"])
             rejected = sum(len(c["rejected"]) for c in r["calls"])
             ok, why = grade(path.stem, r["said"])
-            violations = sum(bool(_FORBIDDEN.search(s)) for s in r["said"])   # spoken despite the guardrail
+            violations = sum(forbidden(s) for s in r["said"])   # spoken despite the guardrail
             all_ms += ms
             rows.append((path.stem, len(r["calls"]), dropped, rejected, ok, violations, ms, r["said"]))
             print(f"\n== {path.stem}{f' #{i + 1}' if a.repeat > 1 else ''}: {'PASS' if ok else 'FAIL'} ({why})")
