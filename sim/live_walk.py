@@ -27,6 +27,7 @@ HEAD_CLEAR = 2.0        # m: higher than this the walker passes under
 DEPTH_CORRIDOR = 0.4    # m half-width for depth points: body and margin (Moss's walls run ~0.5 m off the path)
 DEPTH_MIN_FRAC = 0.005  # fraction of the depth map that must be above-ground mass in the corridor
 SCALE_PCT = 85          # percentile of depth / flat-floor depth below the horizon that sets the depth scale
+GROUND_CONSISTENT = 0.85  # median / SCALE_PCT ratio: ~1.0 when ground fills the view, 0.65-0.74 for a wall head-on
 
 
 # ------------------------------------------------------------------ smoothing and the stop zone
@@ -103,14 +104,20 @@ def floor_depth(rows: int, fx: float, cam_height: float, pitch: float):
 
 def ground_scale(depth, floor) -> float:
     """Metric depth models misjudge scale outdoors (sim frames: 0.76x to 1.48x). Along a ray below the horizon the
-    ground is the farthest thing it can hit, so a high percentile of depth / flat-floor depth there is the scale."""
+    ground is the farthest thing it can hit, so a high percentile of depth / flat-floor depth there is the scale.
+    A wall, closed gate or truck side filling the view hides the ground: its ratios fall and spread out down the rows,
+    and a scale under 1 from them would push the obstacle out (twice as far at 0.5) or past max_d. So a scale under 1
+    counts only when the ratios agree (median >= GROUND_CONSISTENT x the percentile); otherwise 1.0, unscaled."""
     import numpy as np
     floor = np.broadcast_to(floor, depth.shape)
     m = np.isfinite(floor) & (floor < 10.0)
     if not m.any():
         return 1.0
     r = (depth / np.where(m, floor, 1.0))[m]
-    return float(np.clip(np.percentile(r, SCALE_PCT), 0.5, 2.0))
+    hi, mid = np.percentile(r, [SCALE_PCT, 50])
+    if hi < 1.0 and mid < GROUND_CONSISTENT * hi:
+        return 1.0
+    return float(np.clip(hi, 0.5, 2.0))
 
 
 def side_walls(nonground, below, a, xc, cam_height: float):

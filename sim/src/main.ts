@@ -109,6 +109,8 @@ function forward() {
 // The drone follows behind the walker's head, and scouts corners on the route (droneLook.ts).
 let drone: DronePose = { x: walker.x, n: walker.n, y: HEAD_TOP + DRONE_ABOVE_HEAD, heading: walker.heading };
 let droneScouting = false, lastPlaced = performance.now();
+// ?compare=1 (compare.ts) syncs Street View to a drone DRONE_BEHIND behind the walker: no scouting, no flight lag there.
+const followOnly = new URLSearchParams(location.search).get("compare") === "1";
 
 function placeCameras() {
   if (worldName === "tiles") Object.assign(walker, clampToFence(walker.x, walker.n, FENCE_INSET_M));
@@ -116,8 +118,10 @@ function placeCameras() {
   const wx = walker.x, wz = -walker.n;
   body.position.set(wx, HEAD_TOP / 2, wz);
   const now = performance.now();
-  const target = droneTarget(walker, worldName === "placeholder" ? [] : route, HEAD_TOP + DRONE_ABOVE_HEAD, DRONE_BEHIND);
-  drone = stepDrone(drone, target, Math.min(0.2, (now - lastPlaced) / 1000));
+  const target = droneTarget(walker, worldName === "placeholder" || followOnly ? [] : route, HEAD_TOP + DRONE_ABOVE_HEAD,
+                             DRONE_BEHIND);
+  drone = followOnly ? { x: target.x, n: target.n, y: target.y, heading: target.heading }
+    : stepDrone(drone, target, Math.min(0.2, (now - lastPlaced) / 1000));
   droneScouting = target.scouting;
   lastPlaced = now;
   const dh = THREE.MathUtils.degToRad(drone.heading);
