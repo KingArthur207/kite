@@ -5,8 +5,9 @@
         python sim/yolo_check.py --url http://localhost:5199 --out sim/docs
 
 Opens the sim in headless Chromium with its clock frozen, mocks the relay and earpiece sockets
-(so it never touches a shared relay), walks the walker north in steps and grabs drone + chest
-frames. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
+(so it never touches a shared relay), walks the walker in steps and grabs drone + chest frames.
+On Moss it walks up Moss's NE sidewalk to Howard and watches the zebra; `?world=placeholder`
+in --url keeps the old walk north. Each frame comes with the actors' boxes at render time (window.__kiteActors), projected
 with the camera model from config.ts. Prints per-camera, per-class recall of visible instances.
 """
 
@@ -60,15 +61,15 @@ def project(a: dict, pose: dict, cam: int):
     p, f, r = cam_pose(pose, cam)
     lo, hi = a["min"], a["max"]
     us, vs = [], []
-    for cx in (lo[0], hi[0]):
-        for cy in (lo[1], hi[1]):
-            for cz in (lo[2], hi[2]):
-                d = np.array([cx, cy, cz]) - p
-                z = d @ f
-                if z < 0.3:
-                    return None
-                us.append(W / 2 + FX * (d @ r) / z)
-                vs.append(H / 2 - FX * d[1] / z)
+    # Moss-world cars send their oriented box corners; an axis-aligned box of a car at 45 degrees is far too big.
+    corners = a.get("corners") or [(cx, cy, cz) for cx in (lo[0], hi[0]) for cy in (lo[1], hi[1]) for cz in (lo[2], hi[2])]
+    for c in corners:
+        d = np.array(c) - p
+        z = d @ f
+        if z < 0.3:
+            return None
+        us.append(W / 2 + FX * (d @ r) / z)
+        vs.append(H / 2 - FX * d[1] / z)
     box = [min(us), min(vs), max(us), max(vs)]
     clipped = [max(box[0], 0), max(box[1], 0), min(box[2], W), min(box[3], H)]
     area = lambda b: max(0, b[2] - b[0]) * max(0, b[3] - b[1])
@@ -128,6 +129,10 @@ def grab(url: str, per_cam: int):
         page.clock.run_for(3000)
         # Stops along the sidewalk; at each, look ahead and then turned toward the road.
         steps = [(2.5, 0), (0, 30), (0, -30), (3, 0), (0, 40), (0, -40), (4, 0), (0, 0), (5, 0), (0, 0), (5, 0), (0, 0), (8, 0)]
+        if "world=placeholder" not in url:
+            # Moss: the road is on the left. Walk up Moss to the Howard curb, turn left to face
+            # the zebra and watch cars turn in from Howard.
+            steps = [(a, -t) for a, t in steps] + [(34, 0), (0, -90)] + [(0, 0)] * 16
         for walk_s, turn_deg in steps:
             state["still"] = False
             if walk_s:

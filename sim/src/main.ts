@@ -8,9 +8,14 @@ import { buildOsmWorld, type WorldExtras } from "./osmWorld";
 import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 
-// ?world=placeholder keeps the old box world; default is Moss St from OSM.
+// ?world=placeholder keeps the old box world and its traffic; default is Moss St from OSM.
+// Metrics mode always runs on Moss, with the street emptied of traffic (it scripts its own).
+const query = new URLSearchParams(location.search);
+const metricsOn = query.get("metrics") === "1";
 const world: ReturnType<typeof buildWorld> & WorldExtras =
-  new URLSearchParams(location.search).get("world") === "placeholder" ? buildWorld() : buildOsmWorld();
+  query.get("world") === "placeholder" && !metricsOn
+    ? buildWorld()
+    : buildOsmWorld({ actors: !metricsOn, walkers: () => [walker] });   // cars yield to the walker too
 const { scene } = world;
 
 // Walker: (x east, n north), heading in compass degrees (0 = north, 90 = east).
@@ -20,7 +25,7 @@ const body = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0x4a6fa5 }),
 );
 scene.add(body);
-const metrics = startMetrics({ walker, scene, solids: world.solids }); // null unless ?metrics=1
+const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }) : null;
 
 const aspect = CAM_W / CAM_H;
 const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);

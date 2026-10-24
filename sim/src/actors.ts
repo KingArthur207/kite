@@ -21,8 +21,8 @@ const PEOPLE = {
   dress:    { file: "ped_dress.glb",        height: 1.68 },
   woman2:   { file: "ped_woman2.glb",       height: 1.70 },
 };
-type CarName = keyof typeof CARS;
-type PersonName = keyof typeof PEOPLE;
+export type CarName = keyof typeof CARS;
+export type PersonName = keyof typeof PEOPLE;
 
 // Lanes match world.ts: main road x in [2.2, 9.2], cross street z in [-40, -33], crosswalk at x in [-2, 2].
 // dir is the travel direction (+1 or -1 along axis); wrap is the loop range along the axis.
@@ -60,6 +60,32 @@ interface Car { obj: THREE.Object3D; axis: "x" | "z"; dir: 1 | -1; speed: number
 interface Person { obj: THREE.Object3D; mixer: THREE.AnimationMixer; s: number; speed: number }
 
 const loader = new GLTFLoader();
+const gltfs = new Map<string, ReturnType<typeof loader.loadAsync>>();
+const load = (file: string) => {
+  if (!gltfs.has(file)) gltfs.set(file, loader.loadAsync(`models/${file}`));
+  return gltfs.get(file)!;   // each fit() clones, so one download serves every copy
+};
+
+/** A car model at real size, front along +z, sitting on y = 0, with its measured footprint. */
+export async function loadCar(model: CarName) {
+  const m = CARS[model];
+  const obj = fit((await load(m.file)).scene, m.yaw, m.length, "length");
+  obj.name = model;
+  const size = measureBox(obj.children[0]).getSize(new THREE.Vector3());
+  return { obj, length: size.z, width: size.x, height: size.y };
+}
+
+/** A person at real height, playing its walk (or idle) clip. */
+export async function loadPerson(name: PersonName, idle: boolean) {
+  const g = await load(PEOPLE[name].file);
+  const obj = fit(g.scene, 0, PEOPLE[name].height, "height");
+  obj.name = name;
+  const mixer = new THREE.AnimationMixer(obj);
+  const want = idle ? /idle|standing/i : /walk/i;
+  const clip = g.animations.find((a) => want.test(a.name)) ?? g.animations[0];
+  if (clip) mixer.clipAction(clip).play();
+  return { obj, mixer };
+}
 
 // World box of a model as drawn: skinned meshes need their bones posed first, or they measure
 // in bind space (Blender exports lie along z there).
@@ -112,13 +138,9 @@ export function spawnActors(scene: THREE.Scene) {
   const people: Person[] = [];
   const standers: THREE.Object3D[] = [];
 
-  const load = (file: string) => loader.loadAsync(`models/${file}`);
-
   for (const c of CAR_SPAWNS) {
     const m = CARS[c.model];
-    load(m.file).then((g) => {
-      const obj = fit(g.scene, m.yaw, m.length, "length");
-      obj.name = c.model;
+    loadCar(c.model).then(({ obj }) => {
       obj.rotation.y = c.axis === "z" ? (c.dir > 0 ? 0 : Math.PI) : (c.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
       if (c.axis === "z") obj.position.set(c.lane, 0, c.at); else obj.position.set(c.at, 0, c.lane);
       scene.add(obj);
@@ -126,15 +148,9 @@ export function spawnActors(scene: THREE.Scene) {
     }).catch((e) => console.error(`[actors] ${m.file}`, e));
   }
 
-  const person = (name: PersonName, idle: boolean) => load(PEOPLE[name].file).then((g) => {
-    const obj = fit(g.scene, 0, PEOPLE[name].height, "height");
-    obj.name = name;
-    const mixer = new THREE.AnimationMixer(obj);
-    const want = idle ? /idle|standing/i : /walk/i;
-    const clip = g.animations.find((a) => want.test(a.name)) ?? g.animations[0];
-    if (clip) mixer.clipAction(clip).play();
-    scene.add(obj);
-    return { obj, mixer };
+  const person = (name: PersonName, idle: boolean) => loadPerson(name, idle).then((p) => {
+    scene.add(p.obj);
+    return p;
   });
 
   for (const w of WALKERS) {

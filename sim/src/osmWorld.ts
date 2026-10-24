@@ -2,6 +2,7 @@
 // JSON frame: x east, y north, metres from the zebra across Moss. three.js: (x, up, -north).
 import * as THREE from "three";
 import moss from "../public/osm/moss.json";
+import { spawnMossActors } from "./mossActors";
 
 type P = [number, number];
 type Quad = P[];
@@ -31,6 +32,7 @@ export interface WorldExtras {
 
 export const lanes: Lane[] = data.lanes;
 export const route: P[] = data.route;
+export const crossings = data.crossings;
 
 const CURB_H = 0.15;
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
@@ -96,7 +98,8 @@ function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
   return Math.hypot(x - (x1 + t * dx), n - (n1 + t * dn));
 }
 
-export function buildOsmWorld() {
+/** actors: false leaves the street empty (metrics mode). walkers: people the cars must yield to. */
+export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: number; n: number }[] } = {}) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x9ec9ff);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x666655, 1.6));
@@ -137,5 +140,6 @@ export function buildOsmWorld() {
     overlay,
     place: "Moss St at Howard St",
   };
-  return { scene, update: (_dt: number) => {}, solids: () => [] as THREE.Box3[], ...extras };
+  const actors = opts.actors === false ? null : spawnMossActors(scene, opts.walkers ?? (() => []));
+  return { scene, update: (dt: number) => actors?.update(dt), solids: () => actors?.solids() ?? [], ...extras };
 }
