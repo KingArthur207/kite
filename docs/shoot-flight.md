@@ -41,10 +41,16 @@ Positions: the walker starts on the NE sidewalk of Moss about 70 m before Howard
 5. Hold `r` until `h` in the status line reads the walker's height plus 0.3 m (about 2.0 m for a 1.7 m walker). The safety ceiling is 2.3 m.
 6. Rex starts the walk. Hold `w` to follow at the walker's pace; the drone tops out around 0.5 m/s at `--speed 50`, so the walker goes slowly (0.5 to 0.7 m/s). Small `a`/`d` to stay behind their head, `q`/`e` to turn with them at the corner.
 7. Space hovers at once. `l` lands. Ctrl+C lands and stops recording; keep clear until it is down.
+   - Letting go of a move key keeps the stick on for up to `--pulse` (1 s), about 0.5 m at speed 50. Tap space the moment the walker stops.
 
 Keys: `t` takeoff, `l` land, space hover, `w`/`s` forward/back, `a`/`d` left/right, `r`/`f` up/down, `q`/`e` turn, `!!` emergency (motors off, it falls: only if it is about to hit someone).
+Arrow keys, function keys, Ctrl+Z, Ctrl+\\ and Ctrl+S do nothing while flying (they used to move or stop the program). Capitals work like lowercase.
 
 The drone also acts on its own: it lands at 20% battery or after 7 minutes in the air, and it hovers if video or telemetry stalls for 1 s (the status line says so). After a safety hover, press the move key again.
+
+If the status line says `WI-FI DOWN`, the drone keeps hovering (it may hold its last stick until it hears from the laptop, and lands itself after 15 s of silence). Stop walking, keep within 3 to 5 m, don't hold a move key, and wait for it to clear; then press the key again. Before flying, turn off Auto-Join for other known Wi-Fi networks so macOS rejoins the Tello. If `telemetry stale -> hover` stays while the Wi-Fi is fine, press `l` and restart the recorder.
+
+`t` is refused without live video or telemetry. If the drone is visibly up but the status isn't `FLYING` about 8 s after `t`, press `l`. A land that fails is re-sent every 2 s on its own.
 
 Land by 30% if the take is done, or when Rex calls it. To fly again in the same morning, restart the recorder.
 
