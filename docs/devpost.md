@@ -74,7 +74,7 @@ Checks. `scripts/check.sh` runs the earpiece tests on both audio engines, Rust f
 - The safety cues are deterministic and work with no internet: cached Cartesia phrases, local voice commands, sonar and stops that don't wait on any model.
 - Claude can only make Kite more careful. Every judgment is checked in code before it is spoken, and only deterministic code can end a stop.
 - One detector reads the phone camera, recorded clips, Street View stills of Moss St and the sim's frames through the same code. It has run on clips, stills and sim frames. [TODO: confirm on the phone camera at the rehearsal.]
-- [TODO: collision numbers from the sim with Kite, from metrics mode. On Moss St the blind baseline is 3.05 collisions per walk (seed 1, 20 walks); the oracle's 0 is an upper bound that sees ground truth, not Kite, and must not be quoted as Kite. Leave this out if we don't measure Kite.]
+- [TODO: collision numbers from the sim with Kite. Measured Oct 24 (Moss, seed 1, 20 walks, full pipeline with the YOLO stand-in): Kite 3.05 collisions per walk, the same as blind. YOLO has no class for the bin or the sign, and the turning car comes from outside the cameras' view; details in `sim/README.md`. There is no reduction to quote, so leave this line out unless a later run (streetseg, or a detector that sees bins and signs) shows one. The oracle's 0 sees ground truth and must not be quoted as Kite.]
 - [TODO: the interview, and what changed in Kite because of it.]
 
 ## What we learned
