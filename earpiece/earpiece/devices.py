@@ -127,6 +127,20 @@ def default_output_name() -> str | None:
     return None
 
 
+def headphones_output_name(prefer: str = "airpods") -> str | None:
+    """The output to use for the walker: a device matching `prefer` (AirPods) first, else any
+    Bluetooth output (spec: any stereo Bluetooth pair works). None if neither is connected."""
+    outs = outputs()
+    p = prefer.lower()
+    for d in outs:
+        if p and p in d["name"].lower():
+            return d["name"]
+    for d in outs:
+        if d["transport"].startswith("bluetooth"):
+            return d["name"]
+    return None
+
+
 def airpods_output_present(substr: str = "airpods") -> bool:
     s = substr.lower()
     for d in outputs():

@@ -5,12 +5,17 @@
 //! Python interpreter, and talks to Python only through lock-free rings. So no
 //! amount of Python work (Claude streaming, Moss lookups, perception floods) can
 //! make the wearer's audio stutter.
+//!
+//! It also owns cue *placement*: `render_binaural` is the Brown-Duda renderer of
+//! `spatial.py` in Rust, so the whole audible path (placement, mixing, output)
+//! is native and runs without the GIL.
 
 mod mixer;
+pub mod spatial;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use mixer::{Cmd, Mixer, Voice};
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -523,9 +528,110 @@ impl Drop for Engine {
     }
 }
 
+// -------------------------------------------------------------------- binaural
+fn f32_le(b: &[u8], what: &str) -> PyResult<Vec<f32>> {
+    if !b.len().is_multiple_of(4) {
+        return Err(PyValueError::new_err(format!(
+            "{what} must be float32 little-endian bytes (length a multiple of 4, got {})",
+            b.len()
+        )));
+    }
+    Ok(bytes_to_f32(b))
+}
+
+fn f32_bytes<'py>(py: Python<'py>, v: &[f32]) -> PyResult<Bound<'py, PyBytes>> {
+    PyBytes::new_with(py, v.len() * 4, |buf| {
+        for (o, x) in buf.chunks_exact_mut(4).zip(v) {
+            o.copy_from_slice(&x.to_le_bytes());
+        }
+        Ok(())
+    })
+}
+
+fn check_render_args(azimuths: &[f64], rate: u32, sinc_taps: usize) -> PyResult<spatial::Delay> {
+    if rate == 0 {
+        return Err(PyValueError::new_err("rate must be positive"));
+    }
+    if let Some(a) = azimuths.iter().find(|a| !a.is_finite()) {
+        return Err(PyValueError::new_err(format!(
+            "azimuth must be finite, got {a}"
+        )));
+    }
+    spatial::Delay::from_taps(sinc_taps).map_err(PyValueError::new_err)
+}
+
+/// Place a mono cue at `azimuth_deg` (0 ahead, +90 right): float32 LE bytes in,
+/// interleaved stereo float32 LE bytes out, `n + pad (+ sinc_taps)` frames.
+/// Bit-for-bit the reference `spatial._render_py` when `sinc_taps == 0`; an even
+/// `sinc_taps` (2..=64) selects the windowed-sinc fractional delay instead.
+/// Releases the GIL while rendering.
+#[pyfunction]
+#[pyo3(signature = (mono, azimuth_deg, rate, gain=1.0, extra_ild_db=6.0, sinc_taps=0))]
+fn render_binaural<'py>(
+    py: Python<'py>,
+    mono: &[u8],
+    azimuth_deg: f64,
+    rate: u32,
+    gain: f64,
+    extra_ild_db: f64,
+    sinc_taps: usize,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let mode = check_render_args(&[azimuth_deg], rate, sinc_taps)?;
+    let x = f32_le(mono, "mono")?;
+    let out = py.detach(move || spatial::render(&x, azimuth_deg, rate, gain, extra_ild_db, mode));
+    f32_bytes(py, &out)
+}
+
+/// The same cue at many azimuths in one call (cache pre-warming): one bytes
+/// object per azimuth, each identical to `render_binaural` at that azimuth.
+/// Shared work is done once and azimuths are spread over threads, GIL released.
+#[pyfunction]
+#[pyo3(signature = (mono, azimuths, rate, gain=1.0, extra_ild_db=6.0, sinc_taps=0))]
+fn render_binaural_batch<'py>(
+    py: Python<'py>,
+    mono: &[u8],
+    azimuths: Vec<f64>,
+    rate: u32,
+    gain: f64,
+    extra_ild_db: f64,
+    sinc_taps: usize,
+) -> PyResult<Vec<Bound<'py, PyBytes>>> {
+    let mode = check_render_args(&azimuths, rate, sinc_taps)?;
+    let x = f32_le(mono, "mono")?;
+    let outs =
+        py.detach(move || spatial::render_batch(&x, &azimuths, rate, gain, extra_ild_db, mode));
+    outs.iter().map(|o| f32_bytes(py, o)).collect()
+}
+
+/// The per-ear delay stage on its own (diagnostics, the ITD accuracy test):
+/// delays mono float32 bytes by `delay_samples`, returns `out_len` samples.
+#[pyfunction]
+#[pyo3(signature = (mono, delay_samples, out_len, sinc_taps=0))]
+fn fractional_delay<'py>(
+    py: Python<'py>,
+    mono: &[u8],
+    delay_samples: f64,
+    out_len: usize,
+    sinc_taps: usize,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let mode = spatial::Delay::from_taps(sinc_taps).map_err(PyValueError::new_err)?;
+    if !delay_samples.is_finite() || delay_samples < 0.0 {
+        return Err(PyValueError::new_err(
+            "delay_samples must be finite and >= 0",
+        ));
+    }
+    let x = f32_le(mono, "mono")?;
+    let out = py.detach(move || spatial::fractional_delay(&x, delay_samples, out_len, mode));
+    f32_bytes(py, &out)
+}
+
 #[pymodule]
 fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
+    m.add_function(wrap_pyfunction!(render_binaural, m)?)?;
+    m.add_function(wrap_pyfunction!(render_binaural_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(fractional_delay, m)?)?;
+    m.add("SINC_TAPS_MAX", spatial::MAX_SINC_TAPS)?;
     m.add("BUS_CUE", mixer::BUS_CUE)?;
     m.add("BUS_ALERT", mixer::BUS_ALERT)?;
     Ok(())

@@ -102,13 +102,15 @@ def _r(v, nd: int = 0):
 
 def brief(snap: dict) -> dict:
     """App context -> just what the judgment needs (smaller prompt, faster answer)."""
-    route, last = snap.get("route") or {}, snap.get("last_instruction") or {}
+    route, last, dirs = snap.get("route") or {}, snap.get("last_instruction") or {}, snap.get("directions") or {}
     out = {
         "hazards": [{k: _r(v) for k, v in h.items() if v is not None} for h in snap.get("hazards") or []],
         "nearby": [{"kind": o.get("kind"), "bearing": _r(o.get("bearing")), "distance": _r(o.get("distance"), 1)}
                    for o in snap.get("nearby") or []],
         "scene": snap.get("scene"),
-        "route": {k: v for k, v in (("to", route.get("label")), ("distance", _r(route.get("distance"))),
+        "route": {k: v for k, v in (("to", route.get("label") or dirs.get("destination")),
+                                    ("distance", _r(route.get("distance"))),
+                                    ("next_turn", dirs.get("next")), ("next_turn_in_m", dirs.get("next_in_m")),
                                     ("last_instruction", last.get("text"))) if v is not None},
         "place": (snap.get("position") or {}).get("place"),
         "recent_speech": snap.get("recent_speech"),

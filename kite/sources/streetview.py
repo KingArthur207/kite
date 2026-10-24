@@ -1,4 +1,8 @@
-"""Google Street View along the planned route as a frame source: real imagery of our corner before the Tello shoot.
+"""
+Google reps at Cal Hacks gave us permission (Sat Oct 24, ~3 AM) to use Street View, including
+detection on the frames, only for Moss St between Folsom and Howard: see docs/google-permission.md.
+SCOPE (below) enforces that; nothing is stored, committed or used for training.
+Google Street View along the planned route as a frame source: real imagery of our corner before the Tello shoot.
 
     from kite.sources import open_source
     with open_source("streetview:route", pitch=0) as src:            # sim/public/osm/route.json, drone-like
@@ -61,6 +65,20 @@ TELLO_HFOV_DEG = 55.1  # load_camera(): fx 920 at 960 wide
 SPEED_MPS = 0.6  # the walker's pace at the shoot (spec section 8): sets pose t
 TIMEOUT_S = 15.0
 TMP_ROOTS = (Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve())
+
+
+# Moss St from Folsom to Howard plus the corner, with about 30 m of margin (docs/google-permission.md).
+SCOPE = (37.7768, 37.7788, -122.4095, -122.4068)   # lat min, lat max, lng min, lng max
+
+
+def in_scope(lat: float, lng: float) -> bool:
+    lat0, lat1, lng0, lng1 = SCOPE
+    return lat0 <= lat <= lat1 and lng0 <= lng <= lng1
+
+
+def _require_scope(lat: float, lng: float) -> None:
+    if not in_scope(lat, lng):
+        raise ValueError(f"streetview: {lat:.5f},{lng:.5f} is outside the one street Google allowed us (Moss St)")
 
 
 def _http_get(url: str) -> bytes:
@@ -158,6 +176,7 @@ class StreetViewSource:
         return data
 
     def _metadata(self, lat: float, lng: float) -> dict | None:
+        _require_scope(lat, lng)
         m = json.loads(self._get("metadata", {"location": f"{lat:.7f},{lng:.7f}", "radius": round(self.radius_m),
                                               "source": "outdoor"}))
         status = m.get("status")

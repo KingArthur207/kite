@@ -147,6 +147,47 @@ def offline_tts(text: str, rate: int, voice: str = "Samantha", wpm: int = 210) -
             pass
 
 
+class UsageMeter:
+    """Characters sent to Cartesia, persisted across runs so a hackathon team can see (and
+    cap) its total burn. Written at most every few seconds; never on the audio path."""
+
+    def __init__(self, path: Path, budget: int):
+        self.path = Path(path)
+        self.budget = budget
+        self.session = 0
+        self.total = 0
+        self._dirty_t = 0.0
+        try:
+            self.total = int(json.loads(self.path.read_text()).get("chars", 0))
+        except (OSError, ValueError, TypeError, AttributeError):
+            self.total = 0
+
+    def add(self, n: int) -> None:
+        self.session += n
+        self.total += n
+        if time.monotonic() - self._dirty_t > 3.0:
+            self.flush()
+
+    def flush(self) -> None:
+        self._dirty_t = time.monotonic()
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"chars": self.total, "updated": time.time()}))
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+    @property
+    def over_budget(self) -> bool:
+        return self.budget > 0 and self.total >= self.budget
+
+
+class ConcurrencyLimited(RuntimeError):
+    """Cartesia refused a request because too many were in flight (our plan allows 2).
+    Transient: retry shortly instead of falling back to the slow offline voice."""
+
+
 class CartesiaStream:
     """One persistent Cartesia TTS WebSocket shared by all utterances (each is a context)."""
 
@@ -161,6 +202,7 @@ class CartesiaStream:
         self._ctx: dict[str, asyncio.Queue] = {}
         self._lock = asyncio.Lock()
         self.down_until = 0.0            # back off after failures instead of hammering
+        self.meter: "UsageMeter | None" = None
         self.failures = 0
         self.last_error: str | None = None
 
@@ -216,6 +258,8 @@ class CartesiaStream:
                "generation_config": {"speed": self.cfg.speed}}
         try:
             await ws.send(json.dumps(req))
+            if self.meter is not None:
+                self.meter.add(len(text))
             first = True
             while True:
                 timeout = self.cfg.first_chunk_timeout_s if first else 5.0
@@ -232,7 +276,10 @@ class CartesiaStream:
                     self.failures = 0
                     return
                 elif t == "error":
-                    self._fail(str(m.get("message") or m.get("title") or "error"))
+                    msg = str(m.get("message") or m.get("title") or "error")
+                    if "concurrency" in msg.lower():
+                        raise ConcurrencyLimited(msg)       # not an outage: no backoff
+                    self._fail(msg)
                     raise RuntimeError(f"cartesia: {self.last_error}")
         finally:
             self._ctx.pop(ctx_id, None)
@@ -254,7 +301,8 @@ class CartesiaStream:
 
 
 # ---------------------------------------------------------------------- manager
-SAFETY_KINDS = ("Person", "Car", "Bike", "Obstacle", "Step down", "Curb")
+SAFETY_KINDS = ("Person", "Car", "Bike", "Obstacle", "Step down", "Curb", "Crowd", "Overhead obstacle",
+                "Construction")
 FIXED_PHRASES = (
     "Stop.", "Stop. Person ahead.", "Stop. Obstacle ahead.", "Stop. Car.", "Careful.",
     "Obstacle detection paused.", "Obstacle detection is back.",
@@ -262,9 +310,15 @@ FIXED_PHRASES = (
     "Guidance paused.", "Guidance resumed.", "Beeps muted.", "Beeps on.",
     "You have arrived.", "Don't walk.", "Walk signal is on.", "Crowd ahead.",
     "AirPods disconnected. Using the laptop speaker.", "AirPods connected.",
+    "Headphones disconnected. Using the laptop speaker.", "Headphones connected.",
+    "Hold it steady. Reading.", "Reading text needs the internet right now.",
+    "I can't see any text. Try holding it closer and a little steadier.",
     "Kite is ready.", "Left ear.", "Right ear.", "Louder.", "Quieter.",
     "No internet. Using the backup voice.", "Internet is back.",
     "Turn around.", "On course.",
+    # the spec's fixed phrases (section 5.6): cached once, never streamed
+    "Wait.", "Curb ahead.", "Bear left.", "Bear right.", "Path is clear. You can continue.",
+    "Crowd ahead. Wait.", "Car ahead. Wait.", "Overhead obstacle ahead.",
 )
 
 
@@ -282,6 +336,11 @@ class Speaker:
         self.log = log
         self.cache = PhraseCache(cfg, engine.rate)
         self.tts = CartesiaStream(cfg, key, engine.rate)
+        self.meter = UsageMeter(Path(cfg.cache_dir).parent / "cartesia_usage.json", cfg.char_budget)
+        self.tts.meter = self.meter
+        if key:
+            self.log(f"[speech] Cartesia usage on this machine so far: {self.meter.total:,} characters"
+                     + (f" of a {self.meter.budget:,} budget" if self.meter.budget else ""))
         self._queue: list[Utterance] = []
         self._qlock = threading.Lock()
         self._wake: asyncio.Event | None = None
@@ -397,6 +456,7 @@ class Speaker:
         self._call(self._prewarm, phrases or safety_phrases())
 
     def stop(self) -> None:
+        self.meter.flush()
         if self._loop is not None:
             fut = asyncio.run_coroutine_threadsafe(self.tts.close(), self._loop)
             try:
@@ -535,10 +595,16 @@ class Speaker:
             return await self._await_end(u.uid, pcm.size / self.engine.rate + 3.0)
 
         total = 0.0
-        if self.tts.available:
+        attempts = 3
+        neural_ok = self.tts.available and (not self.meter.over_budget or u.priority in ("critical", "hazard"))
+        if self.tts.available and not neural_ok and not getattr(self, "_budget_warned", False):
+            self._budget_warned = True
+            self.log("[speech] Cartesia character budget reached: non-urgent speech uses the built-in voice")
+        while neural_ok and attempts > 0:
+            attempts -= 1
             chunks = []
             try:
-                async for c in self.tts.stream(u.text, u.uid):
+                async for c in self.tts.stream(u.text, u.uid if attempts == 2 else f"{u.uid}-{attempts}"):
                     if u.cancelled:                     # preempted while streaming
                         await self.tts.cancel(u.uid)
                         return "cut"
@@ -551,15 +617,25 @@ class Speaker:
                 self.engine.speech_end(u.uid)
                 self.stats["neural"] += 1
                 self._set_online(True)
-                if len(u.text) <= 60 and chunks:          # short phrases are worth keeping offline
+                if len(u.text) <= self.cfg.cache_max_chars and chunks:   # repeats cost nothing
                     self.cache.put(u.text, np.concatenate(chunks))
                 return await self._await_end(u.uid, total / self.engine.rate + 3.0)
+            except ConcurrencyLimited:
+                self.stats["concurrency_retries"] = self.stats.get("concurrency_retries", 0) + 1
+                if total > 0 or u.cancelled:
+                    break
+                await asyncio.sleep(0.15 * (3 - attempts))  # another request is finishing: brief wait
+                continue
             except Exception as e:
                 self.log(f"[speech] cartesia failed ({e}); using the offline voice")
                 self._set_online(False)
                 if total > 0:              # audio already started: do not restart the sentence
                     self.engine.speech_end(u.uid)
                     return await self._await_end(u.uid, total / self.engine.rate + 3.0)
+                break
+        if total > 0:
+            self.engine.speech_end(u.uid)
+            return await self._await_end(u.uid, total / self.engine.rate + 3.0)
         if u.expired(time.monotonic(), self.cfg.default_ttl_s):
             self.engine.speech_cancel(u.uid)
             return "dropped"
@@ -588,22 +664,26 @@ class Speaker:
         t0 = time.monotonic()
         done = 0
         if self.tts.available:
-            # Cartesia allows 2 concurrent requests for the whole team: prewarm uses one,
-            # leaving the other for live speech (KITE_CARTESIA_PREWARM to change).
-            sem = asyncio.Semaphore(max(1, int(os.environ.get("KITE_CARTESIA_PREWARM", "1"))))
-
-            async def one(p: str) -> None:
-                nonlocal done
-                async with sem:
+            # One at a time, and never while Kite is talking: the Cartesia plan allows only two
+            # requests in flight, and live speech must always get one.
+            for p in missing:
+                if self.meter.over_budget:
+                    break
+                while self._current is not None or self.listening:
+                    await asyncio.sleep(0.05)
+                for _try in range(3):
                     try:
                         chunks = [c async for c in self.tts.stream(p, "warm-" + uuid.uuid4().hex[:10])]
                         if chunks:
                             self.cache.put(p, np.concatenate(chunks))
                             done += 1
+                        break
+                    except ConcurrencyLimited:
+                        await asyncio.sleep(0.5)
                     except Exception:
-                        pass
-
-            await asyncio.gather(*(one(p) for p in missing))
+                        break
+                if not self.tts.available:
+                    break
         if done < len(missing):
             # no neural voice: make sure the critical phrases at least exist offline
             for p in phrases:

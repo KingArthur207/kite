@@ -11,7 +11,7 @@ Open a [private security advisory](https://github.com/KingArthur207/kite/securit
 - API keys live only in the repo-root `.env`, which is git-ignored. `.env.example` lists the variable names with no values.
 - Keys are read from the environment at runtime and are never logged, sent to the dashboard, or embedded in client code.
 - If a key is ever pasted somewhere public (a chat, an issue, a commit), rotate it at the provider straight away, then update `.env`. Removing it from git history is not enough.
-- CI runs [gitleaks](https://github.com/gitleaks/gitleaks) over the **full git history** on every push and pull request.
+- [`scripts/check.sh`](scripts/check.sh) runs [gitleaks](https://github.com/gitleaks/gitleaks) over the **full git history**; run it before merging.
 
 | Variable | Used by | Where to rotate |
 |---|---|---|
@@ -19,7 +19,6 @@ Open a [private security advisory](https://github.com/KingArthur207/kite/securit
 | `ANTHROPIC_API_KEY` | earpiece voice brain (Claude) | console.anthropic.com |
 | `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY` | earpiece memory | portal.usemoss.dev, API keys |
 | `GOOGLE_MAPS_API_KEY` | destination lookup (Places API New, Routes API v2) | Google Cloud console; restrict it to those APIs and add a daily quota |
-| `GEMINI_API_KEY` | drone scene description | aistudio.google.com |
 
 ## How the earpiece limits damage
 
@@ -31,13 +30,12 @@ Open a [private security advisory](https://github.com/KingArthur207/kite/securit
 
 ## Automated checks
 
-| Check | What it catches | Where |
-|---|---|---|
-| gitleaks | committed keys and tokens, anywhere in history | `.github/workflows/security.yml` |
-| pip-audit | known CVEs in Python dependencies | security workflow |
-| bandit (medium and above) | risky Python patterns | security workflow |
-| npm audit (high and above) | known CVEs in the dashboard and SpacetimeDB module | security workflow |
-| cargo audit | RustSec advisories for the Rust audio engine | security workflow |
-| Dependabot | outdated dependencies and actions, grouped weekly | `.github/dependabot.yml` |
+All of them run locally with `scripts/check.sh` (or one at a time: `scripts/check.sh secrets audit`). The team runs it before merging; there are no hosted CI runners.
 
-The security workflow also runs weekly, so newly published advisories surface without a code change.
+| Check | What it catches | Step |
+|---|---|---|
+| gitleaks | committed keys and tokens, anywhere in history | `secrets` |
+| pip-audit | known CVEs in Python dependencies | `audit` |
+| bandit (medium and above) | risky Python patterns | `audit` |
+| npm audit (high and above) | known CVEs in the dashboard and SpacetimeDB module | `audit` |
+| cargo audit | RustSec advisories for the Rust audio engine | `audit` |

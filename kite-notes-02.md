@@ -58,7 +58,7 @@ A webcam worn by the person runs object detection for sudden, close obstacles.
 - **Google Maps:** Routes API v2 and Places API (New). The legacy Directions and Places APIs are *not* enabled on
   the key.
 - **Anthropic (Claude):** route and scene reasoning.
-- **Gemini:** describing the scene in the drone's video.
+- **Claude:** describing the scene in the drone's video.
 - **Cartesia:** text-to-speech in the AirPods (`sonic-3.6`) and speech-to-text (`ink-whisper`).
 - **Moss:** route and landmark memory, only if we enter the Moss track.
 
@@ -107,13 +107,13 @@ cue sounds, and the JSON event contract. Summary in §7.
                                        SpacetimeDB "kite-sync-pl6rp" (Maincloud, needs INTERNET)
                                                          │
    webcam ──USB──  WEARABLE LAPTOP  ── earpiece: UDP 5010 / WS 5011 on 127.0.0.1 ──► AirPods (Bluetooth)
-                   obstacle detection, Maps routing, Claude / Gemini / Cartesia
+                   obstacle detection, Maps routing, Claude / Cartesia
                                                          │
                                                caregiver dashboard (browser)
 ```
 
 Two things to settle early:
-1. **Internet for the drone laptop.** Its Wi-Fi belongs to the Tello, so SpacetimeDB, Gemini and Claude are
+1. **Internet for the drone laptop.** Its Wi-Fi belongs to the Tello, so SpacetimeDB and Claude are
    unreachable from it unless it gets a second link: iPhone USB tethering, Ethernet, or a USB Wi-Fi dongle.
    Alternatively, the drone laptop only streams to the wearable laptop over a second link, and that laptop
    does the cloud calls.
@@ -406,7 +406,7 @@ Optional SpacetimeDB link (`spacetime_enabled: false` by default).
 | `beacon` | `{"type":"beacon","bearing":-35,"distance":42,"label":"Palace of Fine Arts"}` / `{"type":"beacon","active":false}` | direction to the next waypoint (Soundscape-style) |
 | `hazard` | `{"type":"hazard","kind":"crosswalk","state":"dont_walk","bearing":5,"distance":9}` | **main drone output**: crosswalk signal state, crowds, construction ahead |
 | `say` | `{"type":"say","text":"...","priority":"info"}` | free text |
-| `scene` | `{"type":"scene","text":"Wide sidewalk..."}` (not spoken; context for questions) | Gemini's description of the drone video |
+| `scene` | `{"type":"scene","text":"Wide sidewalk..."}` (not spoken; context for questions) | Claude's description of the drone video |
 | `position` | `{"type":"position","lat":37.80,"lng":-122.45,"heading":270,"place":"Lyon St"}` | phone/GPS position |
 | `status` | `{"type":"status","source":"drone","battery":34,"state":"following"}` | drone battery + state |
 | `heartbeat` | `{"type":"heartbeat","source":"webcam"}` | watchdog (no obstacle frames for 1.5 s = "detection is down") |
