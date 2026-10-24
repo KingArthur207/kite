@@ -1,4 +1,9 @@
-"""Google Street View along the planned route as a frame source: real imagery of our corner before the Tello shoot.
+"""
+DEV ONLY. Google's Map Tiles policy prohibits object detection on tile content, and the
+Google Maps Platform Terms may restrict machine analysis of Street View imagery too (check the
+License Restrictions section before any further use). Don't use Street View frames or results
+in the demo, the video, the Devpost or any committed file. Real Tello footage replaces this.
+Google Street View along the planned route as a frame source: real imagery of our corner before the Tello shoot.
 
     from kite.sources import open_source
     with open_source("streetview:route", pitch=0) as src:            # sim/public/osm/route.json, drone-like
