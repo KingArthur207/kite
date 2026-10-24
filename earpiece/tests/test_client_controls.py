@@ -7,6 +7,8 @@ import random
 import socket
 import threading
 
+import pytest
+
 from conftest import wait_for
 from earpiece.client import MAX_DATAGRAM, EarpieceClient
 from earpiece.controls import PAUSE, REPEAT, TALK, Gestures
@@ -51,6 +53,82 @@ def test_small_frames_go_out_unchanged_and_a_missing_earpiece_never_raises():
         dead.say("hello")
     dead.send({"type": "say", "text": "x" * 70000})   # too big even for the OS: counted, not raised
     assert dead.dropped >= 1
+
+
+def test_every_client_helper_sends_what_the_earpiece_accepts():
+    """The client is the contract teammates code against: each helper's datagram must parse."""
+    rx = receiver()
+    c = EarpieceClient("127.0.0.1", rx.getsockname()[1], source="drone")
+    c.heartbeat()
+    c.guidance("In 20 meters, turn left onto Lyon Street", key="step-3", ttl=10, bearing=-30)
+    c.beacon(bearing=-35, distance=42, label="Palace of Fine Arts")
+    c.beacon(active=False)
+    c.hazard("crosswalk", state="dont_walk", bearing=5, distance=9, ttl=5)
+    c.say("Hello", priority="answer")
+    c.scene("Wide sidewalk, light crowd near the corner")
+    c.position(lat=37.8, lng=-122.44, heading=90, place="Lyon Street")
+    c.status(battery=81, state="flying", text="ok")
+    c.control("pause")
+    c.obstacles([{"id": 1, "kind": "pole", "bearing": 3, "distance": 2.0}], source="chest")
+    got = [parse(rx.recv(65536)) for _ in range(11)]
+    rx.close()
+    assert [m.type for m in got] == ["heartbeat", "guidance", "beacon", "beacon", "hazard", "say", "scene",
+                                     "position", "status", "control", "obstacles"]
+    assert all(m.source == "drone" for m in got[:-1]) and got[-1].source == "chest"
+
+
+def test_odd_obstacle_distances_never_break_trimming():
+    """Trimming sorts by distance; a missing, NaN, string or bool distance sorts last, never raises."""
+    rx = receiver()
+    c = EarpieceClient("127.0.0.1", rx.getsockname()[1])
+    odd = [{"id": i, "kind": "person", "bearing": 0, "distance": d, "pad": "x" * 200}
+           for i, d in enumerate([float("nan"), "near", True, None, float("inf")] * 20)]
+    near = [{"id": 1000 + i, "kind": "pole", "bearing": 0, "distance": 1.0 + i, "pad": "x" * 200} for i in range(5)]
+    c.obstacles(odd + near)
+    m = json.loads(rx.recv(65536))
+    rx.close()
+    assert c.trimmed == 1 and len(json.dumps(m)) <= MAX_DATAGRAM
+    assert [o["id"] for o in m["objects"][:5]] == [1000, 1001, 1002, 1003, 1004]   # real distances first
+
+
+def test_requests_yields_only_the_asked_kinds_and_reconnects(monkeypatch):
+    """client.requests(): the generator teammates use for voice requests. It skips other
+    events and, when the earpiece is not there yet, retries instead of raising."""
+    import time
+
+    from earpiece import client
+    from earpiece.transport import Transport
+    t = Transport(lambda m: None, "127.0.0.1", 0, 0, log=lambda *_: None)
+    t.start()
+    try:
+        url = f"ws://127.0.0.1:{t.ws_port}"
+        assert wait_for(lambda: t.ws_port, 5)
+        gen = client.requests(url)
+        out: list = []
+        reader = threading.Thread(target=lambda: out.extend([next(gen), next(gen)]), daemon=True)
+        reader.start()
+        assert wait_for(lambda: t.stats["clients"] == 1, 10)
+        t.publish({"type": "spoken", "text": "not for the client"})
+        t.publish({"type": "voice_request", "intent": "navigate", "destination": "Crissy Field"})
+        t.publish({"type": "caregiver_alert", "message": "help"})
+        reader.join(10)
+        assert [m["type"] for m in out] == ["voice_request", "caregiver_alert"]
+    finally:
+        t.stop()
+    # nothing listens: it backs off 1 s and retries, never raises. The third back-off ends the test.
+    sleeps: list = []
+
+    class Done(Exception):
+        pass
+
+    def fake_sleep(s):
+        sleeps.append(s)
+        if len(sleeps) == 3:
+            raise Done
+    monkeypatch.setattr(time, "sleep", fake_sleep)
+    with pytest.raises(Done):
+        next(client.requests("ws://127.0.0.1:9"))
+    assert sleeps == [1.0, 1.0, 1.0]
 
 
 def test_gestures_single_double_triple():
