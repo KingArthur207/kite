@@ -91,7 +91,7 @@ class RawTelloStream:
         self.finished = False  # feed mode: every chunk decoded
         self._t_start = None
         self._st = {"datagrams": 0, "bytes": 0, "frames_decoded": 0, "frames": 0, "corrupt_frames": 0,
-                    "decode_errors": 0, "queue_drops": 0, "skipped_bytes": 0, "resyncs": 0,
+                    "decode_errors": 0, "queue_drops": 0, "skipped_bytes": 0, "resyncs": 0, "keyframe_seen": False,
                     "time_to_first_datagram_s": None, "time_to_first_frame_s": None, "size": None,
                     "rcvbuf_requested": rcvbuf, "rcvbuf": None, "port": None, "last_error": None}
         self._last_rx = 0.0
@@ -231,7 +231,11 @@ class RawTelloStream:
     # ------------------------------------------------------------------ decoder
     def _new_codec(self):
         ctx = av.CodecContext.create("h264", "r")
-        ctx.flags |= int(av.codec.context.Flags.low_delay)
+        ctx.flags |= int(av.codec.context.Flags.low_delay) | int(av.codec.context.Flags.output_corrupt)
+        # show_all: output frames from the first SPS/PPS on, before a full IDR has arrived (they fill in as intra
+        # data comes). If the drone sends IDRs seconds apart, this gives a picture in ~0.6 s instead of one IDR
+        # interval later (docs/mac-video-root-cause.md); stats()["keyframe_seen"] says when it is fully refreshed.
+        ctx.flags2 |= int(av.codec.context.Flags2.show_all)
         ctx.thread_type = "SLICE"  # frame threading would hold frames back (latency); slices do not
         return ctx
 
@@ -264,6 +268,7 @@ class RawTelloStream:
             ctx = self._new_codec()
             synced, pending, errors_in_a_row = False, b"", 0
             st["resyncs"] += 1
+            st["keyframe_seen"] = False
 
         eof = False
         while not eof and not self._stopped.is_set():
@@ -321,6 +326,8 @@ class RawTelloStream:
                 for f in frames:
                     errors_in_a_row = 0
                     st["frames_decoded"] += 1
+                    if f.key_frame:
+                        st["keyframe_seen"] = True
                     if f.is_corrupt:
                         st["corrupt_frames"] += 1
                         if self._drop_corrupt:
