@@ -205,7 +205,7 @@ Each person owns a deliverable, not a layer. One owner per job.
 | Karthik | The voice: earpiece, Maps, Cartesia, Claude | The Claude judgment layer (5.6). Fix the `brain.py` system prompt, which says the drone "flies ahead". "What's in front of me?" answered from the chest camera. | Headphones as the output, any stereo Bluetooth pair. |
 | Eddy | Infrastructure, sim, the live-walk kit, the video, the submission | Done: event tables, dashboard with live map, replay, `netcheck` and `offline.sh`, the sim with the Moss world, glTF cars and people, metrics mode and the stand-in detector. Next: caregiver messages through Spacetime (5.2); a reveal screen with the chest camera and its boxes; the stand-in detector on the phone camera; the collision number with the real detector. | Buy the kit at 8 AM (section 13). Run the 40-walk rehearsal at 6 PM. |
 
-Every code change goes through a pull request (team decision, Oct 24 meeting). Keep PRs small and merge them within the hour; if nobody else is awake, the author merges their own once the change is tested (spec author's call). Everyone works in this repo; nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
+Eddy decides by hand when the repo goes public (team decision, Oct 24, 1:30 AM); no gate forces it. Every code change goes through a pull request (team decision, Oct 24 meeting). Keep PRs small and merge them within the hour; if nobody else is awake, the author merges their own once the change is tested (spec author's call). Everyone works in this repo; nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
 
 Also owned: Rex runs the interview and verifies the guide dog figures. Eddy owns the clock, the demo video and the submission audit. The presenter comes from a timed tryout.
 
@@ -245,9 +245,9 @@ We have one charged Tello battery and no charger until someone buys a USB-C to M
 | Sat 3:45 AM to 8:00 PM | Build | Every feature must make the demo better; timebox 2 hours. Ask "can we demo right now?" every 2 hours. |
 | Sat 3:00 PM | Cut point | If the live walk (chest camera, detector, stop in the headphones) isn't reliable, the sim walk becomes the live demo. Cut "walk me to my friend" and signal reading either way. |
 | Sat 6:00 PM | Rehearsal | 40 live walks in a row in a crowded room, fixing what breaks. Then the presenter tryout. |
-| Sat 8:00 PM | Freeze | No new features. Repo public. README with setup, Cartesia features used, known limitations. Devpost draft in. |
+| Sat 8:00 PM | Freeze | No new features. README with setup, Cartesia features used, known limitations. Devpost draft in. |
 | Sun 7:00 AM | Record | Backup video of the real run. Rehearse the pitch. |
-| Sun 8:00 AM | Submit | Disqualifier audit (repo public, teammates listed, tracks ticked, no keys in the repo), then submit and confirm. |
+| Sun 8:00 AM | Submit | Disqualifier audit (teammates listed, tracks ticked, no keys in the repo, repo visibility as the team decides), then submit and confirm. |
 | Sun 10:30 AM | Judging | Whole team at the table for the full window. |
 
 ## 10. Tracks
