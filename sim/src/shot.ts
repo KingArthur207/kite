@@ -42,6 +42,7 @@ export function startShot(opts: {
   walker: { x: number; n: number; heading: number };
   metrics: { step(dt: number): void; live(): MetricsLive } | null;
   place: () => void;          // main.ts placeCameras: fence clamp for the walker, body capsule
+  post?: Promise<((cam: THREE.Camera) => void) | null>;   // ?look=2 post chain (look2.ts); plain render without
 }) {
   const { shot, scene, renderer, world, walker, metrics } = opts;
   const tiles = world.tiles && world.level ? (world as TilesLike) : null;
@@ -315,7 +316,8 @@ export function startShot(opts: {
       if (!render) return "";   // previews skip ahead (record_shot.py --preview); tiles then load late
       await settle();
       world.view?.("screen");
-      renderer.render(scene, shotCam);
+      const post = await opts.post;
+      if (post) post(shotCam); else renderer.render(scene, shotCam);
       draw();
       frames++;
       return out.toDataURL("image/png");

@@ -4,6 +4,7 @@
 // bark and pole wood are CC0 Poly Haven textures (public/textures/CREDITS.md), the rest is drawn here.
 import * as THREE from "three";
 import { seeded } from "./osmLook";
+import { look2 } from "./look2";
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -175,11 +176,12 @@ export function streetTree(at: THREE.Vector3, height: number, seed: number, leav
   }
   grow(trunkTop, new THREE.Vector3((r() - 0.5) * 0.2, 1, (r() - 0.5) * 0.2).normalize(), height * 0.22, trunkR * 0.6, 1);   // leader
   for (const tip of tips) {
-    const cards = 5 + Math.floor(r() * 3);
+    // ?look=2: scrappier crowns, more smaller cards spread wider, so branches show through (Street View on Moss)
+    const cards = look2 ? 6 + Math.floor(r() * 3) : 5 + Math.floor(r() * 3);
     for (let k = 0; k < cards; k++) {
-      const c = tip.clone().add(new THREE.Vector3(r() - 0.5, (r() - 0.5) * 0.7, r() - 0.5).multiplyScalar(1.1));
+      const c = tip.clone().add(new THREE.Vector3(r() - 0.5, (r() - 0.5) * 0.7, r() - 0.5).multiplyScalar(look2 ? 1.5 : 1.1));
       const nrm = new THREE.Vector3(r() - 0.5, r() - 0.3, r() - 0.5).normalize();
-      leaves.card(c, nrm, 1.0 + r() * 0.7, r() * Math.PI, crown, crownR, 0.8 + r() * 0.3);
+      leaves.card(c, nrm, look2 ? 0.5 + r() * 0.45 : 1.0 + r() * 0.7, r() * Math.PI, crown, crownR, 0.8 + r() * 0.3);
     }
   }
   return bark;

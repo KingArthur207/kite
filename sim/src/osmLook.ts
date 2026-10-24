@@ -33,6 +33,7 @@ interface PbrOpts { rough?: boolean; roughness?: number; color?: number; vertexC
 export function pbr(name: string, sizeM: number, o: PbrOpts = {}) {
   const ns = o.normalScale ?? 1;
   return new THREE.MeshStandardMaterial({
+    name,   // look2.ts finds materials by name
     map: tex(`${name}_diff.jpg`, sizeM, true, o.rotate),
     normalMap: name === "roof" ? null : tex(`${name}_nor.jpg`, sizeM, false, o.rotate),
     normalScale: new THREE.Vector2(ns, ns),
