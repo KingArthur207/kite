@@ -600,19 +600,43 @@ class Speaker:
             same = [q for q in self._queue if _norm_text(q.text) == nt]
             if same and not u.key:                    # identical text: keep the queued item's key
                 u.key = key = same[0].key
-            if key:                                   # newer version replaces the queued one
-                self._queue = [q for q in self._queue if q.key != key]
-            self._queue = [q for q in self._queue if _norm_text(q.text) != nt]
+            replaced = [q for q in self._queue if (key and q.key == key) or _norm_text(q.text) == nt]
+            if replaced:                              # newer version replaces the queued one
+                self._queue = [q for q in self._queue if q not in replaced]
             self._queue.append(u)
             self._queue.sort(key=lambda q: (q.rank, q.created))
+            replaced += self._shed_locked()
             cur = self._current
             preempt = (cur is not None and u.rank < cur.rank and priority in ("critical", "hazard"))
         if priority in REPLIES:
             self.turns.reply_queued(u.uid, now)
+        for q in replaced:
+            self._notify(q, "dropped")
         if preempt:
             self._call(self._preempt, cur)
         self._kick()
         return u.uid
+
+    MAX_QUEUE = 32           # queued lines beyond this are shed, least important and oldest first
+    MAX_QUEUE_CRITICAL = 128  # critical lines are only shed past this (a flood, never real traffic)
+
+    def _shed_locked(self) -> list[Utterance]:
+        """Keep the queue bounded (caller holds _qlock; the queue is sorted). "answer" and
+        "system" lines have no default TTL, so without this a flood of distinct lines from the
+        network would queue forever and be read out for hours, with say() getting slower each
+        time. Sheds the oldest of the least important lines; critical lines only past a hard cap."""
+        shed: list[Utterance] = []
+        while len(self._queue) > self.MAX_QUEUE:
+            pool = [q for q in self._queue if q.priority != "critical"]
+            if not pool:
+                if len(self._queue) <= self.MAX_QUEUE_CRITICAL:
+                    break
+                pool = self._queue
+            victim = max(pool, key=lambda q: (q.rank, -q.created))
+            self._queue.remove(victim)
+            shed.append(victim)
+        self.stats["shed"] = self.stats.get("shed", 0) + len(shed)
+        return shed
 
     def cancel_all(self, keep_critical: bool = True) -> None:
         """Flush the queue and cut the current utterance (e.g. wearer said 'stop talking')."""
@@ -821,6 +845,9 @@ class Speaker:
             with self._qlock:
                 self._queue.append(again)
                 self._queue.sort(key=lambda q: (q.rank, q.created))
+                shed = self._shed_locked()
+            for q in shed:
+                self._notify(q, "dropped")
 
     def _next(self) -> Utterance | None:
         now = time.monotonic()
