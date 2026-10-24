@@ -30,3 +30,7 @@ recordings/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Demo video: stock clips and renders stay local
+clips/
+out/
