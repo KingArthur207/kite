@@ -19,6 +19,16 @@ def test_seeded_places_resolve_offline(mem):
     assert mem.resolve_place("Golden Gate Park") is None
 
 
+def test_demo_home_is_a_public_stand_in_with_no_address(mem):
+    home = mem.docs["place-home"]
+    assert "demo" in home.text.lower() and "address" not in home.meta
+    assert not any(ch.isdigit() for ch in home.text)              # no house number anywhere
+    # a public lawn on Marina Green, at most 4 decimals (about 11 m): nobody's front door
+    assert (home.meta["lat"], home.meta["lng"]) == (37.8066, -122.4391)
+    for v in (home.meta["lat"], home.meta["lng"]):
+        assert len(str(v).split(".")[1]) <= 4
+
+
 def test_remember_persists_and_forget_removes(mem, tmp_path):
     m = mem.remember("place", "the pharmacy on Lombard", {"name": "the pharmacy", "lat": 37.79})
     again = MemoryStore(project_id="", project_key="", store=tmp_path / "m.json", log=lambda *_: None)
