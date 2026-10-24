@@ -7,19 +7,15 @@
 // Earpiece: `position` (the panorama's lat/lng, view heading, "Moss St") and `status`, like main.ts.
 // Detector: the page sends {type: "sv_view", pano, lat, lng, heading} to the relay; sim/streetview_bridge.py fetches
 // the Static API images for it and publishes them as the drone and chest frames. The page sends no pixels.
-import { EARPIECE_URL, ORIGIN, POSITION_HZ, RELAY_URL } from "./config";
+import { EARPIECE_URL, POSITION_HZ, RELAY_URL, toSim } from "./config";
 import { reconnectingSocket } from "./net";
 import route from "../public/osm/route.json";
+import { inScope, loadStreetView, PANO_OPTS } from "./googleStreetView";
 
 // ponytail: no @types/google.maps; the handful of calls below are checked by hand
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 declare const google: any;
 
-// Same box as SCOPE in kite/sources/streetview.py: Moss St from Folsom to Howard plus the corner.
-const SCOPE = { latMin: 37.7768, latMax: 37.7788, lngMin: -122.4095, lngMax: -122.4068 };
-const inScope = (lat: number, lng: number) =>
-  lat >= SCOPE.latMin && lat <= SCOPE.latMax && lng >= SCOPE.lngMin && lng <= SCOPE.lngMax;
-const KEY: string = import.meta.env.VITE_GOOGLE_MAPS_API_KEY ?? "";
 const TURN_STEP = 20;           // degrees per Left / Right press
 const STEP_MAX_OFF = 60;        // a link more than this off the wanted direction is not "ahead"
 const WALKING_S = 1.5;          // status stays "walking" this long after a step
@@ -54,9 +50,6 @@ function ahead(p: LatLng, deg: number, m: number): LatLng {
   const r = (deg * Math.PI) / 180;
   return { lat: p.lat + (m * Math.cos(r)) / 111320, lng: p.lng + (m * Math.sin(r)) / (111320 * Math.cos((p.lat * Math.PI) / 180)) };
 }
-const toSim =({ lat, lng }: LatLng) => ({     // inverse of config.ts toLatLng
-  x: (lng - ORIGIN.lng) * 111320 * Math.cos((ORIGIN.lat * Math.PI) / 180), y: (lat - ORIGIN.lat) * 111320,
-});
 
 /** A panorama's data if it is Google's own and inside SCOPE; null otherwise. One request per panorama. */
 async function check(req: object, id?: string): Promise<Pano | null> {
@@ -107,26 +100,12 @@ function turn(deg: number) {
 }
 
 async function start() {
-  if (!KEY) { note = "no VITE_GOOGLE_MAPS_API_KEY: run sh sim/tiles_env.sh"; return; }
-  (window as any).gm_authFailure = () => { note = "Google rejected the key (is the Maps JavaScript API enabled?)"; };
-  await new Promise<void>((resolve, reject) => {
-    (window as any).__kiteSvReady = resolve;
-    const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(KEY)}&v=weekly&loading=async&callback=__kiteSvReady`;
-    s.onerror = () => reject(new Error("could not load the Maps JavaScript API"));
-    document.head.appendChild(s);
-  });
-  const lib = await google.maps.importLibrary("streetView");
+  const lib = await loadStreetView(() => { note = "Google rejected the key (is the Maps JavaScript API enabled?)"; });
   svc = new lib.StreetViewService();
   const first = await check({ location: pts[0], radius: 15, source: lib.StreetViewSource.OUTDOOR });
   if (!first) { note = "no Google panorama at the route start"; return; }
   pano = new lib.StreetViewPanorama(view, {
-    pano: first.id, pov: { heading, pitch: 0 }, zoom: 0,
-    // Google's logo, copyright and terms stay (required); every control and click-to-move goes.
-    disableDefaultUI: true, clickToGo: false, linksControl: false, panControl: false, zoomControl: false,
-    addressControl: false, fullscreenControl: false, motionTracking: false, motionTrackingControl: false,
-    showRoadLabels: false, keyboardShortcuts: false, scrollwheel: false, disableDoubleClickZoom: true,
-    imageDateControl: false,
+    pano: first.id, pov: { heading, pitch: 0 }, zoom: 0, ...PANO_OPTS,
   });
   counts.panoramaLoads++;
   here = first;

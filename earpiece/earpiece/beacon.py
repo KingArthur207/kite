@@ -4,10 +4,13 @@ The navigation side sends the waypoint's bearing relative to the wearer and its
 distance. The beacon pings from that direction, Soundscape's 4-region scheme
 (apps/ios/GuideDogs/Code/Audio/Protocols/DynamicAudioEngineAsset.swift, the
 4-asset selector: +-15 / 55 / 125 deg):
-    |bearing| <= 15 deg  bright double ping  ("on course")
-    15 - 55 deg          ping from that side
-    55 - 125 deg         lower, dull ping from that side ("turn")
-    > 125 deg            distinct falling two-tone, "behind you"
+    |bearing| <= 15 deg  bright same-pitch double ping, C7 C7       ("on course")
+    15 - 55 deg          rising pair D6 -> G6 if right, falling G6 -> D6 if left
+    55 - 125 deg         lower, dull pair A5 -> D6 right / D6 -> A5 left ("turn")
+    > 125 deg            three low, dull G5 pulses                    ("behind you")
+Positive bearing is right (spatial.py). Every cue differs by pitch contour, rhythm
+and timbre alone, so they stay distinct in mono (table speakers, one earbud),
+where left/right panning collapses; the spatialisation is a redundant cue on top.
 Soundscape switches assets abruptly at the region edges. Here the ping's
 brightness also follows a raised-cosine curve of |bearing| (sounds.
 beacon_brightness: flat on axis, 0 at 55 deg), so turning toward the waypoint
@@ -39,7 +42,8 @@ _WARM: dict[tuple[str, int, int], np.ndarray] = {}   # pre-rendered at startup, 
 
 
 def _mono_sound(region: str, bearing_q: int, rate: int) -> np.ndarray:
-    """The beacon cue for (region, 5-degree bearing): brightness depends only on |bearing|."""
+    """The beacon cue for (region, 5-degree bearing): brightness depends on |bearing|, the
+    contour (rising right / falling left) on its sign."""
     mono = sounds.beacon_tick(region, float(bearing_q))
     if rate != sounds.RATE:
         from scipy.signal import resample_poly
@@ -102,9 +106,9 @@ def prewarm(cfg: BeaconCfg, rate: int, log=print) -> int:
             want[r].append(bq)
     n = 0
     for region, bqs in want.items():
-        for mag in sorted({abs(bq) for bq in bqs}):
-            group = [bq for bq in bqs if abs(bq) == mag]
-            for bq, st in zip(group, _place_many(_mono_sound(region, mag, rate), group, rate)):
+        for mag, right in sorted({(abs(bq), bq >= 0) for bq in bqs}):
+            group = [bq for bq in bqs if abs(bq) == mag and (bq >= 0) == right]
+            for bq, st in zip(group, _place_many(_mono_sound(region, group[0], rate), group, rate)):
                 _WARM[(region, bq, rate)] = st
                 n += 1
     return n

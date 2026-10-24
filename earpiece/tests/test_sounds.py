@@ -235,22 +235,74 @@ def test_beacon_gets_brighter_as_you_turn_toward_it():
     assert band_fraction(side, *sounds.FRONT_BAND_HZ) < 0.01
 
 
-def test_behind_cue_lives_in_the_back_band_and_falls():
+def split_notes(x, min_gap_s=0.02):
+    """The notes of a cue, split at runs of silence."""
+    nz = np.flatnonzero(np.abs(x) > 1e-4)
+    cuts = np.flatnonzero(np.diff(nz) > int(min_gap_s * RATE))
+    starts = np.r_[nz[0], nz[cuts + 1]]
+    ends = np.r_[nz[cuts] + 1, nz[-1] + 1]
+    return [x[a:b] for a, b in zip(starts, ends)]
+
+
+def note_pitch(x):
+    """Fundamental of one harmonic note: its strongest spectral peak (partials fall off)."""
+    f, X = spectrum(x)
+    return float(f[np.argmax(X)])
+
+
+def contour(x):
+    """(note count, pitch step in semitones first -> last note) of a mono cue."""
+    p = [note_pitch(n) for n in split_notes(x)]
+    return len(p), 12 * math.log2(p[-1] / p[0])
+
+
+def test_behind_cue_is_a_low_dull_triple_pulse_in_the_back_band():
     x = sounds.beacon_behind()
     assert band_fraction(x, *sounds.FRONT_BAND_HZ) < 0.005
     assert band_fraction(x, *sounds.BACK_BAND_HZ) > 0.5
     assert centroid(sounds.beacon_on_course()) > 2.5 * centroid(x)
-    nz = np.flatnonzero(np.abs(x) > 1e-4)
-    gap = np.flatnonzero(np.diff(nz) > int(0.03 * RATE))
-    assert gap.size == 1                                       # exactly two notes
-    first, second = x[:nz[gap[0]] + 1], x[nz[gap[0] + 1]:]
-    assert centroid(first) > centroid(second)                  # falling: 'turn around'
-    assert 0.2 < x.size / RATE < 0.3
+    n, step = contour(x)
+    assert n == 3 and abs(step) < 0.5                          # three same-pitch beats
+    assert 0.25 < x.size / RATE < 0.4
 
 
-def test_beacon_levels_sit_under_the_sonar():
-    for region, a in (("near", 20), ("near", 50), ("side", 90)):
-        assert sounds.loudness_lu(sounds.beacon_tick(region, a)) == pytest.approx(sounds.BEACON_TARGET_LU, abs=0.5)
+@pytest.mark.parametrize("region,a", [("near", 20), ("near", 50), ("side", 60), ("side", 120)])
+def test_left_and_right_differ_by_contour_in_mono(region, a):
+    """Panning collapses on table speakers: right must rise and left must fall."""
+    nr, right = contour(sounds.beacon_tick(region, a))
+    nl, left = contour(sounds.beacon_tick(region, -a))
+    assert nr == nl == 2
+    assert right > 4 and left < -4                             # a perfect fourth (5 st) each way
+
+
+def test_on_and_behind_differ_from_both_turn_contours():
+    on, behind = contour(sounds.beacon_on_course()), contour(sounds.beacon_behind())
+    assert on[0] == 2 and abs(on[1]) < 0.5                     # level, not rising
+    assert behind[0] == 3 and abs(behind[1]) < 0.5             # level, and three beats
+    assert note_pitch(sounds.beacon_on_course()) > 1.4 * note_pitch(sounds.beacon_tick("near", 20))
+
+
+def test_nav_chime_follows_the_turn_contour():
+    assert sounds.turn_side("Now turn right onto Bay Street.") == 1
+    assert sounds.turn_side("In 30 meters, turn LEFT onto Bay Street.") == -1
+    assert sounds.turn_side("Head north on Polk Street.") == 0
+    assert sounds.turn_side("Brighton Avenue") == 0           # whole words only
+    step = int(0.07 * RATE)                                    # chime knocks are contiguous
+    for text, sign in (("turn right", 1), ("turn left", -1)):
+        x = sounds.nav_chime(text)
+        assert sign * 12 * math.log2(note_pitch(x[step:]) / note_pitch(x[:step])) > 4
+    assert sounds.nav_chime("Continue straight").size < 0.2 * RATE   # one knock
+
+
+def test_status_blip_does_not_sound_like_a_right_turn():
+    n, step = contour(sounds.heard())
+    assert n == 2 and abs(step) < 0.5
+
+
+@pytest.mark.parametrize("region,a", [("on", 0), ("near", 20), ("near", -50), ("side", 90), ("side", -90)])
+def test_beacon_levels_sit_under_the_sonar(region, a):
+    assert sounds.loudness_lu(sounds.beacon_tick(region, a)) == pytest.approx(sounds.BEACON_TARGET_LU, abs=0.5)
+    assert sounds.loudness_lu(sounds.beacon_behind()) == pytest.approx(sounds.BEHIND_TARGET_LU, abs=0.5)
     assert sounds.BEACON_TARGET_LU <= sounds.SONAR_TARGET_LU - 2
 
 
@@ -265,7 +317,7 @@ def _second_partial_ratio(x):
 def test_beacon_timbre_is_not_a_sonar_timbre():
     # the old beacon was the person knock an octave up. The ping is harmonic (2nd partial at
     # 2x), the knock inharmonic (2.76x), and neither the ping nor the knock is rough.
-    ping = sounds.beacon_tick("near", 35)
+    ping = split_notes(sounds.beacon_tick("near", 35))[0]
     assert _second_partial_ratio(ping) == pytest.approx(2.0, abs=0.03)
     assert abs(_second_partial_ratio(sounds.proximity_cue("person", 900)) - 2.0) > 0.3
     assert _modulation_fraction(ping) < 0.5 * _modulation_fraction(sounds.proximity_cue("vehicle", 900))
@@ -299,7 +351,8 @@ def test_behind_cue_does_not_nag():
     assert np.diff(times).min() >= BEHIND_MIN_PERIOD_S - 0.01
 
 
-def test_beacon_mono_depends_only_on_region_and_abs_bearing():
+def test_beacon_mono_depends_on_region_bearing_and_side():
     from earpiece import beacon as beacon_mod
-    assert np.array_equal(beacon_mod._mono_sound("near", 30, RATE), beacon_mod._mono_sound("near", -30, RATE))
+    assert not np.array_equal(beacon_mod._mono_sound("near", 30, RATE), beacon_mod._mono_sound("near", -30, RATE))
+    assert np.array_equal(beacon_mod._mono_sound("behind", 150, RATE), beacon_mod._mono_sound("behind", -150, RATE))
     assert not np.array_equal(beacon_mod._mono_sound("near", 20, RATE), beacon_mod._mono_sound("near", 50, RATE))
