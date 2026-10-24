@@ -46,6 +46,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # the kite package next to this file
 
+DROP_CORRUPT = False  # --drop-corrupt (set in main)
 FIELDS = ["pitch", "roll", "yaw", "vgx", "vgy", "vgz", "tof", "h", "bat"]
 
 # axis: rc vector (left_right, forward_back, up_down, yaw), reaction channel, its minimum threshold,
@@ -137,7 +138,7 @@ def open_raw_video(tello, Stream, fps, tries=3, wait_s=5.0):
     """kite's own UDP reader: bind first (its constructor never waits), then streamon until a frame decodes.
     streamon is re-sent only while no packet arrives; once packets flow it waits for a keyframe (wait_s per try)."""
     try:
-        stream = Stream(tello.get_udp_video_address(), fps=fps).start()
+        stream = Stream(tello.get_udp_video_address(), fps=fps, drop_corrupt=DROP_CORRUPT).start()
     except RuntimeError as e:  # the port is held by another program
         print(f"video: {e}")
         return None
@@ -641,6 +642,8 @@ def build_parser():
                    help="video reader: pyav (default), opencv, or kite's own UDP readers raw (bare H.264 decoder), "
                         "socket (big receive buffer) and auto = raw on macOS, pyav elsewhere")
     add_video_link_args(p)
+    p.add_argument("--drop-corrupt", action="store_true",
+                   help="raw reader: hold the last clean frame through packet loss instead of showing smears")
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
     p.add_argument("--analyze", metavar="JSON", help="re-analyse a saved run without flying")
     p.add_argument("--out", default="results")
@@ -659,6 +662,8 @@ def parse_args(argv=None):
 
 def main(argv=None):
     p, args = parse_args(argv)
+    global DROP_CORRUPT
+    DROP_CORRUPT = args.drop_corrupt
     if not args.analyze:
         check_args(p, args)
     if args.analyze:

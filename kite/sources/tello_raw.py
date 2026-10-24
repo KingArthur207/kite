@@ -55,6 +55,7 @@ def _flag(enum, name: str) -> int:
     raise AttributeError(f"PyAV {av.__version__}: {enum.__name__} has no {name} or {name.upper()}")
 
 
+HOLD_MAX_S = 3.0  # drop_corrupt never freezes the picture longer than this
 LINK_POOR_LOSS, LINK_FAIR_LOSS = 0.2, 0.05  # fraction of decoded frames FFmpeg flags as concealed after loss
 LINK_HELP = "docs/internal/windows-drone.md, 'If the drone video is corrupted'"
 
@@ -94,10 +95,12 @@ class RawTelloStream:
         quiet socket (TelloVideoSource decides when to reconnect). fps caps the BGR conversions per second, with
         a burst of 2 so arrival jitter never drops frames of a stream running at the cap.
         feed: test input (byte chunks, decoded as fast as possible, nothing dropped) instead of a socket.
-        drop_corrupt: hide frames FFmpeg flags as concealed (after loss) instead of delivering them.
+        drop_corrupt: after a frame FFmpeg flags as concealed (packet loss), hold the last clean frame until the next
+            clean keyframe (at most HOLD_MAX_S), instead of delivering smeared frames.
         """
         self._interval = 1.0 / fps
         self._drop_corrupt = drop_corrupt
+        self._held_since: float | None = None  # drop_corrupt: holding since this time, until a clean keyframe
         self._feed = feed
         self._sock = None
         self._q: queue.Queue = queue.Queue(maxsize=queue_datagrams)
@@ -370,7 +373,15 @@ class RawTelloStream:
                         st["keyframe_seen"] = True
                     if f.is_corrupt:
                         st["corrupt_frames"] += 1
-                        if self._drop_corrupt:
+                        if self._drop_corrupt and self._held_since is None:
+                            self._held_since = time.monotonic()
+                    if self._held_since is not None:
+                        # Later P-frames carry the damage forward without being flagged: hold the last clean picture
+                        # until the next keyframe, but never longer than HOLD_MAX_S.
+                        if f.key_frame and not f.is_corrupt or time.monotonic() - self._held_since > HOLD_MAX_S:
+                            self._held_since = None
+                        else:
+                            st["held_frames"] = st.get("held_frames", 0) + 1
                             continue
                     if self._feed is not None:
                         self._publish(f)  # tests / offline: every frame
