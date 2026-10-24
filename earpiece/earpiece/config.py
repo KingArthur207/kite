@@ -89,6 +89,11 @@ class SpeechCfg:
     offline_voice: str = "Samantha"   # macOS `say` voice used without internet
     cache_dir: Path = field(default_factory=lambda: REPO_ROOT / "earpiece" / ".cache" / "tts")
     default_ttl_s: float = 6.0        # navigation speech older than this is dropped, never spoken late
+    # Credit guard: characters sent to Cartesia across ALL runs on this machine (persisted in the
+    # cache dir). Past the budget, only critical/hazard speech may stream; the rest uses cached
+    # phrases or the built-in voice. 0 = no cap.
+    char_budget: int = field(default_factory=lambda: int(os.environ.get("KITE_CARTESIA_CHAR_BUDGET", "150000")))
+    cache_max_chars: int = 120        # lines up to this long are cached: repeat demo runs cost nothing
     dedupe_window_s: float = 4.0
 
 

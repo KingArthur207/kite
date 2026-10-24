@@ -657,6 +657,8 @@ class Earpiece:
                       "airpods": self.output.is_airpods, "underflows": self.output.underflows,
                       "master_gain": round(self.engine.master_gain, 2), "speaking": self.engine.speaking},
             "speech": {"online": self.speaker.online, "history": list(self.speaker.history)[-5:],
+                       "cartesia_chars_session": self.speaker.meter.session,
+                       "cartesia_chars_total": self.speaker.meter.total,
                        **{k: v for k, v in self.speaker.stats.items() if k != "first_audio_ms"},
                        "first_audio_ms": (sorted(self.speaker.stats["first_audio_ms"])[
                            len(self.speaker.stats["first_audio_ms"]) // 2]
