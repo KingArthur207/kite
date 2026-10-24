@@ -206,9 +206,9 @@ Run `python -m earpiece caregiver` and talk. "How's the walk going?" makes Grok 
 
 A cyclist cutting across, a car turning into the crosswalk, someone stepping out of a doorway: Grok Imagine generates each one from the walker's chest height, and Kite's real detector and earpiece play it. On the doorway and oncoming clips Kite says "Person, ahead."
 
-**Built with Cursor and Grok**
+**Built in Cursor, planned with Grok Bot**
 
-The team built Kite in Cursor and used Grok for research and planning throughout the weekend.
+The team built Kite in Cursor and used Grok Bot for research, planning and team collaboration throughout the weekend.
 
 _cyclist at the crosswalk_
 

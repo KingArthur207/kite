@@ -46,3 +46,11 @@ test("/judges cards run from most to least likely to win, and the contents list 
   const calhacks = judges.indexOf('id="calhacks"');
   assert.ok(judges.indexOf('id="spacexai"') < calhacks && calhacks < judges.indexOf('id="people"'));
 });
+
+test("the SpaceXAI card names Cursor, Grok Bot, Grok Voice and Grok Imagine", () => {
+  const c = card("spacexai");
+  assert.match(c, /built Kite in Cursor and used Grok Bot for research, planning and team collaboration/);
+  assert.match(c, /Grok Voice/);
+  assert.match(c, /Grok Imagine/);
+  assert.equal((c.match(/\/assets\/imagined\//g) || []).length, 3);
+});
