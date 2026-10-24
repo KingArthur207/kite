@@ -1,0 +1,21 @@
+[Unit]
+Description=Kite link: the UNO Q talks to the computer (text and video)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# install.sh fills in __USER__ and __DIR__
+ExecStart=/usr/bin/python3 __DIR__/board.py
+User=__USER__
+SupplementaryGroups=video
+Environment=PYTHONUNBUFFERED=1
+Environment=KITE_SOURCE=unoq
+Environment=KITE_PORT=8765
+Environment=KITE_CAMERA=auto
+Environment=KITE_VIDEO_SIZE=640x480
+Environment=KITE_VIDEO_FPS=10
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
