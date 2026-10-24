@@ -7,6 +7,7 @@ The site at **https://trykite.pages.dev**: three static pages (`/`, `/how`, `/ju
   `earpiece/.venv/bin/python site/tools/make_audio.py`
 - `src/*.body.html` hold each page's content. `python3 tools/build_pages.py` wraps each in the shared head (with Organization JSON-LD), nav and footer, writes a Markdown twin of every page (`public/<page>.md`), and regenerates `sitemap.xml` and `llms.txt`, so none of them drift. Never edit the generated files by hand.
 - `functions/_middleware.js` (Cloudflare Pages Functions): a request whose `Accept` prefers `text/markdown` gets the page's Markdown with `Vary: Accept`; everyone else gets the HTML. Unknown paths are a real 404 (`public/404.html`, or a Markdown body for Markdown clients).
+- `public/unoq/` is the Arduino UNO Q installer (`curl -fsSL https://trykite.pages.dev/unoq/install.sh | sh`) and the board files it downloads. They are copies of `hardware/arduino/unoq_link/`, written by `python3 hardware/arduino/unoq_link/publish.py` (which also pins each file's SHA-256 in the installer); never edit them here. `tests/unoq.test.mjs` fails if they drift.
 - `tests/` checks the middleware and the generated files: `node --test tests/*.test.mjs` (also run by `scripts/check.sh site` and by `scripts/deploy-site.sh`).
 - `og/og.html` is the social preview card; screenshot it to `public/assets/og.png` at 1200x630. `og/social.html` is the same card at 1280x640 for the GitHub repo preview (`docs/img/social-preview.png`).
 
