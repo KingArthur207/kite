@@ -61,3 +61,15 @@ Land by 30% if the take is done, or when Rex calls it. To fly again in the same 
 - Copy the folder to a second disk or a teammate before anything else.
 - Hand the folder to Rex for perception. The video is MJPG in `video.mkv`; `ffmpeg -i video.mkv -pix_fmt yuv420p video.mp4` for Eddy's edit.
 - Write down for the pitch: piloted by hand (not autonomous follow), the battery at landing, and anything that went wrong.
+
+## Follow mode (only after the footage is safe)
+
+Code: `kite/follow.py`. Tested in a simulation only; it has never flown. Set up once, on normal internet:
+
+    pip install -e ".[follow]"
+    mkdir -p data/models && curl -L -o data/models/yolo11n.pt https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt
+
+1. Rehearse on the morning's take, no drone: `python -m kite.follow --source recordings/<dir> --overlay`. It writes `follow_dry_run.csv` (the rc that follow would have sent on each frame) and `follow_dry_run.mp4` (the walker box, the target row, the sticks) into the take's folder. Check that the box stays on the walker, `yaw` has the same sign as the walker's offset (right is +), and `fb` goes up when the walker pulls away.
+2. Fly: `python -m kite.record --source tello --out recordings --fly --follow`. Take off, climb to the walker's height plus 0.3 m, and get behind them by hand. The status line shows `follow off (walker conf .. box ..)` once it sees a person cut off by the bottom edge. Then press `g`.
+3. Any key cancels follow first: space hovers, `w`/`a`/... take over, `l` lands. If it loses the walker for 0.5 s it hovers (rc 0), beeps and waits. It never searches. It picks the walker up again once they are back at the bottom edge. A safety hover or `WI-FI DOWN` switches follow off for good: press `g` again once it clears.
+4. Knobs: `--follow-behind 1.5` shows more of the head and shoulders, which helps if the detector misses a bare head. `--follow-height` sets the altitude to hold (default: the height when you press `g`). The drone can't go faster than `SafetyCfg.max_rc` (50 is about 0.5 m/s), so the walker keeps to 0.5 m/s.

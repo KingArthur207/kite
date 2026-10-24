@@ -27,6 +27,7 @@ earpiece/out/
 earpiece/.cache/
 .wrangler/
 recordings/
+data/models/
 
 # Claude Code agent worktrees
 .claude/worktrees/
