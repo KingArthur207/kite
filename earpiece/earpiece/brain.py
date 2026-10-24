@@ -264,6 +264,11 @@ class Brain:
     def online(self) -> bool:
         return self._client is not None
 
+    def stop(self) -> None:
+        """End the event-loop thread (an answer in flight is abandoned)."""
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+
     # ------------------------------------------------------------------ entry
     def handle(self, text: str) -> None:
         """Thread-safe: queue the utterance for handling."""

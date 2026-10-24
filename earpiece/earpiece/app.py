@@ -182,6 +182,9 @@ class Earpiece:
         self._stop.set()
         self._stopped = True
         self.judgment.stop()
+        self.brain.stop()
+        self.vision.stop()
+        self.gestures.stop()
         self.listener.stop()
         self.battery.stop()
         self.speaker.cancel_all(keep_critical=False)
