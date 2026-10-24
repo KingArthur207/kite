@@ -61,6 +61,8 @@ M_PER_DEG_LAT = 111320.0  # same constant as sim/src/config.ts toLatLng
 MOSS_BEARING_DEG = 315.0  # APPROXIMATE: Moss St towards Howard, NW (the SoMa grid is ~45 deg off north)
 STOP_WINDOW_S = 4.0  # speed window for the standing-still test (longer than the heading window: steadier)
 GRID_HZ = 10.0  # internal sampling of the smoothed track
+MIN_T, MAX_T = 946684800.0, 4102444800.0  # 2000-01-01 .. 2100-01-01 UTC: a fix outside is a placeholder or garbage
+MAX_SPAN_S = 24 * 3600.0  # a walk log longer than this has a fix with a wrong date (the grid would not fit in memory)
 PLACE = "Moss St at Howard St"
 
 
@@ -228,12 +230,13 @@ def read_csv(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
 
 
 def read_track(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
-    """GPX or CSV, by content. Sorted by time, one fix per timestamp, impossible coordinates dropped."""
+    """GPX or CSV, by content. Sorted by time, one fix per timestamp, impossible coordinates and times dropped
+    (before 2000 or from 2100 on: loggers write 1970 before the first fix, GPS week rollovers jump back ~20 years)."""
     head = Path(path).read_text(encoding="utf-8-sig", errors="replace")[:512].lstrip()
     fixes = read_gpx(path, tz) if head.startswith("<") else read_csv(path, tz)
     by_t = {}
     for f in fixes:
-        if -90 <= f.lat <= 90 and -180 <= f.lng <= 180 and not (f.lat == 0 and f.lng == 0) and math.isfinite(f.t):
+        if -90 <= f.lat <= 90 and -180 <= f.lng <= 180 and not (f.lat == 0 and f.lng == 0) and MIN_T <= f.t < MAX_T:
             by_t[f.t] = f
     return [by_t[t] for t in sorted(by_t)]
 
@@ -283,6 +286,9 @@ class Track:
         self.t, self.raw_x, self.raw_y, self.acc = t[keep], x[keep], y[keep], acc[keep]
         self.x, self.y = _kernel_fit(self.t, self.raw_x, self.raw_y, w[keep], self.t, smooth_s)
         self.t0, self.t1 = float(self.t[0]), float(self.t[-1])
+        if not self.t1 - self.t0 <= MAX_SPAN_S:
+            raise ValueError(f"the GPS fixes span {(self.t1 - self.t0) / 3600:.1f} h (epoch {self.t0:.0f} to "
+                             f"{self.t1:.0f} s), over {MAX_SPAN_S / 3600:g} h: a fix with a wrong date? Trim the log")
         self.max_gap_s, self.heading_window_s, self.stop_speed = max_gap_s, heading_window_s, stop_speed
         # regular grid: interpolated smoothed positions, then speed / heading / moving / held heading
         n = int(math.floor((self.t1 - self.t0) * GRID_HZ)) + 1

@@ -157,6 +157,21 @@ def test_a_row_with_a_garbled_time_is_skipped_not_fatal(tmp_path):
         gps.read_track(tmp_path / "none.csv")
 
 
+def test_a_fix_with_an_impossible_date_cannot_blow_up_the_grid(tmp_path):
+    """Track sampled the whole time span at 10 Hz: one 1970 placeholder fix (loggers write epoch 0 before the first
+    satellite fix) made it allocate ~1.8e10 grid points and die of MemoryError (or swap the laptop to a halt)."""
+    t, lat, lng, acc = noisy_fixes(seed=2)
+    good = len(gps.read_track(write_csv(tmp_path / "w.csv", t, lat, lng, acc), gps.parse_tz("-07:00")))
+    t = t.copy()
+    t[0], t[-1] = 0.0, 5e9  # epoch 0, and the year 2128
+    fixes = gps.read_track(write_csv(tmp_path / "bad.csv", t, lat, lng, acc), gps.parse_tz("-07:00"))
+    assert len(fixes) == good - 2
+    gps.Track(fixes)  # fits
+    wrong_year = fixes[:-1] + [gps.Fix(fixes[-1].t + 365 * 86400.0, fixes[-1].lat, fixes[-1].lng)]
+    with pytest.raises(ValueError, match="wrong date"):  # a fix a year off: a clear error, not a 300 M point grid
+        gps.Track(wrong_year)
+
+
 def test_gpx_with_offset_and_csv_with_local_naive_times_read_the_same(tmp_path):
     t, lat, lng, acc = noisy_fixes()
     a = gps.read_track(write_gpx(tmp_path / "w.gpx", t, lat, lng, acc))
