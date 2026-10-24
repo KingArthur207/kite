@@ -251,6 +251,20 @@ class MemoryStore:
             self._forgotten = set(json.loads(self.forgotten_path.read_text()))
         except (OSError, ValueError):
             self._forgotten = set()
+        if src == self.store and seed is not None and Path(seed).exists():
+            # A seed entry the wearer never edited (no "t") follows the seed, so a correction
+            # there (the demo home moved off a real house) reaches mirrors made before it.
+            changed = False
+            try:
+                for d in json.loads(Path(seed).read_text()):
+                    m = self.docs.get(d.get("id"))
+                    if m is not None and "t" not in m.meta and (m.text != d["text"] or m.meta != d.get("meta", {})):
+                        m.kind, m.text, m.meta = d.get("kind", m.kind), d["text"], dict(d.get("meta") or {})
+                        changed = True
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+            if changed:
+                self._save_local()
         self._reindex()
 
     def _write(self, path: Path, data) -> None:
@@ -478,7 +492,8 @@ class MemoryStore:
             aka = [a for a in str(m.meta.get("aka") or "").split("; ") if a]
             if old.lower() != new_name.lower() and old not in aka:
                 aka.insert(0, old)
-            m.meta.update({"name": new_name, "description": desc, "aka": "; ".join(aka[:4])})
+            m.meta.update({"name": new_name, "description": desc, "aka": "; ".join(aka[:4]),
+                           "t": round(time.time())})
             m.text = f"{new_name}: {desc}"[:300]
             self._dirty_since_load = True
         self._reindex()

@@ -324,6 +324,19 @@ def test_offline_with_the_network_cut(monkeypatch, tmp_path):
     assert m.resolve_place("the gym") is not None and m.search("gym")[0].text == "the gym"
 
 
+def test_seed_corrections_reach_old_mirrors_but_never_undo_the_wearers_edits(tmp_path):
+    seed = json.loads(M.SEED.read_text())
+    old = [dict(d) for d in seed]
+    old[0] = {"id": "place-home", "kind": "place", "text": "Home: an old street address",
+              "meta": {"name": "home", "address": "an old street address", "lat": 37.1, "lng": -122.1}}
+    old[3] = dict(old[3], meta=dict(old[3]["meta"], name="my bench", t=1_700_000_000))   # renamed by the wearer
+    (tmp_path / "m.json").write_text(json.dumps(old))
+    m = MemoryStore(store=tmp_path / "m.json", **SILENT)
+    assert m.docs["place-home"].text == seed[0]["text"] and "address" not in m.docs["place-home"].meta
+    assert m.docs["place-bench"].meta["name"] == "my bench"
+    assert "old street address" not in (tmp_path / "m.json").read_text()   # scrubbed on disk too
+
+
 def test_corrupt_mirror_is_kept_aside_and_the_seed_reloaded(tmp_path):
     (tmp_path / "m.json").write_text("{not json")
     m = MemoryStore(store=tmp_path / "m.json", **SILENT)
@@ -522,9 +535,11 @@ def test_local_lookup_latency_stays_in_budget(tmp_path, capsys):
 @pytest.mark.slow
 @pytest.mark.skipif(not os.environ.get("KITE_LIVE_TESTS"), reason="set KITE_LIVE_TESTS=1 to hit Moss")
 def test_live_moss_latency(tmp_path, capsys):
-    """Real Moss, index loaded into the local runtime: how long one lookup takes."""
+    """Real Moss, index loaded into the local runtime: how long one lookup takes. Needs
+    MOSS_PROJECT_ID / MOSS_PROJECT_KEY in the environment, the repo .env, or KITE_ENV_FILE."""
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+    from earpiece.config import REPO_ROOT
+    load_dotenv(os.environ.get("KITE_ENV_FILE") or REPO_ROOT / ".env", override=False)
     m = MemoryStore(store=tmp_path / "m.json", log=lambda *_: None)
     m.start()
     assert wait_for(lambda: m.status == "moss" or m.stats["errors"] > 0, 120, 0.3)
