@@ -9,7 +9,7 @@ from earpiece.app import Earpiece
 from earpiece.config import Cfg
 
 # Tests never touch the network voices or real devices unless a test asks for it.
-os.environ.pop("ANTHROPIC_API_KEY", None)
+LIVE_ANTHROPIC_KEY = os.environ.pop("ANTHROPIC_API_KEY", None)   # kept only for opt-in live tests
 os.environ.pop("KITE_SPACETIME", None)       # and never mirror a test run to the live database
 if not os.environ.get("KITE_LIVE_TESTS"):
     os.environ.pop("GOOGLE_MAPS_API_KEY", None)    # routes come from fixtures, not the network

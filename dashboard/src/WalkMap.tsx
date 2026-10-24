@@ -7,6 +7,8 @@ export type LatLng = [number, number];
 export type Pose = { lat: number; lng: number; heading?: number };
 // bearing is in the walker frame (0 ahead, +90 right), distance in meters.
 export type Relative = { key: string; bearing: number; distance: number; label: string; priority: string };
+// A timeline moment placed where the walker was at that time.
+export type Pin = { id: string; at: LatLng; color: string; label: string; stop: boolean };
 
 const M_PER_DEG_LAT = 110_540;
 const M_PER_DEG_LNG = 111_320;
@@ -54,8 +56,21 @@ function Follow({ pose, follow, setFollow }: { pose: Pose; follow: boolean; setF
   return null;
 }
 
-export function WalkMap({ pose, trail, hazards, beacon, freshness }: {
+// Clicking a timeline moment flies there and pauses auto-follow so the map stays on it.
+function FocusOn({ at, setFollow }: { at?: LatLng; setFollow: (on: boolean) => void }) {
+  const map = useMap();
+  const lat = at?.[0], lng = at?.[1];
+  useEffect(() => {
+    if (lat == null || lng == null) return;
+    setFollow(false);
+    map.flyTo([lat, lng], Math.max(map.getZoom(), ZOOM - 1), { duration: 0.6 });
+  }, [map, lat, lng, setFollow]);
+  return null;
+}
+
+export function WalkMap({ pose, trail, hazards, beacon, freshness, pins, focusId, onPick }: {
   pose?: Pose; trail: LatLng[]; hazards: Relative[]; beacon?: Relative; freshness: string;
+  pins: Pin[]; focusId?: string; onPick: (id: string) => void;
 }) {
   const [follow, setFollow] = useState(true);
   if (!pose) {
@@ -103,6 +118,20 @@ export function WalkMap({ pose, trail, hazards, beacon, freshness }: {
             </CircleMarker>
           );
         })}
+        {pins.map(pin => {
+          const on = pin.id === focusId;
+          return (
+            <CircleMarker key={`${pin.id}-${on}`} center={pin.at} radius={on ? 13 : pin.stop ? 9 : 6}
+              eventHandlers={{ click: () => onPick(pin.id) }}
+              pathOptions={{ color: on ? '#fff' : '#0e1116', weight: on ? 3 : 2, fillColor: pin.color, fillOpacity: 1 }}>
+              <Tooltip permanent={on || pin.stop} direction="top" offset={[0, -10]}
+                className={`map-label ${pin.stop ? 'p-critical' : ''} ${on ? 'focus' : ''}`}>
+                {on || !pin.stop ? pin.label : 'Stop'}
+              </Tooltip>
+            </CircleMarker>
+          );
+        })}
+        <FocusOn at={pins.find(p => p.id === focusId)?.at} setFollow={setFollow} />
         <Marker position={here} icon={walkerIcon(pose.heading)} zIndexOffset={1000} />
       </MapContainer>
       <div className="map-overlay">

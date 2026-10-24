@@ -139,6 +139,8 @@ class Cfg:
     listen: ListenCfg = field(default_factory=ListenCfg)
     net: NetCfg = field(default_factory=NetCfg)
     watchdog: WatchdogCfg = field(default_factory=WatchdogCfg)
+    # Claude judgment layer (judgment.py). KITE_JUDGMENT=0 or --no-judgment turns it off.
+    judgment: bool = field(default_factory=lambda: os.environ.get("KITE_JUDGMENT", "1") != "0")
 
     @property
     def cartesia_key(self) -> str | None:

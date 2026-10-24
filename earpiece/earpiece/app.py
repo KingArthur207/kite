@@ -26,9 +26,10 @@ from .beacon import Beacon
 from .brain import Actions, Brain
 from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
-from .events import Msg, clock_phrase, distance_phrase
+from .events import PRIORITY_RANK, Msg, clock_phrase, distance_phrase
 from .camera import BodyCamera
-from .judgment import Decision, Judgment
+from .judgment import Judgment
+from .vision import Vision
 from .listen import Listener
 from .memory import MemoryStore
 from .mixer import Engine
@@ -87,10 +88,11 @@ class Earpiece:
                                                  describe_front=lambda: self.describe_front(),
                                                  read_text=lambda: self.read_text()),
                            self.say, self.cfg.anthropic_key, log=log)
+        self.judgment = Judgment(self.context, self.say, self.upgrade_hazard, self._event,
+                                 api_key=self.cfg.anthropic_key if self.cfg.judgment else None, log=log)
         self._noted_places: set[str] = set()
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
-        self.judgment = Judgment(self.cfg.anthropic_key, snapshot=self._judgment_snapshot,
-                                 act=self._apply_judgment, log=log)
+        self.vision = Vision(self.cfg.anthropic_key, log=log)
         self._stop_since: float | None = None      # a "Stop."/wait is in force since this time
         self._clear_since: float | None = None     # the way has looked clear since this time
         self._last_scene_image = 0.0
@@ -167,6 +169,7 @@ class Earpiece:
             return
         self._stop.set()
         self._stopped = True
+        self.judgment.stop()
         self.listener.stop()
         self.battery.stop()
         self.speaker.cancel_all(keep_critical=False)
@@ -282,8 +285,10 @@ class Earpiece:
         elif t == "say":
             self.say(msg.text, msg.priority, key=msg.key, ttl=msg.ttl)
         elif t == "scene":
+            fresh = self.scene is None or self.scene[0] != msg.text
             self.scene = (msg.text, now)
-            self.judgment.poke("scene")
+            if fresh:
+                self.judgment.notify()
         elif t == "scene_image":
             self._scene_image(msg, now)
         elif t == "position":
@@ -362,11 +367,25 @@ class Earpiece:
             self._begin_wait()
         if changed and text:
             self.say(text, msg.priority, key=f"hazard:{key}:{msg.state}", ttl=min(ttl, 8.0))
-        if changed:
-            self.judgment.poke("hazard")
         self._event("hazard", {"key": key, "state": msg.state, "text": text})
+        if changed:                                # spoken above first: Claude only ever adds to it
+            self.judgment.notify()
 
-    # ================================================================== judgment (Claude)
+    def upgrade_hazard(self, key: str, priority: str) -> bool:
+        """Judgment layer hook: raise (never lower) an existing hazard's priority and say it again."""
+        h = self.hazards.get(key)
+        if h is None or priority not in PRIORITY_RANK or priority == "critical":
+            return False
+        if PRIORITY_RANK[priority] >= PRIORITY_RANK.get(h.get("priority") or "hazard", len(PRIORITY_RANK)):
+            return False
+        h["priority"] = priority
+        if h.get("text"):
+            self.say(h["text"], priority, key=f"hazard:{key}:upgrade", ttl=4.0)
+        self._event("hazard", {"key": key, "state": h.get("state"), "text": h.get("text"),
+                               "priority": priority, "upgraded_by": "judgment"})
+        return True
+
+    # ================================================================== vision (Claude)
     SCENE_IMAGE_EVERY_S = 3.0
 
     def _scene_image(self, msg: Msg, now: float) -> None:
@@ -376,7 +395,7 @@ class Earpiece:
         if msg.kind == "chest":
             self._chest_frame = (msg.data["jpeg"], now)
             return
-        if not self.judgment.online or now - self._last_scene_image < self.SCENE_IMAGE_EVERY_S:
+        if not self.vision.online or now - self._last_scene_image < self.SCENE_IMAGE_EVERY_S:
             return
         self._last_scene_image = now
         where = {"drone": "flying just above and behind the walker's head",
@@ -384,11 +403,11 @@ class Earpiece:
                  "sim": "flying just above and behind the walker's head (a simulation)"}.get(msg.kind, "near the walker")
 
         def work():
-            text = self.judgment.describe_image(msg.data["jpeg"], where)
+            text = self.vision.describe_image(msg.data["jpeg"], where)
             if text:
                 self.scene = (text, time.monotonic())
                 self._event("scene", {"text": text, "source": f"claude:{msg.kind}"})
-                self.judgment.poke("scene")
+                self.judgment.notify()
         threading.Thread(target=work, name="scene-image", daemon=True).start()
 
     CHEST_FRAME_MAX_AGE_S = 3.0
@@ -404,24 +423,24 @@ class Earpiece:
     def describe_front(self) -> str | None:
         """Claude looks at the body camera. None if there is no frame or Claude is unreachable
         (the caller then answers from the obstacle tracks)."""
-        if not self.judgment.online:
+        if not self.vision.online:
             return None
         jpeg = self._body_frame()
         if jpeg is None:
             return None
-        return self.judgment.describe_image(jpeg, "worn on the walker's chest, pointing forward", timeout=7.0)
+        return self.vision.describe_image(jpeg, "worn on the walker's chest, pointing forward", timeout=7.0)
 
     def read_text(self) -> str:
         """Read printed or on-screen text aloud: a menu, a sign, a label, a monitor. The body
         camera frames it, Claude transcribes it, Cartesia reads it sentence by sentence (so
         "stop" or any warning cuts in between sentences)."""
-        if not self.judgment.online:
+        if not self.vision.online:
             return "Reading text needs the internet right now."
         self.say("Hold it steady. Reading.", "answer", key="reading", ttl=10)
         jpeg = self._body_frame()
         if jpeg is None:
             return "I can't see through the camera. Check that it's connected and allowed."
-        text = self.judgment.read_text(jpeg)
+        text = self.vision.read_text(jpeg)
         if text is None:
             return "Sorry, I couldn't read that."
         if not text:
@@ -431,29 +450,6 @@ class Earpiece:
             self.say(sentence, "answer", ttl=120)
         self._event("read_text", {"chars": len(text)})
         return sentences[-1] if sentences else text
-
-    def _judgment_snapshot(self) -> dict:
-        ctx = self.context()
-        ctx["hazards"] = [{"key": k, **{f: h.get(f) for f in ("kind", "state", "text", "bearing", "distance",
-                                                             "priority")}}
-                          for k, h in self.hazards.items()]
-        ctx["stop_in_force"] = self._stop_since is not None
-        return ctx
-
-    def _apply_judgment(self, d: Decision) -> None:
-        for key, pr in d.upgrade:
-            h = self.hazards.get(key)
-            if h is None:
-                continue
-            h["priority"] = pr
-            if pr == "critical" and h.get("text"):
-                self.say(h["text"], "critical", key=f"upgrade:{key}", ttl=4)
-        if d.wait:
-            self._begin_wait()
-        if d.say:
-            self.say(d.say, "hazard" if d.wait else "info", key="judgment", ttl=6)
-        self._event("judgment", {"say": d.say, "wait": d.wait, "upgrade": [list(u) for u in d.upgrade],
-                                 "blocked": d.blocked})
 
     def _status(self, msg: Msg) -> None:
         prev_state = self.drone.get("state")
@@ -717,8 +713,9 @@ class Earpiece:
         return {
             "nearby": nearby,
             "perception_ok": self.perception_ok is not False,
-            "hazards": [{k: v for k, v in h.items() if k in ("kind", "state", "text", "bearing", "distance")}
-                        for h in self.hazards.values()],
+            "hazards": [{"key": key, **{k: v for k, v in h.items()
+                                        if k in ("kind", "state", "text", "bearing", "distance", "priority")}}
+                        for key, h in list(self.hazards.items())],
             "route": {"label": b.label, "bearing": b.bearing, "distance": b.distance,
                       "region": b.region} if b.active else None,
             "directions": self.route.summary(),
@@ -749,10 +746,11 @@ class Earpiece:
                            if self.speaker.stats["first_audio_ms"] else None)},
             "listen": {"active": self.listener.active, "available": self.listener.available,
                        "mic": self.listener.device_name, **self.listener.stats},
-            "judgment": {"online": self.judgment.online, **self.judgment.stats},
             "stop_in_force": self._stop_since is not None,
+            "vision": {"online": self.vision.online, **self.vision.stats},
             "brain": {"online": self.brain.online, **{k: v for k, v in self.brain.stats.items()
                                                       if k != "first_sentence_ms"}},
+            "judgment": {"online": self.judgment.online, **self.judgment.stats},
             "net": dict(self.transport.stats) if self.transport else None,
             "battery": self.battery.last if out else None,
             "memory": self.memory.summary(),

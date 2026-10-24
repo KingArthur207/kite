@@ -13,7 +13,8 @@ python -m earpiece selftest                      # check audio, voices, STT, con
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
-python -m pytest                                 # 270+ tests (also with KITE_AUDIO_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
+python -m earpiece render --jsonl events.jsonl out/heard.wav   # same, from a JSONL timeline (docs/video-runbook.md)
+python -m pytest                                 # 330+ tests (also with KITE_AUDIO_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
 ```
 
 Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `GOOGLE_MAPS_API_KEY`). Everything degrades gracefully without them.
@@ -81,6 +82,8 @@ AirPods (or any Bluetooth headphones' play button): once = talk, twice = repeat,
 | `speech.py`, `listen.py` | Cartesia TTS/STT, priorities, preemption, time-to-live, offline fallback |
 | `brain.py`, `memory.py` | local voice commands, Claude with tools, Moss memory of places and hazards |
 | `route.py`, `geo.py` | Google Routes v2 walking directions turned into spoken turns and the beacon; lat/lng and sim meters |
+| `judgment.py` | Claude judgment calls on hazards and scene ("Wait, the crosswalk is crowded."), with code guardrails |
+| `vision.py`, `camera.py` | Claude vision: scene descriptions, "what's in front of me?" and reading text aloud from the body camera |
 | `app.py`, `transport.py`, `controls.py` | wiring, UDP/WebSocket, AirPods stem presses |
 
 ## Walking directions

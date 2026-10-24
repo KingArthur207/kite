@@ -51,6 +51,7 @@ NEVER_MIRRORED = frozenset({"heartbeat"})
 MAX_CALLS_PER_S = 5.0                # global ceiling on reducer calls; KITE_SPACETIME_MAX_CPS
 CAREGIVER = "caregiver"
 CAREGIVER_PREFIX = "Message from your caregiver: "
+CAREGIVER_SQL = "SELECT * FROM event WHERE source = 'caregiver'"   # fixed query, no inputs
 POLL_S = 1.0
 MIN_POLL_S = 0.5                     # SQL reads cost credits too: never poll faster than 2 Hz
 MAX_BACKOFF_S = 30.0
@@ -378,7 +379,8 @@ class CaregiverInbox:
         # Once we know where we are, ask only for newer rows: smaller replies, same answer.
         newer = f" AND id > {int(self.last_id)}" if self.last_id is not None and self.last_id >= 0 else ""
         r = http.post(f"{self.host}/v1/database/{self.db}/sql",
-                      content=f"SELECT * FROM event WHERE source = '{CAREGIVER}'{newer}",
+                      # fixed query; `newer` is built from an int only, so nothing is injectable
+                      content=CAREGIVER_SQL + newer,  # nosec B608
                       headers={"Authorization": f"Bearer {self._token}"})
         r.raise_for_status()
         out = []

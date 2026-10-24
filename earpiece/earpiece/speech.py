@@ -544,6 +544,7 @@ class Speaker:
                     pass
                 continue
             how = "cut"
+            started = time.time()
             try:
                 how = await self._speak(u)
             except Exception as e:
@@ -557,7 +558,7 @@ class Speaker:
                 self.stats["spoken"] += 1
                 if u.priority == "nav":
                     self.last_nav = u
-            rec = {"t": time.time(), "text": u.text, "priority": u.priority, "result": how}
+            rec = {"t": time.time(), "t_start": started, "text": u.text, "priority": u.priority, "result": how}
             self.history.append(rec)
             if self.on_spoken is not None:
                 try:

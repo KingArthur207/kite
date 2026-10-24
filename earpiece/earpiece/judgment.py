@@ -1,306 +1,224 @@
-"""The judgment layer: Claude makes the careful calls, inside a box it cannot leave.
+"""Claude judgment layer (spec 5.6): one short spoken call about the street.
 
-Spec 5.6. Input: active hazards, the route, the latest scene description, the
-walker's pose and the nearest tracked objects. Output: at most one short spoken
-decision ("Wait, the crosswalk is crowded.") and optional priority upgrades for
-hazards that are already active.
+Deterministic code has already acted before this runs: sonar "Stop.", critical
+obstacles and "don't walk" are spoken by app.py and sonar.py the moment they
+arrive. Claude only adds a judgment on top ("Wait, the crosswalk is crowded.")
+and may raise the priority of a hazard that is already on the list.
 
-The box, enforced here in code (the prompt asks for the same, but code decides):
-  * Claude only ever makes Kite MORE cautious. It may tell the walker to wait or
-    warn them; any reply that would clear a stop, send them on ("go", "continue",
-    "safe to cross", "walk now", ...) is discarded, always.
-  * It never reroutes or navigates: it has no tools, and the output schema has no
-    route field.
-  * Upgrades can only raise a hazard's priority, and only for hazards that exist.
-  * Sonar, critical obstacles and "don't walk" are handled by deterministic code
-    before this layer ever runs; while one of them is active, Claude stays quiet
-    unless it is adding a warning.
-  * It is rate-limited and runs off the audio path; if Claude is slow, down or
-    refuses, nothing changes except that the decision is not spoken.
-
-Scene description from images (Claude vision) lives here too: the drone or sim
-view arrives as a JPEG and is turned into the `scene` text everyone uses.
+Guardrails, all enforced here and not left to the prompt:
+  * Claude can warn or tell the walker to wait. Anything that sounds like
+    permission ("safe to cross", "go ahead", "you can cross"), a reroute, or
+    clearing a stop is thrown away.
+  * Priority upgrades only go up, only for a hazard key that exists, and never
+    to "critical" (that level belongs to the sonar).
+  * At most one call every `min_gap_s`, none when hazards and scene are
+    unchanged, never on the audio thread, and a slow or failed call is dropped
+    without a word.
 """
 
 from __future__ import annotations
 
-import asyncio
-import base64
 import json
 import re
 import threading
 import time
-from dataclasses import dataclass, field
 from typing import Callable
 
 from .events import PRIORITY_RANK
 
-MODEL = "claude-opus-5-5"
+MODEL = "claude-haiku-5-5"
+MAX_SAY = 120
+UPGRADE_TO = ("hazard", "nav", "answer", "info")   # "critical" stays with deterministic code
 
-JUDGE_PROMPT = """You are the judgment layer of Kite, a navigation aid for a blind pedestrian. \
-A drone above and behind the walker and a chest camera report what is around them; the JSON you get \
-is everything Kite currently knows. Deterministic code already handles beeps, "stop" for imminent \
-collisions, and "don't walk" signals.
+SYSTEM_PROMPT = """You are the judgment layer of Kite, an assistive navigation system for a blind pedestrian. \
+A drone above and behind the walker and a chest camera report what they see. You get a JSON snapshot: \
+active hazards (each with a key and priority), nearby obstacles, the route, the last spoken instruction, \
+the drone's latest scene description, and the walker's position.
 
-Your only job: decide whether the walker should hear ONE short extra sentence that makes them safer, \
-and whether any active hazard deserves a higher priority.
+Deterministic safety code has already spoken every stop and every "don't walk". Your job is to add one short \
+spoken judgment only when the snapshot shows a risk the walker has not been told about, such as a crowded \
+crosswalk, a car turning across their path, or construction narrowing the sidewalk.
 
-Rules:
-- You may only make Kite more cautious: tell the walker to wait, slow down, or warn them about something.
-- Never tell the walker to go, continue, cross, or that anything is safe or clear. Never suggest a route change.
-- Speak only about things present in the JSON. If nothing needs saying, return an empty "say".
-- At most 12 words, spoken English, no lists. Use clock directions or left/right/ahead and meters.
-- "upgrade" may only list keys from "hazards" whose priority should be raised to "hazard" or "critical"."""
+Always answer by calling the decide tool exactly once.
+- say: one calm sentence under 120 characters, from the walker's point of view (left, right, ahead, meters). \
+Use an empty string when there is nothing new worth saying, which is most of the time.
+- warning: true when say tells them to wait or take care.
+- upgrade_key / upgrade_priority: to make an existing hazard more urgent, give its key and a higher priority \
+(hazard is the highest you may use). Empty strings for no upgrade.
 
-SCENE_PROMPT = """You describe a street scene for a blind pedestrian's navigation aid. The image comes \
-from a camera {where}. In at most two short sentences, describe what matters for walking: sidewalk \
-width and surface, people and crowds, vehicles, crossings and signals, obstacles, and anything at head \
-height. Give directions as left, right or ahead, and rough distances in meters. Only describe what you \
-can see; if unsure, say so. Never say anything is safe."""
+Never say it is safe to cross, never tell them to go, walk, continue or proceed, never suggest another route, \
+and never contradict a stop or a "don't walk". You may only warn or tell them to wait. Only use what the \
+snapshot contains; never guess."""
 
-READ_PROMPT = """Read the text in this photo aloud for a blind person who is pointing a camera at it \
-(a menu, sign, label, book page, screen or document). Transcribe the readable text exactly, in natural \
-reading order, as plain sentences ready to be spoken: no markdown, no bullet symbols, no commentary. \
-For a menu, read each item with its price. Skip text that is too small or blurry to read reliably \
-rather than guessing. If there is no readable text, reply exactly: NO_TEXT"""
-
-DECISION_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "say": {"type": "string"},
-        "wait": {"type": "boolean"},
-        "upgrade": {"type": "array", "items": {"type": "object", "properties": {
-            "key": {"type": "string"}, "priority": {"type": "string", "enum": ["hazard", "critical"]}},
-            "required": ["key", "priority"], "additionalProperties": False}},
+DECIDE_TOOL = {
+    "name": "decide",
+    "description": "Give at most one short spoken judgment and an optional hazard priority upgrade.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "say": {"type": "string", "description": "One sentence to speak, or empty for nothing."},
+            "warning": {"type": "boolean", "description": "True if say is a warning or a wait."},
+            "upgrade_key": {"type": "string", "description": "Key of an existing hazard, or empty."},
+            "upgrade_priority": {"type": "string", "enum": ["", *UPGRADE_TO]},
+        },
+        "required": ["say", "warning", "upgrade_key", "upgrade_priority"],
+        "additionalProperties": False,
     },
-    "required": ["say", "wait", "upgrade"],
-    "additionalProperties": False,
 }
 
-# Anything that would clear a stop or send the walker on. Checked on every reply.
-_GO = re.compile(
-    r"\b(?:go|go ahead|continue|proceed|cross(?:ing)? now|you can (?:go|walk|cross|continue|proceed)|"
-    r"(?:it'?s|it is|path is|way is|road is|street is|coast is)\s+(?:now\s+)?(?:safe|clear)|safe to|all clear|"
-    r"walk now|start walking|keep walking|move forward|step (?:forward|off|out)|turn (?:left|right)|"
-    r"reroute|detour|take (?:the )?(?:other|another)|instead go)\b", re.I)
+# Permission, reroutes and stop-clearing. Matching any of these drops the sentence.
+_FORBIDDEN = re.compile(
+    r"\b(?:safe|clear|okay|ok|fine)\s+to\s+(?:cross|go|walk|proceed)\b"
+    r"|\b(?:it'?s|it\s+is|path\s+is|road\s+is|street\s+is|coast\s+is|all)\s+(?:safe|clear)\b"
+    r"|\bgo\s+ahead\b|\bgo\s+now\b|\bcross\s+now\b|\bstart\s+(?:crossing|walking)\b|\bwalk\s+now\b"
+    r"|\byou\s+(?:can|may|should)\s+(?:now\s+)?(?:cross|go|walk|continue|proceed|keep)\b"
+    r"|\b(?:proceed|continue|keep\s+(?:walking|going)|carry\s+on|move\s+on|go\s+on)\b"
+    r"|\bno\s+(?:longer\s+)?need\s+to\s+(?:stop|wait)\b|\bdon'?t\s+(?:need\s+to\s+)?(?:stop|wait)\b"
+    r"|\b(?:reroute|re-route|detour|another\s+route|different\s+route|other\s+way|instead)\b"
+    r"|\bsafe\b",
+    re.I)
 
 
-def is_permitted(text: str) -> bool:
-    """True if the sentence only adds caution."""
-    t = " ".join(text.split())
-    if not t:
-        return False
-    if _GO.search(t):
-        return False
-    return len(t.split()) <= 20
-
-
-@dataclass
-class Decision:
-    say: str = ""
-    wait: bool = False
-    upgrade: list = field(default_factory=list)
-    blocked: str | None = None          # why the spoken part was discarded, if it was
-
-
-def sanitize(raw: dict, hazards: dict[str, dict]) -> Decision:
-    """Apply the box to whatever the model returned."""
-    d = Decision()
-    say = raw.get("say") if isinstance(raw, dict) else ""
-    if isinstance(say, str) and say.strip():
-        if is_permitted(say):
-            d.say = " ".join(say.split())[:160]
+def validate(inp, hazards: dict[str, str]) -> tuple[str | None, tuple[str, str] | None, bool, list[str]]:
+    """Tool input -> (say, upgrade, warning, reasons rejected). hazards maps key -> current priority."""
+    rejected: list[str] = []
+    if not isinstance(inp, dict):
+        return None, None, False, ["input is not an object"]
+    say = inp.get("say")
+    say = " ".join(say.split()) if isinstance(say, str) else ""
+    if len(say) > MAX_SAY:
+        rejected.append(f"say too long ({len(say)})")
+        say = ""
+    elif say and _FORBIDDEN.search(say):
+        rejected.append(f"forbidden phrase: {say!r}")
+        say = ""
+    up = None
+    key, pri = inp.get("upgrade_key"), inp.get("upgrade_priority")
+    if key or pri:
+        if not isinstance(key, str) or key not in hazards:
+            rejected.append(f"unknown hazard key {key!r}")
+        elif pri not in UPGRADE_TO:
+            rejected.append(f"bad priority {pri!r}")
+        elif PRIORITY_RANK[pri] >= PRIORITY_RANK.get(hazards[key], len(PRIORITY_RANK)):
+            rejected.append(f"not an upgrade: {key} {hazards[key]} -> {pri}")
         else:
-            d.blocked = "would clear a stop or move the walker"
-    d.wait = bool(raw.get("wait")) if isinstance(raw, dict) else False
-    ups = raw.get("upgrade") if isinstance(raw, dict) else []
-    for u in ups if isinstance(ups, list) else []:
-        if not isinstance(u, dict):
-            continue
-        key, pr = u.get("key"), u.get("priority")
-        h = hazards.get(key) if isinstance(key, str) else None
-        if h is None or pr not in ("hazard", "critical"):
-            continue
-        current = h.get("priority", "hazard")
-        if PRIORITY_RANK[pr] < PRIORITY_RANK.get(current, 99):      # strictly more important only
-            d.upgrade.append((key, pr))
-    return d
+            up = (key, pri)
+    return say or None, up, bool(inp.get("warning")), rejected
 
 
 class Judgment:
-    """Runs Claude off the audio path. `snapshot()` supplies the world; `act(decision)`
-    applies it. Triggered by new hazards / scenes, rate-limited by min_interval_s."""
+    """Background worker. Call notify() when hazards or the scene change; it does the rest."""
 
-    def __init__(self, api_key: str | None, snapshot: Callable[[], dict], act: Callable[[Decision], None],
-                 log=print, model: str = MODEL, min_interval_s: float = 4.0, timeout_s: float = 8.0,
-                 client=None):
+    def __init__(self, snapshot: Callable[[], dict], say: Callable[..., object],
+                 upgrade: Callable[[str, str], bool], event: Callable[[str, dict], None],
+                 api_key: str | None = None, client=None, model: str = MODEL,
+                 min_gap_s: float = 3.5, timeout_s: float = 2.5, log=print):
         self.snapshot = snapshot
-        self.act = act
-        self.log = log
+        self.say = say
+        self.upgrade = upgrade
+        self.event = event
         self.model = model
-        self.min_interval_s = min_interval_s
+        self.min_gap_s = min_gap_s
         self.timeout_s = timeout_s
-        self._client = client
-        if self._client is None and api_key:
+        self.log = log
+        self.client = client
+        if client is None and api_key:
             try:
                 import anthropic
-                self._client = anthropic.AsyncAnthropic(api_key=api_key, timeout=timeout_s, max_retries=1)
+                self.client = anthropic.Anthropic(api_key=api_key, timeout=timeout_s, max_retries=0)
             except ImportError:
-                self._client = None
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._pending = False
-        self._busy = False
-        self._last = 0.0
-        self.enabled = True
-        self.stats = {"calls": 0, "spoken": 0, "blocked": 0, "upgrades": 0, "errors": 0, "skipped": 0,
-                      "last_ms": None, "scenes": 0}
-        threading.Thread(target=self._run, name="judgment", daemon=True).start()
-        t0 = time.time()
-        while self._loop is None and time.time() - t0 < 2:
-            time.sleep(0.002)
+                self.log("[judgment] anthropic SDK not installed: judgment off")
+        self.stats = {"calls": 0, "said": 0, "upgrades": 0, "rejected": 0, "dropped": 0, "skipped": 0}
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._last_call = -1e9
+        self._last_seen: str | None = None
+        if self.client is not None:
+            threading.Thread(target=self._run, name="judgment", daemon=True).start()
 
     @property
     def online(self) -> bool:
-        return self._client is not None
+        return self.client is not None
+
+    def notify(self) -> None:
+        """Cheap and thread-safe: just wakes the worker."""
+        self._wake.set()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._wake.set()
 
     def _run(self) -> None:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        self._loop = loop
-        loop.run_forever()
+        while not self._stop.is_set():
+            self._wake.wait()
+            if self._stop.is_set():
+                return
+            wait = self._last_call + self.min_gap_s - time.monotonic()
+            if wait > 0 and self._stop.wait(wait):     # rate limit; changes meanwhile are coalesced
+                return
+            self._wake.clear()
+            try:
+                self.step()
+            except Exception as e:
+                self.log(f"[judgment] {type(e).__name__}: {e}")
 
-    # ------------------------------------------------------------------ triggering
-    def poke(self, why: str = "") -> None:
-        """Something changed (new hazard, new scene). Thread-safe, cheap, coalesced."""
-        if not self.enabled or self._client is None or self._loop is None:
-            return
-        if self._busy or self._pending:
-            self._pending = True
-            return
-        self._pending = True
-        asyncio.run_coroutine_threadsafe(self._maybe_run(), self._loop)
+    @staticmethod
+    def fingerprint(snap: dict) -> str:
+        hz = sorted((h.get("key"), h.get("state"), h.get("text"), h.get("priority"))
+                    for h in snap.get("hazards") or [])
+        return json.dumps([hz, snap.get("scene")], default=str)
 
-    async def _maybe_run(self) -> None:
-        wait = self.min_interval_s - (time.monotonic() - self._last)
-        if wait > 0:
-            await asyncio.sleep(wait)
-        self._pending = False
-        self._busy = True
-        try:
-            await self.judge_once()
-        finally:
-            self._busy = False
-            if self._pending:
-                self._pending = False
-                self.poke("coalesced")
-
-    def judge_sync(self, timeout: float = 20.0) -> Decision | None:
-        """For tests and the CLI."""
-        return asyncio.run_coroutine_threadsafe(self.judge_once(), self._loop).result(timeout)
-
-    async def judge_once(self) -> Decision | None:
+    def step(self) -> str:
+        """One decision. Returns what happened (for tests and logs)."""
         snap = self.snapshot()
-        hazards = {h["key"]: h for h in snap.get("hazards", []) if isinstance(h, dict) and "key" in h}
-        if not hazards and not snap.get("scene") and not any(
-                (o.get("urgency") or 0) > 0.3 for o in snap.get("nearby", [])):
+        fp = self.fingerprint(snap)
+        if fp == self._last_seen:
             self.stats["skipped"] += 1
-            return None
-        self._last = time.monotonic()
+            return "unchanged"
+        if not snap.get("hazards") and not snap.get("scene"):
+            self._last_seen = fp
+            self.stats["skipped"] += 1
+            return "empty"
+        self._last_seen = fp
+        self._last_call = time.monotonic()
         self.stats["calls"] += 1
         t0 = time.monotonic()
         try:
-            resp = await asyncio.wait_for(self._client.beta.messages.create(
-                model=self.model, max_tokens=1024,
-                system=[{"type": "text", "text": JUDGE_PROMPT, "cache_control": {"type": "ephemeral"}}],
+            resp = self.client.messages.create(
+                model=self.model, max_tokens=300,
+                system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
+                tools=[DECIDE_TOOL], tool_choice={"type": "auto"},
+                thinking={"type": "disabled"}, output_config={"effort": "low"},
                 messages=[{"role": "user", "content": json.dumps(snap, separators=(",", ":"), default=str)}],
-                output_config={"effort": "low", "format": {"type": "json_schema", "schema": DECISION_SCHEMA}},
-                betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-            ), timeout=self.timeout_s)
+            )
         except Exception as e:
-            self.stats["errors"] += 1
-            self.log(f"[judgment] Claude unavailable ({type(e).__name__}); nothing changes")
-            return None
-        self.stats["last_ms"] = round((time.monotonic() - t0) * 1000)
-        if getattr(resp, "stop_reason", None) == "refusal":
-            return None
-        text = next((b.text for b in resp.content if getattr(b, "type", "") == "text"), "")
-        try:
-            raw = json.loads(text)
-        except (TypeError, ValueError):
-            self.stats["errors"] += 1
-            return None
-        d = sanitize(raw, hazards)
-        if d.blocked:
-            self.stats["blocked"] += 1
-            self.log(f"[judgment] discarded {raw.get('say')!r}: {d.blocked}")
-        if d.say:
-            self.stats["spoken"] += 1
-        self.stats["upgrades"] += len(d.upgrade)
-        try:
-            self.act(d)
-        except Exception as e:
-            self.log(f"[judgment] act failed: {e}")
-        return d
-
-    # ------------------------------------------------------------------ scene description
-    def describe_image(self, jpeg: bytes, where: str = "flying just above and behind the walker's head",
-                       timeout: float = 15.0) -> str | None:
-        """Claude vision: JPEG -> one or two sentences for the `scene` context. Blocking;
-        call from a worker thread."""
-        if self._client is None or self._loop is None:
-            return None
-        fut = asyncio.run_coroutine_threadsafe(self._describe(jpeg, where), self._loop)
-        try:
-            return fut.result(timeout)
-        except Exception as e:
-            self.log(f"[judgment] scene description failed ({type(e).__name__})")
-            return None
-
-    def read_text(self, jpeg: bytes, timeout: float = 20.0) -> str | None:
-        """Claude vision OCR: the readable text in the photo, ready to speak. "" if none."""
-        if self._client is None or self._loop is None:
-            return None
-        fut = asyncio.run_coroutine_threadsafe(self._read(jpeg), self._loop)
-        try:
-            return fut.result(timeout)
-        except Exception as e:
-            self.log(f"[judgment] reading text failed ({type(e).__name__})")
-            return None
-
-    async def _read(self, jpeg: bytes) -> str | None:
-        resp = await asyncio.wait_for(self._client.beta.messages.create(
-            model=self.model, max_tokens=4096,
-            messages=[{"role": "user", "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                             "data": base64.standard_b64encode(jpeg).decode()}},
-                {"type": "text", "text": READ_PROMPT}]}],
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-        ), timeout=18)
-        if getattr(resp, "stop_reason", None) == "refusal":
-            return None
-        text = " ".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
-        self.stats["reads"] = self.stats.get("reads", 0) + 1
-        if not text or text.strip().upper().startswith("NO_TEXT"):
-            return ""
-        return re.sub(r"[*#_`>|]+", " ", " ".join(text.split()))[:2000]
-
-    async def _describe(self, jpeg: bytes, where: str) -> str | None:
-        resp = await asyncio.wait_for(self._client.beta.messages.create(
-            model=self.model, max_tokens=1024,
-            messages=[{"role": "user", "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
-                                             "data": base64.standard_b64encode(jpeg).decode()}},
-                {"type": "text", "text": SCENE_PROMPT.format(where=where)}]}],
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-        ), timeout=self.timeout_s + 6)
-        if getattr(resp, "stop_reason", None) == "refusal":
-            return None
-        text = " ".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
-        if not text:
-            return None
-        self.stats["scenes"] += 1
-        # a description is context, never an instruction: strip anything that sounds like one
-        sentences = [s for s in re.split(r"(?<=[.!?])\s+", text) if not _GO.search(s)]
-        return " ".join(sentences)[:400] or None
+            self.stats["dropped"] += 1
+            self.log(f"[judgment] dropped ({type(e).__name__}: {e})")
+            return "dropped"
+        ms = (time.monotonic() - t0) * 1000
+        if ms > self.timeout_s * 1000:
+            self.stats["dropped"] += 1
+            self.log(f"[judgment] dropped: answered in {ms:.0f} ms, too late to be useful")
+            return "late"
+        use = next((b for b in resp.content if getattr(b, "type", None) == "tool_use" and b.name == "decide"), None)
+        if use is None:
+            self.log(f"[judgment] no decision ({resp.stop_reason}, {ms:.0f} ms)")
+            return "none"
+        hazards = {h["key"]: h.get("priority") or "hazard" for h in snap.get("hazards") or [] if h.get("key")}
+        text, up, warning, rejected = validate(use.input, hazards)
+        if rejected:
+            self.stats["rejected"] += len(rejected)
+            self.log(f"[judgment] rejected: {'; '.join(rejected)}")
+        if up and self.upgrade(*up):
+            self.stats["upgrades"] += 1
+        if text:
+            self.stats["said"] += 1
+            pri = "hazard" if warning or up else "nav"
+            self.say(text, pri, key="judgment", ttl=4.0)
+        if text or up:
+            self.event("say", {"source": "judgment", "text": text, "priority": "hazard" if warning or up else "nav",
+                               "upgrade": {"key": up[0], "priority": up[1]} if up else None,
+                               "latency_ms": round(ms)})
+        self.log(f"[judgment] {ms:.0f} ms: say={text!r} upgrade={up}")
+        return "said" if text else ("upgraded" if up else "quiet")

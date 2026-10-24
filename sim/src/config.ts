@@ -15,8 +15,9 @@ export const WALKER_RADIUS = 0.3;
 export const WALK_SPEED = 1.2;          // m/s
 export const TURN_SPEED = 90;           // deg/s
 
-// Sim (0,0) maps here. Gets re-anchored to splat landmarks once the splat exists.
-export const ORIGIN = { lat: 37.8013, lng: -122.4477 };
+// Sim (0,0) maps here: OSM node 12144593726, the zebra across Moss St at Howard St, SF.
+// scripts/osm_corner.py uses the same origin and projection.
+export const ORIGIN = { lat: 37.778352, lng: -122.408768 };
 
 export const RELAY_URL = "ws://127.0.0.1:5020/pub";
 export const EARPIECE_URL = "ws://127.0.0.1:5011";

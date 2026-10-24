@@ -4,20 +4,28 @@ import {
   WALKER_RADIUS, WALK_SPEED, TURN_SPEED, RELAY_URL, EARPIECE_URL, FRAME_FPS, POSITION_HZ, toLatLng,
 } from "./config";
 import { buildWorld } from "./world";
+import { buildOsmWorld, type WorldExtras } from "./osmWorld";
 import { reconnectingSocket } from "./net";
 import { startMetrics } from "./metrics";
 
-const world = buildWorld();
+// ?world=placeholder keeps the old box world and its traffic; default is Moss St from OSM.
+// Metrics mode always runs on Moss, with the street emptied of traffic (it scripts its own).
+const query = new URLSearchParams(location.search);
+const metricsOn = query.get("metrics") === "1";
+const world: ReturnType<typeof buildWorld> & WorldExtras =
+  query.get("world") === "placeholder" && !metricsOn
+    ? buildWorld()
+    : buildOsmWorld({ actors: !metricsOn, walkers: () => [walker] });   // cars yield to the walker too
 const { scene } = world;
 
 // Walker: (x east, n north), heading in compass degrees (0 = north, 90 = east).
-const walker = { x: 0, n: 0, heading: 0 };
+const walker = { x: 0, n: 0, heading: 0, ...world.spawn };
 const body = new THREE.Mesh(
   new THREE.CapsuleGeometry(0.25, HEAD_TOP - 0.5, 4, 8),
   new THREE.MeshLambertMaterial({ color: 0x4a6fa5 }),
 );
 scene.add(body);
-const metrics = startMetrics({ walker, scene, solids: world.solids }); // null unless ?metrics=1
+const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }) : null;
 
 const aspect = CAM_W / CAM_H;
 const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
@@ -67,11 +75,13 @@ function drawScreen() {
   const x = (W - w) / 2, y = (H - h) / 2;
   renderer.setViewport(x, y, w, h);
   renderer.setScissor(x, y, w, h);
+  if (world.overlay) world.overlay.visible = true; // screen only, never in camera frames
   renderer.render(scene, droneCam);
   const iw = w * 0.25, ih = iw / aspect, pad = 10;
   renderer.setViewport(x + w - iw - pad, y + pad, iw, ih);
   renderer.setScissor(x + w - iw - pad, y + pad, iw, ih);
   renderer.render(scene, chestCam);
+  if (world.overlay) world.overlay.visible = false;
 }
 
 // --- sockets
@@ -99,7 +109,7 @@ setInterval(() => {
 // Position (earpiece) and pose (perception) at POSITION_HZ.
 setInterval(() => {
   const { lat, lng } = toLatLng(walker.x, walker.n);
-  ear.json({ type: "position", source: "sim", heading: walker.heading, place: "sim corner",
+  ear.json({ type: "position", source: "sim", heading: walker.heading, place: world.place ?? "sim corner",
              lat, lng, x: walker.x, y: walker.n });
   const camHeights = { drone: HEAD_TOP + DRONE_ABOVE_HEAD, chest: CHEST_HEIGHT };
   for (const [camera, cam_height] of Object.entries(camHeights)) {
@@ -131,9 +141,10 @@ let touching = false;
 let status = "";
 let lastDebug = -1e9;
 
-function hits(x: number, n: number, boxes: THREE.Box3[], r = WALKER_RADIUS) {
+function hits(x: number, n: number, boxes: THREE.Box3[], r = WALKER_RADIUS): object[] {
   const z = -n;
-  return boxes.filter((b) => x > b.min.x - r && x < b.max.x + r && z > b.min.z - r && z < b.max.z + r);
+  const inBoxes = boxes.filter((b) => x > b.min.x - r && x < b.max.x + r && z > b.min.z - r && z < b.max.z + r);
+  return [...inBoxes, ...(world.walls?.(x, n, r) ?? [])]; // walls: building faces and curbs
 }
 
 function step(dt: number) {

@@ -11,7 +11,7 @@ Kite is a guide dog you don't wait two years for. A DJI Tello flies about 30 cm 
 
 The guide dog comparison shapes the features. A guide dog leads around obstacles, stops at curbs and crossings, watches overhead clearance, and refuses "forward" when a car is coming (intelligent disobedience). Each Kite cue should map to one of those jobs.
 
-Why it matters: commonly cited figures put a trained guide dog at around $50,000 with waitlists of years, and only about 2% of blind people work with one. Rex verifies these before they go on a slide.
+Why it matters: Guiding Eyes for the Blind puts the cost of raising and training one guide dog at $50,000 (donors pay it, not the blind person), and fewer than 10,000 guide dogs work in the US against about 1 million Americans who are blind. Drop the old "2%" figure: its only traceable source is from about 1990. Sources and caveats are in `docs/research/facts.md`; Rex signs off before they go on a slide.
 
 What makes Kite's approach its own: no leash (everything reaches the walker as spatial sound and voice), the drone flies behind and above instead of in front, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
 
@@ -72,7 +72,7 @@ The two-minute pitch, demo first (also the Cartesia track's format):
 5. 1:35 to 1:50. The interview quote and one measured number (collisions with and without Kite in the sim).
 6. 1:50 to 2:00. The prior-art line and what's real, then questions.
 
-The prior-art line, roughly: "In 2021, researchers at KIT showed a Tello could lead a blind walker on a leash, and users found it faster. Kite drops the leash: the drone flies behind you, and everything reaches you as sound."
+The prior-art line, roughly: "In 2021, researchers at KIT flew a Tello in front of blindfolded walkers on a leash, and it kept them on the sidewalk. Kite drops the leash: the drone flies behind you, and everything reaches you as sound."
 
 The sim walk is the backup. If the chest camera path fails at the table, the judge walks the sim corner with the screen black, guided by the same earpiece.
 
@@ -204,7 +204,7 @@ Each person owns a deliverable, not a layer. One owner per job.
 | Karthik | The voice: earpiece, Maps, Cartesia, Claude | The Claude judgment layer (5.6). Fix the `brain.py` system prompt, which says the drone "flies ahead". "What's in front of me?" answered from the chest camera. | Headphones as the output, any stereo Bluetooth pair. |
 | Eddy | Infrastructure, sim, the live-walk kit, the video, the submission | Done: event tables, dashboard with live map, replay, `netcheck` and `offline.sh`, the sim with the Moss world, glTF cars and people, metrics mode and the stand-in detector. Next: caregiver messages through Spacetime (5.2); a reveal screen with the chest camera and its boxes; the stand-in detector on the phone camera; the collision number with the real detector. | Buy the kit at 8 AM (section 13). Run the 40-walk rehearsal at 6 PM. |
 
-Every code change goes through a pull request (team decision, Oct 24 meeting). Keep PRs small and merge them within the hour; if nobody else is awake, the author merges their own once the change is tested (spec author's call). Everyone works in this repo; nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
+Eddy decides by hand when the repo goes public (team decision, Oct 24, 1:30 AM); no gate forces it. Every code change goes through a pull request (team decision, Oct 24 meeting). Keep PRs small and merge them within the hour; if nobody else is awake, the author merges their own once the change is tested (spec author's call). Everyone works in this repo; nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
 
 Also owned: Rex runs the interview and verifies the guide dog figures. Eddy owns the clock, the demo video and the submission audit. The presenter comes from a timed tryout.
 
@@ -244,9 +244,9 @@ We have one charged Tello battery and no charger until someone buys a USB-C to M
 | Sat 3:45 AM to 8:00 PM | Build | Every feature must make the demo better; timebox 2 hours. Ask "can we demo right now?" every 2 hours. |
 | Sat 3:00 PM | Cut point | If the live walk (chest camera, detector, stop in the headphones) isn't reliable, the sim walk becomes the live demo. Cut "walk me to my friend" and signal reading either way. |
 | Sat 6:00 PM | Rehearsal | 40 live walks in a row in a crowded room, fixing what breaks. Then the presenter tryout. |
-| Sat 8:00 PM | Freeze | No new features. Repo public. README with setup, Cartesia features used, known limitations. Devpost draft in. |
+| Sat 8:00 PM | Freeze | No new features. README with setup, Cartesia features used, known limitations. Devpost draft in. |
 | Sun 7:00 AM | Record | Backup video of the real run. Rehearse the pitch. |
-| Sun 8:00 AM | Submit | Disqualifier audit (repo public, teammates listed, tracks ticked, no keys in the repo), then submit and confirm. |
+| Sun 8:00 AM | Submit | Disqualifier audit (teammates listed, tracks ticked, no keys in the repo, repo visibility as the team decides), then submit and confirm. |
 | Sun 10:30 AM | Judging | Whole team at the table for the full window. |
 
 ## 10. Tracks

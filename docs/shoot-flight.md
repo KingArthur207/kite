@@ -5,15 +5,15 @@ The pilot's half of spec section 8. One battery, one take of about 5 minutes on 
 ## Tonight, on normal internet
 
 - `git pull`, then `source .venv/bin/activate && pip install -e ".[dev]" && python -m pytest -m "not slow"` passes.
-- Laptop charged, 5 GB or more free (a 5 minute take is about 0.7 GB).
+- Laptop charged, 5 GB or more free (a 5 minute take is about 0.7 GB). `python -m kite.preflight --quick` checks both, plus the deps, ffmpeg and the ports (on normal Wi-Fi the Tello Wi-Fi line only warns).
 - macOS: Local Network access for your terminal app and incoming connections for Python allowed (System Settings > Privacy & Security), so the first connect at the corner doesn't stall on a prompt.
 - Terminal key repeat on (System Settings > Keyboard): holding `w` must keep the drone moving. Test it in the dry-run rehearsal below.
 - Don't power the Tello tonight except for the one short ground check below. Streaming drains the battery.
 
 ## Ground check (drone on the ground, about 1 minute of power)
 
-1. Close the Tello phone app. `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` prints nothing.
-2. Power on the Tello, join its `TELLO-xxxxxx` Wi-Fi.
+1. Close the Tello phone app. Power on the Tello, join its `TELLO-xxxxxx` Wi-Fi.
+2. `python -m kite.preflight`. It checks the laptop (ports, disk, battery, Wi-Fi, terminal), then opens the drone in dry run (no motion is ever sent) for about 6 s: battery, temperature, first frame, fps, frame size, telemetry rate and command latency. It closes the link itself and ends with GO or NO-GO; every NO-GO line says what to fix. Fallback if it can't run: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` must print nothing.
 3. `python -m kite.record --source tello --out recordings --fly --dry-run --max-s 30`
    - The status line shows about 30 fps, a battery figure and `on ground`.
    - Press `t`, `w`, `r`, space, `l`: each shows in the status line as `rc ...` or an event, and nothing moves (dry run).
@@ -34,17 +34,23 @@ Camera calibration runs in this same power-on window, right after step 3, not se
 Positions: the walker starts on the NE sidewalk of Moss about 70 m before Howard. Take off from the sidewalk about 1 m behind the walker, on flat paving, away from cars. The pilot walks 3 to 5 m behind the drone, laptop open on one forearm, with someone at the pilot's elbow watching the ground (the pilot is watching the screen).
 
 1. Rehearse the route on foot with the drone off (Rex calls it).
-2. Phone Tello app closed, `lsof` check empty, join the Tello Wi-Fi.
+2. Phone Tello app closed, join the Tello Wi-Fi, then `python -m kite.preflight`. Fly only on GO: NO-GO below 50% drone battery, busy ports, no video, or the wrong Wi-Fi. On GO it prints the next command. (Fallback: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` prints nothing.)
 3. `python -m kite.record --source tello --out recordings --fly --speed 50`
    - Wait for the status line to show about 30 fps and the battery.
 4. `t` to take off. It climbs to about 1 m.
 5. Hold `r` until `h` in the status line reads the walker's height plus 0.3 m (about 2.0 m for a 1.7 m walker). The safety ceiling is 2.3 m.
 6. Rex starts the walk. Hold `w` to follow at the walker's pace; the drone tops out around 0.5 m/s at `--speed 50`, so the walker goes slowly (0.5 to 0.7 m/s). Small `a`/`d` to stay behind their head, `q`/`e` to turn with them at the corner.
 7. Space hovers at once. `l` lands. Ctrl+C lands and stops recording; keep clear until it is down.
+   - Letting go of a move key keeps the stick on for up to `--pulse` (1 s), about 0.5 m at speed 50. Tap space the moment the walker stops.
 
 Keys: `t` takeoff, `l` land, space hover, `w`/`s` forward/back, `a`/`d` left/right, `r`/`f` up/down, `q`/`e` turn, `!!` emergency (motors off, it falls: only if it is about to hit someone).
+Arrow keys, function keys, Ctrl+Z, Ctrl+\\ and Ctrl+S do nothing while flying (they used to move or stop the program). Capitals work like lowercase.
 
 The drone also acts on its own: it lands at 20% battery or after 7 minutes in the air, and it hovers if video or telemetry stalls for 1 s (the status line says so). After a safety hover, press the move key again.
+
+If the status line says `WI-FI DOWN`, the drone keeps hovering (it may hold its last stick until it hears from the laptop, and lands itself after 15 s of silence). Stop walking, keep within 3 to 5 m, don't hold a move key, and wait for it to clear; then press the key again. Before flying, turn off Auto-Join for other known Wi-Fi networks so macOS rejoins the Tello. If `telemetry stale -> hover` stays while the Wi-Fi is fine, press `l` and restart the recorder.
+
+`t` is refused without live video or telemetry. If the drone is visibly up but the status isn't `FLYING` about 8 s after `t`, press `l`. A land that fails is re-sent every 2 s on its own.
 
 Land by 30% if the take is done, or when Rex calls it. To fly again in the same morning, restart the recorder.
 
@@ -55,3 +61,15 @@ Land by 30% if the take is done, or when Rex calls it. To fly again in the same 
 - Copy the folder to a second disk or a teammate before anything else.
 - Hand the folder to Rex for perception. The video is MJPG in `video.mkv`; `ffmpeg -i video.mkv -pix_fmt yuv420p video.mp4` for Eddy's edit.
 - Write down for the pitch: piloted by hand (not autonomous follow), the battery at landing, and anything that went wrong.
+
+## Follow mode (only after the footage is safe)
+
+Code: `kite/follow.py`. Tested in a simulation only; it has never flown. Set up once, on normal internet:
+
+    pip install -e ".[follow]"
+    mkdir -p data/models && curl -L -o data/models/yolo11n.pt https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt
+
+1. Rehearse on the morning's take, no drone: `python -m kite.follow --source recordings/<dir> --overlay`. It writes `follow_dry_run.csv` (the rc that follow would have sent on each frame) and `follow_dry_run.mp4` (the walker box, the target row, the sticks) into the take's folder. Check that the box stays on the walker, `yaw` has the same sign as the walker's offset (right is +), and `fb` goes up when the walker pulls away.
+2. Fly: `python -m kite.record --source tello --out recordings --fly --follow`. Take off, climb to the walker's height plus 0.3 m, and get behind them by hand. The status line shows `follow off (walker conf .. box ..)` once it sees a person cut off by the bottom edge. Then press `g`.
+3. Any key cancels follow first: space hovers, `w`/`a`/... take over, `l` lands. If it loses the walker for 0.5 s it hovers (rc 0), beeps and waits. It never searches. It picks the walker up again once they are back at the bottom edge. A safety hover or `WI-FI DOWN` switches follow off for good: press `g` again once it clears.
+4. Knobs: `--follow-behind 1.5` shows more of the head and shoulders, which helps if the detector misses a bare head. `--follow-height` sets the altitude to hold (default: the height when you press `g`). The drone can't go faster than `SafetyCfg.max_rc` (50 is about 0.5 m/s), so the walker keeps to 0.5 m/s.

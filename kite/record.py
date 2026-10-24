@@ -4,18 +4,21 @@
     python -m kite.record --source tello --out recordings         # record only: drone on the ground / in hand
     python -m kite.record --source tello --out recordings --fly --dry-run   # rehearse the keys, motion only logged
     python -m kite.record --source tello --out recordings --fly   # the shoot: fly with the keys and record
+    python -m kite.record --source tello --out recordings --fly --follow   # g toggles follow mode (kite/follow.py)
 
 Only one program can hold the Tello ports (UDP 8889/8890/11111), so the program that records from the Tello is also
 the only one that can fly it: --fly adds keyboard control in this same process, through kite's drone layer and
 SafetyGovernor (stick clamp, altitude band, battery / flight-time landing, hover on stale video or telemetry).
 Without --fly the drone is opened with dry_run=True and NO motion command can ever be sent.
 
-Keys (with --fly, typed in this terminal; one key at a time):
+Keys (with --fly, typed in this terminal; one key at a time; arrow / function keys are ignored):
     t takeoff     l land     space hover (all sticks to 0)
     w/s forward/back   a/d left/right   r/f up/down   q/e turn left/right
     A move key drives that stick at --speed for --pulse seconds; holding it (key repeat) keeps it going, so letting
     go stops the drone within --pulse seconds. Press ! twice within 1 s for EMERGENCY (motors off: the drone falls).
-    Ctrl+C lands (with --fly) and stops recording; a second Ctrl+C while landing is ignored.
+    Ctrl+C lands (with --fly) and stops recording; a second Ctrl+C while landing is ignored. Ctrl+Z, Ctrl+\\ and
+    Ctrl+S do nothing while flying (they would suspend, kill or freeze the program with the drone in the air).
+    g (with --follow) toggles follow mode; any other key (and Ctrl+C) cancels it first, then acts as usual.
 
 Output: <out>/<YYYYmmdd_HHMMSS>_<source>/
     video.mkv        MJPG in Matroska, BGR frames as received. Every frame is a JPEG and Matroska needs no index, so
@@ -33,6 +36,7 @@ and telemetry on it. src_t is the source's own arrival stamp for the frame (time
 from __future__ import annotations
 
 import argparse
+import codecs
 import csv
 import json
 import math
@@ -64,6 +68,7 @@ STATE_UNITS = {
 AXIS_KEYS = {"a": (0, -1), "d": (0, 1), "w": (1, 1), "s": (1, -1), "r": (2, 1), "f": (2, -1), "q": (3, -1), "e": (3, 1)}
 KEY_HELP = ("keys: t takeoff | l land | space hover | w/s fwd/back | a/d left/right | r/f up/down | q/e turn | "
             "!! emergency | Ctrl+C land + quit")
+FOLLOW_HELP = "follow: g on/off (needs a walker cut off by the bottom edge); any other key cancels it"
 
 
 @dataclass
@@ -119,23 +124,61 @@ class FileReplay(FrameSource):
 
 
 class TerminalKeys:
-    """Keys typed in this terminal, without Enter (cbreak mode: Ctrl+C still raises KeyboardInterrupt)."""
+    """Keys typed in this terminal, without Enter (cbreak mode: Ctrl+C still raises KeyboardInterrupt).
+
+    read() returns printable ASCII only. Escape sequences are dropped whole, also when split across reads: an arrow key
+    is ESC [ A..D, and its last letter would otherwise fly the drone (Up -> 'a' = left, Left -> 'd' = right). Ctrl+Z
+    (suspend), Ctrl+\\ (quit without landing) and Ctrl+S (output freeze, which blocks print() and so the rc keep-alive)
+    are disabled while the keys are active.
+    """
+
+    ESC_TIMEOUT_S = 0.1  # an unfinished sequence older than this (a lone Escape key) does not swallow the next key
+
+    def __init__(self, fd: int | None = None):
+        self._fd = fd
+        self._dec = codecs.getincrementaldecoder("utf-8")(errors="ignore")
+        self._esc = ""  # "" | "esc" (after ESC) | "csi" (after ESC [) | "ss3" (after ESC O)
+        self._esc_t = 0.0
 
     def __enter__(self) -> TerminalKeys:
         import termios
         import tty
 
-        self._fd = sys.stdin.fileno()
+        if self._fd is None:
+            self._fd = sys.stdin.fileno()
         self._old = termios.tcgetattr(self._fd)
         tty.setcbreak(self._fd)
+        a = termios.tcgetattr(self._fd)
+        off = os.fpathconf(self._fd, "PC_VDISABLE")
+        for name in ("VSUSP", "VDSUSP", "VQUIT"):  # VDSUSP (Ctrl+Y, delayed suspend) exists on macOS only
+            i = getattr(termios, name, None)
+            if i is not None:
+                a[6][i] = off if isinstance(a[6][i], int) else bytes([off])
+        a[0] &= ~termios.IXON
+        termios.tcsetattr(self._fd, termios.TCSANOW, a)
         return self
 
     def read(self) -> str:
         import select
 
-        if select.select([self._fd], [], [], 0)[0]:
-            return os.read(self._fd, 64).decode(errors="ignore")
-        return ""
+        if not select.select([self._fd], [], [], 0)[0]:
+            return ""
+        out, now = [], time.monotonic()
+        for ch in self._dec.decode(os.read(self._fd, 64)):
+            if self._esc and now - self._esc_t > self.ESC_TIMEOUT_S:
+                self._esc = ""  # the Escape key on its own: a terminal sends a whole sequence at once
+            if ch == "\x1b":
+                self._esc, self._esc_t = "esc", now
+            elif self._esc == "esc":
+                self._esc = {"[": "csi", "O": "ss3"}.get(ch, "")  # anything else: Meta/Option+key, dropped
+            elif self._esc == "csi":
+                if "\x40" <= ch <= "\x7e":
+                    self._esc = ""  # final byte of ESC [ ... (A-D arrows, ~ for F5/PgUp/...)
+            elif self._esc == "ss3":
+                self._esc = ""  # ESC O A..D (application-mode arrows), ESC O P (F1)
+            elif " " <= ch <= "~":
+                out.append(ch)
+        return "".join(out)
 
     def __exit__(self, *exc) -> None:
         import termios
@@ -175,7 +218,7 @@ class Recorder:
     """
 
     def __init__(self, frames: FrameSource, drone=None, cfg: RecordCfg | None = None, meta: dict | None = None,
-                 keys=None, safety=None):
+                 keys=None, safety=None, follow=None):
         self.frames = frames
         self.drone = drone
         self.cfg = cfg or RecordCfg()
@@ -202,6 +245,7 @@ class Recorder:
         self._n_gov_events = 0
         self._takeoff_t: float | None = None
         self._events = None
+        self.follow = follow  # kite.follow.FollowMode (--follow) or None
 
     # ------------------------------------------------------------------ files
     def _open_dir(self) -> Path:
@@ -220,12 +264,16 @@ class Recorder:
         tmp.write_text(json.dumps(self.meta, indent=1, default=str))
         os.replace(tmp, self.dir / "meta.json")  # atomic: a crash never leaves half a meta.json
 
-    def _event(self, msg: str, **extra) -> None:
+    def _event(self, msg: str, quiet: bool = False, **extra) -> None:
         rec = {"t_mono": round(time.monotonic(), 6), "t_wall": round(time.time(), 6), "event": msg, **extra}
         if self._events is not None:
-            self._events.write(json.dumps(rec) + "\n")
-            self._events.flush()
-        print(f"  >> {msg}" + (f" {extra}" if extra else ""), flush=True)
+            try:  # a full disk must not raise into the control loop (that would end the flight)
+                self._events.write(json.dumps(rec) + "\n")
+                self._events.flush()
+            except (OSError, ValueError) as e:
+                self.writer_error = self.writer_error or f"events.jsonl: {e!r}"
+        if not quiet:  # quiet: events.jsonl only (follow's 10 Hz decisions)
+            print(f"  >> {msg}" + (f" {extra}" if extra else ""), flush=True)
 
     # ------------------------------------------------------------------ threads
     def _pickup(self) -> None:
@@ -307,14 +355,28 @@ class Recorder:
                 self.tel_lines += 1
 
     # ------------------------------------------------------------------ flight control (main thread)
+    def _follow_key(self, ch: str) -> bool:
+        """g toggles follow (True: handled). Any other key cancels follow, then does its usual job."""
+        if self.follow is None:
+            return False
+        if ch.lower() == "g":
+            self.follow.toggle(self.drone)
+            return True
+        self.follow.cancel(f"key {ch!r}")
+        return False
+
     def _on_key(self, ch: str, now: float) -> None:
+        if self._follow_key(ch):
+            return
         d = self.drone
         k = ch.lower()
         if ch == "!":
             if now - self._bang_t < 1.0:
-                d.emergency()
-                self._cmd = None
-                self._event("EMERGENCY (motors off)")
+                if d.emergency() is False:  # the packet could not be sent: it is still flying
+                    self._event("EMERGENCY NOT SENT (Wi-Fi down): press ! twice again")
+                else:
+                    self._cmd = None
+                    self._event("EMERGENCY (motors off)")
             else:
                 self._bang_t = now
                 print("  >> press ! again within 1 s for EMERGENCY", flush=True)
@@ -342,6 +404,8 @@ class Recorder:
             why = "it already landed in this run: restart the recorder to fly again"
         elif self.last_frame_t is None or time.time() - self.last_frame_t > 1.0:
             why = "no live video (the safety governor would only hover)"
+        elif time.time() - d.telemetry().t > self.safety.telemetry_timeout_s:
+            why = "no live telemetry (the safety governor would only hover)"
         elif bat is None or float(bat) <= self.safety.min_battery_pct:
             why = f"battery {bat}% (lands at {self.safety.min_battery_pct:.0f}%)"
         if why:
@@ -370,14 +434,20 @@ class Recorder:
         if action != "ok":
             self._hold, self._until = [0, 0, 0, 0], [0.0] * 4  # never resume a stick after a safety hover
         vals = tuple(h if now < u else 0 for h, u in zip(self._hold, self._until))
+        following = self.follow is not None and self.follow.active
+        if following:  # follow's rc instead of the keys' (it cancels itself on a safety action or landing)
+            vals = self.follow.tick(d, action, busy)
         if d.flying and not busy:
             d.rc(*vals)  # sent every tick: also the keep-alive against the Tello's 15 s auto-land
             if vals != self._sent_rc:
-                self._event("rc", lr=vals[0], fb=vals[1], ud=vals[2], yaw=vals[3])
+                if not following:  # follow logs its own decisions
+                    self._event("rc", lr=vals[0], fb=vals[1], ud=vals[2], yaw=vals[3])
                 self._sent_rc = vals
         return action
 
     def _land_and_wait(self) -> None:
+        if self.follow is not None:
+            self.follow.cancel("landing / exit")
         d = self.drone
         if not (self.cfg.fly and d is not None) or not (d.flying or d.busy()):
             return
@@ -423,6 +493,11 @@ class Recorder:
             if self._takeoff_t is not None and d.flying:
                 state += f" {time.monotonic() - self._takeoff_t:.0f}s"
             line += f" | {state} rc {' '.join(str(v) for v in self._sent_rc)} | {action}"
+            if self.follow is not None:
+                line += f" | {self.follow.status()}"
+        link = getattr(getattr(self.drone, "inner", self.drone), "link_error", None)
+        if link:
+            line += f" | WI-FI DOWN ({link})"
         if self.writer_error:
             line += f" | {self.writer_error}"
         return line
@@ -449,6 +524,8 @@ class Recorder:
         print(f"recording to {self.dir}", flush=True)
         if self.cfg.fly:
             print(KEY_HELP, flush=True)
+            if self.follow is not None:
+                print(FOLLOW_HELP, flush=True)
 
         threads = [threading.Thread(target=fn, daemon=True, name=fn.__name__)
                    for fn in (self._writer, self._telemetry, self._pickup)]
@@ -512,6 +589,19 @@ class Recorder:
 
 
 # ------------------------------------------------------------------ CLI
+def _make_follow(args, frames, cfg):
+    """FollowMode for --follow: the detector loads and tracks in its own thread from now on."""
+    from .camera import load_camera
+    from .follow import FollowCfg, FollowMode, YoloPersonDetector
+
+    fcfg = FollowCfg(height_m=args.follow_height, video_lag_s=cfg.drone.video_lag_s)
+    if args.follow_behind:
+        fcfg.behind_m = args.follow_behind
+    print("follow: loading the person detector in the background ...", flush=True)
+    return FollowMode(frames, lambda: YoloPersonDetector(args.follow_weights), fcfg, load_camera(),
+                      max_rc=cfg.safety.max_rc).start_tracker()
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="python -m kite.record", description="Record drone video + telemetry to disk.")
     p.add_argument("--source", required=True, help="a video file (dry run, no drone) or 'tello'")
@@ -523,6 +613,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pulse", type=float, default=1.0, help="seconds one key press drives a stick (default 1.0)")
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds (default: Ctrl+C)")
     p.add_argument("--video-backend", choices=["pyav", "opencv"], default=None, help="Tello H.264 decoder")
+    p.add_argument("--follow", action="store_true", help="with --fly: g toggles follow mode (needs the 'follow' extra "
+                   "and data/models/yolo11n.pt, see kite/follow.py)")
+    p.add_argument("--follow-behind", type=float, default=None, help="follow distance behind the head, m (1.2)")
+    p.add_argument("--follow-height", type=float, default=None, help="follow altitude, m above takeoff "
+                   "(default: the height when g is pressed)")
+    p.add_argument("--follow-weights", default=None, help="YOLO weights for --follow")
     args = p.parse_args(argv)
 
     if not 10 <= args.speed <= 100:
@@ -534,6 +630,14 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--fly needs --source tello")
     if args.fly and not sys.stdin.isatty():
         p.error("--fly needs an interactive terminal for the keys")
+    if args.follow:
+        from .follow import detector_available
+
+        if not args.fly:
+            p.error("--follow needs --fly")
+        why = detector_available(args.follow_weights)
+        if why:
+            p.error(f"--follow: {why}")
     if not tello and not os.path.isfile(args.source):
         p.error(f"no such video file: {args.source}")
     os.makedirs(args.out, exist_ok=True)
@@ -578,8 +682,16 @@ def main(argv: list[str] | None = None) -> int:
             print("WARNING: no video yet; recording anyway (the reader keeps retrying, takeoff waits for video)")
         meta["battery_start"] = drone.telemetry().battery_pct
         if args.fly:
-            with TerminalKeys() as keys:
-                Recorder(frames, drone, rcfg, meta, keys=keys, safety=cfg.safety).run()
+            follow = _make_follow(args, frames, cfg) if args.follow else None
+            try:
+                with TerminalKeys() as keys:
+                    rec = Recorder(frames, drone, rcfg, meta, keys=keys, safety=cfg.safety, follow=follow)
+                    if follow is not None:
+                        follow.log = rec._event
+                    rec.run()
+            finally:
+                if follow is not None:
+                    follow.close()
         else:
             Recorder(frames, drone, rcfg, meta).run()
     finally:

@@ -1,233 +1,187 @@
-"""The judgment layer may only make Kite more careful. These tests try hard to make it do otherwise."""
+"""Claude judgment layer: guardrails with a fake client (no network), plus one optional live call."""
 
-import base64
-import json
 import time
-import types
+from types import SimpleNamespace
 
 import pytest
 
-from conftest import wait_for
-from earpiece import judgment as J
-from earpiece.events import parse
+from conftest import LIVE_ANTHROPIC_KEY, wait_for
+from earpiece.client import EarpieceClient
+from earpiece.judgment import Judgment, validate
 
 
-# ---------------------------------------------------------------- the box
+class FakeClient:
+    """Stands in for anthropic.Anthropic: returns a scripted decide() call."""
+
+    def __init__(self, decision=None, delay=0.0, error=None):
+        self.decision = decision or {}
+        self.delay = delay
+        self.error = error
+        self.calls = []
+        self.messages = self
+
+    def create(self, **kw):
+        self.calls.append(kw)
+        if self.delay:
+            time.sleep(self.delay)
+        if self.error:
+            raise self.error
+        d = {"say": "", "warning": False, "upgrade_key": "", "upgrade_priority": "", **self.decision}
+        return SimpleNamespace(stop_reason="tool_use",
+                               content=[SimpleNamespace(type="tool_use", name="decide", input=d)])
+
+
+HAZ = {"hazards": [{"key": "crowd", "kind": "crowd", "text": "Crowd ahead.", "priority": "nav"}],
+       "scene": "A busy crosswalk."}
+
+
+def make(decision=None, snap=None, **kw):
+    said, events, ups = [], [], []
+    state = {"snap": snap or HAZ}
+    j = Judgment(lambda: state["snap"], lambda *a, **k: said.append((a, k)),
+                 lambda key, p: ups.append((key, p)) or True, lambda t, d: events.append((t, d)),
+                 client=FakeClient(decision, **{k: v for k, v in kw.items() if k in ("delay", "error")}),
+                 log=lambda *_: None, **{k: v for k, v in kw.items() if k in ("min_gap_s", "timeout_s")})
+    j.stop()                                   # drive step() by hand
+    return j, said, events, ups, state
+
+
 @pytest.mark.parametrize("text", [
-    "Go ahead.", "You can cross now.", "The path is clear.", "It's safe to cross.", "Continue walking.",
-    "Keep walking straight.", "Walk now, the light is green.", "All clear!", "Turn left to avoid the crowd.",
-    "Take the other sidewalk instead.", "Step off the curb.", "You can go.", "Proceed carefully.",
-    "the way is now clear", "reroute through Bay Street",
-])
-def test_anything_that_moves_or_clears_is_blocked(text):
-    assert not J.is_permitted(text)
+    "It is safe to cross now.", "Go ahead, the light is green.", "You can cross.", "The path is clear.",
+    "Keep walking.", "Proceed to the corner.", "You don't need to stop.", "Take a detour to the left.",
+    "All clear.", "It's clear to go."])
+def test_permission_and_reroutes_are_never_spoken(text):
+    j, said, events, _, _ = make({"say": text})
+    j.step()
+    assert said == [] and events == []
+    assert j.stats["rejected"] == 1
 
 
-@pytest.mark.parametrize("text", [
-    "Wait, the crosswalk is crowded.", "Slow down, a cyclist is coming from the left.",
-    "Careful, low branch at head height ahead.", "Wait for the people to pass.", "Stay where you are.",
-])
-def test_caution_is_allowed(text):
-    assert J.is_permitted(text)
+def test_a_warning_is_spoken_at_hazard_priority_and_mirrored_as_say():
+    j, said, events, _, _ = make({"say": "Wait, the crosswalk is crowded.", "warning": True})
+    assert j.step() == "said"
+    (args, kw), = said
+    assert args == ("Wait, the crosswalk is crowded.", "hazard") and kw["ttl"] <= 5
+    (kind, d), = events
+    assert kind == "say" and d["source"] == "judgment" and d["priority"] == "hazard"
 
 
-def test_sanitize_only_raises_existing_hazards():
-    hazards = {"crowd": {"priority": "nav"}, "car": {"priority": "critical"}}
-    d = J.sanitize({"say": "Go now.", "wait": False, "upgrade": [
-        {"key": "crowd", "priority": "hazard"},       # raise: allowed
-        {"key": "car", "priority": "hazard"},         # lower critical -> hazard: refused
-        {"key": "ghost", "priority": "critical"},     # unknown hazard: refused
-        {"key": "crowd", "priority": "info"}]}, hazards)
-    assert d.say == "" and d.blocked
-    assert d.upgrade == [("crowd", "hazard")]
+def test_too_long_is_rejected():
+    j, said, *_ = make({"say": "Wait. " * 30, "warning": True})
+    j.step()
+    assert said == []
 
 
-def test_sanitize_handles_garbage():
-    for raw in (None, [], "x", {"say": 5, "upgrade": "no"}, {"upgrade": [None, 3, {"key": 1}]}):
-        d = J.sanitize(raw, {})
-        assert d.say == "" and d.upgrade == []
+def test_downgrades_unknown_keys_and_critical_are_rejected():
+    hz = {"crowd": "hazard"}
+    assert validate({"upgrade_key": "crowd", "upgrade_priority": "info"}, hz)[1] is None        # down
+    assert validate({"upgrade_key": "crowd", "upgrade_priority": "hazard"}, hz)[1] is None      # same
+    assert validate({"upgrade_key": "ghost", "upgrade_priority": "hazard"}, hz)[1] is None      # no key
+    assert validate({"upgrade_key": "crowd", "upgrade_priority": "critical"}, hz)[1] is None    # sonar only
+    assert validate({"upgrade_key": "crowd", "upgrade_priority": "hazard"}, {"crowd": "nav"})[1] == ("crowd", "hazard")
 
 
-# ---------------------------------------------------------------- with a fake Claude
-class FakeClaude:
-    """Stands in for anthropic.AsyncAnthropic: returns scripted replies, records requests."""
-
-    def __init__(self, replies):
-        self.replies = list(replies)
-        self.requests = []
-        outer = self
-
-        class Messages:
-            async def create(self, **kw):
-                outer.requests.append(kw)
-                r = outer.replies.pop(0) if outer.replies else {"say": "", "wait": False, "upgrade": []}
-                text = r if isinstance(r, str) else json.dumps(r)
-                return types.SimpleNamespace(stop_reason="end_turn",
-                                             content=[types.SimpleNamespace(type="text", text=text)])
-
-        self.beta = types.SimpleNamespace(messages=Messages())
+def test_upgrade_goes_through_the_app_hook():
+    j, _, _, ups, _ = make({"upgrade_key": "crowd", "upgrade_priority": "hazard"})
+    assert j.step() == "upgraded"
+    assert ups == [("crowd", "hazard")]
 
 
-def test_judgment_speaks_waits_and_upgrades(app):
-    fake = FakeClaude([{"say": "Wait, the crosswalk is crowded.", "wait": True,
-                        "upgrade": [{"key": "crowd", "priority": "critical"}]}])
-    app.judgment._client = fake
-    app.judgment.min_interval_s = 0
-    app.handle(parse({"type": "hazard", "kind": "crowd", "key": "crowd", "bearing": 5, "distance": 8,
-                      "priority": "nav"}))
-    said = lambda: [h["text"] for h in app.speaker.history]
-    assert wait_for(lambda: "Wait, the crosswalk is crowded." in said(), 8)
-    assert app.hazards["crowd"]["priority"] == "critical"
-    assert app._stop_since is not None
-    req = fake.requests[0]
-    assert req["model"] == "claude-opus-5-5" and req["output_config"]["effort"] == "low"
-    assert req["output_config"]["format"]["type"] == "json_schema"
-    assert "tools" not in req                                         # it cannot act, only advise
-    snap = json.loads(req["messages"][0]["content"])
-    assert snap["hazards"][0]["key"] == "crowd"
+def test_no_call_when_nothing_changed():
+    j, _, _, _, state = make({"say": "Wait, a car is turning in from your right.", "warning": True})
+    j.step()
+    j.step()
+    j.step()
+    assert len(j.client.calls) == 1
+    state["snap"] = {**HAZ, "scene": "A car turning in from the right."}
+    j.step()
+    assert len(j.client.calls) == 2
+    j2, *_ = make(snap={"hazards": [], "scene": None})
+    j2.step()
+    assert j2.client.calls == []
 
 
-def test_judgment_cannot_clear_a_stop(app):
-    fake = FakeClaude([{"say": "The path is clear, you can continue.", "wait": False, "upgrade": []}])
-    app.judgment._client = fake
-    app.judgment.min_interval_s = 0
-    app.handle(parse({"type": "hazard", "kind": "vehicle", "key": "car", "state": "wait", "bearing": 0}))
-    assert wait_for(lambda: app.judgment.stats["blocked"] == 1, 8)
-    assert wait_for(lambda: "Car, ahead. Wait." in [h["text"] for h in app.speaker.history], 6)
-    assert "The path is clear, you can continue." not in [h["text"] for h in app.speaker.history]
+def test_slow_or_failing_claude_is_dropped_silently():
+    j, said, events, *_ = make({"say": "Wait.", "warning": True}, delay=0.3, timeout_s=0.1)
+    assert j.step() == "late" and said == [] and events == []
+    j2, said2, *_ = make(error=TimeoutError("read timeout"))
+    assert j2.step() == "dropped" and said2 == []
 
 
-def test_judgment_failure_changes_nothing(app):
-    class Boom:
-        class beta:
-            class messages:
-                @staticmethod
-                async def create(**kw):
-                    raise RuntimeError("network down")
-    app.judgment._client = Boom()
-    app.judgment.min_interval_s = 0
-    app.handle(parse({"type": "hazard", "kind": "crowd", "key": "c2", "bearing": 20}))
-    assert wait_for(lambda: app.judgment.stats["errors"] >= 1, 8)
-    assert wait_for(lambda: "Crowd, slightly right." in [h["text"] for h in app.speaker.history], 4)
+def test_rate_limit_coalesces_a_burst_of_changes():
+    said = []
+    n = {"i": 0}
+
+    def snap():
+        n["i"] += 1
+        return {"hazards": [{"key": "crowd", "text": f"Crowd {n['i']}", "priority": "nav"}], "scene": None}
+
+    fake = FakeClient({"say": "Wait.", "warning": True})
+    j = Judgment(snap, lambda *a, **k: said.append(a), lambda *a: True, lambda *a: None,
+                 client=fake, min_gap_s=0.5, log=lambda *_: None)
+    try:
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 1.2:
+            j.notify()
+            time.sleep(0.02)
+        time.sleep(0.1)
+        assert 2 <= len(fake.calls) <= 3       # ~60 notifications, at most one call per 0.5 s
+    finally:
+        j.stop()
 
 
-def test_judgment_is_rate_limited_and_coalesced(app):
-    fake = FakeClaude([])
-    app.judgment._client = fake
-    app.judgment.min_interval_s = 1.0
-    for i in range(20):
-        app.handle(parse({"type": "hazard", "kind": "crowd", "key": f"k{i}", "bearing": i}))
-    time.sleep(2.6)
-    assert 1 <= len(fake.requests) <= 3
+def test_dont_walk_is_spoken_even_while_claude_hangs(app):
+    app.judgment.stop()
+    fake = FakeClient({"say": "It's safe to cross.", "warning": False}, delay=3.0)
+    app.judgment = Judgment(app.context, app.say, app.upgrade_hazard, app._event,
+                            client=fake, min_gap_s=0.1, timeout_s=2.5, log=app.log)
+    c = EarpieceClient("127.0.0.1", app.cfg.net.udp_port, source="drone")
+    c.hazard("crosswalk", state="dont_walk", bearing=0, distance=6)
+    assert wait_for(lambda: "Don't walk." in [h["text"] for h in app.speaker.history], 2)
+    assert wait_for(lambda: fake.calls, 2)          # Claude was asked, and is still thinking
+    assert app.judgment.stats["said"] == 0
+    time.sleep(3.2)
+    assert app.judgment.stats["dropped"] == 1        # answered late: dropped, never spoken
+    assert "It's safe to cross." not in [h["text"] for h in app.speaker.history]
+    app.judgment.stop()
 
 
-# ---------------------------------------------------------------- stop, wait, continue
-def test_stop_wait_then_continue(app):
-    from earpiece.client import EarpieceClient
-    c = EarpieceClient("127.0.0.1", app.cfg.net.udp_port, source="webcam")
-    for _ in range(25):                                # someone right in front: "Stop."
-        c.obstacles([{"id": 1, "kind": "person", "bearing": 0, "distance": 0.5}])
-        time.sleep(1 / 15)
-    said = lambda: [h["text"] for h in app.speaker.history]
-    assert wait_for(lambda: any(t.startswith("Stop") for t in said()), 3)
-    assert "Path is clear. You can continue." not in said()
-    for _ in range(50):                                # they step aside; perception keeps running
-        c.obstacles([])
-        time.sleep(1 / 15)
-    assert wait_for(lambda: "Path is clear. You can continue." in said(), 4)
-    assert said().count("Path is clear. You can continue.") == 1
+def test_app_upgrade_hook_only_raises(app):
+    c = EarpieceClient("127.0.0.1", app.cfg.net.udp_port, source="drone")
+    c.send({"type": "hazard", "kind": "crowd", "text": "Small crowd ahead.", "priority": "nav", "bearing": 20})
+    assert wait_for(lambda: "crowd" in app.hazards, 2)
+    assert not app.upgrade_hazard("crowd", "info")
+    assert not app.upgrade_hazard("crowd", "critical")
+    assert not app.upgrade_hazard("nope", "hazard")
+    assert app.upgrade_hazard("crowd", "hazard")
+    assert app.hazards["crowd"]["priority"] == "hazard"
+    assert {"key": "crowd", "priority": "hazard"}.items() <= next(
+        h for h in app.context()["hazards"] if h["key"] == "crowd").items()
 
 
-def test_no_continue_when_camera_dies(app):
-    from earpiece.client import EarpieceClient
-    c = EarpieceClient("127.0.0.1", app.cfg.net.udp_port, source="webcam")
-    for _ in range(25):
-        c.obstacles([{"id": 1, "kind": "pole", "bearing": 0, "distance": 0.5}])
-        time.sleep(1 / 15)
-    time.sleep(4.0)                                     # camera stops sending: never say "clear"
-    assert "Path is clear. You can continue." not in [h["text"] for h in app.speaker.history]
+def test_judgment_off_without_key_or_by_flag(monkeypatch):
+    from earpiece.__main__ import main  # noqa: F401  (flag is parsed there)
+    from earpiece.config import Cfg
+    monkeypatch.setenv("KITE_JUDGMENT", "0")
+    assert Cfg().judgment is False
+    monkeypatch.delenv("KITE_JUDGMENT")
+    assert Cfg().judgment is True
+    j = Judgment(lambda: HAZ, print, print, print, api_key=None, log=lambda *_: None)
+    assert not j.online
 
 
-# ---------------------------------------------------------------- scene images
-def test_scene_image_is_validated():
-    from earpiece.events import BadMessage
-    with pytest.raises(BadMessage):
-        parse({"type": "scene_image", "jpeg": base64.b64encode(b"not a jpeg").decode()})
-    with pytest.raises(BadMessage):
-        parse({"type": "scene_image", "jpeg": "!!!"})
-    m = parse({"type": "scene_image", "camera": "chest", "jpeg": base64.b64encode(b"\xff\xd8xx").decode()})
-    assert m.kind == "chest" and m.data["jpeg"].startswith(b"\xff\xd8")
-
-
-def test_scene_image_becomes_scene_context(app):
-    fake = FakeClaude(["Narrow sidewalk, two people ahead on the left. Go straight, it's clear."])
-    app.judgment._client = fake
-    app.handle(parse({"type": "scene_image", "camera": "drone",
-                      "jpeg": base64.b64encode(b"\xff\xd8" + b"0" * 100).decode()}))
-    assert wait_for(lambda: app.scene is not None, 8)
-    assert app.scene[0] == "Narrow sidewalk, two people ahead on the left."   # the instruction is stripped
-    req = fake.requests[0]
-    assert req["messages"][0]["content"][0]["type"] == "image"
-
-
-# ---------------------------------------------------------------- "what's in front of me?"
-def test_front_question_uses_the_chest_camera(app):
-    fake = FakeClaude(["A wooden bench about one meter ahead, slightly right."])
-    app.judgment._client = fake
-    app.handle(parse({"type": "scene_image", "camera": "chest",
-                      "jpeg": base64.b64encode(b"\xff\xd8chest").decode()}))
-    assert app._chest_frame is not None and fake.requests == []      # chest frames are not auto-described
-    app.heard("what's in front of me")
-    assert wait_for(lambda: "A wooden bench about one meter ahead, slightly right." in
-                    [h["text"] for h in app.speaker.history], 10)
-    assert "worn on the walker's chest" in fake.requests[0]["messages"][0]["content"][1]["text"]
-
-
-def test_front_question_without_a_fresh_frame_answers_locally(app):
-    app.heard("what's in front of me")
-    assert wait_for(lambda: any("Nothing close" in h["text"] or "not running" in h["text"]
-                                for h in app.speaker.history), 6)
-
-
-def test_judgment_events_are_not_bridged(app):
-    sent = []
-    app.bridges.append(types.SimpleNamespace(publish=lambda o: sent.append(o["type"])))
-    app._event("judgment", {"say": "x"})
-    app._event("continue", {})
-    app._event("spoken", {"text": "x"})
-    assert sent == ["spoken"]
-
-
-# ---------------------------------------------------------------- reading text aloud (OCR)
-def test_read_this_reads_the_text_sentence_by_sentence(app):
-    fake = FakeClaude(["**Lunch menu.** Margherita pizza, 14 dollars. Caesar salad, 11 dollars."])
-    app.judgment._client = fake
-    app.handle(parse({"type": "scene_image", "camera": "chest", "jpeg": base64.b64encode(b"\xff\xd8menu").decode()}))
-    app.heard("read this to me")
-    said = lambda: [h["text"] for h in app.speaker.history]
-    assert wait_for(lambda: "Caesar salad, 11 dollars." in said(), 15)
-    assert said()[:4] == ["Hold it steady. Reading.", "Lunch menu.", "Margherita pizza, 14 dollars.",
-                          "Caesar salad, 11 dollars."]                       # markdown stripped, in order
-    assert "Transcribe the readable text exactly" in fake.requests[0]["messages"][0]["content"][1]["text"]
-
-
-def test_read_with_no_text_or_no_camera(app):
-    fake = FakeClaude(["NO_TEXT"])
-    app.judgment._client = fake
-    app.heard("what does this say")                     # no frame and the camera is off in tests
-    assert wait_for(lambda: any("can't see through the camera" in h["text"] for h in app.speaker.history), 8)
-    app.handle(parse({"type": "scene_image", "camera": "chest", "jpeg": base64.b64encode(b"\xff\xd8blank").decode()}))
-    app.heard("read this")
-    assert wait_for(lambda: any("can't see any text" in h["text"] for h in app.speaker.history), 10)
-
-
-def test_warnings_cut_into_a_long_reading(app):
-    long = " ".join(f"Item {i} costs {i} dollars." for i in range(1, 12))
-    app.judgment._client = FakeClaude([long])
-    app.handle(parse({"type": "scene_image", "camera": "chest", "jpeg": base64.b64encode(b"\xff\xd8m").decode()}))
-    app.heard("read the menu")
-    assert wait_for(lambda: any(h["text"].startswith("Item 1") for h in app.speaker.history), 10)
-    app.say("Stop.", "critical")
-    assert wait_for(lambda: "Stop." in [h["text"] for h in app.speaker.history], 5)
-    order = [h["text"] for h in app.speaker.history]
-    assert order.index("Stop.") < len(order) - 1 or app.speaker.busy    # the stop did not wait for the menu
+@pytest.mark.skipif(not LIVE_ANTHROPIC_KEY, reason="live Claude call: needs ANTHROPIC_API_KEY")
+def test_live_decision():
+    said = []
+    j = Judgment(lambda: {"hazards": [{"key": "crosswalk", "kind": "crosswalk", "state": "walk",
+                                       "text": "Walk signal is on.", "priority": "hazard"}],
+                          "scene": "A white car is turning right across the crosswalk from the walker's right.",
+                          "position": {"place": "Lyon Street and Bay Street"}},
+                 lambda *a, **k: said.append(a), lambda *a: True, lambda *a: None,
+                 api_key=LIVE_ANTHROPIC_KEY, timeout_s=8.0, log=print)
+    j.stop()
+    out = j.step()
+    print("live:", out, said)
+    assert out in ("said", "quiet", "upgraded", "none")
+    for text, _ in said:
+        assert len(text) <= 120

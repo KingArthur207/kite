@@ -74,44 +74,135 @@ The [Anatomy](#-anatomy) table below lists every integration.
 
 ## 🧭 How it works
 
+Kite has three layers. **Eyes** turn camera frames into events. The **earpiece** on the wearable laptop decides what to say and when. **Ears and watchers** get the result: the walker through AirPods, the caregiver through a live dashboard.
+
 ```mermaid
 flowchart LR
-  subgraph eyes["Eyes"]
-    drone["DJI Tello, 30 cm above and behind the head<br/>(or the sim's virtual drone camera)"]
-    chest["Chest camera<br/>(or the sim's chest camera)"]
+  classDef eye fill:#E8F1FB,stroke:#3A6EA5,color:#16324F
+  classDef safe fill:#FDECEA,stroke:#C0392B,color:#5B1A12
+  classDef ai fill:#F3EBFA,stroke:#7D4CB0,color:#3A1F56
+  classDef voice fill:#FFF4E0,stroke:#D68910,color:#5A3A06
+  classDef out fill:#E9F7EF,stroke:#1E8449,color:#0E3B20
+  classDef ext fill:#F4F4F2,stroke:#8A8A85,color:#333,stroke-dasharray:4 3
+
+  subgraph EYES["1 · Eyes"]
+    direction TB
+    drone["🚁 Tello drone<br/>above and behind the head<br/><i>outdoors</i>"]:::eye
+    chest["📷 Body camera<br/>on the chest<br/><i>indoors and outdoors</i>"]:::eye
+    simcam["🖥️ Browser sim<br/>virtual cameras"]:::eye
+    perception["Perception<br/>detection and segmentation"]:::eye
+    maps["🗺️ Google Routes v2<br/>and Places"]:::ext
+    drone --> perception
+    chest --> perception
+    simcam --> perception
   end
 
-  seg["Perception: streetseg (Rex)<br/>segmentation + detection<br/>in progress"]
-  drone -- "frames" --> seg
-  chest -- "frames" --> seg
-
-  maps["Google Routes v2 + Places (New)"]
-  sim["Browser sim<br/>walker pose"]
-
-  subgraph wearable["Earpiece (wearable laptop)"]
-    ear["UDP 5010 / WebSocket 5011<br/>validate, clamp, rate-limit"]
-    safety["Deterministic safety<br/>sonar, 'Stop.', 'Don't walk.', stop and wait"]
-    claude["Claude claude-opus-5-5<br/>judgment, scene, answers + tools"]
-    moss["Moss memory<br/>places and hazards"]
-    tts["Cartesia Sonic TTS<br/>+ phrase cache"]
-    stt["Cartesia Ink STT"]
-    mixer["Rust mixer + limiter"]
+  subgraph EAR["2 · Earpiece, on the wearable laptop"]
+    direction TB
+    inbox["Event inbox<br/>UDP 5010 · WebSocket 5011<br/>validate · clamp · rate-limit"]
+    subgraph SAFETY["Deterministic safety · no network"]
+      direction TB
+      sonar["Sonar beeps<br/>by time to contact"]:::safe
+      stop["'Stop.' · stop and wait<br/>crossing signals"]:::safe
+      beacon["Beacon ticks<br/>toward the next turn"]:::safe
+    end
+    subgraph CLAUDE["Claude + Moss · off the audio path"]
+      direction TB
+      judgment["Judgment · Haiku<br/>one cautious sentence"]:::ai
+      brain["Voice brain · Opus<br/>answers and tools"]:::ai
+      vision["Vision · Opus<br/>describe · read text aloud"]:::ai
+      moss[("Moss memory<br/>3–12 ms local search")]:::ai
+    end
+    subgraph VOICE["Cartesia"]
+      direction TB
+      stt["Ink · speech to text"]:::voice
+      tts["Sonic · streamed voice<br/>+ cached safety phrases"]:::voice
+    end
+    mixer["Rust audio engine<br/>binaural · priority mixer · limiter"]:::out
+    inbox --> SAFETY
+    inbox --> CLAUDE
+    stt --> CLAUDE
+    SAFETY -- "beeps" --> mixer
+    SAFETY -- "fixed phrases" --> tts
+    CLAUDE -- "sentences, filtered in code" --> tts
+    tts --> mixer
   end
 
-  seg -- "hazard, scene (drone)<br/>obstacles ~10 Hz (chest)" --> ear
-  maps -- "guidance, beacon" --> ear
-  sim -- "position, status" --> ear
-  ear --> safety --> mixer
-  ear --> claude
-  moss <--> claude
-  stt -- "what the walker said" --> claude
-  claude -- "one cautious sentence" --> tts
-  safety -- "fixed phrases" --> tts
-  tts --> mixer
-  mixer -- "Bluetooth" --> airpods(["AirPods"])
+  subgraph OUT["3 · Ears and watchers"]
+    direction TB
+    airpods(["🎧 AirPods or any<br/>stereo Bluetooth headphones"]):::out
+    stdb[("SpacetimeDB<br/>event · latest")]:::ext
+    dash["👩‍⚕️ Caregiver dashboard<br/>live map · no video"]:::ext
+    stdb <--> dash
+  end
 
-  ear -- "mirror every event" --> stdb[("SpacetimeDB<br/>event + latest")]
-  stdb -- "live subscription" --> dash["Caregiver dashboard<br/>no video"]
+  perception -- "obstacles ~10 Hz<br/>hazards · scene" --> inbox
+  maps -- "turns" --> inbox
+  mixer -- "Bluetooth" --> airpods
+  inbox -- "mirror" --> stdb
+```
+
+**What happens when someone steps in front of you.** The beep and the "Stop." come from local code in well under a tenth of a second. Claude may add one sentence afterwards, but nothing waits for it.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Cam as 📷 Body camera
+  participant P as Perception
+  participant E as Earpiece safety
+  participant M as Rust mixer
+  participant A as 🎧 AirPods
+  participant J as Claude judgment
+  participant S as SpacetimeDB
+
+  Cam->>P: frame
+  P->>E: obstacles (person, 0°, 0.7 m)
+  E->>M: beeps from straight ahead, faster as you close in
+  M->>A: binaural beeps
+  E->>M: "Stop." (cached, plays instantly)
+  M->>A: "Stop."
+  par off the audio path
+    E-)S: mirror the hazard
+    E-)J: hazards and scene changed
+    J--)E: "Wait, the crosswalk is crowded."
+    Note over E,J: Dropped if it sounds like "go",<br/>arrives after 2.5 s, or tries to downgrade
+  end
+  Note over E: Clear for 1.5 s with perception alive
+  E->>M: "Path is clear. You can continue."
+  M->>A: speech
+```
+
+**Stop and wait, like a guide dog.** Kite never steers you around an obstacle on its own. It stops, waits, and only deterministic code can let you go again.
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> Walking
+  Walking --> Stopped: obstacle in the walking corridor,<br/>closer than 0.75 m or under 1 s away
+  Stopped --> Waiting: "Stop." spoken
+  Waiting --> Waiting: still blocked, or perception silent<br/>(never "clear" on a dead camera)
+  Waiting --> Walking: clear for 1.5 s with perception alive<br/>"Path is clear. You can continue."
+  state "At a crossing" as Crossing
+  Walking --> Crossing: "don't walk" signal
+  Crossing --> Walking: "walk" held steady for 0.6 s
+  note right of Waiting
+    Claude can add "Wait." here,
+    but can never end the wait
+  end note
+```
+
+**Who gets heard first.** Every sound has a priority. A higher one cuts in and ducks the rest, and anything that goes stale before it plays is dropped instead of said late.
+
+```mermaid
+flowchart LR
+  classDef p fill:#FFFFFF,stroke:#555,color:#222
+  c["🔴 critical<br/>Stop."]:::p --> h["🟠 hazard<br/>Car, 2 o'clock."]:::p --> n["🔵 nav<br/>Turn left in 20 m."]:::p --> a["🟣 answer<br/>Claude's reply"]:::p --> i["🟢 info<br/>caregiver, memories"]:::p --> s["⚪ system<br/>battery, status"]:::p
+  style c fill:#FDECEA,stroke:#C0392B
+  style h fill:#FEF3E2,stroke:#D68910
+  style n fill:#E8F1FB,stroke:#3A6EA5
+  style a fill:#F3EBFA,stroke:#7D4CB0
+  style i fill:#E9F7EF,stroke:#1E8449
+  style s fill:#F4F4F2,stroke:#8A8A85
 ```
 
 Every producer speaks one contract, the event types in [`earpiece/earpiece/events.py`](earpiece/earpiece/events.py): `obstacles`, `hazard`, `guidance`, `beacon`, `position`, `status`, `scene`, `scene_image`, `say`, `memory`, `heartbeat`, `control`. Bearings are degrees in the walker's frame (0 ahead, +90 right, ±180 behind) and distances are metres. Priorities run `critical` > `hazard` > `nav` > `answer` > `info` > `system`.
@@ -152,16 +243,17 @@ Honest status as of this commit. **Core** means it is in the main path and teste
 | Phrase cache + macOS `say` fallback | On by default | Safety phrases play from disk; new text falls back to a built-in voice | "Stop." must work with no internet |
 | Local voice intents ([`brain.py`](earpiece/earpiece/brain.py)) | On by default | Stop, repeat, pause, louder, "what's around me", "take me to ...", "remember ..." with no network | The common commands should never depend on the cloud |
 | Claude voice brain with tools ([`brain.py`](earpiece/earpiece/brain.py)) | Key-gated | Answers anything else from Kite's live context; tools: navigate, settings, remember, alert caregiver | Beeps need someone to explain them |
-| Claude judgment layer ([`judgment.py`](earpiece/earpiece/judgment.py)) | Key-gated | Adds at most one cautious sentence and may raise a hazard's priority; no tools, structured JSON output | The careful calls a guide dog makes |
-| Claude scene description (`scene_image` events) | Key-gated | Describes camera frames sent over the WebSocket into the shared `scene` text, at most one every 3 s | Context for answers and judgment. No producer in this repo sends frames yet |
+| Claude judgment layer ([`judgment.py`](earpiece/earpiece/judgment.py)) | Key-gated | Adds at most one cautious sentence and may raise a hazard's priority, through one strict `decide` tool checked in code | The careful calls a guide dog makes |
+| Claude scene description ([`vision.py`](earpiece/earpiece/vision.py), [`sim/scene_describe.py`](sim/scene_describe.py)) | Key-gated | Turns drone, chest and sim frames into the shared `scene` text | Context for answers and judgment |
+| Reading text aloud and "what's in front of me?" ([`vision.py`](earpiece/earpiece/vision.py), [`camera.py`](earpiece/earpiece/camera.py)) | Key-gated | The body camera frames a menu, sign or screen; Claude transcribes or describes it; Cartesia reads it | Print is the other half of the world a cane can't reach |
 | Moss memory ([`memory.py`](earpiece/earpiece/memory.py)) | Core (Moss keys; local JSON mirror keeps it working without them) | The wearer's places and remembered hazards, searched on every utterance | Every walk shouldn't start from zero |
 | Google Places API (New) ([`destinations.py`](earpiece/earpiece/destinations.py)) | Key-gated | "The nearest pharmacy" ranked by distance; named places resolved to coordinates | Getting somewhere, not just avoiding things |
-| Google Routes API v2 to `guidance` and `beacon` | In progress | Walking route as spoken turns and the beacon's bearing | Same |
+| Google Routes API v2 to `guidance` and `beacon` ([`route.py`](earpiece/earpiece/route.py)) | Key-gated | Walking route as spoken turns and the beacon's bearing, rerouted when the walker strays | Same |
 | SpacetimeDB module and caregiver dashboard ([`dashboard/`](dashboard/)) | Core (earpiece mirroring is opt-in with `--spacetime`) | `event` and `latest` tables; dashboard shows walker, hazards, last spoken, devices, live feed | A caregiver can watch the walk, and every device shares one state |
 | Browser sim ([`sim/`](sim/)) | Core for the demo (placeholder world) | Arrow-key walker, virtual drone and chest cameras at Tello resolution, collision counter | Judges can walk a corner at the table, where drones are banned |
 | Perception `streetseg` (Rex) | In progress, not yet in this repo | Street segmentation and detection on drone, sim and webcam frames, emitting `hazard`, `scene`, `obstacles` | Same detector on real and simulated frames is the honesty claim |
-| Drone layer for the Tello (Arthur) | In progress, not yet in this repo | Flight, recording, telemetry; [`tests/drone_test.py`](tests/drone_test.py) measures Tello latency | The view from above is what a cane can't give |
-| Sim collisions with and without Kite | Planned | Scripted walks, collisions counted with cues on and off | The usefulness number for the pitch |
+| Drone layer for the Tello (Arthur) ([`kite/`](kite/)) | Core | Flight with safety limits, follow, preflight GO/NO-GO, recording, replay, telemetry and walker GPS | The view from above is what a cane can't give |
+| Sim metrics mode ([`scripts/sim_metrics.py`](scripts/sim_metrics.py)) | Harness runs; the with-Kite number needs perception | Scripted walks with collisions counted: blind 4.6 per walk, oracle 0.45 | The usefulness number for the pitch |
 | Landing site ([`site/`](site/)) | Live | [trykite.pages.dev](https://trykite.pages.dev), audio rendered by the real earpiece | Hear it without the hardware |
 
 ## 🔊 Cartesia: the voice, both ways
@@ -200,13 +292,13 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 
 **The problem.** A cane reports only what it touches. The walker needs to know about the crowd at the crossing, the car turning in, or the sign at head height before they reach it, and they need it said in a sentence, not as a list of detections.
 
-**What Claude does** (model `claude-opus-5-5` at low effort, with server-side fallbacks and a cached system prompt):
+**What Claude does.** Two models, each matched to its job: `claude-haiku-5-5` for the judgment layer, where a call must land inside 2.5 s, and `claude-opus-5-5` at low effort, with server-side fallbacks, for vision and conversation.
 
 | Job | How | Where |
 |---|---|---|
-| **Judgment layer** | Gets the active hazards, route, latest scene text, walker pose, nearest objects and whether a stop is in force, as JSON. Returns structured JSON: at most one short sentence ("Wait, the crosswalk is crowded."), a `wait` flag that starts a stop-and-wait, and optional priority upgrades. It has no tools and can only make Kite more cautious. Triggered by new hazards and scenes, rate-limited to one call every 4 s | [`judgment.py`](earpiece/earpiece/judgment.py), wired in [`app.py`](earpiece/earpiece/app.py) |
-| **Scene description** | Reads a JPEG sent as a `scene_image` event (drone, chest or sim camera) and writes one or two sentences about sidewalk, people, vehicles, crossings and head-height obstacles. That text becomes the `scene` context for answers and judgment. Raw frames stay on the earpiece and are never mirrored to SpacetimeDB | `Judgment.describe_image` |
-| **Reading text aloud** | "Read this", "what does the sign say": the body camera frames the text, Claude transcribes it exactly in reading order (a menu item by item with prices), and Cartesia reads it sentence by sentence so a warning can cut in between sentences. Says so plainly when there's no readable text | `Judgment.read_text`, `Earpiece.read_text`, [`camera.py`](earpiece/earpiece/camera.py) |
+| **Judgment layer** | When the hazard list or the scene changes, a background thread sends `claude-haiku-5-5` the active hazards, nearby obstacles, route, last instruction, scene text and position as JSON. Claude answers through one strict tool, `decide`: at most one short sentence ("Wait, the crosswalk is crowded.") and an optional priority upgrade for a hazard already on the list. It can only make Kite more cautious. At most one call every 3.5 s, skipped when nothing changed; a call slower than 2.5 s is dropped. Off with `KITE_JUDGMENT=0` or `--no-judgment` | [`judgment.py`](earpiece/earpiece/judgment.py), wired in [`app.py`](earpiece/earpiece/app.py) |
+| **Scene description** | Reads a JPEG sent as a `scene_image` event (drone, chest or sim camera) and writes one or two sentences about sidewalk, people, vehicles, crossings and head-height obstacles. That text becomes the `scene` context for answers and judgment. Raw frames stay on the earpiece and are never mirrored to SpacetimeDB. [`sim/scene_describe.py`](sim/scene_describe.py) does the same from the sim and real cameras and sends the text as a `scene` event | [`vision.py`](earpiece/earpiece/vision.py) `Vision.describe_image` |
+| **Reading text aloud** | "Read this", "what does the sign say": the body camera frames the text, Claude transcribes it exactly in reading order (a menu item by item with prices), and Cartesia reads it sentence by sentence so a warning can cut in between sentences. Says so plainly when there's no readable text | `Vision.read_text`, `Earpiece.read_text`, [`camera.py`](earpiece/earpiece/camera.py) |
 | **"What's in front of me?"** | Answered by Claude from the newest body-camera frame; falls back to the obstacle tracks when there's no frame or no internet | `Earpiece.describe_front` |
 | **Conversational answers with tools** | "What's around me?", "Is the crossing busy?", anything the local intents don't cover. Streamed and spoken sentence by sentence, with the relevant Moss memories in context. Tools: `navigate_to`, `control` (settings), `remember` (Moss), `alert_caregiver` | [`brain.py`](earpiece/earpiece/brain.py) |
 
@@ -215,10 +307,10 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 | Risk | What we did |
 |---|---|
 | **It hallucinates an obstacle, or misses one** | Claude never detects anything. Beeps and stops come from perception and deterministic code. Claude only describes the JSON context it is given, and the prompts tell it to say it can't see something rather than guess. |
-| **It tells someone to cross, or to go** | A code-level filter (`is_permitted` and `sanitize` in `judgment.py`) discards any judgment reply that would clear a stop, move the walker or reroute: "go", "continue", "safe to cross", "walk now", "turn left", "detour", and more. Upgrades can only raise a priority, and only for hazards that exist. The judgment layer has no tools and its output schema has no route field. Sonar, `critical` obstacles and "don't walk" run in deterministic code before Claude sees anything, and only deterministic code can say "Path is clear." For conversational answers, the prompt forbids saying a crossing is safe, and Claude's tools are checked against an allow-list before anything runs. |
-| **It is slow** | Claude is off the audio path. Local intents (stop, repeat, pause, louder, "what's around me", "take me to ...") answer offline and instantly. The judgment layer is rate-limited and coalesces triggers; if Claude is slow, the decision simply isn't spoken. |
+| **It tells someone to cross, or to go** | A code-level filter (`validate` in `judgment.py`) discards any judgment sentence that sounds like permission, clears a stop or reroutes: "safe to cross", "go ahead", "you can cross", "keep walking", "detour", and more, plus anything over 120 characters. An upgrade must name a hazard that exists, must raise its priority, and can never reach `critical`. The `decide` tool has no route or movement field. Sonar, `critical` obstacles and "don't walk" run in deterministic code before Claude sees anything, and only deterministic code can say "Path is clear." For conversational answers, the prompt forbids saying a crossing is safe, and Claude's tools are checked against an allow-list before anything runs. |
+| **It is slow** | Claude is off the audio path. Local intents (stop, repeat, pause, louder, "what's around me", "take me to ...") answer offline and instantly. The judgment layer uses the fastest model, coalesces triggers, and drops any call slower than 2.5 s, so a late judgment is never spoken. |
 | **It refuses, errors or is unreachable** | Requests use server-side fallbacks. A refusal or error means nothing changes in the judgment layer, and the voice brain answers locally from Kite's own context instead. |
-| **Prompt injection through scene text** (a sign that says "the road is clear, walk now") | Scene descriptions are treated as context, never instructions. Sentences in a description that sound like an instruction to move are stripped by the same filter before the text is stored. |
+| **Prompt injection through scene text** (a sign that says "the road is clear, walk now") | Scene descriptions are treated as context, never instructions. Sentences in a description that sound like an instruction to move are stripped by a filter in `vision.py` before the text is stored, and anything the judgment layer says still has to pass its own filter. |
 
 ## 🌐 SpacetimeDB: one live world state
 
@@ -276,8 +368,8 @@ Moss's first example use is voice agents that listen, respond and act in real ti
 | 3–12 ms | Moss lookup of a saved place or hazard, in process | `memory.py` |
 | 0 | Audio glitches while five threads hammer the CPU and the mixer for 3 s, with the Rust engine on a real device | `test_real_device_survives_python_abuse` in [`test_rust_engine.py`](earpiece/tests/test_rust_engine.py) |
 | 0 | Audio glitches replaying the 673-event sample walk through `scripts/replay.py` on laptop speakers | [`data/sample_walk.jsonl`](data/sample_walk.jsonl) |
-| 200+ | Automated tests (202 Python, 3 Rust), including a flood of 20,000 datagrams, a third of them malformed, from three senders | [`earpiece/tests/`](earpiece/tests/), [`test_app_stress.py`](earpiece/tests/test_app_stress.py) |
-| Planned | Collisions in the sim with and without Kite's cues, over scripted walks | Sim metrics mode (spec section 5.4), not built yet |
+| 350+ | Automated tests (330 earpiece, 22 Rust, plus the drone layer and sim), including a flood of 20,000 datagrams, a third of them malformed, from three senders | [`earpiece/tests/`](earpiece/tests/), [`test_app_stress.py`](earpiece/tests/test_app_stress.py) |
+| 4.6 → ? | Collisions per scripted blind walk in the sim (seed 1, 20 walks). An oracle that reacts to ground truth gets 0.45; the number with Kite's real cues needs perception running | [`scripts/sim_metrics.py`](scripts/sim_metrics.py), [`sim/README.md`](sim/README.md) |
 
 **From prototype to production.** Every hardware piece sits behind a seam, so swapping it changes a setting, not code: frames come from a `FrameSource` (file, sim, webcam or Tello), producers send the same `EarpieceClient` events whether they are scripted, replayed or live, hosts come from `.env`, and the output device is matched by name. The path we see from here is a phone in place of the wearable laptop, perception running on device, and testing with orientation and mobility instructors. That path is a plan, not something this repo does yet.
 
@@ -324,6 +416,7 @@ Moss's first example use is voice agents that listen, respond and act in real ti
 | `scripts/replay.py` | Replays a JSONL of events into the earpiece, and optionally into SpacetimeDB |
 | `scripts/audit.py` | Pre-submission check: secrets, `.env`, repo visibility, README, large files, model weights |
 | `scripts/netcheck.py` | Checks this laptop's setup: the earpiece over UDP and WebSocket, SpacetimeDB, internet to Claude, Cartesia and Google, and which keys are set |
+| `scripts/demo.sh` | Starts and stops the whole demo (`sim`, `live`, `replay`, `status`, `stop`), with logs in `logs/` |
 | `scripts/offline.sh` | Switches to a local SpacetimeDB server when the internet is gone (`scripts/offline.sh off` undoes it) |
 | `scripts/sim_metrics.py` | Runs sim metrics mode headless and prints collision counts |
 | `data/sample_walk.jsonl` | A recorded 40-second walk in the earpiece event format |
@@ -340,6 +433,14 @@ You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv
 ```bash
 cp .env.example .env    # CARTESIA_API_KEY, ANTHROPIC_API_KEY, GOOGLE_MAPS_API_KEY, ...
 ```
+
+After the installs in steps 1 to 3 (the venv and `npm install` in `dashboard/` and `sim/`), one command runs the whole demo in the background and `scripts/demo.sh stop` ends it:
+
+```bash
+scripts/demo.sh sim        # or: live <camera-index>, replay <file.jsonl>, status, stop
+```
+
+`docs/demo-runbook.md` has the flags. The steps below start each piece by hand.
 
 1. Earpiece (terminal 1):
 
@@ -382,6 +483,20 @@ Tests: `cd earpiece && python -m pytest`, and `earpiece/.venv/bin/python sim/tes
 
 The wearable laptop runs the earpiece and drives the AirPods. The drone laptop runs perception or a replay. Connect them with a Thunderbolt cable; macOS brings up a Thunderbolt Bridge interface with a self-assigned address.
 
+```mermaid
+flowchart LR
+  classDef box fill:#F7F5F0,stroke:#555,color:#222
+  subgraph D["Drone laptop"]
+    tello["🚁 Tello Wi-Fi"]:::box --> perc["Perception or<br/>scripts/replay.py"]:::box
+  end
+  subgraph W["Wearable laptop"]
+    ear["Earpiece<br/>--bind 0.0.0.0"]:::box --> pods(["🎧 AirPods"]):::box
+    cam["📷 Body camera (USB)"]:::box --> ear
+  end
+  perc -- "UDP 5010 over Thunderbolt Bridge<br/>169.254.x.y" --> ear
+  ear -- "internet (Wi-Fi)" --> cloud[("Cartesia · Claude · Moss<br/>Google · SpacetimeDB")]:::box
+```
+
 On the wearable laptop:
 
 ```bash
@@ -417,7 +532,7 @@ python -m pytest                        # + the H.264-over-UDP reader tests (nee
 |---|---|
 | `drone/tello.py` | `TelloDrone`: djitellopy for commands + state. Discrete moves are non-blocking (`busy()` / `last_result()`), late replies after `stop` are discarded, `streamon` is re-sent until video arrives, `dry_run=True` never sends motion. |
 | `drone/safety.py` | `SafetyGovernor`: wraps any drone; clamps rc, altitude ceiling/floor, lands on low battery or flight time, hovers on stale video/telemetry. Call `check()` every loop. |
-| `sources/` | Newest-frame video readers: `TelloVideoSource` (PyAV or the team's OpenCV `VideoStream`, auto-reconnect), `WebcamSource`, file replay. |
+| `sources/` | Newest-frame video readers: `TelloVideoSource` (PyAV or the team's OpenCV `VideoStream`, auto-reconnect), `WebcamSource`, file replay; `open_source(spec)` opens any of them, a take or the sim for perception (below). |
 | `config.py` | `DroneCfg` / `SafetyCfg` defaults. |
 
 ```python
@@ -471,6 +586,72 @@ python -m kite.record --source tello --out recordings --fly            # the sho
   fits them from a chessboard on a screen with the drone on the ground (at most 45 s of stream) and writes
   `data/tello_camera.json`. The pilot's shoot steps are in `docs/shoot-flight.md`.
 
+### Opening any frame source (detectors)
+
+`kite.sources.open_source(spec, **opts)` gives every detector the same object for every camera: `read() -> (ok, bgr)`,
+`.pose` (dict: `x, y, heading, cam_height, pitch, roll, t, battery, flying, tel_dt, heading_ref`, None where
+unknown), `.camera` (fx, fy, cx, cy at the size of the frames actually read), `.name`, `release()`, `with`.
+
+| Spec | Source | Frames | Pose | Camera |
+|---|---|---|---|---|
+| `tello` | live Tello, **dry run**: video + telemetry, motion never sent | newest | Tello telemetry (height, pitch, roll, yaw, battery) | `load_camera()` |
+| `recording:<dir>` or a take folder | `RecordingSource` (`realtime=True` paces it) | every | recorded telemetry | meta.json / `load_camera()`, scaled |
+| `clip.mp4`, `file:<path>` | a video file (`realtime=True` paces it) | every | `t` only (`cam_height=`, `pitch=` if given) | `load_camera()` scaled to the clip |
+| `webcam:<n>`, `<n>` | camera index n | newest | `cam_height=1.3`, `pitch=0` (options) | ~68 deg FOV guess, labelled uncalibrated |
+| `webcam:<name>`, e.g. `webcam:iPhone` | the camera whose name contains it (Continuity Camera) | newest | as webcam | as webcam |
+| `sim:drone`, `sim:chest` | `sim/frames.py` (relay running, needs `websockets`) | next | the sim's x, y, heading, cam_height, pitch | fx from `sim/src/config.ts` (1000) |
+
+`camera=Camera(...)` overrides the intrinsics of any source (`fx=` or `hfov_deg=` too, except for takes). Live sources return
+`(False, None)` after `timeout` s (default 5) with no new frame; files and takes at the end.
+
+```python
+from kite.sources import open_source
+
+with open_source("webcam:iPhone") as src:      # or "tello", "sim:chest", "clip.mp4", "recordings/<take>"
+    ok, bgr = src.read()
+    while ok:
+        events = process(bgr, src.camera, src.pose)
+        ok, bgr = src.read()
+```
+
+At the table: `python -m kite.sources.open --list-cameras` (indices and names; `--probe` grabs one frame from each),
+then `python -m kite.sources.open webcam:iPhone --preview` (or `tello`, `sim:chest`, a file, a take) prints fps,
+frame size, the camera and a few poses.
+
+### Walker GPS (`kite.gps`)
+
+The walker's phone logs GPS during the take. `kite.gps` smooths that track, lines it up with the recording, and
+writes what the demo and perception need:
+
+```bash
+python -m kite.gps walk.gpx --recording recordings/<dir>                 # GPX: times are UTC or carry an offset
+python -m kite.gps walk.csv --recording recordings/<dir> --tz America/Los_Angeles --offset-s 1.5
+python -m kite.gps --route --out data                                    # planned route -> data/shoot_route.*
+earpiece/.venv/bin/python scripts/replay.py recordings/<dir>/gps/positions.jsonl --spacetime   # start with the video
+```
+
+- Input: GPX (`trkpt` with `time`) or CSV with `time`, `lat`, `lon` columns (`accuracy` optional). Times
+  without a zone are read in `--tz`, which defaults to UTC.
+- Clocks: a frame's GPS time is `t_wall + --offset-s`, where the offset is the phone clock minus the laptop clock.
+  The laptop is on the Tello Wi-Fi with no NTP. The command prints the overlap between video and GPS and warns
+  when there's none or when the gap is a whole number of hours (a time-zone mistake). To measure the offset, show
+  the Tello the phone's seconds clock at the start of the take.
+- Output in `<recording>/gps/`:
+  - `positions.jsonl`: earpiece `position` events at 5 Hz, `t` = seconds from the first video frame.
+  - `frames_gps.csv`: the walker's lat, lng, sim x and y, heading and speed for every frame `index`. `heading` is
+    empty while the walker stands still, and `heading_hold` keeps the last walking heading. Perception uses it to
+    turn drone bearings into the walker's frame (spec 5.1).
+  - `track.csv`: every fix, raw and smoothed.
+  - `summary.json`: duration, distance, walking speed, overlap, closest approach to the crossing, and distance
+    from the planned route.
+- Sim metres: x east and y north of the Moss St zebra crossing node (37.778352, -122.408768). This uses the same
+  tangent plane as `sim/src/config.ts` `toLatLng`, via `latlng_to_sim()` / `sim_to_latlng()`.
+- Accuracy: phone GPS drift at walking speed tilts the heading by about 10° and blurs starts and stops by a few
+  seconds. That's fine for the map and for rough bearings, but not for a precise stop line.
+- `data/shoot_route.gpx` / `.jsonl` hold the planned walk from spec section 8. It's **approximate**: it assumes
+  Moss St runs at 315° towards Howard (`--moss-bearing`), and it hasn't been surveyed. You can use it as a reference
+  line, or replay it as a planned walk.
+
 ## Known limitations
 
 - Perception isn't on `main` yet, so the sim produces no real hazards and nothing runs on webcam or Tello frames in this repo today.
@@ -506,8 +687,8 @@ We think the right way to help a blind pedestrian is not a smarter cane or a tal
 | Name | Built |
 |---|---|
 | Arthur | Drone layer, flight and recording |
-| Eddy | SpacetimeDB tables, dashboard and map, sim and metrics mode, replay, network tools, submission |
-| Karthik | Earpiece: spatial sonar and beacon, Cartesia voice, Claude assistant and judgment layer, reading text aloud, Moss memory, destinations and routing; the Rust real-time audio engine; SpacetimeDB setup and the earpiece bridge; CI, security and the landing site |
+| Eddy | SpacetimeDB tables, dashboard and map, caregiver messages, the Claude judgment layer and scene descriptions, sim and metrics mode, video audio rendering, replay, network tools, submission |
+| Karthik | Earpiece: spatial sonar and beacon, Cartesia voice, Claude voice assistant, camera vision and reading text aloud, stop and wait, Moss memory, destinations and routing; the Rust real-time audio engine; SpacetimeDB setup and the earpiece bridge; CI, security and the landing site |
 | Rex | Perception (`streetseg`), the interview, the shoot |
 
 ## Credits
