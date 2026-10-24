@@ -232,6 +232,40 @@ python -m kite.record --source tello --out recordings --fly            # the sho
   fits them from a chessboard on a screen with the drone on the ground (at most 45 s of stream) and writes
   `data/tello_camera.json`. The pilot's shoot steps are in `docs/shoot-flight.md`.
 
+### Walker GPS (`kite.gps`)
+
+The walker's phone logs GPS during the take. `kite.gps` smooths that track, lines it up with the recording, and
+writes what the demo and perception need:
+
+```bash
+python -m kite.gps walk.gpx --recording recordings/<dir>                 # GPX: times are UTC or carry an offset
+python -m kite.gps walk.csv --recording recordings/<dir> --tz America/Los_Angeles --offset-s 1.5
+python -m kite.gps --route --out data                                    # planned route -> data/shoot_route.*
+earpiece/.venv/bin/python scripts/replay.py recordings/<dir>/gps/positions.jsonl --spacetime   # start with the video
+```
+
+- Input: GPX (`trkpt` with `time`) or CSV with `time`, `lat`, `lon` columns (`accuracy` optional). Times
+  without a zone are read in `--tz`, which defaults to UTC.
+- Clocks: a frame's GPS time is `t_wall + --offset-s`, where the offset is the phone clock minus the laptop clock.
+  The laptop is on the Tello Wi-Fi with no NTP. The command prints the overlap between video and GPS and warns
+  when there's none or when the gap is a whole number of hours (a time-zone mistake). To measure the offset, show
+  the Tello the phone's seconds clock at the start of the take.
+- Output in `<recording>/gps/`:
+  - `positions.jsonl`: earpiece `position` events at 5 Hz, `t` = seconds from the first video frame.
+  - `frames_gps.csv`: the walker's lat, lng, sim x and y, heading and speed for every frame `index`. `heading` is
+    empty while the walker stands still, and `heading_hold` keeps the last walking heading. Perception uses it to
+    turn drone bearings into the walker's frame (spec 5.1).
+  - `track.csv`: every fix, raw and smoothed.
+  - `summary.json`: duration, distance, walking speed, overlap, closest approach to the crossing, and distance
+    from the planned route.
+- Sim metres: x east and y north of the Moss St zebra crossing node (37.778352, -122.408768). This uses the same
+  tangent plane as `sim/src/config.ts` `toLatLng`, via `latlng_to_sim()` / `sim_to_latlng()`.
+- Accuracy: phone GPS drift at walking speed tilts the heading by about 10° and blurs starts and stops by a few
+  seconds. That's fine for the map and for rough bearings, but not for a precise stop line.
+- `data/shoot_route.gpx` / `.jsonl` hold the planned walk from spec section 8. It's **approximate**: it assumes
+  Moss St runs at 315° towards Howard (`--moss-bearing`), and it hasn't been surveyed. You can use it as a reference
+  line, or replay it as a planned walk.
+
 ## Known limitations
 
 - Perception isn't on `main` yet, so the sim produces no real hazards and nothing runs on webcam or Tello frames in this repo today.
