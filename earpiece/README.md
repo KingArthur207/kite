@@ -58,6 +58,8 @@ With no perception stream, the earpiece grabs one frame from the local camera on
 | "What's in front of me?" | Claude describes the body camera frame; offline, the obstacle tracks answer |
 | "Take me to my coffee shop" / "the nearest pharmacy" / "the end of the street" | Resolved through Moss, Google Places, or sent as a relative target |
 | "Remember this place as the bench" / "remember that the curb is tall" | Saved to Moss memory |
+| "Forget the bench" / "rename the bench to the reading bench" / "undo" | Edits a saved memory; "undo" brings back the last one forgotten |
+| "Take me home" | Routes to the saved home |
 | "Stop" / "repeat" / "pause" / "louder" / "mute the beeps" | Handled locally, offline |
 
 ## Safety rules in code
@@ -140,6 +142,19 @@ Live cost is one Grok session with two short turns, plus at most one new Cartesi
 | `app.py`, `transport.py`, `controls.py` | wiring, UDP/WebSocket, AirPods stem presses |
 | `spacetime.py`, `caregiver_voice.py` | SpacetimeDB mirror and caregiver inbox; the caregiver's Grok Voice line |
 
+## Memory (Moss)
+
+Kite remembers the wearer's places, hazards and notes in a Moss index (`kite-memory`), loaded into Moss's local runtime so a lookup runs in-process on every utterance. Measured on a loaded laptop: a live Moss query takes 5.4 ms at the median and 12.2 ms at the 95th percentile; the offline mirror answers in about 0.1 ms with 500 memories.
+
+- **Finding places.** "My usual coffee place", "the cafe", "the bench by the park" and "where I fell last week" all find the right memory: plurals and common synonyms are folded together, rare words count for more, and the main noun counts for more than the words after it. A destination always has to share a real word with what was said, so Kite never invents somewhere to walk to.
+- **Asking, not guessing.** When two saved places fit equally well, Kite asks ("Which one: the bus stop bench, or the park bench?") and understands short answers: "the second one", "the park one", "never mind".
+- **No pile of copies.** Saving the same place again (same name, within 30 m) moves it; saying the same hazard again marks it as still true. Renamed places still answer to their old name.
+- **Older is softer.** A hazard heads-up from last week is "Heads up: ..."; from a few months ago it is "From 3 months ago: ..."; older than six months, "An old note, it may have changed: ...".
+- **Offline and privacy.** Every write goes to a local mirror (`earpiece/.cache/memory.json`, readable by the user only) and then to Moss; with no keys or no network the mirror answers on its own with the same matching. A memory forgotten while offline is deleted from Moss on the next start, so it cannot come back. `memory.py` talks to Moss and nothing else. Two other paths carry memory text off the device, both by design: the few memories relevant to a question go to Claude with that question, and memory events go to the caregiver dashboard when the SpacetimeDB bridge is on.
+- The seeded demo home is a stand-in point on the public Marina Green lawn, not anyone's address.
+
+Tests: `tests/test_memory.py` (fake Moss for parity and failure modes; `-m slow` for the latency benchmark; `KITE_LIVE_TESTS=1` for one live Moss check).
+
 ## Walking directions
 
 When the wearer asks for a saved, nearby or named place, the earpiece routes there itself (Google Routes API v2, walking) and follows every `position` event:
@@ -147,7 +162,12 @@ When the wearer asks for a saved, nearby or named place, the earpiece routes the
 - the first instruction at the start, said in the wearer's frame when a heading is known ("Head toward Lyon Street, slightly left");
 - a heads-up about 30 m before each turn ("In 30 meters, turn left onto Bay Street") and "Now turn left onto Bay Street" at about 6 m, each exactly once, however much the GPS wanders;
 - the beacon aimed at the next corner (never across it), then about 15 m along the route, with the distance left to the destination;
-- "You're off the route. Finding a new one." after 8 s more than 25 m away, then a new route from where the wearer is;
-- arrival within 8 m. With no key or no network, the beacon points straight at the place and real routing is retried.
+- "You're walking away from the route. Turn around." once, when the wearer heads back the way they came (or the wrong way from the start) for about 12 m; standing still with GPS wander never triggers it;
+- "You're off the route. Finding a new one." after 8 s more than 25 m away (not repeated within a minute), then a new route from where the wearer is. New routes are requested at most every 20 s and 5 times in 10 minutes; while one waits, the beacon points straight at the destination;
+- arrival within 8 m, or at the end of the route.
 
-`position.heading` is a compass heading (0 north, 90 east). Without one, the walking direction over the last few fixes is used, and no beacon is sent while the wearer stands still. The sim and real GPS share one mapping, `geo.LocalFrame`: anchor it with `LocalFrame.from_landmarks([((lat, lng), (x, y)), ...])` on the same two or three landmarks that line up the splat, then `to_latlng(x, y)` for positions and `heading_of(dx, dy)` for headings. Route state goes out as `route` events (`started` with the polyline, `fallback`, `failed`, `rerouting`, `arrived`, `cancelled`) for the dashboard map.
+When Google can't help, the wearer hears one short line per destination ("No directions right now. The beacon points to Blue Bottle Coffee.") and the beacon points straight at the place. Timeouts, lost network and server errors retry after 15 s, quota errors after 60 s, and a bad key or "no walking route" are not retried. Distances are always spoken in meters, rounded the way a person would ("in 25 meters"), and directions are given in the wearer's frame ("slightly left", "at 2 o'clock") when a heading is known. Route cues are `nav` priority with short expiry, so a hazard always goes first and a turn that can't be said in time is dropped rather than said late.
+
+Tests: `tests/test_route.py` and `tests/test_route_hardening.py` (random routes and random walks with jitter, drift, stops and U-turns; a fake Google for every failure).
+
+`position.heading` is a compass heading (0 north, 90 east). Without one, the walking direction over the last few fixes is used, and no beacon is sent while the wearer stands still. The sim and real GPS share one mapping, `geo.LocalFrame`: anchor it with `LocalFrame.from_landmarks([((lat, lng), (x, y)), ...])` on the same two or three landmarks that line up the splat, then `to_latlng(x, y)` for positions and `heading_of(dx, dy)` for headings. Route state goes out as `route` events (`started` with the polyline, `fallback`, `failed` with `retry_s`, `rerouting` with `wait_s`, `holding`, `arrived`, `cancelled`) for the dashboard map.
