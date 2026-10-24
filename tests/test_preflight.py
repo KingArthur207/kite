@@ -341,7 +341,7 @@ def test_checks_the_chosen_video_backend(monkeypatch):
                         or FakeLinkDrone())
     pf.drone_checks(**FAST, video_backend="opencv")
     pf.drone_checks(**FAST)
-    assert seen == ["opencv", "socket" if sys.platform == "darwin" else "pyav"]  # None: the config default
+    assert seen == ["opencv", "pyav"]  # None: the config default (socket is opt-in)
 
 
 def test_through_the_real_drone_layer_sends_no_motion():

@@ -24,7 +24,7 @@ def _readonly(img: np.ndarray) -> np.ndarray:
 class TelloVideoSource(FrameSource):
     """The Tello's H.264 stream, decoded by PyAV through FFmpeg's udp:// reader (backend "pyav", djitellopy's way),
     by the team's OpenCV VideoStream (backend "opencv"), or by our own UDP socket feeding PyAV's parser (backend
-    "socket", the default on macOS: big receive buffer, no FFmpeg network code, see socket_stream.py).
+    "socket", opt-in until tested on a real Tello: big receive buffer, no FFmpeg network code, see socket_stream.py).
 
     The drone must already have been told `streamon` (the drone adapter does that). Only one reader
     can bind UDP 11111: every consumer shares this source.

@@ -31,7 +31,7 @@ class DroneCfg:
     video_fps: int = 60  # reader retrieve cap: must sit above the ~30 fps stream (equal drops ~40 % of frames)
     # Tello H.264 decoder: socket (our UDP socket + PyAV's parser), pyav (djitellopy's) or opencv (the team's
     # VideoStream). socket on macOS, where the FFmpeg udp:// readers showed no image on the team's Macs.
-    video_backend: str = field(default_factory=lambda: "socket" if sys.platform == "darwin" else "pyav")
+    video_backend: str = "pyav"   # "socket" is opt-in (--video-backend socket) until it has run against a real Tello
     # camera-to-laptop video delay (s). After a discrete move/rotation, only frames arriving later than
     # "command done + video_lag_s" show the new view. Measure it with tests/drone_test.py.
     # vigil 2026-09-26 run: video 6 +/- 78 ms (yaw) and 21 +/- 40 ms (forward move) behind telemetry, worst 85 ms

@@ -31,7 +31,7 @@ Camera calibration runs in this same power-on window, right after step 3, not se
 
 ### If the video shows no image on a Mac
 
-On macOS the default decoder is `socket`: kite binds UDP 11111 itself with the largest receive buffer the OS allows (8 MB on our Macs) and feeds PyAV's parser, with no FFmpeg network code involved. The older readers are still there (`--video-backend pyav` or `opencv`, which `kite.record`, `kite.preflight` and `kite.calibrate` all accept).
+`--video-backend socket` is an opt-in decoder (the default stays `pyav` until socket has run against a real Tello): kite binds UDP 11111 itself with the largest receive buffer the OS allows (8 MB on our Macs) and feeds PyAV's parser, with no FFmpeg network code involved. The other readers are `--video-backend pyav` (default) and `opencv`; all three work in `kite.record`, `kite.preflight` and `kite.calibrate` all accept).
 
 1. Check the permissions first, because they block every decoder the same way:
    - System Settings > Privacy & Security > Local Network: your terminal app (Terminal, iTerm, VS Code) is on.
