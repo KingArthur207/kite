@@ -8,17 +8,19 @@ import socket
 import threading
 
 import pytest
+from websockets.exceptions import InvalidStatus
 from websockets.sync.client import connect
 
 from conftest import free_port, wait_for
-from earpiece.transport import MAX_BUCKETS, Transport
+from earpiece.transport import MAX_BUCKETS, Transport, origin_allowed
 
 
 @pytest.fixture
 def net():
     got: list = []
     logs: list = []
-    t = Transport(got.append, "127.0.0.1", free_port(), free_port(), log=logs.append)
+    t = Transport(got.append, "127.0.0.1", free_port(), free_port(), log=logs.append,
+                  allow_origins=("http://192.168.1.5:5173/",))
     t.state_provider = lambda: {"ok": True}
     t.start()
     t.got, t.logs = got, logs
@@ -35,6 +37,36 @@ def udp_send(t: Transport, data: bytes, sock: socket.socket | None = None) -> No
     s.sendto(data, ("127.0.0.1", t.udp_port))
     if sock is None:
         s.close()
+
+
+# ------------------------------------------------------------------ browser origins
+@pytest.mark.parametrize("origin", [None, "http://localhost:5173", "http://127.0.0.1:5173",
+                                    "http://localhost:5174", "http://[::1]:5173", "https://localhost",
+                                    "http://192.168.1.5:5173"])
+def test_local_pages_and_non_browser_clients_connect(net, origin):
+    with connect(ws_url(net), origin=origin, open_timeout=3) as ws:
+        assert json.loads(ws.recv(timeout=2))["type"] == "state"
+        ws.send(json.dumps({"type": "say", "text": "hello", "source": "sim"}))
+        assert wait_for(lambda: any(m.type == "say" for m in net.got), 3)
+
+
+@pytest.mark.parametrize("origin", ["https://evil.example", "http://localhost.evil.example:5173",
+                                    "http://127.0.0.1.nip.io:5173", "null", "file://", "http://192.168.1.6:5173",
+                                    "chrome-extension://abcdef"])
+def test_other_web_pages_get_403_and_nothing_is_spoken(net, origin):
+    with pytest.raises(InvalidStatus) as e:
+        with connect(ws_url(net), origin=origin, open_timeout=3) as ws:
+            ws.send(json.dumps({"type": "say", "text": "walk now", "priority": "critical"}))
+    assert e.value.response.status_code == 403
+    assert net.got == [] and net.stats["origin_rejected"] == 1 and net.stats["clients"] == 0
+
+
+def test_origin_allowed_is_strict():
+    assert origin_allowed(None) and origin_allowed("http://localhost:5173/")
+    assert not origin_allowed("http://localhost:5173.evil.example")
+    assert not origin_allowed("http://user@localhost:5173")
+    assert not origin_allowed("ws://localhost:5173")
+    assert origin_allowed("http://10.0.0.2:5173", frozenset({"http://10.0.0.2:5173"}))
 
 
 # ------------------------------------------------------------------ malformed input

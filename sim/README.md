@@ -502,7 +502,7 @@ Bench fixes on the way: video files are now paced like a camera (skip ahead when
 
 ## Files and placeholders
 
-- `src/tilesWorld.ts` is the Google 3D tiles world over the Moss colliders and traffic, and `src/fence.ts` is its geofence. `?detector=osm` keeps the capture frames on OSM Moss. `?relay=` and `?ear=` override the relay and earpiece URLs (empty means offline). `window.__kiteWalker` is the walker, for scripted checks.
+- `src/tilesWorld.ts` is the Google 3D tiles world over the Moss colliders and traffic, and `src/fence.ts` is its geofence. `?detector=osm` keeps the capture frames on OSM Moss. `?relay=` and `?ear=` override the relay and earpiece URLs (empty means offline). Both servers refuse browser pages from other machines, so a sim page served from another laptop needs `--origin http://HOST:5173` on the relay and `--allow-origin http://HOST:5173` on `earpiece run`. `window.__kiteWalker` is the walker, for scripted checks.
 - `src/world.ts` is the placeholder box world, with its glTF traffic from `src/actors.ts`. `src/osmWorld.ts` is Moss St, with its traffic from `src/mossActors.ts` and its look from `src/osmLook.ts`, `src/osmFacades.ts` and `src/osmStreet.ts`. Both export `scene`, `update` and `solids`. The Moss world also exports `spawn`, `walls`, `overlay`, `place` and `tune` (see `WorldExtras`).
 - `ORIGIN` in `src/config.ts` is the Moss zebra (37.778352, -122.408768) and maps to sim (0, 0), so the route and the dashboard use the same points.
 - `FX` in `src/config.ts` starts at 1000. The Tello camera calibration replaces it.

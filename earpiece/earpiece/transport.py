@@ -6,19 +6,37 @@
 Both bind to localhost by default (--bind 0.0.0.0 to accept the drone laptop on
 the LAN). Each peer is rate-limited (token bucket) so a runaway sender cannot
 starve the audio loop, and every message is validated by events.parse().
+
+Browsers let any web page open a WebSocket to 127.0.0.1, so the WebSocket also
+checks the Origin header: only pages served from this machine (the sim and the
+Street View bridge, any loopback port) and non-browser clients (no Origin: Python
+senders, scripts/replay.py, the drone laptop) may connect. Anything else gets 403,
+so a page in another tab can never make the earpiece speak. `allow_origins` (run
+--allow-origin) adds more, e.g. a sim page opened from another machine.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import re
 import threading
 import time
 from typing import Callable
 
 from .events import BadMessage, Msg, parse
 
+LOCAL_ORIGIN = re.compile(r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d{1,5})?$")
 MAX_BUCKETS = 4096          # per-peer rate limiters kept; idle ones are evicted beyond this
+
+
+def origin_allowed(origin: str | None, extra: frozenset[str] = frozenset()) -> bool:
+    """No Origin header (not a browser), a page served from this machine, or an explicit extra."""
+    if origin is None:
+        return True
+    origin = origin.strip().rstrip("/")
+    return bool(LOCAL_ORIGIN.match(origin)) or origin in extra
+
 
 class _Bucket:
     def __init__(self, rate: float, burst: float):
@@ -37,8 +55,10 @@ class _Bucket:
 
 class Transport:
     def __init__(self, on_msg: Callable[[Msg], None], host: str = "127.0.0.1", udp_port: int = 5010,
-                 ws_port: int = 5011, log=print, rate_per_peer: float = 400.0):
+                 ws_port: int = 5011, log=print, rate_per_peer: float = 400.0,
+                 allow_origins: tuple[str, ...] = ()):
         self.on_msg = on_msg
+        self.allow_origins = frozenset(o.strip().rstrip("/") for o in allow_origins)
         self.host = host
         self.udp_port = udp_port
         self.ws_port = ws_port
@@ -50,7 +70,8 @@ class Transport:
         self._ready = threading.Event()
         self._thread: threading.Thread | None = None
         self._servers: list = []
-        self.stats = {"udp": 0, "ws": 0, "bad": 0, "limited": 0, "clients": 0, "last_error": None}
+        self.stats = {"udp": 0, "ws": 0, "bad": 0, "limited": 0, "clients": 0, "last_error": None,
+                      "origin_rejected": 0}
         self.state_provider: Callable[[], dict] | None = None
 
     def start(self) -> None:
@@ -118,9 +139,19 @@ class Transport:
         self._servers.append(udp)
         self._servers.append(await websockets.serve(
             self._ws_handler, self.host, self.ws_port, max_size=256 * 1024, ping_interval=20,
-            ping_timeout=20))
+            ping_timeout=20, process_request=self._check_origin))
         loop.create_task(self._state_pump())
         self.log(f"[net] listening: udp://{self.host}:{self.udp_port}  ws://{self.host}:{self.ws_port}")
+
+    def _check_origin(self, connection, request):
+        origin = request.headers.get("Origin")
+        if origin_allowed(origin, self.allow_origins):
+            return None
+        self.stats["origin_rejected"] += 1
+        if self.stats["origin_rejected"] <= 5:
+            self.log(f"[net] refused a WebSocket from origin {origin[:100]!r}")
+        from http import HTTPStatus
+        return connection.respond(HTTPStatus.FORBIDDEN, "origin not allowed\n")
 
     def _bucket(self, peer: str) -> _Bucket:
         b = self._buckets.get(peer)

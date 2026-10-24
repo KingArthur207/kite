@@ -108,7 +108,8 @@ class Earpiece:
         self.gestures = Gestures(self.gesture, log=log)
         self.gestures.on_press = self.barge_in            # cut at the press, not after classifying it
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
-                                   self.cfg.net.ws_port, log=log) if network else None
+                                   self.cfg.net.ws_port, log=log,
+                                   allow_origins=self.cfg.net.allow_origins) if network else None
         if self.transport is not None:
             self.transport.state_provider = self.state
         self.bridges: list = []                    # extra sinks (e.g. SpacetimeDB) for outbound events
