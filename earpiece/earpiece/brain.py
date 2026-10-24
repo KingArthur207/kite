@@ -21,6 +21,26 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .events import clock_phrase, distance_phrase
+from .judgment import fold
+from .vision import permission
+
+# A voice answer is spoken as it streams, so each sentence is checked on its own. The prompt asks
+# Claude never to say it is safe to cross; this makes it code: a sentence giving permission, an
+# all-clear or a cleared stop is not spoken, and neither is a bare "yes" to "can I cross?".
+_ASKS_GO = re.compile(
+    r"\b(?:can|could|may|should|shall|do)\s+i\s+(?:go|cross|walk|move|proceed|start|step|continue)\b"
+    r"|\bis\s+(?:it|the\s+\w+|everything)\s+(?:safe|ok|okay|clear|time|empty|fine)\b"
+    r"|\b(?:ok|okay|safe|clear|good)\s+to\s+(?:go|cross|walk|move)\b|\bmy\s+turn\b")
+_AFFIRM = re.compile(r"^\W*(?:yes|yeah|yep|yup|sure|absolutely|of\s+course|definitely|correct|right|affirmative"
+                     r"|certainly|indeed|totally|you\s+bet)\b")
+NO_PERMISSION = "I can't tell you when to cross. Listen for traffic and use your cues."
+
+
+def unsafe_answer(sentence: str, question: str = "") -> bool:
+    """True when a spoken answer sentence must not be said (see _ASKS_GO above)."""
+    if permission(sentence):
+        return True
+    return bool(question and _ASKS_GO.search(fold(question)) and _AFFIRM.search(fold(sentence)))
 
 MODEL = "claude-opus-5-5"
 SYSTEM_PROMPT = """You are Kite, the voice of an assistive navigation system for a blind pedestrian. \
@@ -130,7 +150,7 @@ class Brain:
         self.history: list[dict] = []              # short memory: last few Q/A pairs as text
         self._loop: asyncio.AbstractEventLoop | None = None
         self._busy = threading.Lock()
-        self.stats = {"local": 0, "llm": 0, "llm_errors": 0, "first_sentence_ms": []}
+        self.stats = {"local": 0, "llm": 0, "llm_errors": 0, "blocked": 0, "first_sentence_ms": []}
         if api_key:
             try:
                 import anthropic
@@ -320,12 +340,18 @@ class Brain:
         messages.append({"role": "user", "content": f"<context>{ctx}</context>\n\nUser said: {text}"})
         t0 = time.monotonic()
         spoken: list[str] = []
+        blocked: list[str] = []
         first = True
 
         def emit(sentence: str) -> None:
             nonlocal first
             s = sentence.strip()
             if not s:
+                return
+            if unsafe_answer(s, text):
+                blocked.append(s)
+                self.stats["blocked"] += 1
+                self.log(f"[brain] not spoken (sounds like permission to move): {s!r}")
                 return
             if first:
                 first = False
@@ -367,6 +393,8 @@ class Brain:
                 results.append({"type": "tool_result", "tool_use_id": u.id, "content": out,
                                 **({"is_error": True} if err else {})})
             messages.append({"role": "user", "content": results})
+        if blocked and not spoken:                 # everything it said was a go-ahead: say why it's quiet
+            emit(NO_PERMISSION)
         answer = " ".join(spoken)
         self.history += [{"role": "user", "content": text},
                          {"role": "assistant", "content": answer or "(no answer)"}]
@@ -375,6 +403,17 @@ class Brain:
     def _run_tool(self, name: str, inp) -> tuple[str, bool]:
         if not isinstance(inp, dict):
             return "invalid input", True
+        schema = next((t["input_schema"] for t in TOOLS if t["name"] == name), None)
+        if schema is None:
+            return f"unknown tool {name}", True
+        # eager_input_streaming means the API no longer validates arguments: hold them to the schema
+        # here (no extra keys, strings only), so None never becomes a destination called "None".
+        extra = sorted(str(k) for k in inp if k not in schema["properties"])
+        if extra:
+            return f"unknown argument(s) {extra}", True
+        bad = [k for k, v in inp.items() if not isinstance(v, str)]
+        if bad:
+            return f"{', '.join(map(str, bad))} must be a string", True
         try:
             if name == "navigate_to":
                 dest = str(inp.get("destination", "")).strip()[:120]
