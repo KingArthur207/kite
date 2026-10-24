@@ -302,7 +302,7 @@ class Brain:
         if not parts:
             if not ctx.get("perception_ok", True):
                 return "Obstacle detection is not running, so I can't see around you right now."
-            return "Nothing close to you right now. The path ahead looks clear."
+            return "Nothing close to you that I can detect right now."
         s = "; ".join(parts)
         return s[0].upper() + s[1:] + "."
 
