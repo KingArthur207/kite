@@ -25,6 +25,26 @@ Start them in any order. The page reconnects to the relay and the earpiece every
 
 The HUD counts collisions with buildings, cars, pedestrians and the bin.
 
+## Metrics mode
+
+`?metrics=1&mode=blind|kite|oracle&trials=20&seed=1` runs an autopilot with no keyboard input. A walker at 1.2 m/s follows a fixed route: up the sidewalk, across the crosswalk, then west around the corner. On the way it meets a pedestrian crossing, a bin, a head-height sign, a car through the crosswalk and a second pedestrian. Their timing is seeded, so each trial is different and every run with the same seed is identical. The ambient cars and people are hidden in this mode.
+
+- `blind`: the walker never reacts. Runs time-accelerated (`speed`, default 300).
+- `kite`: the walker reacts only to the earpiece on `ws://127.0.0.1:5011`. It stops 0.7 s after a `spoken` event with priority `critical` or `hazard`, a `state` with a critical sonar track, or a hazard in `dont_walk`/`wait`/`red`/`stop`. It walks on after 1.5 s with no cue and never detours. Runs in real time, since the pipeline is real time.
+- `oracle`: an upper bound that reacts to the true obstacles in a 5 m corridor ahead. It is not Kite and must never be presented as Kite.
+
+In every mode, a walker that stays blocked for 1 s or waits 5 s feels around the obstacle with a 1.5 m sidestep, the way a cane user would. Results show in the HUD and in `window.kiteMetrics`, get logged as one `KITE_METRICS {...}` console line, and can be downloaded as JSON. Blind and oracle open no sockets, so they never feed a shared earpiece or relay.
+
+Headless (starts its own vite on port 5287; pass `--url` to reuse one):
+
+```
+uv run --with playwright playwright install chromium        # first time
+uv run --with playwright python scripts/sim_metrics.py --mode blind
+uv run --with playwright python scripts/sim_metrics.py --mode oracle
+```
+
+Kite mode: start the relay, the detector on sim frames and the earpiece, then open `?metrics=1&mode=kite` or run `--mode kite`. That takes about 50 s a walk. Run it on a machine where nothing else is sending to the earpiece.
+
 ## What the sim sends
 
 To the earpiece (`ws://127.0.0.1:5011`):
