@@ -416,7 +416,7 @@ def test_guide_falls_back_to_a_straight_beacon_and_retries(monkeypatch):
     g.start((37.8029, -122.4489), "Palace of Fine Arts")
     assert wait_for(lambda: any(m.type == "beacon" for m in out), 3)
     says = [m.text for m in out if m.type == "say"]
-    assert len(says) == 1 and says[0].startswith("I couldn't get walking directions.")
+    assert says == ["No directions right now. The beacon points to Palace of Fine Arts."]
     assert len(says[0].split()) <= R.MAX_WORDS
     fake.fail, fake.route = None, R.parse_routes(LYON)             # the network is back
     assert wait_for(lambda: (g.position({"lat": 37.8013, "lng": -122.4477, "heading": 300.0}) or
@@ -499,14 +499,14 @@ def test_app_routes_a_nearby_place_end_to_end(app, monkeypatch):
 def test_app_routes_a_remembered_place_and_cancel_stops_it(app, monkeypatch):
     route = marina()
     monkeypatch.setattr(R, "compute_route", FakeRoutes(route))
-    app.memory.remember("place", "Blue Bottle Coffee on Filbert",
-                        {"name": "Blue Bottle Coffee", "lat": route.destination[0], "lng": route.destination[1]})
-    out = app.navigate("my Blue Bottle Coffee")
-    assert out == "Okay, heading to Blue Bottle Coffee."
+    app.memory.remember("place", "Sightglass Coffee on Filbert",
+                        {"name": "Sightglass Coffee", "lat": route.destination[0], "lng": route.destination[1]})
+    out = app.navigate("my Sightglass Coffee")
+    assert out == "Okay, heading to Sightglass Coffee."
     assert app.route.active and app.route.follower is None       # waiting for a position
     lat, lng = route.steps[0].start
     app.handle(_pos(lat, lng, 180.0))
-    assert wait_for(lambda: app.beacon.active and app.beacon.label == "Blue Bottle Coffee", 5)
+    assert wait_for(lambda: app.beacon.active and app.beacon.label == "Sightglass Coffee", 5)
     app.control("cancel_route")
     assert not app.route.active and not app.beacon.active
     app.handle(_pos(lat, lng, 180.0))

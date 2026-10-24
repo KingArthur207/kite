@@ -31,7 +31,7 @@ from .camera import BodyCamera
 from .judgment import RECENT_SPEECH_S, Judgment
 from .vision import Vision
 from .listen import Listener
-from .memory import MemoryStore
+from .memory import MemoryStore, name_of, pick
 from .mixer import Engine
 from .output import DeviceOutput, NullOutput, RustDeviceOutput
 from .route import RouteGuide
@@ -86,12 +86,18 @@ class Earpiece:
         self.brain = Brain(self.context, Actions(self.navigate, self.control, self.alert_caregiver,
                                                  self.stop_speaking, self.ear_check,
                                                  remember=self.remember, recall=self.recall,
+                                                 forget=self.forget, rename=self.rename_memory,
+                                                 undo=self.undo_forget, clarify=self.clarify,
                                                  describe_front=lambda: self.describe_front(),
                                                  read_text=lambda: self.read_text()),
                            self.say, self.cfg.anthropic_key, log=log)
+        self.listener.turns = self.speaker.turns          # end-of-speech -> reply latency, by stage
+        self.listener.on_partial = self.brain.prefetch    # Moss recall starts while the wearer talks
         self.judgment = Judgment(self.context, self.say, self.upgrade_hazard, self._event,
                                  api_key=self.cfg.anthropic_key if self.cfg.judgment else None, log=log)
         self._noted_places: set[str] = set()
+        self._asking: dict | None = None           # "which bench?": the candidates, until an answer
+        self._undo: tuple[object, float] | None = None   # last forgotten memory, for "undo"
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
         self.vision = Vision(self.cfg.anthropic_key, log=log)
         self._stop_since: float | None = None      # a "Stop."/wait is in force since this time
@@ -100,6 +106,7 @@ class Earpiece:
         self._chest_frame: tuple[bytes, float] | None = None   # newest chest-camera JPEG
         self.camera = BodyCamera(log=log)
         self.gestures = Gestures(self.gesture, log=log)
+        self.gestures.on_press = self.barge_in            # cut at the press, not after classifying it
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
                                    self.cfg.net.ws_port, log=log) if network else None
         if self.transport is not None:
@@ -532,7 +539,14 @@ class Earpiece:
         self.brain.handle(text)
 
     def _on_listening(self, on: bool) -> None:
+        if on:
+            self.brain.interrupt()
         self.speaker.set_listening(on)
+
+    def barge_in(self) -> None:
+        """The wearer pressed: stop non-safety speech and the answer still being written."""
+        self.brain.interrupt()
+        self.speaker.barge_in()
 
     # ================================================================== actions
     def repeat(self) -> None:
@@ -550,16 +564,11 @@ class Earpiece:
         the background while Kite acknowledges right away."""
         from . import destinations as dst
         destination = destination.strip().rstrip(".")
-        place = self.memory.resolve_place(destination)
-        if place is not None:
-            name = place.meta.get("name") or place.text.split(":")[0]
-            self._event("voice_request", {"intent": "navigate", "destination": destination,
-                                          "target_type": "memory", "name": name,
-                                          "address": place.meta.get("address"), "lat": place.meta.get("lat"),
-                                          "lng": place.meta.get("lng"), "memory_id": place.id})
-            if place.meta.get("lat") is not None and place.meta.get("lng") is not None:
-                self.route.start((place.meta["lat"], place.meta["lng"]), name)
-            return f"Okay, heading to {name}."
+        res = self.memory.resolve(destination)
+        if res.ambiguous:
+            return self._ask("navigate", res, "Which one")
+        if res.place is not None:
+            return self._go_to_memory(res.place, destination)
         d = dst.classify(destination)
         if d.kind == "relative":
             self._event("voice_request", d.request())
@@ -599,24 +608,103 @@ class Earpiece:
         from . import destinations as dst
         return dst.places_search(query, lat, lng, nearby)
 
+    def _go_to_memory(self, place, said: str) -> str:
+        name = name_of(place)
+        self._event("voice_request", {"intent": "navigate", "destination": said,
+                                      "target_type": "memory", "name": name,
+                                      "address": place.meta.get("address"), "lat": place.meta.get("lat"),
+                                      "lng": place.meta.get("lng"), "memory_id": place.id})
+        if place.meta.get("lat") is not None and place.meta.get("lng") is not None:
+            self.route.start((place.meta["lat"], place.meta["lng"]), name)
+        return f"Okay, heading to {name}."
+
+    ASK_TTL_S = 20.0        # a "which one?" waits this long for its answer
+    UNDO_S = 120.0          # "undo" brings back a forgotten memory for this long
+
+    def _ask(self, action: str, res, lead: str, arg: str | None = None) -> str:
+        self._asking = {"action": action, "cands": res.candidates, "arg": arg,
+                        "until": time.monotonic() + self.ASK_TTL_S}
+        return res.question(lead)
+
+    def clarify(self, text: str) -> str | None:
+        """The answer to a pending "which one?", or None when no question is open or this
+        doesn't answer it (then the utterance is handled as a fresh request)."""
+        a, self._asking = self._asking, None
+        if a is None or time.monotonic() > a["until"]:
+            return None
+        i = pick(a["cands"], text)
+        if i is None:
+            return None
+        if i < 0:
+            return "Okay, never mind."
+        m = a["cands"][i]
+        if a["action"] == "navigate":
+            return self._go_to_memory(m, name_of(m))
+        if a["action"] == "forget":
+            return self._forget(m)
+        return self._rename(m, a["arg"] or "")
+
     def remember(self, kind: str, text: str) -> str:
         text = text.strip().rstrip(".")
         if not text:
             return "What should I remember?"
-        meta = {}
+        pos = self.position or {}
         if kind == "place":
-            pos = self.position or {}
             meta = {"name": text, "lat": pos.get("lat"), "lng": pos.get("lng"), "near": pos.get("place")}
             body = f"{text}" + (f", near {pos['place']}" if pos.get("place") else "")
-            m = self.memory.remember("place", body, meta)
-            reply = f"Saved. I'll remember this place as {text}."
+            m, status = self.memory.save("place", body, meta)
+            reply = {"updated": f"Updated. {text} is saved right here now.",
+                     "same_name": f"Saved. You have another place called {text}, so I'll ask which one "
+                                  f"when you go there."}.get(status, f"Saved. I'll remember this place as {text}.")
             if pos.get("lat") is None:
                 reply += " I don't have your exact location yet, so I saved the name only."
         else:
-            m = self.memory.remember(kind, text, {"near": (self.position or {}).get("place")})
-            reply = "Got it. I'll remember that."
-        self._event("memory", {"id": m.id, "kind": m.kind, "text": m.text, "source": "voice"})
+            m, status = self.memory.save(kind, text, {"near": pos.get("place")})
+            reply = ("I already had that. I've marked it as still true." if status == "duplicate"
+                     else "Got it. I'll remember that.")
+        self._event("memory", {"id": m.id, "kind": m.kind, "text": m.text, "source": "voice", "action": status})
         return reply
+
+    def forget(self, what: str) -> str:
+        what = what.strip().rstrip(".!?")
+        res = self.memory.resolve(what, kinds=None)
+        if res.ambiguous:
+            return self._ask("forget", res, "Which one should I forget")
+        if res.place is None:
+            return f"I don't have anything saved called {what}."
+        return self._forget(res.place)
+
+    def _forget(self, m) -> str:
+        self.memory.forget(m.id)
+        self._undo = (m, time.monotonic())
+        self._event("memory", {"id": m.id, "kind": m.kind, "text": m.text, "source": "voice",
+                               "action": "forgotten"})
+        return f"Okay, I've forgotten {name_of(m) if m.kind == 'place' else 'that note'}. Say undo to bring it back."
+
+    def undo_forget(self) -> str:
+        u, self._undo = self._undo, None
+        if u is None or time.monotonic() - u[1] > self.UNDO_S:
+            return "There's nothing to undo."
+        m = self.memory.restore(u[0])
+        self._event("memory", {"id": m.id, "kind": m.kind, "text": m.text, "source": "voice", "action": "restored"})
+        return f"Okay, {name_of(m) if m.kind == 'place' else 'that note'} is back."
+
+    def rename_memory(self, old: str, new: str) -> str:
+        new = new.strip().rstrip(".!?")
+        res = self.memory.resolve(old)
+        if res.ambiguous:
+            return self._ask("rename", res, f"Which one should I call {new}", arg=new)
+        if res.place is None:
+            return f"I don't have a place called {old.strip()}."
+        return self._rename(res.place, new)
+
+    def _rename(self, m, new: str) -> str:
+        old = name_of(m)
+        r = self.memory.rename(m.id, new)
+        if r is None:
+            return "I can only rename saved places."
+        self._event("memory", {"id": r.id, "kind": r.kind, "text": r.text, "source": "voice", "action": "renamed"})
+        return f"Okay, {old} is now called {new}."
 
     def recall(self, query: str) -> list[dict]:
         return [{"kind": h.kind, "text": h.text, "score": round(h.score, 3)}
@@ -624,8 +712,10 @@ class Earpiece:
 
     def _place_notes(self, place: str) -> None:
         for h in self.memory.notes_for(place)[:1]:
-            # a remembered note is context, not an imminent danger: live directions go first
-            self.say(f"Heads up: {h.text}", "info", key=f"memory:{h.id}", ttl=30)
+            # a remembered note is context, not an imminent danger: live directions go first;
+            # an old one is said more softly and gives up sooner
+            text, ttl = self.memory.heads_up(h)
+            self.say(text, "info", key=f"memory:{h.id}", ttl=ttl)
 
     def alert_caregiver(self, message: str) -> str:
         self._event("caregiver_alert", {"message": message, "position": self.position})
@@ -672,6 +762,8 @@ class Earpiece:
             out = "Route cancelled."
         elif action == "stop_speaking":
             self.stop_speaking()
+        elif action in ("speak_faster", "speak_slower", "speak_normal"):
+            out = self.speaker.adjust_speed({"speak_faster": 1, "speak_slower": -1}.get(action, 0))
         self._event("control", {"action": action})
         if speak and out:
             self.say(out, "system", ttl=5)

@@ -12,6 +12,11 @@ can arrive as PAUSE then NEXT a few ms apart, so presses inside a short window
 are collapsed and the strongest wins (previous > next > play/pause).
 Another media app that starts playing can take now-playing away; we re-assert
 it every few seconds.
+
+Barge-in does not wait for that window: the FIRST press of any burst calls
+`on_press` straight away (the app cuts non-safety speech there), and the
+gesture itself is classified 0.3 s later. Whatever the wearer meant (talk,
+repeat, pause), they wanted Kite to stop talking first.
 """
 
 from __future__ import annotations
@@ -33,6 +38,8 @@ class Gestures:
         self._raw: queue.Queue = queue.Queue()
         self.stem_ok = False
         self._targets = []
+        self.on_press: Callable[[], None] | None = None    # immediate, before classification
+        self.press_to_cut_ms: list[float] = []              # raw press -> on_press returned
         threading.Thread(target=self._classify, name="gestures", daemon=True).start()
 
     # -------------------------------------------------------------- raw input
@@ -42,7 +49,14 @@ class Gestures:
 
     def _classify(self) -> None:
         while True:
-            kind, _ = self._raw.get()
+            kind, t_press = self._raw.get()
+            if self.on_press is not None:
+                try:
+                    self.on_press()
+                except Exception as e:
+                    self.log(f"[controls] press handler failed: {type(e).__name__}: {e}")
+                self.press_to_cut_ms.append((time.monotonic() - t_press) * 1000)
+                del self.press_to_cut_ms[:-20]
             kinds = {kind}
             t_end = time.monotonic() + self.debounce_s
             while True:

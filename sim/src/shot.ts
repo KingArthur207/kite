@@ -42,6 +42,7 @@ export function startShot(opts: {
   walker: { x: number; n: number; heading: number };
   metrics: { step(dt: number): void; live(): MetricsLive } | null;
   place: () => void;          // main.ts placeCameras: fence clamp for the walker, body capsule
+  post?: Promise<((cam: THREE.Camera) => void) | null>;   // ?look=2 post chain (look2.ts); plain render without
 }) {
   const { shot, scene, renderer, world, walker, metrics } = opts;
   const tiles = world.tiles && world.level ? (world as TilesLike) : null;
@@ -68,6 +69,7 @@ export function startShot(opts: {
   // --- cast: the walker (with a white cane), the drone, the turning car
   const walkerObj = new THREE.Group();
   scene.add(walkerObj);
+  walkerObj.visible = !shot.pov;
   walkerObj.add(cane());
   let walk: THREE.AnimationAction | null = null, idle: THREE.AnimationAction | null = null, mixer: THREE.AnimationMixer | null = null;
   const loads: Promise<unknown>[] = [
@@ -182,7 +184,7 @@ export function startShot(opts: {
     const head = new THREE.Vector3(walker.x, 2.5, -walker.n);
     let stack = 0;
     for (const c of cues) if (t >= c.from && t < c.to) label(head, c.text, c.color ?? "#fff", fade(c), stack++);
-    if (metrics) {
+    if (metrics && !shot.pov) {
       const live = metrics.live();
       for (const o of live.obstacles) {
         const near = o.pos.distanceTo(new THREE.Vector3(walker.x, 0, -walker.n));
@@ -261,8 +263,9 @@ export function startShot(opts: {
     t += dt;
     if (metrics) {
       metrics.step(dt);
+      if (shot.pov && shot.walk) stepWalker(dt);   // overrides the metrics walker; its obstacles still move
       const live = metrics.live();
-      if (live.collisions > seenCollisions) cues.push({ from: t, to: t + 1.6, text: "Collision", ring: true, color: "#ff5a4e" });
+      if (!shot.pov && live.collisions > seenCollisions) cues.push({ from: t, to: t + 1.6, text: "Collision", ring: true, color: "#ff5a4e" });
       seenCollisions = live.collisions;
     } else {
       world.update(dt);
@@ -313,7 +316,8 @@ export function startShot(opts: {
       if (!render) return "";   // previews skip ahead (record_shot.py --preview); tiles then load late
       await settle();
       world.view?.("screen");
-      renderer.render(scene, shotCam);
+      const post = await opts.post;
+      if (post) post(shotCam); else renderer.render(scene, shotCam);
       draw();
       frames++;
       return out.toDataURL("image/png");

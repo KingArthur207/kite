@@ -125,14 +125,17 @@ The log from the 41-second walk on the home page, verbatim. Every line has a pri
 000.5s  said [nav] Head north on Lyon Street for 60 meters.
 006.5s  said [hazard] Person, ahead.
 008.4s  said [critical] Stop. Person ahead.
+011.1s  said [hazard] Path is clear. You can continue.
 013.4s  said [hazard] Obstacle, ahead.
 015.5s  said [critical] Stop. Obstacle ahead.
 018.0s  said [hazard] Don't walk.
-022.5s  said [hazard] Walk signal is on.
+018.8s  said [hazard] Path is clear. You can continue.
+020.9s  said [hazard] Wait. Don't walk signal ahead.
+023.1s  said [hazard] Walk signal is on.
 025.0s  said [nav] Turn left onto Bay Street.
-026.8s  said [nav] Small crowd ahead on the right.
+026.6s  said [nav] Small crowd ahead on the right.
 030.0s  said [system] Drone battery is at 28 percent.
-033.1s  said [hazard] Heads up: The curb at Lyon Street and Bay Street is very tall: step down slowly
+033.0s  said [info] Heads up: The curb at Lyon Street and Bay Street is very tall: step down slowly
 
 ```
 

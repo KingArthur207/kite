@@ -60,6 +60,8 @@ step_drone() {
   # a few drone tests measure wall-clock timing; rerun failures once before calling them real
   run "drone tests" bash -c "cd '$ROOT' && { '$DRONE_VENV/bin/python' -m pytest -q -m 'not slow' || '$DRONE_VENV/bin/python' -m pytest -q -m 'not slow' --lf; }"
   run "sim scene-describe tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q sim/test_scene_describe.py"
+  # geometry, depth fusion, hazards and event contract with fake models; `-m slow` adds the real models
+  run "perception tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q perception/tests"
 }
 
 step_dashboard() {

@@ -3,6 +3,7 @@
     uv run --no-project --with playwright python scripts/record_shot.py corner
     uv run --no-project --with playwright python scripts/record_shot.py follow --world moss
     uv run --no-project --with playwright python scripts/record_shot.py all
+    uv run --no-project --with playwright python scripts/record_shot.py pov --fps 25   # chest POV, then scripts/pov.sh
 
 Opens the sim at ?shot=<name> in headless Chromium (Metal GPU), steps it frame by frame through
 window.kiteShot.frame(1/fps) (the page's clock is this script's fixed step, never the wall clock), writes
@@ -29,7 +30,7 @@ import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SIM = ROOT / "sim"
-SHOTS = ["establishing", "follow", "corner", "explainer"]
+SHOTS = ["establishing", "follow", "corner", "explainer", "pov"]
 
 
 def wait_http(url: str, timeout: float) -> None:
@@ -123,7 +124,7 @@ def main() -> None:
         wait_http(url, 30)
         with sync_playwright() as p:
             browser = p.chromium.launch(args=["--use-angle=metal", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"])
-            for name in SHOTS if args.shot == "all" else [args.shot]:
+            for name in [s for s in SHOTS if s != "pov"] if args.shot == "all" else [args.shot]:   # pov: --fps 25
                 preview = [float(x) for x in args.preview.split(",")] if args.preview else None
                 r = record(browser, url, name, args.world, args.fps, out_dir, args.max_seconds, preview)
                 failed |= bool(r.get("camera_fence_violations") or r.get("tile_fence_violations"))
