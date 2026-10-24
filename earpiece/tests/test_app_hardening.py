@@ -55,6 +55,38 @@ def test_inbound_memories_are_rate_limited(app):
     assert any("over 30 a minute" in m for m in app.logs)
 
 
+def spoken(app):
+    return [h["text"] for h in app.speaker.history]
+
+
+def walk(app):
+    app.handle(Msg("hazard", "drone", kind="crosswalk", state="walk", bearing=0.0, distance=6.0))
+
+
+def test_dont_walk_is_never_overtaken_by_a_walk_being_confirmed(app, monkeypatch):
+    """The control loop confirms a pending "walk" while the transport thread may be applying a
+    "don't walk". Without a lock, the loop could take the pending walk, the don't-walk could be
+    applied, and then the stale walk on top: the walker hears "Walk signal is on." last."""
+    orig = app._apply_hazard
+    confirming = threading.Event()
+
+    def slow_confirm(key, msg, now):
+        if msg.state == "walk" and threading.current_thread().name == "control":
+            confirming.set()
+            time.sleep(0.2)                         # widen the window the race needs
+        return orig(key, msg, now)
+
+    monkeypatch.setattr(app, "_apply_hazard", slow_confirm)
+    walk(app)
+    assert confirming.wait(3)
+    app.handle(Msg("hazard", "drone", kind="crosswalk", state="dont_walk", bearing=0.0, distance=6.0))
+    time.sleep(0.3)
+    assert app.hazards["crosswalk"]["state"] == "dont_walk"
+    assert wait_for(lambda: "Don't walk." in spoken(app), 3)
+    said = spoken(app)
+    assert "Walk signal is on." not in said[said.index("Don't walk."):]
+
+
 def test_perception_source_set_is_bounded(app):
     for i in range(1000):
         app.handle(Msg("obstacles", f"cam{i}", seq=1, objects=[]))

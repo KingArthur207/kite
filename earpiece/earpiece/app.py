@@ -101,6 +101,7 @@ class Earpiece:
         self._place_notes_busy = threading.Lock()   # one memory lookup at a time, never a thread per message
         self._memory_writes: deque = deque(maxlen=self.MEMORY_WRITES_PER_MIN)   # inbound memory rate limit
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
+        self._hazard_lock = threading.RLock()      # transport thread and control loop both apply hazards
         self.vision = Vision(self.cfg.anthropic_key, log=log)
         self._stop_since: float | None = None      # a "Stop."/wait is in force since this time
         self._clear_since: float | None = None     # the way has looked clear since this time
@@ -342,21 +343,19 @@ class Earpiece:
 
     def _hazard(self, msg: Msg, now: float) -> None:
         key = msg.key or (msg.kind or "hazard")
-        if msg.kind == "crosswalk":
-            # Asymmetric on purpose: a one-frame "walk" misread must never send someone into
-            # traffic, while a "don't walk" is safe to act on at once.
-            if msg.state in ("walk", "go", "green"):
-                prev = self.hazards.get(key)
-                if not (prev and prev.get("state") in ("walk", "go", "green")):
-                    p = self._walk_pending.get(key)
-                    if p is None:
-                        self._walk_pending[key] = (now, msg)
-                    else:
-                        self._walk_pending[key] = (p[0], msg)
-                    return
-            else:
-                self._walk_pending.pop(key, None)
-        self._apply_hazard(key, msg, now)
+        with self._hazard_lock:
+            if msg.kind == "crosswalk":
+                # Asymmetric on purpose: a one-frame "walk" misread must never send someone into
+                # traffic, while a "don't walk" is safe to act on at once.
+                if msg.state in ("walk", "go", "green"):
+                    prev = self.hazards.get(key)
+                    if not (prev and prev.get("state") in ("walk", "go", "green")):
+                        p = self._walk_pending.get(key)
+                        self._walk_pending[key] = (now if p is None else p[0], msg)
+                        return
+                else:
+                    self._walk_pending.pop(key, None)
+            self._apply_hazard(key, msg, now)
 
     MAX_HAZARDS = 64           # active hazards kept (each one is in every prompt Claude gets)
     MAX_SOURCES = 32           # perception sources tracked for heartbeats
@@ -364,10 +363,13 @@ class Earpiece:
     MEMORY_WRITES_PER_MIN = 30  # inbound `memory` messages (each one rewrites the store and syncs to Moss)
 
     def _confirm_walks(self, now: float) -> None:
-        for key, (since, msg) in list(self._walk_pending.items()):
-            if now - since >= self.WALK_CONFIRM_S:
-                del self._walk_pending[key]
-                self._apply_hazard(key, msg, now)
+        """Under the hazard lock: a "don't walk" arriving on the transport thread must never be
+        overtaken by a pending "walk" this loop had already picked up."""
+        with self._hazard_lock:
+            for key, (since, msg) in list(self._walk_pending.items()):
+                if now - since >= self.WALK_CONFIRM_S:
+                    del self._walk_pending[key]
+                    self._apply_hazard(key, msg, now)
 
     def _apply_hazard(self, key: str, msg: Msg, now: float) -> None:
         prev = self.hazards.get(key)
