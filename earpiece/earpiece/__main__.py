@@ -60,6 +60,9 @@ def cmd_run(a) -> int:
         cfg.listen.input_substr = a.mic
     cfg.listen.hands_free = a.hands_free
     app = Earpiece(cfg, output="null" if a.null else "device", log=_log, output_device=a.output)
+    if a.spacetime or cfg.net.spacetime_enabled:
+        from .spacetime import SpacetimeBridge
+        app.bridges.append(SpacetimeBridge(source="earpiece", log=_log))
     app.start()
     if not a.no_stem:
         app.gestures.enable_stem()
@@ -155,6 +158,7 @@ def main(argv=None) -> int:
     r.add_argument("--hands-free", action="store_true", help="always listen for 'Kite, ...'")
     r.add_argument("--no-stem", action="store_true", help="do not capture media keys / stem presses")
     r.add_argument("--bind", default="127.0.0.1", help="0.0.0.0 to accept events from the LAN")
+    r.add_argument("--spacetime", action="store_true", help="mirror events to SpacetimeDB (SPACETIME_HOST)")
     rr = sub.add_parser("render", help="render a scenario to a WAV file")
     rr.add_argument("scenario", choices=["walk", "car", "dropout", "crowd"])
     rr.add_argument("out")
