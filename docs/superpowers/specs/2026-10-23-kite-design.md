@@ -82,7 +82,7 @@ Crossing signals: a signal head 20 m away is about 14 px tall in the Tello strea
 
 ### 5.1 The contract: Karthik's earpiece events
 
-We use the event types already defined on `feat/airpods-audio` in `earpiece/` (summarised in `kite-notes-02.md` section 7). Nobody invents a parallel format.
+We use the event types already defined in `earpiece/earpiece/events.py` (validated by `events.parse()`; summary in `earpiece/README.md` and `kite-notes-02.md` section 7). Producers send them with `earpiece.client.EarpieceClient` (`.obstacles()`, `.hazard()`, `.guidance()`, `.beacon()`, ...). Nobody invents a parallel format.
 
 - Frame: bearings in degrees in the walker's frame, 0 straight ahead, +90 right, −90 left, ±180 behind. Distances in meters.
 - Types: `obstacles`, `hazard`, `guidance`, `beacon`, `position`, `status`, `scene`, `say`, `heartbeat`, `control`.
@@ -99,13 +99,13 @@ We use the event types already defined on `feat/airpods-audio` in `earpiece/` (s
 
 - Converting a drone or sim bearing to the walker's frame needs the walker's heading. The sim knows it exactly. On real footage, use the walking direction over the last second or so.
 
-### 5.2 SpacetimeDB is the transport between machines
+### 5.2 Transport: UDP to the earpiece, SpacetimeDB for shared state
 
-The earpiece binds to 127.0.0.1, so events from another process or machine arrive through SpacetimeDB. That also makes Spacetime the real backbone, which is what its track rewards.
+What exists on `main`: the earpiece takes events on UDP 5010 and WebSocket 5011, on localhost by default and on the LAN with `--bind 0.0.0.0`. It can mirror outbound events to SpacetimeDB, but it does not read events from SpacetimeDB.
 
-Default design, Karthik's to change: one `event` table (`id`, `type`, `source`, `priority`, `payload` as the event JSON, `t`) that every producer writes through a reducer, plus a `latest` table keyed by `(type, source)` for state the dashboard shows (walker position, drone or sim status). The earpiece subscribes and passes each payload through its existing validator. Python producers call reducers over HTTP (`POST /v1/database/kite-sync-pl6rp/call/<reducer>` with a bearer token; see `dashboard/README.md`). Old events get pruned so the table stays small.
+So the live path is direct: every producer uses `EarpieceClient`, pointed at `127.0.0.1` on one laptop or at the wearable laptop's Thunderbolt bridge address from the drone laptop (earpiece run with `--bind 0.0.0.0`). The address comes from `.env` (`KITE_EARPIECE_HOST`). This keeps the safety path off the internet and means nobody waits on Eddy's tables to test.
 
-Exception for the safety path: the webcam detector and the earpiece run on the same laptop, so webcam `obstacles` and `heartbeat` go straight to the earpiece over localhost UDP 5010. They are mirrored to Spacetime at about 1 Hz for the dashboard only. The sonar never waits on the internet. (Spec author's call.)
+SpacetimeDB holds the shared state everyone else watches: the earpiece mirrors every event it receives and speaks, and the sim, drone laptop and dashboard subscribe to it. Default design, Eddy's to change: one `event` table (`id`, `type`, `source`, `priority`, `payload` as JSON, `t`) plus a `latest` table keyed by `(type, source)`. Python writes over HTTP (`POST /v1/database/kite-sync-pl6rp/call/<reducer>`, see `dashboard/README.md`). The dashboard shows the walker on a map, the route, active hazards and status, read only from Spacetime. For the Spacetime track, the pitch line is: "every device on the walk, and the caregiver, shares one live world state."
 
 Networks: we build at Aneesh's apartment on its Wi-Fi. Maincloud, Claude and Cartesia need internet, not just a shared network; with Maincloud, two machines don't even need to be on the same network, only online. At judging the whole demo (sim, detector, earpiece, dashboard) runs on one laptop, so the only network question there is internet for those three cloud services, from the venue Wi-Fi ("Cal Hacks 13.0", per the hacker guide). Fallbacks, tested by Saturday freeze: cached Cartesia phrases plus macOS `say` for speech, a local `spacetime start --listen-addr 127.0.0.1:3000` instance with the same module, and the deterministic cues (sonar, `critical`, `dont_walk`) working with Claude unreachable. (Spec author's call.)
 
@@ -154,7 +154,7 @@ Every task below can be done by one person driving Claude (or Cursor) agents on 
 |---|---|---|---|
 | Frames | Video files: the phone clips from tonight (below), sim frames, any street video | Tello stream, body webcam | `FrameSource`: `VideoFileSource` vs `TelloVideoSource` / `WebcamSource` (already in `kite/sources/`) |
 | Drone commands | `make_tello(cfg, dry_run=True)`: connects, streams, logs motion instead of sending it | Tello | `dry_run=False` |
-| Events | A JSONL file of events replayed into Spacetime or straight to the earpiece | Live producers | A `replay` tool reads JSONL and writes the same events a live producer would |
+| Events | The earpiece's scripted scenarios (`python -m earpiece run --sim walk`) or a JSONL file replayed through `EarpieceClient` | Live producers | Same `EarpieceClient` calls; `replay` is a 20-line script |
 | Network | Everything on one laptop, `127.0.0.1` and Maincloud | Two laptops over the Thunderbolt bridge | Host addresses in `.env` (`KITE_EARPIECE_HOST`, `SPACETIME_HOST`), never hardcoded |
 | Audio | Laptop speakers or any headphones | AirPods | Earpiece output device setting (it already matches "AirPods" by name) |
 | Position | Sim pose, or a GPS track replayed from a file | Walker's phone GPS | Same `position` event either way |
@@ -171,12 +171,21 @@ Each person owns a deliverable, not a layer. One owner per job.
 |---|---|---|---|
 | Arthur | The drone and the 3D world: flight, recording, splat | Push the drone layer (`kite/`, `pyproject.toml`, tests) to `main`. A `record` command that saves video and telemetry to disk, tested in dry run against a video file. Splat pipeline run on tonight's overhead phone clip, so the tool and settings are proven before the real capture. | The 7am shoot on the one battery (section 8). Then the splat from the real capture. Camera fx calibration if time allows (the sim starts at 1000). |
 | Rex | Perception: `streetseg` | Move `streetseg` from `rexheng/videotesting` into this repo (rewritten or re-committed by Rex, per the rules), emitting earpiece events instead of the glasses' `turn`. Done check: `python -m streetseg --source <phone clip>` writes `hazard`, `scene` and `obstacles` events to a JSONL file and an overlay video that looks like a Waymo demo. | Point the source at Tello footage, the live webcam, and sim frames. Same command, different `--source`. |
-| Karthik | The voice: earpiece, Google Maps directions, Cartesia, Claude | Earpiece and destinations are merged (PRs #2 and #3). Done check: replaying a JSONL of events (hazard, guidance, beacon, obstacles) through Spacetime plays the right beeps and speech on laptop speakers, with the Claude judgment layer and cached phrases in. | AirPods as the output device. Walker's phone GPS as the `position` source. |
-| Eddy | Infrastructure, then the sim, the video and the submission | Replace the starter `person` table with the event tables. The `replay` tool. Host addresses in `.env`. Done check: a hardcoded `hazard` from a second process reaches the earpiece through Spacetime on one laptop. Then the sim (section 5.4) with an arrow-key walker, the virtual drone and chest cameras, a placeholder world, frames to `streetseg`. | The Thunderbolt bridge: set the hosts in `.env` on two laptops and rerun the same check. Splat into the sim once Arthur has it. |
+| Karthik | The voice: earpiece, Google Maps directions, Cartesia, Claude | Earpiece and destinations are merged (PRs #2 and #3). Done check: `python -m earpiece run --sim walk` and a replayed JSONL from Rex both play the right beeps and speech on laptop speakers, with the Claude judgment layer and cached phrases in, and every event mirrored to Spacetime. | AirPods as the output device. Walker's phone GPS as the `position` source. |
+| Eddy | Infrastructure, then the sim, the video and the submission | Replace the starter `person` table with the event tables; dashboard reads them. The `replay` script. `KITE_EARPIECE_HOST` in `.env`. Done check: a JSONL replayed from a second process plays in the earpiece and shows on the dashboard, on one laptop. Then the sim (section 5.4) with an arrow-key walker, the virtual drone and chest cameras, a placeholder world, frames to `streetseg`. | The Thunderbolt bridge: earpiece with `--bind 0.0.0.0`, `KITE_EARPIECE_HOST` set to the bridge address on the drone laptop, rerun the same check across two laptops. Splat into the sim once Arthur has it. |
 
 Everyone works in this repo, on short branches merged to `main` often. Nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
 
 Also owned: Rex runs the interview and verifies the guide dog figures. Eddy owns the clock, the demo video and the submission audit. The presenter comes from a timed tryout.
+
+### 7.1 Kickoff prompts
+
+Each owner pulls `main` and starts their agent with one of these. They assume the agent can read the repo.
+
+- Arthur: "Read docs/superpowers/specs/2026-10-23-kite-design.md sections 6 to 8 and kite-notes-02.md. Commit the drone layer in kite/ with pyproject.toml and its tests. Add `python -m kite.record --source <file|tello> --out <dir>` that saves BGR video and timestamped telemetry, working in dry run against a video file. Then set up a splat pipeline that runs on Apple Silicon and test it on our overhead phone clip."
+- Rex: "Read the spec sections 5.1, 5.3, 6 and 7, and earpiece/earpiece/events.py. Bring streetseg into this repo as a top-level package. Replace its glasses `turn` output with earpiece events sent through earpiece.client.EarpieceClient, plus a `--jsonl` option that writes the same events to a file. Done when `python -m streetseg --source <phone clip> --jsonl out.jsonl --overlay out.mp4` works."
+- Karthik: "Read the spec sections 5.1, 5.2, 5.6 and 7. Add the Claude judgment layer to the earpiece under the safety rule in 5.6, cache the fixed Cartesia phrases, and mirror every received and spoken event to SpacetimeDB through the existing bridge hook. Done when `python -m earpiece run --sim walk` and a replayed JSONL both sound right on laptop speakers."
+- Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
 
 ## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
 
