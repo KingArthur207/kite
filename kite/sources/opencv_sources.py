@@ -12,6 +12,7 @@ from ..types import Frame
 from .base import FrameSource
 
 TELLO_UDP_URL = "udp://@0.0.0.0:11111"
+VIDEO_BACKENDS = ("socket", "pyav", "opencv")
 
 
 def _readonly(img: np.ndarray) -> np.ndarray:
@@ -21,8 +22,9 @@ def _readonly(img: np.ndarray) -> np.ndarray:
 
 
 class TelloVideoSource(FrameSource):
-    """The Tello's H.264 stream, decoded by PyAV (backend "pyav", default: djitellopy's decoder) or by the team's
-    OpenCV VideoStream (backend "opencv").
+    """The Tello's H.264 stream, decoded by PyAV through FFmpeg's udp:// reader (backend "pyav", djitellopy's way),
+    by the team's OpenCV VideoStream (backend "opencv"), or by our own UDP socket feeding PyAV's parser (backend
+    "socket", the default on macOS: big receive buffer, no FFmpeg network code, see socket_stream.py).
 
     The drone must already have been told `streamon` (the drone adapter does that). Only one reader
     can bind UDP 11111: every consumer shares this source.
@@ -39,8 +41,8 @@ class TelloVideoSource(FrameSource):
 
     def __init__(self, url: str = TELLO_UDP_URL, fps: int = 60, timeout_ms: int = 15000, reconnect_after_s: float = 20.0,
                  backend: str = "pyav"):
-        if backend not in ("pyav", "opencv"):
-            raise ValueError(f"video backend {backend!r}: use pyav or opencv")
+        if backend not in VIDEO_BACKENDS:
+            raise ValueError(f"video backend {backend!r}: use {', '.join(VIDEO_BACKENDS)}")
         self.url, self.fps, self.backend = url, fps, backend
         # FFmpeg open/read timeout. It must outlast the wait for a clean keyframe: nothing decodes before one, and
         # the Tello sends them seconds apart (a lost packet costs a whole one). With 5 s / 3 s the capture was
@@ -53,6 +55,7 @@ class TelloVideoSource(FrameSource):
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.reconnects = 0
+        self.last_error: str | None = None  # why the last open failed (socket: the port is held)
 
     def start(self) -> TelloVideoSource:
         if self._thread is None:
@@ -64,13 +67,16 @@ class TelloVideoSource(FrameSource):
     def _run(self) -> None:
         if self.backend == "pyav":
             from .pyav_stream import PyAVStream as Stream
+        elif self.backend == "socket":
+            from .socket_stream import SocketStream as Stream
         else:
             from .video_stream import VideoStream as Stream
 
         while not self._stop.is_set():
             try:
                 stream = Stream(self.url, fps=self.fps, open_timeout_ms=self.timeout_ms, read_timeout_ms=self.timeout_ms).start()
-            except RuntimeError:  # nothing decodable before the open timeout: try again
+            except RuntimeError as e:  # nothing decodable before the open timeout, or the port is held: try again
+                self.last_error = str(e)
                 self._stop.wait(0.5)
                 continue
             with self._lock:
@@ -87,6 +93,14 @@ class TelloVideoSource(FrameSource):
                 self._stream = None
                 self._offset += max(stream.read_seq(copy=False)[0], 0)
             stream.stop()  # its thread leaves grab() within the read timeout -> safe to release
+
+    def diagnosis(self) -> str | None:
+        """Why there is no picture, when the reader can tell (socket backend), else the last open error."""
+        with self._lock:
+            stream = self._stream
+        if stream is not None and hasattr(stream, "diagnose"):
+            return stream.diagnose()
+        return self.last_error
 
     def read(self) -> Frame | None:
         with self._lock:
