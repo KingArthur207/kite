@@ -9,7 +9,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Geo, facadeMaterial, pbr, seeded, type FacadeKind } from "./osmLook";
-import { buildingSheet, look2 } from "./look2";
+import { buildingSheet, look2, lookExtras } from "./look2";
 import { leafTexture } from "./streetProps";
 import { LayoutFronts, facadeLayouts, facadeSides, gaps, layoutHeight, onFront } from "./facadeLayouts";
 
@@ -251,6 +251,9 @@ export function buildFacades(scene: THREE.Object3D, input: Building[], roadQuads
     // The sheet gives the wall colour as photographed; the material multiplies it by its texture, so divide that out.
     const color = sheetColor ? albedoTint(sheetColor, kind) : tint(b, kind, rnd);
     const vic = b.style === "victorian", midrise = b.style === "midrise";
+    // look 2: a Moss St building shows only what Street View does. Its fronts with a layout are drawn from it below;
+    // every other wall of it is plain: no windows, doors, garages, bays, stoops or cornice guessed per lot.
+    const plain = look2 && !lookExtras && (vic || !!sheet || !!lay || facadeSides.has(b.id));
     const residential = vic || (!midrise && (kind === "stucco" || kind === "plaster" || kind === "siding" || RESIDENTIAL.has(b.tags?.building ?? "")) && !b.storefront);
     const lv = parseFloat(b.tags?.["building:levels"] ?? "");
     const levels = sheet?.floors ?? Math.max(1, Number.isFinite(lv) ? Math.round(lv) : Math.round(b.h / STOREY));
@@ -300,7 +303,7 @@ export function buildFacades(scene: THREE.Object3D, input: Building[], roadQuads
         const n3 = new THREE.Vector3(out[0], 0, -out[1]);
         g.quad([v3(a, y0), v3(c, y0), v3(c, y1), v3(a, y1)], n3, [[s0, y0], [s0 + L, y0], [s0 + L, y1], [s0, y1]], color);
         s0 += L;
-        if (isParty(bi, a, c)) return;   // shared wall: blank
+        if (plain || isParty(bi, a, c)) return;   // shared wall (or a Moss wall Street View has no layout for): blank
         const at = (t: number, o = 0): P => [a[0] + u[0] * t + out[0] * o, a[1] + u[1] * t + out[1] * o];
         const street = L >= 1.4 && isStreet(bi, at(L / 2), out);
         // look 2: a cornice only wraps a corner that's open (not against a neighbour's wall), so it never runs into one
@@ -315,7 +318,7 @@ export function buildFacades(scene: THREE.Object3D, input: Building[], roadQuads
         const place = (k: KindName, t: number, y: number, frame = trimColor, pane = paneTint(), o = 0, oo = out) =>
           inst[k].push({ m: basis(at(t, o), y, oo), frame, pane });
         const busy: [number, number][] = [];   // along-wall spans taken by bays (upper floors)
-        const wantEscape = look2 && low && street && levels >= 3 && L > 6 && (sheet?.fire_escape ?? (midrise && rnd2() < FIRE_ESCAPE_SHARE));
+        const wantEscape = lookExtras && low && street && levels >= 3 && L > 6 && (sheet?.fire_escape ?? (midrise && rnd2() < FIRE_ESCAPE_SHARE));
 
         // Ground floor on street fronts.
         if (!low) { /* upper part only */ } else if (street && vic) {
@@ -341,11 +344,11 @@ export function buildFacades(scene: THREE.Object3D, input: Building[], roadQuads
                 for (let k = 0; k < 3; k++) stoops.push([...s[k], ...s[k + 1]] as [number, number, number, number]);
               }
               place("door", dt, 0.15 + rise + KINDS.door.h / 2, trimColor, new THREE.Color(VIC_DOORS[Math.floor(rnd() * VIC_DOORS.length)]));
-              if (look2 && (sheet?.gate ?? rnd2() < GATE_SHARE)) {   // iron security gate in front of the door
+              if (lookExtras && (sheet?.gate ?? rnd2() < GATE_SHARE)) {   // iron security gate in front of the door
                 gates.push(basis(at(dt, KINDS.door.d + 0.03), 0.15 + rise + KINDS.door.h / 2 + 0.05, out));
               }
               const hedgeD = Math.min(HEDGE_D, room);
-              if (look2 && hedgeD >= HEDGE_MIN_D && (sheet?.hedge ?? rnd2() < HEDGE_SHARE)) {   // hedge beside the stoop
+              if (lookExtras && hedgeD >= HEDGE_MIN_D && (sheet?.hedge ?? rnd2() < HEDGE_SHARE)) {   // hedge beside the stoop
                 const h0 = dt + hw + 0.05, h1 = Math.min(t0 + lw - 0.1, h0 + 1.6);
                 if (h1 - h0 > 0.5) {
                   hedges.push({ at, t0: h0, t1: h1, d: hedgeD, h: 0.9 + rnd2() * 0.5 });
@@ -417,11 +420,9 @@ export function buildFacades(scene: THREE.Object3D, input: Building[], roadQuads
       const r = layoutFronts.front({
         b, lay, wall: g, trim, color, trimColor, segs,
         garageColor: sheet?.garage_colour ? new THREE.Color(sheet.garage_colour) : undefined,
-        walkRoom: (p) => walk.length > 1 ? Math.min(...walk.slice(1).map((q, k) => segDist(p, walk[k], q))) - WALK_CLEAR : STOOP_D,
         bay: (at, x0, x1, y0, y1, ys) => bay(g, trim, at, (x0 + x1) / 2, y0, y1, color, trimColor, (k, p, y, oo) =>
           inst[x1 - x0 >= BIG_BAY ? (k === "res" ? "bayc" : "bays") : k].push({ m: basis(p, y, oo), frame: trimColor, pane: paneTint() }), sh, levels, { W: x1 - x0, ys }),
       });
-      stoops.push(...r.stoops);
       for (const q of r.garages) garages.push({ x: q.p[0], n: q.p[1], u: q.u, out: q.out, w: q.w });
     }
   });
@@ -463,7 +464,8 @@ export function buildFacades(scene: THREE.Object3D, input: Building[], roadQuads
   return { garages, windows, stoops };
 }
 
-// --- look 2: iron gates and doorstep hedges
+// --- ?look=2&extras=1 only: random iron gates, doorstep hedges and fire escapes (Street View doesn't back them per
+// building; without the flag look 2 draws none)
 const GATE_SHARE = 0.55, HEDGE_SHARE = 0.45;   // Street View on Moss: most doors gated, many stoops with a hedge
 const HEDGE_D = 0.6, HEDGE_MIN_D = 0.35;       // m: hedge depth out from the wall, and the shallowest worth drawing
 interface Hedge { at: (t: number, o?: number) => P; t0: number; t1: number; d: number; h: number }

@@ -6,9 +6,12 @@
 //   - bright midday sun, hard shadows; world-space grime on walls, trim and ground (breaks texture tiling)
 //   - post: N8AO ambient occlusion, ACES via OutputPass, a light grade, SMAA
 //   - the per-building sheet public/local/moss_buildings.json (optional, local only), see loadBuildingSheet
-//   - osmFacades adds iron security gates and doorstep hedges; streetProps makes Moss's trees scrappier
+//   - streetProps makes Moss's trees scrappier
 //   - Moss fronts (and some exposed side walls) from public/local/moss_facade_layouts.json (optional, local only):
-//     facadeLayouts.ts draws their real openings, arches, garage styles and bays; scripts/facade_layouts.py makes it
+//     facadeLayouts.ts draws their real openings, arches, garage styles and bays; scripts/facade_layouts.py makes it.
+//     Nothing on a Moss building that Street View doesn't show: its other walls stay plain (osmFacades).
+//   - &extras=1 brings back the guessed extras: random iron gates, doorstep hedges, fire escapes, and the per-lot
+//     procedural fronts on Moss. Off by default: Street View doesn't back them building by building.
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
@@ -19,6 +22,7 @@ import { loadFacadeLayouts } from "./facadeLayouts";
 const DEFAULT_LOOK = "1";
 const query = new URLSearchParams(location.search);
 export const look2 = (query.get("look") ?? DEFAULT_LOOK) === "2" && query.get("metrics") !== "1";
+export const lookExtras = look2 && query.get("extras") === "1";
 
 /** One building's look, from public/local/moss_buildings.json (generated from Street View, gitignored). Any field may be missing. */
 export interface BuildingSheet {
