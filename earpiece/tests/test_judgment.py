@@ -85,9 +85,32 @@ def test_reply_line_parsing():
     assert validate(parse_reply("Sign ahead says use other side."), {})[0] is None   # echoing a sign is a reroute
 
 
-def test_a_reply_cut_off_at_max_tokens_is_never_spoken():
-    j, said, events, *_ = make({"say": "Wait. Car turning in", "warning": True}, stop_reason="max_tokens")
+def capped(text):
+    j, said, events, *_ = make()
+    j.client = RawClient(text, stop_reason="max_tokens")
+    return j, said, events
+
+
+def test_a_capped_reply_keeps_its_first_full_sentence():
+    j, said, _ = capped("Wait. Crowd on the right ahead, crossing signal says don't walk. Hold")
+    assert j.step() == "said" and said[0][0][0] == "Wait."
+
+
+def test_a_capped_reply_with_only_a_partial_sentence_is_silent():
+    j, said, events = capped("Wait for the car turning in")
     assert j.step() == "none" and said == [] and events == []
+
+
+def test_a_capped_reply_whose_first_sentence_is_permission_is_silent():
+    j, said, events = capped("You can cross now. Wait, a car is coming")
+    assert j.step() == "quiet" and said == [] and events == []
+
+
+@pytest.mark.parametrize("text", ["Staying quiet. The car is parked and nothing", "- Nothing to flag. More text"])
+def test_a_capped_meta_explanation_is_silent(text):
+    j, said, events = capped(text)
+    j.step()
+    assert said == [] and events == []
 
 
 def test_upgrade_does_not_trigger_another_call():
@@ -295,13 +318,13 @@ def test_real_warnings_still_pass(text):
 class RawClient(FakeClient):
     """Replies with exactly this text."""
 
-    def __init__(self, text):
-        super().__init__()
+    def __init__(self, text, stop_reason="end_turn"):
+        super().__init__(stop_reason=stop_reason)
         self.text = text
 
     def create(self, **kw):
         self.calls.append(kw)
-        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text=self.text)])
+        return SimpleNamespace(stop_reason=self.stop_reason,content=[SimpleNamespace(type="text", text=self.text)])
 
 
 @pytest.mark.parametrize("reply", [

@@ -14,7 +14,8 @@ Guardrails, all enforced here and not left to the prompt:
   * At most one call every `min_gap_s`, none when hazards and scene are
     unchanged, never on the audio thread, and a slow or failed call is dropped
     without a word. A call still unanswered after `hedge_s` is raced by a
-    second identical one; a reply cut off at MAX_TOKENS is never spoken.
+    second identical one; a reply cut off at MAX_TOKENS
+    keeps only its first complete sentence (after the same checks), never a partial one.
   * The same line is never said twice within RECENT_SPEECH_S.
 
 Tune with scripts/judgment_eval.py (real Claude over data/scenarios/*.jsonl).
@@ -36,7 +37,7 @@ from .events import PRIORITY_RANK
 
 MODEL = "claude-haiku-5-5"
 MAX_SAY = 90
-MAX_TOKENS = 60          # one short line; a reply cut off at this cap is dropped, never spoken half-said
+MAX_TOKENS = 60          # one short line; a capped reply keeps only its first complete sentence, never half-said
 UPGRADE_TO = ("hazard", "nav", "answer", "info")   # "critical" stays with deterministic code
 MAX_HEARD = 120         # each recent_speech line is cut to this (it is untrusted text, and tokens)
 RECENT_SPEECH_S = 15.0   # what the walker heard this recently goes in the snapshot, so Claude doesn't repeat it
@@ -96,7 +97,8 @@ _FORBIDDEN = re.compile(
 # has said nothing; that is silence, not a line to speak.
 _META = re.compile(r"^[-(\[*]|\b(?:silen\w*|quiet|no\s+warning|nothing\s+to|no\s+need|not\s+needed|none"
                    r"|no\s+comment|no\s+action|n/a)\b", re.I)
-_HOLD = re.compile(r"\b(?:wait|stop|hold|don't|do\s+not|never)\b", re.I)   # these lines may cut in
+_FIRST_SENTENCE = re.compile(r".*?[.!?](?=\s|$)")   # a capped reply is trusted only up to its first full stop
+_HOLD =re.compile(r"\b(?:wait|stop|hold|don't|do\s+not|never)\b", re.I)   # these lines may cut in
 
 
 def forbidden(text: str) -> bool:
@@ -313,7 +315,12 @@ class Judgment:
             self.log(f"[judgment] dropped: answered in {ms:.0f} ms, too late to be useful")
             return "late"
         reply = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
-        if resp.stop_reason != "end_turn" or not reply.strip():
+        if resp.stop_reason == "max_tokens":       # cut off: only a complete first sentence is safe; it still goes through validate()
+            m = _FIRST_SENTENCE.match(" ".join(reply.split()))
+            reply = m.group(0) if m else ""
+        elif resp.stop_reason != "end_turn":
+            reply = ""
+        if not reply.strip():
             self.log(f"[judgment] no decision ({resp.stop_reason}, {ms:.0f} ms): {reply[:80]!r}")
             return "none"
         hazards = {h["key"]: h.get("priority") or "hazard" for h in snap.get("hazards") or [] if h.get("key")}
