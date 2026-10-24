@@ -64,6 +64,8 @@ def parse_args(argv=None):
     ap.add_argument("--jsonl", help="also write events with a t field (scripts/replay.py)")
     ap.add_argument("--overlay", help="write an mp4 (or .jpg for a still) with boxes and labels")
     ap.add_argument("--no-send", action="store_true", help="do not send to the earpiece")
+    ap.add_argument("--ear-port", type=int, default=int(os.environ.get("KITE_EARPIECE_PORT", "5010")),
+                    help="earpiece UDP port (default $KITE_EARPIECE_PORT or 5010)")
     ap.add_argument("--fast", action="store_true", help="video: do not pace to real time")
     ap.add_argument("--max-seconds", type=float, default=0, help="stop after this long (0 = forever)")
     return ap.parse_args(argv)
@@ -136,7 +138,7 @@ def main(argv=None) -> None:
     if not a.no_send:
         from earpiece.client import EarpieceClient
         ear = EarpieceClient(host=os.environ.get("KITE_EARPIECE_HOST", "127.0.0.1"),
-                             port=int(os.environ.get("KITE_EARPIECE_PORT", "5010")), source="perception")
+                             port=a.ear_port, source="perception")
     jsonl = open(a.jsonl, "w") if a.jsonl else None
 
     def emit(ev: dict, t: float) -> None:
