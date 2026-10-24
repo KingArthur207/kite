@@ -6,7 +6,7 @@ Paste the sections below into Devpost. Everything in [TODO: ...] has to be fille
 
 ## Inspiration
 
-A trained guide dog costs around $50,000, the waitlist can run for years, and only about 2% of blind people work with one. [TODO: verify (Rex), with sources, before these go on a slide or here.] A cane finds what is within a meter or so of the walker. It can't tell you the crosswalk ahead is crowded or that a car is pulling across the sidewalk.
+Guiding Eyes for the Blind puts the cost of raising and training one guide dog at $50,000, paid by donors, and at Guide Dogs for the Blind the wait after applying was 7 to 10 months in 2022. About 1 million Americans are blind (JAMA Ophthalmology, 2021), and fewer than 10,000 guide dogs work in the US (IGDF, 2018). [TODO: Rex to sign off; sources and caveats in `docs/research/facts.md`. The "2% of blind people" figure dates from around 1990 and was dropped.] A cane finds what is within a meter or so of the walker. It can't tell you the crosswalk ahead is crowded or that a car is pulling across the sidewalk.
 
 We wanted to give a blind pedestrian some of what a guide dog gives them: something that looks farther ahead than they can, stops them at curbs and crossings, watches for overhead obstacles, and refuses to go forward when going forward isn't safe.
 
