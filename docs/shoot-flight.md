@@ -5,15 +5,15 @@ The pilot's half of spec section 8. One battery, one take of about 5 minutes on 
 ## Tonight, on normal internet
 
 - `git pull`, then `source .venv/bin/activate && pip install -e ".[dev]" && python -m pytest -m "not slow"` passes.
-- Laptop charged, 5 GB or more free (a 5 minute take is about 0.7 GB).
+- Laptop charged, 5 GB or more free (a 5 minute take is about 0.7 GB). `python -m kite.preflight --quick` checks both, plus the deps, ffmpeg and the ports (on normal Wi-Fi the Tello Wi-Fi line only warns).
 - macOS: Local Network access for your terminal app and incoming connections for Python allowed (System Settings > Privacy & Security), so the first connect at the corner doesn't stall on a prompt.
 - Terminal key repeat on (System Settings > Keyboard): holding `w` must keep the drone moving. Test it in the dry-run rehearsal below.
 - Don't power the Tello tonight except for the one short ground check below. Streaming drains the battery.
 
 ## Ground check (drone on the ground, about 1 minute of power)
 
-1. Close the Tello phone app. `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` prints nothing.
-2. Power on the Tello, join its `TELLO-xxxxxx` Wi-Fi.
+1. Close the Tello phone app. Power on the Tello, join its `TELLO-xxxxxx` Wi-Fi.
+2. `python -m kite.preflight`. It checks the laptop (ports, disk, battery, Wi-Fi, terminal), then opens the drone in dry run (no motion is ever sent) for about 6 s: battery, temperature, first frame, fps, frame size, telemetry rate and command latency. It closes the link itself and ends with GO or NO-GO; every NO-GO line says what to fix. Fallback if it can't run: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` must print nothing.
 3. `python -m kite.record --source tello --out recordings --fly --dry-run --max-s 30`
    - The status line shows about 30 fps, a battery figure and `on ground`.
    - Press `t`, `w`, `r`, space, `l`: each shows in the status line as `rc ...` or an event, and nothing moves (dry run).
@@ -34,7 +34,7 @@ Camera calibration runs in this same power-on window, right after step 3, not se
 Positions: the walker starts on the NE sidewalk of Moss about 70 m before Howard. Take off from the sidewalk about 1 m behind the walker, on flat paving, away from cars. The pilot walks 3 to 5 m behind the drone, laptop open on one forearm, with someone at the pilot's elbow watching the ground (the pilot is watching the screen).
 
 1. Rehearse the route on foot with the drone off (Rex calls it).
-2. Phone Tello app closed, `lsof` check empty, join the Tello Wi-Fi.
+2. Phone Tello app closed, join the Tello Wi-Fi, then `python -m kite.preflight`. Fly only on GO: NO-GO below 50% drone battery, busy ports, no video, or the wrong Wi-Fi. On GO it prints the next command. (Fallback: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` prints nothing.)
 3. `python -m kite.record --source tello --out recordings --fly --speed 50`
    - Wait for the status line to show about 30 fps and the battery.
 4. `t` to take off. It climbs to about 1 m.
