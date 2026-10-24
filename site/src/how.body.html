@@ -1,0 +1,192 @@
+  <main id="main">
+    <header class="page-head">
+      <p class="hand kicker"><span class="hl-sky">you learn it in a minute</span></p>
+      <h1>How Kite <em>works.</em></h1>
+      <p class="lede">Tap any sound below to hear it, rendered by the real earpiece. Then see why the beep beats a sentence, how you talk to Kite, and the log from a real walk.</p>
+    </header>
+
+    <!-- ============================================================ legend -->
+    <section class="section">
+      <svg class="doodle" viewBox="0 0 150 150" aria-hidden="true" data-d="tello"><g stroke="#1D2B6B" stroke-width="2.4"><rect x="52" y="58" width="46" height="34" rx="10"/><path d="M56 62 L 34 40 M94 62 L 116 40 M56 88 L 34 110 M94 88 L 116 110"/><circle cx="30" cy="36" r="18"/><circle cx="120" cy="36" r="18"/><circle cx="30" cy="114" r="18"/><circle cx="120" cy="114" r="18"/></g><circle cx="75" cy="60" r="3" fill="#E2448F"/><text x="38" y="146" fill="#E2448F">tello, top view</text></svg>
+
+      <div class="split">
+        <h2 class="display">Every sound <span class="hl">means one thing.</span></h2>
+        <p class="side">You learn Kite in a minute, the way you learn a turn signal. Where a sound comes from is where the thing is. What it sounds like is what it is. How fast it repeats is how soon you'd reach it.</p>
+      </div>
+      <div class="legend">
+        <div class="card">
+          <p class="mono label">WHERE</p>
+          <h3>Direction</h3>
+          <div class="chips">
+            <button class="chip" data-src="dir-left">On your left</button>
+            <button class="chip" data-src="dir-ahead">Ahead</button>
+            <button class="chip" data-src="dir-right">On your right</button>
+          </div>
+          <p class="fine">Rendered with a model of the human head, so each ear hears it a fraction of a millisecond apart.</p>
+        </div>
+        <div class="card">
+          <p class="mono label">WHAT</p>
+          <h3>A sound per thing</h3>
+          <div class="chips">
+            <button class="chip" data-src="kind-person">Person</button>
+            <button class="chip" data-src="kind-vehicle">Car</button>
+            <button class="chip" data-src="kind-pole">Pole</button>
+            <button class="chip" data-src="kind-curb">Curb</button>
+          </div>
+          <p class="fine">A soft knock, a rough buzz, a clean pip, a falling glide. Never more than two at once.</p>
+        </div>
+        <div class="card">
+          <p class="mono label">HOW SOON</p>
+          <h3>Getting closer</h3>
+          <div class="chips"><button class="chip wide" data-src="approach">Someone walking straight at you</button></div>
+          <p class="fine">Beeps start about three and a half seconds before you'd meet, then speed up and rise in pitch. At the last second Kite says "Stop."</p>
+        </div>
+        <div class="card">
+          <p class="mono label">WHICH WAY</p>
+          <h3>The beacon</h3>
+          <div class="chips">
+            <button class="chip" data-src="beacon-on">On course</button>
+            <button class="chip" data-src="beacon-side">Turn left</button>
+            <button class="chip" data-src="beacon-behind">Behind you</button>
+          </div>
+          <p class="fine">A tick from the direction of your next turn. Bright when you're facing it.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ modes -->
+    <section class="section">
+      <div class="split">
+        <h2 class="display">Inside or out, <span class="hl">it sees for you.</span></h2>
+        <p class="side">Where you are decides what Kite uses. The earpiece and the voice are the same either way.</p>
+      </div>
+      <div class="three two">
+        <article class="card topline">
+          <h3>Indoors</h3>
+          <p class="mono label">THE BODY CAMERA ALONE</p>
+          <ul>
+            <li>Beeps for the chair, the door frame, the sign at head height.</li>
+            <li>Point it at a <b>menu, a book, a street sign or a screen</b> and say "read this". Kite reads it to you, line by line.</li>
+            <li>"What's in front of me?" gets a sentence, not a list of boxes.</li>
+          </ul>
+          <p class="without">For anywhere a drone can't fly.</p>
+        </article>
+        <article class="card topline">
+          <h3>Outdoors</h3>
+          <p class="mono label">THE DRONE, PLUS THE BODY CAMERA</p>
+          <ul>
+            <li>The drone watches the route, the crowd at the corner and the car turning in.</li>
+            <li>A beacon ticks toward your next turn; directions arrive on time or not at all.</li>
+            <li>At a hazard Kite stops you, waits, and tells you when the way is clear.</li>
+          </ul>
+          <p class="without">For walking somewhere you need to go.</p>
+        </article>
+      </div>
+      <span class="hand aside right-aside" aria-hidden="true">same earpiece,<br />same voice</span>
+    </section>
+
+    <!-- ============================================================ dark band -->
+    <section class="band">
+      <div class="band-inner">
+        <div>
+          <h2 class="display light">The beep is <br />the interface.</h2>
+          <p class="band-sub">Speech is slow. Two words take most of a second, and the person stepping off the curb doesn't have one. So Kite saves its voice for decisions and lets <span class="hl-dark">sound carry the distance.</span></p>
+          <p class="band-body">Each object gets a time-to-contact, worked out from how fast the gap is closing. The rate of the beeps follows it, from one a second at the edge of the warning zone to almost nine a second just before contact. Your ears read rhythm faster than any sentence.</p>
+          <hr />
+          <p class="band-big">Faster means closer. That's the whole manual.</p>
+        </div>
+        <figure class="chart card-dark" aria-label="Chart: beep interval falls as an obstacle approaches">
+          <svg viewBox="0 0 420 260" role="img" aria-labelledby="chart-t">
+            <title id="chart-t">Time between beeps falls from 1.0 seconds at 3.5 seconds to contact, to 0.11 seconds at contact</title>
+            <g class="axis">
+              <line x1="48" y1="20" x2="48" y2="210" /><line x1="48" y1="210" x2="400" y2="210" />
+              <text x="40" y="214" text-anchor="end">0</text><text x="40" y="117" text-anchor="end">0.5 s</text><text x="40" y="24" text-anchor="end">1 s</text>
+              <text x="48" y="232">3.5 s</text><text x="224" y="232" text-anchor="middle">time to contact</text><text x="400" y="232" text-anchor="end">0</text>
+            </g>
+            <path class="grid" d="M48 117 H400 M48 24 H400" />
+            <path class="curve" d="M48 24 C 150 40, 250 120, 330 176 S 380 196, 400 199" />
+            <circle class="pt" cx="400" cy="199" r="5" />
+            <text class="lab" x="392" y="186" text-anchor="end">"Stop."</text>
+          </svg>
+          <figcaption class="mono">Seconds between beeps, from the earpiece's sonar settings (1.0 s → 0.11 s).</figcaption>
+          <span class="hand chart-note" aria-hidden="true">faster = closer</span>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ voice, as a comic -->
+    <section class="section">
+      <div class="split">
+        <h2 class="display">Just <span class="hl">say it.</span></h2>
+        <p class="side">Press an AirPod once and talk. Simple requests run on the laptop with no internet at all; everything else goes to Claude, which sees what Kite sees, and comes back in Cartesia's voice.</p>
+      </div>
+      <div class="comic">
+        <figure class="panel">
+          <span class="pn">1</span>
+          <p class="bubble you">Kite, take me to my usual coffee shop.</p>
+          <p class="bubble kite">Okay, heading to Blue Bottle Coffee.</p>
+          <div class="cast"><svg class="who-walker" viewBox="0 0 60 90" aria-hidden="true"><g fill="none" stroke="#1E2133" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="26" cy="16" r="10"/><path d="M26 26 C 27 40, 26 50, 27 62"/><path d="M27 62 L 18 86 M27 62 L 36 86"/><path d="M26 36 C 34 40, 40 44, 46 48"/><path d="M26 36 C 20 44, 16 50, 13 56"/><path d="M13 56 L 6 88" stroke="#1D2B6B"/></g><circle cx="35" cy="17" r="2.6" fill="#E2448F"/></svg><svg class="who-kite" viewBox="0 0 70 90" aria-hidden="true"><g transform="translate(35 36) rotate(-10)"><path d="M0 -32 L-24 -8 L0 -8 Z" fill="#E2448F"/><path d="M0 -32 L24 -8 L0 -8 Z" fill="#1D2B6B"/><path d="M-24 -8 L0 36 L0 -8 Z" fill="#1D2B6B"/><path d="M24 -8 L0 36 L0 -8 Z" fill="#E2448F"/><circle cx="-7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="-6.4" cy="-3.4" r="1.6" fill="#1E2133"/><circle cx="7.6" cy="-3.4" r="1.6" fill="#1E2133"/><path d="M-6 5 Q 0 10 6 5" fill="none" stroke="#F5F2EC" stroke-width="2" stroke-linecap="round"/><path d="M0 36 C 6 44, -6 48, 2 56" fill="none" stroke="#1E2133" stroke-width="2" stroke-linecap="round"/></g></svg></div>
+          <figcaption class="hand">Moss knows “usual”</figcaption>
+        </figure>
+        <figure class="panel">
+          <span class="pn">2</span>
+          <p class="bubble you">Bring me to the end of the street.</p>
+          <p class="bubble kite">Okay, I'll guide you to the end of the street.</p>
+          <div class="cast"><svg class="who-walker" viewBox="0 0 60 90" aria-hidden="true"><g fill="none" stroke="#1E2133" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="26" cy="16" r="10"/><path d="M26 26 C 27 40, 26 50, 27 62"/><path d="M27 62 L 18 86 M27 62 L 36 86"/><path d="M26 36 C 34 40, 40 44, 46 48"/><path d="M26 36 C 20 44, 16 50, 13 56"/><path d="M13 56 L 6 88" stroke="#1D2B6B"/></g><circle cx="35" cy="17" r="2.6" fill="#E2448F"/></svg><svg class="who-kite" viewBox="0 0 70 90" aria-hidden="true"><g transform="translate(35 36) rotate(-10)"><path d="M0 -32 L-24 -8 L0 -8 Z" fill="#E2448F"/><path d="M0 -32 L24 -8 L0 -8 Z" fill="#1D2B6B"/><path d="M-24 -8 L0 36 L0 -8 Z" fill="#1D2B6B"/><path d="M24 -8 L0 36 L0 -8 Z" fill="#E2448F"/><circle cx="-7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="-6.4" cy="-3.4" r="1.6" fill="#1E2133"/><circle cx="7.6" cy="-3.4" r="1.6" fill="#1E2133"/><path d="M-6 5 Q 0 10 6 5" fill="none" stroke="#F5F2EC" stroke-width="2" stroke-linecap="round"/><path d="M0 36 C 6 44, -6 48, 2 56" fill="none" stroke="#1E2133" stroke-width="2" stroke-linecap="round"/></g></svg></div>
+          <figcaption class="hand">works with no internet</figcaption>
+        </figure>
+        <figure class="panel">
+          <span class="pn">3</span>
+          <p class="bubble you">Read this to me.</p>
+          <p class="bubble kite">Lunch menu. Margherita pizza, 14 dollars. Caesar salad, 11 dollars.</p>
+          <div class="cast"><svg class="who-walker" viewBox="0 0 60 90" aria-hidden="true"><g fill="none" stroke="#1E2133" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="26" cy="16" r="10"/><path d="M26 26 C 27 40, 26 50, 27 62"/><path d="M27 62 L 18 86 M27 62 L 36 86"/><path d="M26 36 C 34 40, 40 44, 46 48"/><path d="M26 36 C 20 44, 16 50, 13 56"/><path d="M13 56 L 6 88" stroke="#1D2B6B"/></g><circle cx="35" cy="17" r="2.6" fill="#E2448F"/></svg><svg class="who-kite" viewBox="0 0 70 90" aria-hidden="true"><g transform="translate(35 36) rotate(-10)"><path d="M0 -32 L-24 -8 L0 -8 Z" fill="#E2448F"/><path d="M0 -32 L24 -8 L0 -8 Z" fill="#1D2B6B"/><path d="M-24 -8 L0 36 L0 -8 Z" fill="#1D2B6B"/><path d="M24 -8 L0 36 L0 -8 Z" fill="#E2448F"/><circle cx="-7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="-6.4" cy="-3.4" r="1.6" fill="#1E2133"/><circle cx="7.6" cy="-3.4" r="1.6" fill="#1E2133"/><path d="M-6 5 Q 0 10 6 5" fill="none" stroke="#F5F2EC" stroke-width="2" stroke-linecap="round"/><path d="M0 36 C 6 44, -6 48, 2 56" fill="none" stroke="#1E2133" stroke-width="2" stroke-linecap="round"/></g></svg></div>
+          <figcaption class="hand">Claude reads, Cartesia speaks</figcaption>
+        </figure>
+        <figure class="panel">
+          <span class="pn">4</span>
+          <p class="bubble you">What's around me?</p>
+          <p class="bubble kite">A person slightly left, 2 meters; a car at 2 o'clock, 8 meters.</p>
+          <div class="cast"><svg class="who-walker" viewBox="0 0 60 90" aria-hidden="true"><g fill="none" stroke="#1E2133" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="26" cy="16" r="10"/><path d="M26 26 C 27 40, 26 50, 27 62"/><path d="M27 62 L 18 86 M27 62 L 36 86"/><path d="M26 36 C 34 40, 40 44, 46 48"/><path d="M26 36 C 20 44, 16 50, 13 56"/><path d="M13 56 L 6 88" stroke="#1D2B6B"/></g><circle cx="35" cy="17" r="2.6" fill="#E2448F"/></svg><svg class="who-kite" viewBox="0 0 70 90" aria-hidden="true"><g transform="translate(35 36) rotate(-10)"><path d="M0 -32 L-24 -8 L0 -8 Z" fill="#E2448F"/><path d="M0 -32 L24 -8 L0 -8 Z" fill="#1D2B6B"/><path d="M-24 -8 L0 36 L0 -8 Z" fill="#1D2B6B"/><path d="M24 -8 L0 36 L0 -8 Z" fill="#E2448F"/><circle cx="-7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="-6.4" cy="-3.4" r="1.6" fill="#1E2133"/><circle cx="7.6" cy="-3.4" r="1.6" fill="#1E2133"/><path d="M-6 5 Q 0 10 6 5" fill="none" stroke="#F5F2EC" stroke-width="2" stroke-linecap="round"/><path d="M0 36 C 6 44, -6 48, 2 56" fill="none" stroke="#1E2133" stroke-width="2" stroke-linecap="round"/></g></svg></div>
+          <figcaption class="hand">from what the cameras see</figcaption>
+        </figure>
+        <figure class="panel">
+          <span class="pn">5</span>
+          <p class="bubble you">Remember this place as the bench.</p>
+          <p class="bubble kite">Saved. I'll remember this place as the bench.</p>
+          <div class="cast"><svg class="who-walker" viewBox="0 0 60 90" aria-hidden="true"><g fill="none" stroke="#1E2133" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="26" cy="16" r="10"/><path d="M26 26 C 27 40, 26 50, 27 62"/><path d="M27 62 L 18 86 M27 62 L 36 86"/><path d="M26 36 C 34 40, 40 44, 46 48"/><path d="M26 36 C 20 44, 16 50, 13 56"/><path d="M13 56 L 6 88" stroke="#1D2B6B"/></g><circle cx="35" cy="17" r="2.6" fill="#E2448F"/></svg><svg class="who-kite" viewBox="0 0 70 90" aria-hidden="true"><g transform="translate(35 36) rotate(-10)"><path d="M0 -32 L-24 -8 L0 -8 Z" fill="#E2448F"/><path d="M0 -32 L24 -8 L0 -8 Z" fill="#1D2B6B"/><path d="M-24 -8 L0 36 L0 -8 Z" fill="#1D2B6B"/><path d="M24 -8 L0 36 L0 -8 Z" fill="#E2448F"/><circle cx="-7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="-6.4" cy="-3.4" r="1.6" fill="#1E2133"/><circle cx="7.6" cy="-3.4" r="1.6" fill="#1E2133"/><path d="M-6 5 Q 0 10 6 5" fill="none" stroke="#F5F2EC" stroke-width="2" stroke-linecap="round"/><path d="M0 36 C 6 44, -6 48, 2 56" fill="none" stroke="#1E2133" stroke-width="2" stroke-linecap="round"/></g></svg></div>
+          <figcaption class="hand">Moss, again</figcaption>
+        </figure>
+        <figure class="panel">
+          <span class="pn">6</span>
+          <p class="bubble you"><i>(walks toward someone)</i></p>
+          <p class="bubble kite">Stop. Person ahead.</p>
+          <div class="cast"><svg class="who-walker" viewBox="0 0 60 90" aria-hidden="true"><g fill="none" stroke="#1E2133" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="26" cy="16" r="10"/><path d="M26 26 C 27 40, 26 50, 27 62"/><path d="M27 62 L 18 86 M27 62 L 36 86"/><path d="M26 36 C 34 40, 40 44, 46 48"/><path d="M26 36 C 20 44, 16 50, 13 56"/><path d="M13 56 L 6 88" stroke="#1D2B6B"/></g><circle cx="35" cy="17" r="2.6" fill="#E2448F"/></svg><svg class="who-kite" viewBox="0 0 70 90" aria-hidden="true"><g transform="translate(35 36) rotate(-10)"><path d="M0 -32 L-24 -8 L0 -8 Z" fill="#E2448F"/><path d="M0 -32 L24 -8 L0 -8 Z" fill="#1D2B6B"/><path d="M-24 -8 L0 36 L0 -8 Z" fill="#1D2B6B"/><path d="M24 -8 L0 36 L0 -8 Z" fill="#E2448F"/><circle cx="-7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="7" cy="-4" r="3.4" fill="#F5F2EC"/><circle cx="-6.4" cy="-3.4" r="1.6" fill="#1E2133"/><circle cx="7.6" cy="-3.4" r="1.6" fill="#1E2133"/><path d="M-6 5 Q 0 10 6 5" fill="none" stroke="#F5F2EC" stroke-width="2" stroke-linecap="round"/><path d="M0 36 C 6 44, -6 48, 2 56" fill="none" stroke="#1E2133" stroke-width="2" stroke-linecap="round"/></g></svg></div>
+          <figcaption class="hand">plain code, no AI, instant</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ============================================================ terminal -->
+    <section class="section">
+      <div class="split">
+        <h2 class="display">What the earpiece <em>actually said.</em></h2>
+        <p class="side">The log from the 41-second walk on the home page, verbatim. Every line has a priority; a "Stop." cuts in front of everything else.</p>
+      </div>
+      <figure class="term" aria-label="Earpiece log from the demo walk">
+        <div class="term-bar"><i></i><i></i><i></i><span>python -m earpiece run --sim walk</span></div>
+        <pre><code><span class="t">000.5s</span>  said <span class="n">[nav]</span> Head north on Lyon Street for 60 meters.
+<span class="t">006.5s</span>  said <span class="h">[hazard]</span> Person, ahead.
+<span class="t">008.4s</span>  said <span class="c">[critical]</span> Stop. Person ahead.
+<span class="t">013.4s</span>  said <span class="h">[hazard]</span> Obstacle, ahead.
+<span class="t">015.5s</span>  said <span class="c">[critical]</span> Stop. Obstacle ahead.
+<span class="t">018.0s</span>  said <span class="h">[hazard]</span> Don't walk.
+<span class="t">022.5s</span>  said <span class="h">[hazard]</span> Walk signal is on.
+<span class="t">025.0s</span>  said <span class="n">[nav]</span> Turn left onto Bay Street.
+<span class="t">026.8s</span>  said <span class="n">[nav]</span> Small crowd ahead on the right.
+<span class="t">030.0s</span>  said <span class="s">[system]</span> Drone battery is at 28 percent.
+<span class="t">033.1s</span>  said <span class="h">[hazard]</span> Heads up: The curb at Lyon Street and Bay Street is very tall: step down slowly</code></pre>
+      </figure>
+    </section>
+
+  </main>
+
