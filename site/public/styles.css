@@ -421,3 +421,31 @@ mark { background: none; color: inherit; padding: 0 2px;
   .kicker.center { font-size: 23px; }
   .kicker.center .arrow { display: none; }
 }
+
+/* ------------------------------------------------------------ /judges: Kite in 30 seconds */
+.brief { margin: 28px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; padding: 0; overflow: hidden; }
+.brief > div { padding: 22px 22px 24px; border-left: 1.5px dashed rgba(29, 43, 107, 0.2); }
+.brief > div:first-child { border-left: 0; }
+.brief dt { font: 600 22px/1.1 var(--hand); color: var(--verm); margin-bottom: 8px; transform: rotate(-1.5deg); transform-origin: left; }
+.brief dd { margin: 0; font-size: 15.5px; line-height: 1.5; color: var(--ink); }
+.brief .try { background: #FFE9F2; }
+.brief .try dt { color: var(--indigo); }
+.brief-foot { margin: 16px 0 0; color: var(--muted); font-size: 15px; max-width: 860px; }
+.brief-foot a { color: var(--indigo); font-weight: 600; }
+.tracks-intro { padding-top: 90px; }
+.tracks-intro .display { font-size: clamp(32px, 4.2vw, 48px); }
+.tracks-intro .lede { margin: 12px 0 0; max-width: 640px; }
+.tracks-intro + .tracks-body { padding-top: 0; }
+.tracks-body > .group-title:first-child { margin-top: 44px; }
+@media (max-width: 1000px) {
+  .brief { grid-template-columns: 1fr 1fr; }
+  .brief > div:nth-child(3) { border-left: 0; }
+  .brief > div:nth-child(n+3) { border-top: 1.5px dashed rgba(29, 43, 107, 0.2); }
+}
+@media (max-width: 600px) {
+  .brief { grid-template-columns: 1fr; }
+  .brief > div { border-left: 0; padding: 16px 18px 18px; }
+  .brief > div + div { border-top: 1.5px dashed rgba(29, 43, 107, 0.2); }
+  .page-head { padding-top: 44px; }
+  .track { padding: 22px 18px 20px; }
+}
