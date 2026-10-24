@@ -233,13 +233,16 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
     return rnd;
   };
   let seed = 100;
-  for (const { p } of along(mossCurb(0, 0.65), 5, 8.5)) {
+  // DataSF's street tree inventory (moss.json furniture) puts real trees at their surveyed spots in osmStreet.ts;
+  // only invent trees when that inventory isn't there.
+  const inventoryTrees = data.furniture.some((f) => f.kind === "tree");
+  if (!inventoryTrees) for (const { p } of along(mossCurb(0, 0.65), 5, 8.5)) {
     const rnd = seeded(seed++);
     if (rnd() < 0.3 || !clear(p, 0.5) || poles.some((o) => dist(o.p, p) < 3)) continue;
     props.push({ p, r: 0.5 });
     tree(p, seed * 13, 6 + rnd() * 1.5);
   }
-  for (const r of howard) for (const side of [0, 1] as const) {
+  if (!inventoryTrees) for (const r of howard) for (const side of [0, 1] as const) {
     for (const { p } of along(offsetPts(r.pts, side ? r.curbs[1] + 0.85 : r.curbs[0] - 0.85), 4 + side * 5, 10)) {
       const rnd = seeded(seed++);
       if (!clear(p, 0.5) || data.furniture.some((f) => Math.hypot(f.x - p[0], f.y - p[1]) < 2.5)) continue;

@@ -51,7 +51,7 @@ capture.setSize(CAM_W, CAM_H, false);
 // ?world=photo (opt-in): OSM Moss with Street View photo walls from public/local/facades_*/manifest.json.
 // ?world=real (default otherwise): the Blender-built street from the local public/local/moss_real.glb,
 // falling back to the textured OSM street when that file is missing.
-let worldName = metricsOn ? "moss" : query.get("world") ?? "real";   // ?world=photo opt-in until it is reviewed; ?world=tiles for Google 3D
+let worldName = metricsOn ? "moss" : query.get("world") ?? "moss";   // default: textured OSM street (city data + dressing); ?world=real (Blender GLB), ?world=photo and ?world=tiles are opt-in until the team approves one
 if (worldName === "tiles" && !TILES_KEY) {
   console.warn("[sim] no VITE_GOOGLE_MAPS_API_KEY (run sh sim/tiles_env.sh); using ?world=moss");
   worldName = "moss";

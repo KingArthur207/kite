@@ -33,11 +33,13 @@ OUT_GLB = ROOT / "sim/public/local/moss_real.glb"
 SCENE = "MossReal"
 
 CURB_H = 0.15
+BAY_Z = 3.0
 MARK_Z = 0.012
 RECESS = {"window": 0.12, "door": 0.25, "garage": 0.3}
 CORNICE_H, CORNICE_OUT = 0.35, 0.25
 MOSS_ROAD = 8916291
 POLE_EVERY, POLE_FIRST = 32.0, 8.0
+WIRE_MAX_SPAN = 45.0
 WIRE_SAG = 0.35
 STOREY, WIN_EVERY = 3.2, 2.6
 FALLBACK = [("stucco", 2.0), ("plaster", 3.2), ("brick", 3.0), ("siding", 1.8), ("concrete", 2.7)]
@@ -177,6 +179,21 @@ class Mesh:
                       [(i / n, 0), ((i + 1) / n, 0), ((i + 1) / n, h), (i / n, h)], mat)
         self.face([(cx + a * r1, cy + b * r1, cz + h) for a, b in ring], [(a, b) for a, b in ring], mat)
 
+    def tube(self, a, b, r0, r1, mat, n=6):
+        """A tapered cylinder from point a to point b (3D)."""
+        d = [b[i] - a[i] for i in range(3)]
+        L = math.sqrt(sum(x * x for x in d)) or 1e-6
+        w = [x / L for x in d]
+        t = (1, 0, 0) if abs(w[0]) < 0.9 else (0, 1, 0)
+        u = [w[1] * t[2] - w[2] * t[1], w[2] * t[0] - w[0] * t[2], w[0] * t[1] - w[1] * t[0]]
+        un = math.sqrt(sum(x * x for x in u))
+        u = [x / un for x in u]
+        v = [w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0]]
+        ring = lambda c, r, i: tuple(c[k] + r * (math.cos(2 * math.pi * i / n) * u[k] + math.sin(2 * math.pi * i / n) * v[k]) for k in range(3))  # noqa: E731
+        for i in range(n):
+            self.face([ring(a, r0, i), ring(a, r0, i + 1), ring(b, r1, i + 1), ring(b, r1, i)],
+                      [(i / n, 0), ((i + 1) / n, 0), ((i + 1) / n, 1), (i / n, 1)], mat)
+
     def blob(self, centre, r, mat, n=12):
         """A low-poly squashed sphere (tree canopy)."""
         cx, cy, cz = centre
@@ -221,22 +238,59 @@ def seeded(i):
     return ((a ^ (a >> 15)) % 10007) / 10007
 
 
-def textured_wall(m, a, b, h, nrm, entry):
+def on_boundary(p, poly, tol=0.05):
+    for a, b in zip(poly, poly[1:]):
+        ex, ey = b[0] - a[0], b[1] - a[1]
+        L2 = ex * ex + ey * ey or 1e-12
+        t = max(0.0, min(1.0, ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / L2))
+        if math.hypot(a[0] + t * ex - p[0], a[1] + t * ey - p[1]) < tol:
+            return True
+    return False
+
+
+def building_edges(bd):
+    """[(key, a, b, z0, z1, outward normal)], as scripts/streetview_facades.py building_edges(): roof-outline
+    edges (bays overhanging from bay_z) and the ground-floor edges under them (keys "g<k>")."""
+    out, h = [], float(bd["h"])
+    ground, bay_z = bd.get("ground"), float(bd.get("bay_z", BAY_Z))
+    for poly, is_ground in ((bd["pts"], False), (ground, True)):
+        if poly is None:
+            continue
+        ccw = signed_area(poly) > 0
+        for k in range(len(poly) - 1):
+            a, b = poly[k], poly[k + 1]
+            L = math.dist(a, b)
+            if L < 0.3:
+                continue
+            ex, ey = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+            nrm = (ey, -ex) if ccw else (-ey, ex)
+            mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            if is_ground:
+                if not on_boundary(mid, bd["pts"]):
+                    out.append((f"g{k}", a, b, 0.0, min(bay_z, h), nrm))
+            else:
+                z0 = bay_z if ground is not None and not on_boundary(mid, ground) else 0.0
+                if z0 < h:
+                    out.append((k, a, b, z0, h, nrm))
+    return out
+
+
+def textured_wall(m, a, b, z0, h, nrm, entry):
     """Grid over the wall split at every opening edge; cells inside an opening are pushed in, with reveals."""
     L = math.dist(a, b)
     e = ((b[0] - a[0]) / L, (b[1] - a[1]) / L)
     wall, glass = photo(entry["file"]), photo(entry["file"], glass=True)
-    ops = [o for o in entry.get("openings", []) if 0 <= o[1] < o[3] <= L and 0 <= o[2] < o[4] <= h]
+    ops = [o for o in entry.get("openings", []) if 0 <= o[1] < o[3] <= L and z0 <= o[2] < o[4] <= h]
 
     def P(s, z, depth=0.0):
         return (a[0] + e[0] * s - nrm[0] * depth, a[1] + e[1] * s - nrm[1] * depth, z)
 
     def UV(s, z):
-        return (s / L, z / h)
+        return (s / L, (z - z0) / (h - z0))
 
     out = (nrm[0], nrm[1], 0.0)
     xs = sorted({0.0, L, *[o[1] for o in ops], *[o[3] for o in ops]})
-    zs = sorted({0.0, h, *[o[2] for o in ops], *[o[4] for o in ops]})
+    zs = sorted({z0, h, *[o[2] for o in ops], *[o[4] for o in ops]})
     for s0, s1 in zip(xs, xs[1:]):
         for z0, z1 in zip(zs, zs[1:]):
             sc, zc = (s0 + s1) / 2, (z0 + z1) / 2
@@ -251,15 +305,15 @@ def textured_wall(m, a, b, h, nrm, entry):
                                            ((s0, z1), (s0, z0), (e[0], e[1], 0)), ((s1, z0), (s1, z1), (-e[0], -e[1], 0))):
             m.quad_facing([P(sa, za), P(sb, zb), P(sb, zb, d), P(sa, za, d)],
                           [UV(sa, za), UV(sb, zb), UV(sb, zb), UV(sa, za)], wall, inward)
-        if kind == "door" and z0 < 0.6:   # a stoop: one 15 cm step per 15 cm of sill height above the sidewalk
-            steps = max(1, round((z0 - CURB_H) / 0.15)) if z0 > CURB_H + 0.1 else 1
+        if kind == "door" and 0.25 < z0 < 0.9:   # a raised door: a stoop, one 15 cm step per 15 cm of sill
+            steps = max(1, round((z0 - CURB_H) / 0.15))
             for k in range(steps):
                 sc = (s0 + s1) / 2
                 depth = 0.3 * (steps - k)
                 cx, cy = a[0] + e[0] * sc + nrm[0] * depth / 2, a[1] + e[1] * sc + nrm[1] * depth / 2
-                m.box((cx, cy, CURB_H), (s1 - s0 + 0.3, depth, max(0.05, z0 - CURB_H) * (k + 1) / steps + 0.0),
+                m.box((cx, cy, CURB_H), (s1 - s0 + 0.3, depth, (z0 - CURB_H) * (k + 1) / steps),
                       math.atan2(e[1], e[0]), solid("stoop", (0.55, 0.54, 0.52), 0.9))
-    if entry.get("top_rgb"):
+    if entry.get("top_rgb") and not str(entry["edge"]).startswith("g"):
         col = tuple(c * 0.85 for c in entry["top_rgb"])
         cx, cy = (a[0] + b[0]) / 2 + nrm[0] * CORNICE_OUT / 2, (a[1] + b[1]) / 2 + nrm[1] * CORNICE_OUT / 2
         m.box((cx, cy, h - CORNICE_H), (L + 0.2, CORNICE_OUT, CORNICE_H), math.atan2(e[1], e[0]),
@@ -267,46 +321,55 @@ def textured_wall(m, a, b, h, nrm, entry):
 
 
 def build_buildings(data, manifest, coll):
+    """Ground floor from `ground` (bays clipped at the property line) up to bay_z, the roof outline above it
+    with a soffit under the overhang. Street walls that passed verification carry their photo; the ones that
+    didn't get the plain material (a wrong photo is worse than none)."""
     m = Mesh("buildings")
     roof = pbr("roof")
     glass = solid("window_glass", (0.06, 0.08, 0.10), 0.1, 0.3)
-    walls = {(w["building"], w["edge"]): w for w in manifest if w.get("file")}
+    walls = {(w["building"], str(w["edge"])): w for w in manifest if w.get("file")}
+    street = {(w["building"], str(w["edge"])) for w in manifest}
+    plain = {(w["building"], str(w["edge"])): w["plain_rgb"] for w in manifest if w.get("plain_rgb")}
     for bd in data["buildings"]:
-        pts, h = bd["pts"], float(bd["h"])
-        ccw = signed_area(pts) > 0
+        h = float(bd["h"])
         kind, size = FALLBACK[int(seeded(bd["id"]) * len(FALLBACK))]
         tint = [(0.95, 0.92, 0.85), (0.85, 0.88, 0.9), (0.9, 0.85, 0.8), (0.8, 0.82, 0.78)][bd["id"] % 4]
         tops = [w["top_rgb"] for (bid, _), w in walls.items() if bid == bd["id"] and w.get("top_rgb")]
-        if tops:   # side and back walls of a photographed building: plain stucco in its photo's colour
+        tops = tops or [c for (bid, _), c in plain.items() if bid == bd["id"]]
+        if tops:   # other walls of a building seen in the photos: plain stucco in its photo colour
             kind, size = "stucco", 2.0
             tint = tuple(round(min(1.0, 1.15 * sum(t[i] for t in tops) / len(tops)), 2) for i in range(3))
         fb = pbr(kind, tint=tint if kind != "brick" else None)
-        for k in range(len(pts) - 1):
-            a, b = pts[k], pts[k + 1]
+        for key, a, b, z0, z1, nrm in building_edges(bd):
             L = math.dist(a, b)
-            if L < 1e-3:
-                continue
-            ex, ey = (b[0] - a[0]) / L, (b[1] - a[1]) / L
-            nrm = (ey, -ex) if ccw else (-ey, ex)
-            entry = walls.get((bd["id"], k))
+            entry = walls.get((bd["id"], str(key)))
             if entry:
-                textured_wall(m, a, b, h, nrm, entry)
+                textured_wall(m, a, b, z0, z1, nrm, entry)
                 continue
-            m.quad_facing([(*a, 0), (*b, 0), (*b, h), (*a, h)],
-                          [(0, 0), (L / size, 0), (L / size, h / size), (0, h / size)], fb, (*nrm, 0))
-            if not tops and L > 3 and h > 4:   # unphotographed building: a plain window grid, 3 cm proud
+            c = plain.get((bd["id"], str(key)))   # a street wall whose photo didn't verify: its colour only
+            mat = pbr("stucco", tint=tuple(round(min(1.0, 1.15 * v), 2) for v in c)) if c else fb
+            m.quad_facing([(*a, z0), (*b, z0), (*b, z1), (*a, z1)],
+                          [(0, z0 / size), (L / size, z0 / size), (L / size, z1 / size), (0, z1 / size)], mat, (*nrm, 0))
+            if not tops and (bd["id"], str(key)) not in street and L > 3 and z1 > 4:
+                ex, ey = (b[0] - a[0]) / L, (b[1] - a[1]) / L   # unphotographed, off-street: a plain window grid
                 n = int((L - 0.8) // WIN_EVERY)
                 for i in range(n):
                     sc = (L - (n - 1) * WIN_EVERY) / 2 + i * WIN_EVERY
-                    for f in range(1, int(h // STOREY)):
-                        z0 = f * STOREY + 0.8
-                        win = [(a[0] + ex * (sc + dx) + nrm[0] * 0.03, a[1] + ey * (sc + dx) + nrm[1] * 0.03, z0 + dz)
+                    for f in range(1, int(z1 // STOREY)):
+                        zw = f * STOREY + 0.8
+                        if zw < z0:
+                            continue
+                        win = [(a[0] + ex * (sc + dx) + nrm[0] * 0.03, a[1] + ey * (sc + dx) + nrm[1] * 0.03, zw + dz)
                                for dx, dz in ((-0.6, 0), (0.6, 0), (0.6, 1.6), (-0.6, 1.6))]
                         m.quad_facing(win, [(0, 0), (1, 0), (1, 1), (0, 1)], glass, (*nrm, 0))
+        pts = bd["pts"]
         ring = pts[:-1] if pts[0] == pts[-1] else pts
-        if not ccw:
+        if signed_area(pts) < 0:
             ring = ring[::-1]
         m.face([(x, y, h) for x, y in ring], [(x / 4, y / 4) for x, y in ring], roof)
+        if bd.get("ground"):   # soffit: the outline at bay_z facing down (inside the ground floor it's hidden)
+            bz = float(bd.get("bay_z", BAY_Z))
+            m.face([(x, y, bz) for x, y in ring[::-1]], [(x / size, y / size) for x, y in ring[::-1]], fb)
     return m.build(coll)
 
 
@@ -420,7 +483,88 @@ def ground_z(p, data):
     return CURB_H if any(in_quad(p, q) for q in data["sidewalk_quads"]) else 0.0
 
 
-def build_furniture(data, coll):
+ICO = None
+
+
+def icosphere():
+    """Unit icosphere, one subdivision: (verts, tris)."""
+    global ICO
+    if ICO:
+        return ICO
+    t = (1 + 5 ** 0.5) / 2
+    v = [(-1, t, 0), (1, t, 0), (-1, -t, 0), (1, -t, 0), (0, -1, t), (0, 1, t), (0, -1, -t), (0, 1, -t),
+         (t, 0, -1), (t, 0, 1), (-t, 0, -1), (-t, 0, 1)]
+    f = [(0, 11, 5), (0, 5, 1), (0, 1, 7), (0, 7, 10), (0, 10, 11), (1, 5, 9), (5, 11, 4), (11, 10, 2), (10, 7, 6),
+         (7, 1, 8), (3, 9, 4), (3, 4, 2), (3, 2, 6), (3, 6, 8), (3, 8, 9), (4, 9, 5), (2, 4, 11), (6, 2, 10),
+         (8, 6, 7), (9, 8, 1)]
+    v = [tuple(c / math.sqrt(sum(x * x for x in p)) for c in p) for p in v]
+    mid, out = {}, []
+    def m_(i, j):
+        k = (min(i, j), max(i, j))
+        if k not in mid:
+            p = [(v[i][c] + v[j][c]) / 2 for c in range(3)]
+            n = math.sqrt(sum(x * x for x in p))
+            v.append(tuple(x / n for x in p))
+            mid[k] = len(v) - 1
+        return mid[k]
+    for a, b, c in f:
+        ab, bc, ca = m_(a, b), m_(b, c), m_(c, a)
+        out += [(a, ab, ca), (b, bc, ab), (c, ca, bc), (ab, bc, ca)]
+    ICO = (v, out)
+    return ICO
+
+
+# genus: (crown base as a share of height, crown width / height, leaf colour)
+GENUS = {"Pyrus": (0.38, 0.75, (0.17, 0.30, 0.10)), "Tristaniopsis": (0.40, 0.55, (0.12, 0.25, 0.08)),
+         "Magnolia": (0.25, 0.75, (0.06, 0.16, 0.05)), "Platanus": (0.40, 1.0, (0.20, 0.32, 0.12)),
+         "Lophostemon": (0.35, 0.80, (0.10, 0.22, 0.08)), "Ficus": (0.30, 0.95, (0.10, 0.24, 0.08)),
+         "Prunus": (0.35, 0.95, (0.26, 0.10, 0.12)), "Callistemon": (0.30, 0.90, (0.15, 0.25, 0.10)),
+         "Arbutus": (0.30, 0.90, (0.13, 0.24, 0.09)), "Pinus": (0.20, 0.55, (0.08, 0.17, 0.08))}
+
+
+def street_tree(m, p, z, species, h, crown_r, dbh_in, seed, bark):
+    """Trunk sized from DBH up to the crown base, 3-5 primary limbs, and a crown of noisy leaf clumps in an
+    ellipsoid of the species' proportions. Two leaf shades per genus."""
+    genus = species.split()[0] if species else ""
+    base, ratio, col = GENUS.get(genus, (0.35, 0.8, (0.13, 0.24, 0.09)))
+    leaves = [solid(f"leaves_{genus or 'x'}_{k}", tuple(c * f for c in col), 0.85) for k, f in enumerate((1.0, 1.35))]
+    rnd = lambda k: seeded(seed * 31 + k)   # noqa: E731
+    r_trunk = max(0.04, dbh_in * 0.0127)
+    zb = z + h * base
+    m.cyl((*p, z), r_trunk * 1.15, r_trunk * 0.8, zb - z + 0.3, bark, 8)
+    rw = min(crown_r, max(0.6, h * ratio / 2))           # crown half-width
+    rh = (h * (1 - base)) / 2                             # crown half-height
+    cz = zb + rh
+    for k in range(3 + int(rnd(1) * 3)):                  # limbs from the crown base out into the crown
+        a = 2 * math.pi * (k / 4 + 0.2 * rnd(10 + k))
+        tip = (p[0] + math.cos(a) * rw * 0.6, p[1] + math.sin(a) * rw * 0.6, cz + rh * 0.2)
+        m.tube((p[0], p[1], zb - 0.1), tip, r_trunk * 0.55, r_trunk * 0.25, bark)
+    vs, tris = icosphere()
+    n = int(6 + 3 * rw * rh)
+    for k in range(min(n, 16)):
+        u, v, w = rnd(100 + 3 * k) * 2 - 1, rnd(101 + 3 * k) * 2 - 1, rnd(102 + 3 * k) * 2 - 1
+        if u * u + v * v + w * w > 1:
+            u, v, w = u * 0.6, v * 0.6, w * 0.6
+        c = (p[0] + u * rw * 0.7, p[1] + v * rw * 0.7, cz + w * rh * 0.7)
+        rc = max(0.35, 0.45 * min(rw, rh * 1.3)) * (0.75 + 0.5 * rnd(200 + k))
+        pts = []
+        for j, q in enumerate(vs):
+            jit = 0.8 + 0.4 * seeded(seed * 977 + k * 131 + j)
+            pts.append((c[0] + q[0] * rc * jit, c[1] + q[1] * rc * jit, c[2] + q[2] * rc * jit * 0.85))
+        mat = leaves[int(rnd(300 + k) * 2)]
+        for a_, b_, c_ in tris:
+            m.face([pts[a_], pts[b_], pts[c_]], [(0, 0), (1, 0), (0, 1)], mat)
+
+
+def street_light(m, p, yaw, z, steel):
+    c, s_ = math.cos(yaw), math.sin(yaw)
+    m.cyl((*p, z), 0.12, 0.08, 8.5, steel)
+    m.box((p[0] + c * 1.1, p[1] + s_ * 1.1, z + 8.27), (2.2, 0.07, 0.07), yaw, steel)
+    m.box((p[0] + c * 2.3, p[1] + s_ * 2.3, z + 8.18), (0.7, 0.32, 0.15), yaw, steel)
+    m.box((p[0] + c * 2.3, p[1] + s_ * 2.3, z + 8.16), (0.6, 0.26, 0.02), yaw, solid("lamp", (0.9, 0.88, 0.8), 0.3))
+
+
+def build_furniture(data, coll, extras=None):
     m = Mesh("furniture")
     wood = solid("wood_pole", (0.23, 0.17, 0.12), 0.9)
     steel = solid("steel", (0.45, 0.48, 0.47), 0.45, 0.6)
@@ -484,66 +628,50 @@ def build_furniture(data, coll):
             c = min(data["crossings"], key=lambda c: math.hypot(c["x"] - p[0], c["y"] - p[1]))
             m.box((*p, z), (1.2, 0.6, 0.008), math.atan2(c["u"][1], c["u"][0]), tactile)
 
-    # Not in OSM: wooden poles every POLE_EVERY m along Moss's SW curb, three wires between them.
-    moss = next(r for r in data["roads"] if r["id"] == MOSS_ROAD)
-    line = offset(moss["pts"], moss["curbs"][0] - 0.35)
-    poles, s0, nxt = [], 0.0, POLE_FIRST
-    for a, b in zip(line, line[1:]):
-        L = math.dist(a, b)
-        u = ((b[0] - a[0]) / L, (b[1] - a[1]) / L) if L else (1, 0)
-        while nxt <= s0 + L:
-            t = nxt - s0
-            p = (a[0] + u[0] * t, a[1] + u[1] * t)
+    # Poles and street lights: where scripts/streetview_facades.py triangulated them from the photos (local
+    # only), else the old guess (wooden poles every POLE_EVERY m along Moss's SW curb, lights on Howard).
+    poles = []
+    found = (extras or {}).get("poles") or []
+    for f in found:
+        p = (f["x"], f["y"])
+        if f["kind"] == "utility":
+            yaw = toward_road(p)
+            wood_pole(p, yaw + math.pi / 2, f.get("light", False))
+            poles.append((p, yaw + math.pi / 2))
+        else:
+            street_light(m, p, toward_road(p), ground_z(p, data), steel)
+    if not found:
+        moss = next(r for r in data["roads"] if r["id"] == MOSS_ROAD)
+        line = offset(moss["pts"], moss["curbs"][0] - 0.35)
+        for p, u in walk(line, POLE_FIRST, POLE_EVERY):
             yaw = math.atan2(u[0], -u[1])     # across the street, toward the road
             wood_pole(p, yaw, True)
             poles.append((p, yaw))
-            nxt += POLE_EVERY
-        s0 += L
-    # Not in OSM either: steel streetlights and street trees along both Howard curbs near the corner.
+        for r in (r for r in data["roads"] if r["name"] == "Howard Street"):
+            for side, sign in ((r["curbs"][1], 1), (r["curbs"][0], -1)):
+                for p, u in walk(offset(r["pts"], side + sign * 0.5), 6.0, 36.0):
+                    if -80 < p[0] < 140 and -150 < p[1] < 70 and not any(
+                            math.hypot(c["x"] - p[0], c["y"] - p[1]) < 5 for c in data["crossings"]):
+                        street_light(m, p, math.atan2(-sign * u[0], sign * u[1]), ground_z(p, data), steel)
+    # Street trees where DataSF's inventory has them, shaped by species and trunk diameter.
     trees = Mesh("trees")
-    leaves = solid("leaves", (0.10, 0.20, 0.07), 0.9)
     bark = solid("bark", (0.20, 0.16, 0.12), 0.95)
-    for r in (r for r in data["roads"] if r["name"] == "Howard Street"):
-        for side, sign in ((r["curbs"][1], 1), (r["curbs"][0], -1)):
-            for every, first, off, what in ((36.0, 6.0, 0.5, "light"), (18.0, 3.0, 0.75, "tree")):
-                for p, u in walk(offset(r["pts"], side + sign * off), first, every):
-                    if not (-80 < p[0] < 140 and -150 < p[1] < 70) or any(math.hypot(c["x"] - p[0], c["y"] - p[1]) < 5 for c in data["crossings"]):
-                        continue
-                    z = ground_z(p, data)
-                    if what == "light":
-                        yaw = math.atan2(-sign * u[0], sign * u[1])
-                        c, s_ = math.cos(yaw), math.sin(yaw)
-                        m.cyl((*p, z), 0.12, 0.08, 8.5, steel)
-                        m.box((p[0] + c * 1.1, p[1] + s_ * 1.1, z + 8.27), (2.2, 0.07, 0.07), yaw, steel)
-                        m.box((p[0] + c * 2.3, p[1] + s_ * 2.3, z + 8.18), (0.7, 0.32, 0.15), yaw, steel)
-                    else:
-                        rnd = seeded(int(p[0] * 1000) ^ int(p[1] * 1000))
-                        h = 4.0 + 1.2 * rnd
-                        trees.cyl((*p, z), 0.13, 0.09, h, bark, 8)
-                        for k in range(4):
-                            a = 2 * math.pi * seeded(k * 7919 + int(rnd * 1e4))
-                            d = 0 if k == 0 else 0.8
-                            trees.blob((p[0] + math.cos(a) * d, p[1] + math.sin(a) * d, z + h + 0.3 + 0.6 * (k % 2)),
-                                   0.9 + 0.4 * seeded(k + int(rnd * 1e5)), leaves)
-
-    for (pa, ya), (pb, _) in zip(poles, poles[1:]):
-        for off in (-1.0, 0.0, 1.0):
-            a = (pa[0] + math.cos(ya) * off, pa[1] + math.sin(ya) * off)
-            b = (pb[0] + math.cos(ya) * off, pb[1] + math.sin(ya) * off)
-            n = 12
-            pts = [(a[0] + (b[0] - a[0]) * i / n, a[1] + (b[1] - a[1]) * i / n,
-                    CURB_H + 9.75 - WIRE_SAG * 4 * (i / n) * (1 - i / n)) for i in range(n + 1)]
-            for p, q in zip(pts, pts[1:]):   # a thin flat strip, seen from below
-                m.face([(p[0], p[1], p[2]), (q[0], q[1], q[2]), (q[0], q[1], q[2] - 0.025), (p[0], p[1], p[2] - 0.025)],
-                       [(0, 0)] * 4, dark)
-    t = trees.build(coll)
-    bm = bmesh.new()
-    bm.from_mesh(t.data)
-    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-4)   # shared vertices, so smooth shading is smooth
-    bm.to_mesh(t.data)
-    bm.free()
-    for poly in t.data.polygons:
-        poly.use_smooth = True
+    for f in data["furniture"]:
+        if f["kind"] == "tree":
+            t = f["tags"]
+            street_tree(trees, (f["x"], f["y"]), ground_z((f["x"], f["y"]), data), t.get("species", ""),
+                        t.get("height_m", 5.0), t.get("crown_r_m", 1.5), t.get("dbh_in") or 3, f["id"], bark)
+        elif f["kind"] == "parking_meter":
+            p = (f["x"], f["y"])
+            z = ground_z(p, data)
+            m.cyl((*p, z), 0.04, 0.04, 1.15, steel, 8)
+            m.box((*p, z + 1.15), (0.2, 0.16, 0.36), toward_road(p), pay)
+    # Overhead wires between neighbouring utility poles (sorted along Moss), three per crossarm.
+    moss = next(r for r in data["roads"] if r["id"] == MOSS_ROAD)
+    mu = (moss["pts"][-1][0] - moss["pts"][0][0], moss["pts"][-1][1] - moss["pts"][0][1])
+    poles.sort(key=lambda q: q[0][0] * mu[0] + q[0][1] * mu[1])
+    spans = [(a, b) for a, b in zip(poles, poles[1:]) if math.dist(a[0], b[0]) < WIRE_MAX_SPAN]
+    t = trees.build(coll)   # flat shaded: the jittered clumps read as foliage, not smooth blobs
     return [m.build(coll), t]
 
 
@@ -564,7 +692,8 @@ def sim_camera(name, x, y, z, heading, coll):
 def build():
     data = json.loads(MOSS.read_text())
     man_path = FACADES / "facades.json"
-    manifest = json.loads(man_path.read_text())["walls"] if man_path.exists() else []
+    extras = json.loads(man_path.read_text()) if man_path.exists() else {}
+    manifest = extras.get("walls", [])
     scene = bpy.data.scenes.get(SCENE) or bpy.data.scenes.new(SCENE)
     for ob in list(scene.collection.all_objects):
         me = ob.data
@@ -581,7 +710,7 @@ def build():
     rigs = bpy.data.collections.new("MossRealRig")      # cameras and light, not exported
     scene.collection.children.link(rigs)
     _mats.clear()
-    objs = [build_buildings(data, manifest, coll), build_streets(data, coll), *build_furniture(data, coll)]
+    objs = [build_buildings(data, manifest, coll), build_streets(data, coll), *build_furniture(data, coll, extras)]
     sun = bpy.data.objects.new("MossRealSun", bpy.data.lights.new("MossRealSun", "SUN"))
     sun.data.energy = 4.0
     sun.rotation_euler = (math.radians(50), 0, math.radians(-130))
@@ -606,9 +735,51 @@ def build():
     scene.camera = first
     scene.render.resolution_x, scene.render.resolution_y = 960, 720
     textured = sum(1 for w in manifest if w.get("file"))
+    scene["kite_built"] = True
     print(f"[build_real_moss] {len(data['buildings'])} buildings, {textured}/{len(manifest)} street walls with photos, "
           f"{sum(len(o.data.polygons) for o in objs)} faces")
     return scene, objs
+
+
+def render_views(cams_path, out_dir):
+    """Render the MossReal model from Street View tile cameras, for scripts/facade_verify.py. cams_path: JSON
+    [{name, x, y, z, heading, pitch, fov, tx, ty}] (yaw already in heading; tilt as in streetview_facades.project:
+    world directions d are seen as Rt d). Writes <out_dir>/<name>.png at 640x640."""
+    from mathutils import Matrix
+    scene = bpy.data.scenes[SCENE]
+    cams = json.loads(Path(cams_path).read_text())
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    cam = bpy.data.cameras.get("verify_cam") or bpy.data.cameras.new("verify_cam")
+    cam.sensor_fit = next(i.identifier for i in cam.bl_rna.properties["sensor_fit"].enum_items if i.identifier == "HORIZONTAL")
+    cam.clip_start, cam.clip_end = 0.05, 500
+    ob = bpy.data.objects.get("verify_cam") or bpy.data.objects.new("verify_cam", cam)
+    if ob.name not in scene.collection.objects:
+        scene.collection.objects.link(ob)
+    scene.camera = ob
+    r = scene.render
+    r.resolution_x = r.resolution_y = 640
+    r.resolution_percentage = 100
+    engines = [i.identifier for i in r.bl_rna.properties["engine"].enum_items]
+    r.engine = next(e for e in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "BLENDER_WORKBENCH") if e in engines)
+    r.image_settings.file_format = "PNG"
+    for c in cams:
+        cam.angle_x = math.radians(c["fov"])
+        h, p = math.radians(c["heading"]), math.radians(c["pitch"])
+        # camera axes in world: right, up (= -down), back (= -fwd), as streetview_facades.project
+        level = (math.sin(h), math.cos(h), 0.0)
+        fwd = [math.cos(p) * level[k] + math.sin(p) * (0, 0, 1)[k] for k in range(3)]
+        right = (math.cos(h), -math.sin(h), 0.0)
+        down = [math.sin(p) * level[k] - math.cos(p) * (0, 0, 1)[k] for k in range(3)]
+        R = Matrix([[right[k], -down[k], -fwd[k]] for k in range(3)])
+        a, b = math.radians(c.get("tx", 0)), math.radians(c.get("ty", 0))
+        rx = Matrix([[1, 0, 0], [0, math.cos(a), -math.sin(a)], [0, math.sin(a), math.cos(a)]])
+        ry = Matrix([[math.cos(b), 0, math.sin(b)], [0, 1, 0], [-math.sin(b), 0, math.cos(b)]])
+        R = (rx @ ry).transposed() @ R
+        ob.matrix_world = Matrix.Translation((c["x"], c["y"], c["z"])) @ R.to_4x4()
+        r.filepath = str(out / f"{c['name']}.png")
+        bpy.ops.render.render(write_still=True, scene=scene.name)
+    print(f"[build_real_moss] rendered {len(cams)} views to {out}")
 
 
 def export(scene, objs):
@@ -631,6 +802,27 @@ def export(scene, objs):
 
 
 if __name__ == "__main__":
-    s, o = build()
-    if "--export" in sys.argv:
-        export(s, o)
+    args = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
+    if "--render-glb" in args:       # render an exported model (scripts/facade_verify.py)
+        i = args.index("--render-glb")
+        scene = bpy.context.scene
+        scene.name = SCENE
+        for ob in list(scene.objects):
+            bpy.data.objects.remove(ob, do_unlink=True)
+        bpy.ops.import_scene.gltf(filepath=args[i + 1])
+        world = bpy.data.worlds.new("MossRealWorld")
+        world.use_nodes = True
+        bg = next(n for n in world.node_tree.nodes if n.type == "BACKGROUND")
+        env = world.node_tree.nodes.new("ShaderNodeTexEnvironment")
+        env.image = bpy.data.images.load(str(TEX / "urban_street_01_1k.hdr"), check_existing=True)
+        world.node_tree.links.new(env.outputs["Color"], bg.inputs["Color"])
+        scene.world = world
+        render_views(args[i + 2], args[i + 3])
+    elif "--render-only" in args:      # render the scene already in the open .blend
+        render_views(args[args.index("--render-only") + 1], args[args.index("--render-only") + 2])
+    else:
+        s, o = build()
+        if "--export" in args:
+            export(s, o)
+        if "--render" in args:
+            render_views(args[args.index("--render") + 1], args[args.index("--render") + 2])
