@@ -1,4 +1,8 @@
-# 🪁 Kite
+<p align="center">
+  <img src="site/public/assets/logo.svg" alt="Kite logo: a diamond kite whose tail is a sound wave" width="112">
+</p>
+
+<h1 align="center">Kite</h1>
 
 **A guide dog that flies. Kite tells a blind pedestrian what's coming before they reach it.**
 
@@ -6,7 +10,7 @@
 ![Rust](https://img.shields.io/badge/Rust-audio%20engine-000000?logo=rust&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-sim%20%2B%20dashboard-3178C6?logo=typescript&logoColor=white)
 ![Cartesia](https://img.shields.io/badge/Cartesia-Sonic%20%2B%20Ink-FF6B35)
-![Claude](https://img.shields.io/badge/Claude-claude--opus--5--5-D97757?logo=anthropic&logoColor=white)
+![Claude](https://img.shields.io/badge/Claude-Opus%20%2B%20Haiku-D97757?logo=anthropic&logoColor=white)
 ![SpacetimeDB](https://img.shields.io/badge/SpacetimeDB-Maincloud-6E40C9)
 ![Moss](https://img.shields.io/badge/Moss-memory-2E8B57)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
