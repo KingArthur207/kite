@@ -15,7 +15,7 @@ You need a Mac with Xcode, Node 22, a free or paid Apple ID added in Xcode (Sett
    npm install
    npx expo prebuild -p ios
    ```
-3. Set the signing team once: `open ios/Kite.xcworkspace`, select the Kite target, go to Signing & Capabilities, and pick your Team. If `com.kite.phone` is already taken, rerun prebuild with `KITE_BUNDLE_ID=com.yourname.kite npx expo prebuild -p ios`.
+3. Set the signing team once: `open ios/Kite.xcworkspace`, select the Kite target, go to Signing & Capabilities, and pick your Team. The default bundle id is `com.eddyzhao.kite` (Eddy's team, 4T3U9F8XAD); on another team, rerun prebuild with `KITE_BUNDLE_ID=com.yourname.kite npx expo prebuild -p ios`.
 4. Build and install. A Release build bundles the JS, so it runs without Metro:
    ```sh
    npx expo run:ios --device --configuration Release

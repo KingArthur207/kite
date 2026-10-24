@@ -1,7 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
 // KITE_BUNDLE_ID overrides the bundle id, e.g. if com.kite.phone is taken on your Apple team.
-const bundleIdentifier = process.env.KITE_BUNDLE_ID ?? 'com.kite.phone';
+const bundleIdentifier = process.env.KITE_BUNDLE_ID ?? 'com.eddyzhao.kite';
 
 const config: ExpoConfig = {
   name: 'Kite',
