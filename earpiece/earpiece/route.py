@@ -276,6 +276,7 @@ class RouteFollower:
     STEP_SLACK_M = 2.0
     MAX_ACCURACY_M = 40.0   # fixes worse than this are ignored
     BEACON_MIN_S = 0.2      # sim positions can come at 30 Hz; the beacon needs ~5 Hz
+    START_TTL_S = 30.0      # cues at the start wait for the walker, who is waiting for them
 
     def __init__(self, route: Route,
                  on_guidance: Callable[[str, str, float], None],
@@ -414,7 +415,8 @@ class RouteFollower:
 
         if not self.started:
             self.started = True
-            out.append((self.on_guidance, (self._start_text(rel), f"{self.prefix}:start", 12.0)))
+            out.append((self.on_guidance, (self._start_text(rel), f"{self.prefix}:start",
+                                           self.START_TTL_S)))
 
         if math.dist(here, self.dest_xy) <= self.ARRIVE_M or (
                 self.length - self.progress <= self.ARRIVE_M and cross <= self.BACK_ON_M):
@@ -483,7 +485,11 @@ class RouteFollower:
         text = _sentence(lead, *m.notes)
         if len(text.split()) > MAX_WORDS:
             text = fit(_sentence(lead))
-        return self.on_guidance, (text, f"{self.prefix}:now:{m.index}", 5.0)
+        # A maneuver due right at the start (Google often begins with a 2 m step) queues behind
+        # the start instruction and any memory heads-up; the walker hasn't moved yet, so it can
+        # wait as long as they do. Later, a "now" more than 5 s late is worse than none.
+        ttl = self.START_TTL_S if len(self._track) <= 1 else 5.0
+        return self.on_guidance, (text, f"{self.prefix}:now:{m.index}", ttl)
 
     def _start_text(self, rel: float | None) -> str:
         lines = sentences(self.route.steps[0].instruction) or ["Follow the route"]

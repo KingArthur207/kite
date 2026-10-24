@@ -268,6 +268,9 @@ def test_live_example_says_the_stairs_and_the_destination_side():
     texts = [t for t, _, _ in rec.said]
     assert texts[0] == "Head toward Lyon Street, straight ahead."     # walker-frame, not "northwest"
     assert "Continue onto Lyon Street. Take the stairs." in texts
+    stairs_ttl = [ttl for t, _, ttl in rec.said if t.endswith("Take the stairs.")][0]
+    assert stairs_ttl == R.RouteFollower.START_TTL_S              # due at the start: waits behind it
+    assert [ttl for t, _, ttl in rec.said if t == "Now turn left."] == [5.0]
     assert "Now turn left." in texts
     assert any(t.startswith("Palace of Fine Arts is") and t.endswith("on your left.") for t in texts)
     assert rec.arrived == ["Palace of Fine Arts"]
