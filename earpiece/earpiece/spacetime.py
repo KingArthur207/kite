@@ -409,8 +409,10 @@ class CaregiverInbox:
         self.log = log
         self.interval = max(interval, MIN_POLL_S)
         self.last_id: int | None = None          # None until the first successful poll
-        self.stats = {"polls": 0, "spoken": 0, "bad": 0, "failed": 0, "rejected": 0, "unsigned": 0}
+        self.stats = {"polls": 0, "spoken": 0, "bad": 0, "failed": 0, "rejected": 0, "unsigned": 0,
+                      "replayed": 0}
         self._token: str | None = None
+        self._seen_sigs: dict[str, float] = {}   # sig -> when first spoken, kept CAREGIVER_MAX_AGE_S
         self.secret = (os.environ.get("KITE_CAREGIVER_TOKEN", "") if token is None else token).strip()
         if not self.secret:
             log("[caregiver] KITE_CAREGIVER_TOKEN not set: anyone who can reach the database can send "
@@ -448,11 +450,24 @@ class CaregiverInbox:
 
     def _signed(self, d: dict) -> bool:
         ts, sig, text = d.get("ts"), d.get("sig"), d.get("text")
-        if not isinstance(ts, int) or not isinstance(sig, str) or not isinstance(text, str):
+        if (isinstance(ts, bool) or not isinstance(ts, int) or not isinstance(sig, str)
+                or not isinstance(text, str)):
             return False
-        if abs(time.time() - ts / 1000) > CAREGIVER_MAX_AGE_S:
+        now_ms = int(time.time() * 1000)       # int: a huge ts must not be converted to float
+        if not abs(now_ms - ts) <= int(CAREGIVER_MAX_AGE_S * 1000):
             return False
         return hmac.compare_digest(sign_caregiver(self.secret, text, ts)["sig"], sig)
+
+    def _replayed(self, sig: str) -> bool:
+        """True if this signature was already spoken. The table is public, so anyone can copy a
+        signed row and push it again (as often as they like) while it is still fresh."""
+        now = time.time()
+        for k in [k for k, t in self._seen_sigs.items() if now - t > 2 * CAREGIVER_MAX_AGE_S]:
+            del self._seen_sigs[k]
+        if sig in self._seen_sigs:
+            return True
+        self._seen_sigs[sig] = now
+        return False
 
     def poll(self, http: httpx.Client) -> None:
         rows = sorted(self.fetch(http))
@@ -475,10 +490,16 @@ class CaregiverInbox:
             if msg.type != "say":                 # only words flow back; no controls, no hazards
                 self.stats["bad"] += 1
                 continue
-            if self.secret and not self._signed(json.loads(payload)):
-                self.stats["unsigned"] += 1
-                self.log(f"[caregiver] ignored row {rid}: not signed with KITE_CAREGIVER_TOKEN, or stale")
-                continue
+            if self.secret:
+                d = json.loads(payload)
+                if not self._signed(d):
+                    self.stats["unsigned"] += 1
+                    self.log(f"[caregiver] ignored row {rid}: not signed with KITE_CAREGIVER_TOKEN, or stale")
+                    continue
+                if self._replayed(d["sig"]):
+                    self.stats["replayed"] += 1
+                    self.log(f"[caregiver] ignored row {rid}: a copy of a message already spoken")
+                    continue
             if forbidden(msg.text):               # same rule as Claude: no permission, all-clear or reroute
                 self.stats["rejected"] += 1
                 self.log(f"[caregiver] rejected row {rid}, not spoken (sounds like permission to move): "

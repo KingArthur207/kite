@@ -137,3 +137,27 @@ def test_with_a_token_only_signed_fresh_rows_are_spoken():
     inbox.poll(http)
     assert [m.text for m in got] == [CAREGIVER_PREFIX + "I'm on my way."]
     assert inbox.stats["unsigned"] == 4
+
+
+def test_a_copied_signed_row_is_spoken_once():
+    """The event table is public: anyone can re-push a caregiver's signed row while it is fresh."""
+    fake = FakeSpacetime()
+    inbox, got, http = make(fake, token="s3cret")
+    inbox.poll(http)
+    signed = say("I'm waiting at the car.", **sign("s3cret", "I'm waiting at the car."))
+    for rid in range(2, 12):                       # the original and nine copies
+        fake.add(rid, signed)
+    inbox.poll(http)
+    assert len(got) == 1 and inbox.stats["replayed"] == 9
+
+
+@pytest.mark.parametrize("ts", [10 ** 400, -(10 ** 400), True, 2 ** 70, "123", 1.5e12])
+def test_absurd_signature_timestamps_are_unsigned_not_a_failed_poll(ts):
+    fake = FakeSpacetime()
+    inbox, got, http = make(fake, token="s3cret")
+    inbox.poll(http)
+    fake.add(2, say("hi", ts=ts, sig="00"))
+    fake.add(3, say("I'm on my way.", **sign("s3cret", "I'm on my way.")))
+    inbox.poll(http)                               # must not raise (OverflowError used to)
+    assert [m.text for m in got] == [CAREGIVER_PREFIX + "I'm on my way."]
+    assert inbox.stats["unsigned"] == 1
