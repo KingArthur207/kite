@@ -21,15 +21,21 @@ export interface FacadeLayout {
   width: number; a: P; b: P;
 }
 export const facadeLayouts = new Map<number, FacadeLayout>();
+/** Exposed side walls (over a lower neighbour, or a corner building's other street face), by building id. */
+export const facadeSides = new Map<number, FacadeLayout[]>();
 
 /** Load the layouts if they're there (look 2 calls this with the building sheet). */
 export async function loadFacadeLayouts() {
   const r = await fetch("local/moss_facade_layouts.json").catch(() => null);
   if (!r?.ok || !r.headers.get("content-type")?.includes("json")) return;   // vite answers a missing file with index.html
   try {
-    const j = (await r.json()) as { buildings?: Record<string, FacadeLayout> };
+    const j = (await r.json()) as { buildings?: Record<string, FacadeLayout>; sides?: Record<string, FacadeLayout> };
     for (const [id, l] of Object.entries(j.buildings ?? {})) if (usable(l)) facadeLayouts.set(Number(id), l);
-    console.info(`[look2] facade layouts: ${facadeLayouts.size} fronts`);
+    for (const [key, l] of Object.entries(j.sides ?? {})) {   // "<building id>:s<edge>"
+      const id = Number(key.split(":")[0]);
+      if (usable(l)) facadeSides.set(id, [...(facadeSides.get(id) ?? []), l]);
+    }
+    console.info(`[look2] facade layouts: ${facadeLayouts.size} fronts, ${[...facadeSides.values()].flat().length} side walls`);
   } catch (e) { console.error("[look2] moss_facade_layouts.json unreadable, procedural fronts", e); }
 }
 
@@ -37,22 +43,35 @@ function usable(l: FacadeLayout) {
   return Array.isArray(l.openings) && Array.isArray(l.a) && Array.isArray(l.b) && l.x1 > l.x0 && l.roofline > 2;
 }
 
-/** Roofline from the photo when it's believable (OSM/LiDAR heights run 2-3 m under Street View on Moss). */
+/** The building's height with a layout: the photo's roofline when believable (the LiDAR heights run 2-5 m under
+ *  Street View on Moss), never under its highest opening. */
 export function layoutHeight(l: FacadeLayout, h: number) {
-  return l.roofline > h * 0.7 && l.roofline < h * 1.7 ? l.roofline : h;
+  const top = Math.max(0, ...l.openings.map((o) => o.y1)) + (l.cornice ? l.cornice.y1 - l.cornice.y0 : 0) + 0.4;
+  return Math.max(l.roofline > h * 0.7 && l.roofline < h * 3 ? l.roofline : h, top);
 }
 
-/** Does footprint edge a->c lie on the layout's front (same line, facing the same way)? */
-export function onFront(l: FacadeLayout, a: P, c: P, out: P) {
+/** Is footprint edge a->c (outward normal out) part of the layout's front: facing the same way, within the front's
+ *  span and a few metres of its line (fronts that step back count)? */
+export function onFront(l: FacadeLayout, a: P, c: P, out: P, side = false) {
   const fx = l.b[0] - l.a[0], fy = l.b[1] - l.a[1], L = Math.hypot(fx, fy);
   const n: P = [fy / L, -fx / L];
-  const nOut = n[0] * out[0] + n[1] * out[1];
-  if (Math.abs(nOut) < 0.9) return false;
+  if (n[0] * out[0] + n[1] * out[1] < FRONT_FACING) return false;
   const off = (p: P) => Math.abs((p[0] - l.a[0]) * n[0] + (p[1] - l.a[1]) * n[1]);
   const t = (p: P) => ((p[0] - l.a[0]) * fx + (p[1] - l.a[1]) * fy) / L;
-  return off(a) < FRONT_TOL && off(c) < FRONT_TOL && Math.min(t(a), t(c)) > -FRONT_TOL && Math.max(t(a), t(c)) < L + FRONT_TOL;
+  const lo = Math.min(t(a), t(c)), hi = Math.max(t(a), t(c));
+  if (side) return off(a) < SIDE_OFF && off(c) < SIDE_OFF && Math.min(hi, L) - Math.max(lo, 0) > 1;   // the read part of a long wall
+  return off(a) < FRONT_OFF && off(c) < FRONT_OFF && lo > -0.5 && hi < L + 0.5;
 }
-const FRONT_TOL = 0.8;   // m
+const FRONT_FACING = 0.8, FRONT_OFF = 3.0, SIDE_OFF = 0.5, EDGE_SEEN = 0.3, MAX_SHIFT = 3.0;   // m
+
+/** Openings that come closer than 3 cm to an earlier one are dropped (the wall's triangulation needs holes apart). */
+function apart<T extends Opening>(ops: T[]) {
+  const kept: T[] = [];
+  for (const o of [...ops].sort((p, q) => (q.x1 - q.x0) * (q.y1 - q.y0) - (p.x1 - p.x0) * (p.y1 - p.y0))) {
+    if (!kept.some((q) => o.x0 < q.x1 + 0.03 && q.x0 < o.x1 + 0.03 && o.y0 < q.y1 + 0.03 && q.y0 < o.y1 + 0.03)) kept.push(o);
+  }
+  return kept;
+}
 
 // --- sizes (m)
 const RECESS = { window: 0.12, door: 0.28, garage: 0.22, storefront: 0.14, bay: 0 };
@@ -60,7 +79,7 @@ const CASING = 0.11, CASING_D = 0.05, SILL_H = 0.07, SILL_D = 0.07, SILL_OVER = 
 const EDGE = 0.04;             // holes stay this far inside the wall outline (triangulation needs them apart)
 const BAY_D = 0.7;             // SF angled bay depth
 const BELT_H = 0.16, BELT_OUT = 0.06;
-const CORNICE_OUT = 0.32, BRACKET_PITCH = 0.9;
+const CORNICE_OUT = 0.32, BRACKET_PITCH = 0.9, CORNICE_MAX = 1.0;
 const STOOP_MIN_RISE = 0.25, STOOP_D = 1.0, STOOP_MIN_D = 0.45;
 const GATE_BAR = 0.11;         // m between gate bars
 const ARC_SEGS = 14;
@@ -71,8 +90,10 @@ const DOORS = [0x7a2e2a, 0x24324a, 0x1e1e1e, 0x2f5a46, 0x5b3b2a];
 export interface FrontCtx {
   b: { id: number; h: number }; lay: FacadeLayout;
   wall: Geo; trim: Geo; color: THREE.Color; trimColor: THREE.Color; garageColor?: THREE.Color;
+  segs: [P, P][];                              // the footprint edges making up the front, each left to right
   walkRoom: (p: P) => number;                 // m free in front of the wall at p before the demo walk's clearance
-  bay: (x0: number, x1: number, y0: number, y1: number, ys: number[]) => [number, number];   // draws an angled bay, returns its along-wall span
+  /** Draws an angled bay x0..x1 along a wall (at: along-wall t, out z -> point), y0..y1 high, windows at heights ys. */
+  bay: (at: (t: number, z?: number) => P, x0: number, x1: number, y0: number, y1: number, ys: number[]) => void;
 }
 
 /** Accumulates every layout front, then adds their meshes. */
@@ -85,22 +106,49 @@ export class LayoutFronts {
   private iron = new Geo();
   constructor(private mats: { glass: THREE.Material; shutter: THREE.MeshStandardMaterial; panels: THREE.MeshStandardMaterial }) {}
 
-  /** Draw one front. Returns stoop collision segments and garage doors (for parked-car clearances). */
-  front(ctx: FrontCtx) {
+  /** Draw one front: the layout's openings onto the footprint edges that make it up (ctx.segs, each left to right
+   *  seen from the street; most fronts are one straight wall, some step back). Returns stoop collision segments and
+   *  garage doors (for parked-car clearances). */
+  front(ctx0: FrontCtx) {
+    const l0 = ctx0.lay;
+    const fx = l0.b[0] - l0.a[0], fy = l0.b[1] - l0.a[1], FL = Math.hypot(fx, fy);
+    // Where the photo shows the building's own edge inside the picture (OSM footprints sit up to ~3 m off along the
+    // street), the openings keep their distance from that edge: the left one, else the right one.
+    const s = l0.x0 > EDGE_SEEN ? l0.x0 : l0.x1 < FL - EDGE_SEEN ? l0.x1 - FL : 0;
+    const shift = Math.abs(s) <= MAX_SHIFT ? s : 0;   // more: the footprint likely holds several of the photo's buildings
+    const lay = shift ? { ...l0, openings: l0.openings.map((o) => ({ ...o, x0: o.x0 - shift, x1: o.x1 - shift })) } : l0;
+    const ctx = { ...ctx0, lay };
+    const proj = (p: P) => ((p[0] - lay.a[0]) * fx + (p[1] - lay.a[1]) * fy) / FL;   // along the photo's line
+    const stoops: [number, number, number, number][] = [];
+    const garages: { p: P; u: P; out: P; w: number }[] = [];
+    for (const [A, C] of ctx.segs) {
+      const tA = proj(A), tC = proj(C);
+      if (tC - tA < 0.3) continue;
+      const r = this.segment(ctx, A, C, tA, tC);
+      stoops.push(...r.stoops);
+      garages.push(...r.garages);
+    }
+    return { stoops, garages };
+  }
+
+  /** One straight piece of a front: wall A -> C, showing the layout between tA and tC (metres along the photo). */
+  private segment(ctx: FrontCtx, A: P, C: P, tA: number, tC: number) {
     const { lay, color, trimColor } = ctx;
-    const A = lay.a, B = lay.b;
-    const L = Math.hypot(B[0] - A[0], B[1] - A[1]);
-    const u: P = [(B[0] - A[0]) / L, (B[1] - A[1]) / L];
-    const out: P = [u[1], -u[0]];                          // a -> b runs left to right seen from the street
-    const H = layoutHeight(lay, ctx.b.h);
-    // The photo is rectified in metres along the same line (a -> b), so its coordinates are the wall's.
-    const X = (x: number) => x, Y = (y: number) => y, sy = 1;
+    const L = Math.hypot(C[0] - A[0], C[1] - A[1]);
+    const u: P = [(C[0] - A[0]) / L, (C[1] - A[1]) / L];
+    const out: P = [u[1], -u[0]];                          // A -> C runs left to right seen from the street
+    const H = ctx.b.h;
+    // The photo is rectified in metres along the front, so its coordinates are the wall's (rescaled a little where
+    // this piece of footprint isn't parallel to the photo's line).
+    const k = L / (tC - tA);
+    const X = (x: number) => (x - tA) * k, Y = (y: number) => y, sy = 1;
     const F = new Frame(A, u, out);
-    const ops = lay.openings.map((o) => ({ ...o, x0: X(o.x0), x1: X(o.x1), y0: Y(o.y0), y1: Y(o.y1) }))
+    const ops = lay.openings.filter((o) => (o.x0 + o.x1) / 2 >= tA && (o.x0 + o.x1) / 2 < tC)
+      .map((o) => ({ ...o, x0: X(o.x0), x1: X(o.x1), y0: Y(o.y0), y1: Y(o.y1) }))
       .map((o) => ({ ...o, x0: Math.max(EDGE, o.x0), x1: Math.min(L - EDGE, o.x1), y0: Math.max(o.type === "bay" ? 0.5 : EDGE, o.y0),
-        y1: Math.min(H - EDGE - (lay.cornice ? (lay.cornice.y1 - lay.cornice.y0) * sy : 0), o.y1) }))
+        y1: Math.min(H - EDGE - (lay.cornice ? Math.min(CORNICE_MAX, (lay.cornice.y1 - lay.cornice.y0) * sy) : 0), o.y1) }))
       .filter((o) => o.x1 - o.x0 > 0.25 && o.y1 - o.y0 > 0.25);
-    const holes = ops.filter((o) => o.type !== "bay");
+    const holes = apart(ops.filter((o) => o.type !== "bay"));
     const bays = ops.filter((o) => o.type === "bay");
     const floors = lay.floors.map((f) => ({ y0: Y(f.y0), y1: Y(f.y1) }));
     const rnd = mulberry(ctx.b.id);
@@ -112,7 +160,7 @@ export class LayoutFronts {
     F.shape(ctx.wall, new THREE.ShapeGeometry(shape), 0.0, [0, 0, 1], color, (x, y) => [x, y]);
 
     const stoops: [number, number, number, number][] = [];
-    const garages: { t: number; w: number }[] = [];
+    const garages: { p: P; u: P; out: P; w: number }[] = [];
     holes.forEach((o, i) => {
       const path = paths[i], R = RECESS[o.type];
       F.reveal(ctx.wall, path, R, color);
@@ -126,14 +174,17 @@ export class LayoutFronts {
       }
       this.infill(F, o, path, R, frameCol, ctx, rnd, color);
       if (o.type === "door" && o.y0 > STOOP_MIN_RISE) stoops.push(...this.stoop(F, ctx, o));
-      if (o.type === "garage") garages.push({ t: (o.x0 + o.x1) / 2, w });
+      if (o.type === "garage") garages.push({ p: F.at((o.x0 + o.x1) / 2), u, out, w });
     });
 
     // Bays, with a window per floor on each face.
     const busy: [number, number][] = [];
     for (const o of bays) {
-      const ys = floors.filter((f) => f.y0 >= o.y0 - 0.5 && f.y1 <= o.y1 + 0.5).map((f) => f.y0 + Math.min((f.y1 - f.y0) * 0.55, 1.95));
-      busy.push(ctx.bay(o.x0, o.x1, o.y0, o.y1, ys));
+      // A window per floor the bay spans (1.4 m of it at least), centred a little above the middle of that stretch.
+      const ys = floors.map((f) => [Math.max(f.y0, o.y0), Math.min(f.y1, o.y1)]).filter(([a, b]) => b - a >= 1.4)
+        .map(([a, b]) => Math.min((a + b) / 2 + 0.1, b - 1.0));
+      ctx.bay((t, z = 0) => F.at(t, z), o.x0, o.x1, o.y0, o.y1, ys);
+      busy.push([o.x0, o.x1]);
     }
     // Belt courses and the cornice, broken around bays and openings so no band runs through them.
     for (const y0 of lay.belts ?? []) {
@@ -144,14 +195,14 @@ export class LayoutFronts {
       for (const [t0, t1] of gaps(0, L, cuts)) F.box(ctx.trim, t0, t1, y - BELT_H / 2, y + BELT_H / 2, 0, BELT_OUT, trimColor);
     }
     if (lay.cornice) {
-      const y0 = Math.min(Y(lay.cornice.y0), H - 0.25), y1 = H;
+      const y1 = H, y0 = Math.max(Math.min(Y(lay.cornice.y0), H - 0.25), H - CORNICE_MAX);   // a frieze, not a band down the wall
       F.box(ctx.trim, 0, L, y1 - Math.min(0.3, y1 - y0), y1, 0, CORNICE_OUT, trimColor);
       if (y1 - y0 > 0.45) {   // frieze board and brackets under the crown
         F.box(ctx.trim, 0, L, y0, y1 - 0.3, 0, 0.04, trimColor);
         for (let t = 0.3; t < L - 0.2; t += BRACKET_PITCH) F.box(ctx.trim, t - 0.06, t + 0.06, Math.max(y0, y1 - 0.6), y1 - 0.3, 0, CORNICE_OUT - 0.04, trimColor);
       }
     }
-    return { stoops, garages: garages.map((g) => ({ p: F.at(g.t), u, out, w: g.w })) };
+    return { stoops, garages };
   }
 
   private infill(F: Frame, o: Opening, path: P[], R: number, frameCol: THREE.Color, ctx: FrontCtx, rnd: () => number, wall: THREE.Color) {

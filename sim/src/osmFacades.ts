@@ -11,7 +11,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { Geo, facadeMaterial, pbr, seeded, type FacadeKind } from "./osmLook";
 import { buildingSheet, look2 } from "./look2";
 import { leafTexture } from "./streetProps";
-import { LayoutFronts, facadeLayouts, gaps, layoutHeight, onFront } from "./facadeLayouts";
+import { LayoutFronts, facadeLayouts, facadeSides, gaps, layoutHeight, onFront } from "./facadeLayouts";
 
 type P = [number, number];
 type Quad = P[];
@@ -34,6 +34,7 @@ const STOOP_RISE = 0.5, STOOP_D = 1.0, STOOP_MIN = 0.45;   // m: entry stoop hei
 const WALK_CLEAR = 1.4;         // m: stoops end this far from the demo walk line (walker radius, plus the 1 m the metrics
                                 // autopilot sidesteps toward the buildings on Moss, src/metrics.ts SIDE)
 const STEP_GREY = new THREE.Color(0xc4c1ba);   // painted concrete stoops
+const BIG_BAY = 3.2;            // m: a layout bay this wide gets the big bay windows
 const VIC_WINDOW_TOP = 1.85 / 2 + 0.13 + 0.3;  // m from a "vic" window's centre to the top of its hood
 
 // Street View on Moss: mint, pale blue, cream, pink, light grey, a pale yellow and a sage.
@@ -73,6 +74,20 @@ function pickKind(b: Building, rnd: () => number): FacadeKind {
   let r = rnd() * mix.reduce((s, [, w]) => s + w, 0);
   for (const [k, w] of mix) if ((r -= w) < 0) return k;
   return mix[0][0];
+}
+
+// look 2: mean linear albedo each wall material ends up with before its tint (texture mean x material colour;
+// siding is look2's own canvas boards at 0.92). Measured off public/textures/*_diff.jpg.
+const ALBEDO: Record<FacadeKind, [number, number, number]> = {
+  stucco: [0.68, 0.65, 0.63], plaster: [0.4, 0.38, 0.37], brick: [0.14, 0.077, 0.051],
+  concrete: [0.27, 0.24, 0.16], metal: [0.1, 0.098, 0.083], siding: [0.72, 0.72, 0.72],
+};
+const MAX_TINT = 10, PAINTED_LUMA = 0.35;
+const luma = (c: THREE.Color) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+/** Vertex tint that makes a wall of this kind come out at colour c (linear) on average. */
+function albedoTint(c: THREE.Color, kind: FacadeKind) {
+  const [r, g, b] = ALBEDO[kind];
+  return new THREE.Color(Math.min(MAX_TINT, c.r / r), Math.min(MAX_TINT, c.g / g), Math.min(MAX_TINT, c.b / b));
 }
 
 function tint(b: Building, kind: FacadeKind, rnd: () => number) {
@@ -159,7 +174,7 @@ function panelDoorTexture() {
 
 /** skip: walls drawn elsewhere (photo facades), as `${building id}:${edge index}`; they get no wall, windows or cornice.
  *  walk: the demo walk line; Victorian stoops stop short of it. Returns stoops as wall segments for collision. */
-export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQuads: Quad[], skip = new Set<string>(), walk: P[] = []) {
+export function buildFacades(scene: THREE.Object3D, input: Building[], roadQuads: Quad[], skip = new Set<string>(), walk: P[] = []) {
   const glass = new THREE.MeshStandardMaterial({ name: "glass", color: 0xffffff, roughness: 0.06, metalness: 0.65, envMapIntensity: 1.3 });
   const trimMat = new THREE.MeshStandardMaterial({ name: "frame", color: 0xffffff, roughness: 0.65 });
   const doorMat = new THREE.MeshStandardMaterial({ name: "door", color: 0xffffff, roughness: 0.5 });
@@ -171,6 +186,8 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     vgarage: { w: 2.5, h: 2.3, f: 0.14, d: 0.12, mull: "none", pane: panels },
     res: { w: 1.05, h: 1.7, f: 0.09, d: 0.12, mull: "h", pane: glass },
     narrow: { w: 0.62, h: 1.6, f: 0.08, d: 0.1, mull: "h", pane: glass },
+    bayc: { w: 1.35, h: 1.85, f: 0.1, d: 0.12, mull: "h", pane: glass },    // look 2 layout bays: the big front sash
+    bays: { w: 0.72, h: 1.85, f: 0.08, d: 0.1, mull: "h", pane: glass },    // and the side ones
     ind: { w: 2.2, h: 1.9, f: 0.07, d: 0.1, mull: "vh", pane: glass },
     shop: { w: 2.7, h: 2.45, f: 0.08, d: 0.1, mull: "none", pane: glass },
     garage: { w: 2.6, h: 2.3, f: 0.1, d: 0.1, mull: "none", pane: shutter, uvMetres: true },
@@ -194,6 +211,9 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     if (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) r.pop();
     return look2 ? simplify(r) : r;
   };
+  // look 2: a building with a Street View layout stands on its ground footprint (no capped bay outline in front of
+  // the layout's wall), as tall as the photo shows.
+  const buildings = input.map((b) => { const l = layoutFronts && facadeLayouts.get(b.id); return l ? { ...capBays(b, 0), h: layoutHeight(l, b.h) } : b; });
   const rings = buildings.map((b) => open(b.pts));
   const edges = rings.flatMap((r, bi) => r.map((a, i) => ({ bi, a, b: r[(i + 1) % r.length] })));
 
@@ -216,16 +236,20 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     return false;
   };
 
-  buildings.forEach((b0, bi) => {
-    const lay = layoutFronts ? facadeLayouts.get(b0.id) : undefined;   // look 2: this front from Street View
-    const b = lay ? { ...b0, h: layoutHeight(lay, b0.h) } : b0;
+  buildings.forEach((b, bi) => {
+    const lay = layoutFronts ? facadeLayouts.get(b.id) : undefined;   // look 2: this front from Street View
+    // look 2: the front and any exposed side walls read off Street View, each with the footprint edges it covers
+    const faces = layoutFronts ? [...(lay ? [lay] : []), ...(facadeSides.get(b.id) ?? [])].map((l) => ({ lay: l, segs: [] as [P, P][] })) : [];
     const ring = rings[bi];
     if (ring.length < 3) return;
     const rnd = seeded(b.id);
     const sheet = look2 ? buildingSheet.get(b.id) : undefined;   // per-building look from Street View, if loaded
     const rnd2 = seeded(b.id + 1);                                  // look-2 extras, so rnd's sequence stays as it was
-    const kind: FacadeKind = sheet?.cladding ?? pickKind(b, rnd);
-    const color = sheet?.main ? new THREE.Color(sheet.main) : tint(b, kind, rnd);
+    const sheetColor = sheet?.main ? new THREE.Color(sheet.main) : null;
+    // Painted brick (a light colour on brick) reads as a light masonry wall: the brick texture would drag it to brown.
+    const kind: FacadeKind = sheet?.cladding === "brick" && sheetColor && luma(sheetColor) > PAINTED_LUMA ? "stucco" : sheet?.cladding ?? pickKind(b, rnd);
+    // The sheet gives the wall colour as photographed; the material multiplies it by its texture, so divide that out.
+    const color = sheetColor ? albedoTint(sheetColor, kind) : tint(b, kind, rnd);
     const vic = b.style === "victorian", midrise = b.style === "midrise";
     const residential = vic || (!midrise && (kind === "stucco" || kind === "plaster" || kind === "siding" || RESIDENTIAL.has(b.tags?.building ?? "")) && !b.storefront);
     const lv = parseFloat(b.tags?.["building:levels"] ?? "");
@@ -267,7 +291,12 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
         const u: P = [(c[0] - a[0]) / L, (c[1] - a[1]) / L];
         const out: P = area > 0 ? [u[1], -u[0]] : [-u[1], u[0]];
         if (high && skip.has(`${b.id}:${i}`)) { s0 += L; return; }
-        if (lay && onFront(lay, a, c, out)) { s0 += L; return; }    // drawn from the layout below
+        const face = faces.find((f) => onFront(f.lay, a, c, out, f.lay !== lay));
+        if (face) {   // drawn from the layout below, left to right seen from the street
+          face.segs.push(u[1] * out[0] - u[0] * out[1] > 0 ? [a, c] : [c, a]);
+          s0 += L;
+          return;
+        }
         const n3 = new THREE.Vector3(out[0], 0, -out[1]);
         g.quad([v3(a, y0), v3(c, y0), v3(c, y1), v3(a, y1)], n3, [[s0, y0], [s0 + L, y0], [s0 + L, y1], [s0, y1]], color);
         s0 += L;
@@ -383,19 +412,14 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
         }
       });
     }
-    if (lay && layoutFronts) {
+    for (const { lay, segs } of faces) {
+      if (!layoutFronts || !segs.length) continue;
       const r = layoutFronts.front({
-        b, lay, wall: g, trim, color, trimColor,
+        b, lay, wall: g, trim, color, trimColor, segs,
         garageColor: sheet?.garage_colour ? new THREE.Color(sheet.garage_colour) : undefined,
         walkRoom: (p) => walk.length > 1 ? Math.min(...walk.slice(1).map((q, k) => segDist(p, walk[k], q))) - WALK_CLEAR : STOOP_D,
-        bay: (x0, x1, y0, y1, ys) => {
-          const L = Math.hypot(lay.b[0] - lay.a[0], lay.b[1] - lay.a[1]);
-          const u: P = [(lay.b[0] - lay.a[0]) / L, (lay.b[1] - lay.a[1]) / L], out: P = [u[1], -u[0]];
-          const at = (t: number, o = 0): P => [lay.a[0] + u[0] * t + out[0] * o, lay.a[1] + u[1] * t + out[1] * o];
-          bay(g, trim, at, (x0 + x1) / 2, y0, y1, color, trimColor, (k, p, y, oo) =>
-            inst[k === "res" ? "vic" : k].push({ m: basis(p, y, oo), frame: trimColor, pane: paneTint() }), sh, levels, { W: x1 - x0, ys });
-          return [x0, x1] as [number, number];
-        },
+        bay: (at, x0, x1, y0, y1, ys) => bay(g, trim, at, (x0 + x1) / 2, y0, y1, color, trimColor, (k, p, y, oo) =>
+          inst[x1 - x0 >= BIG_BAY ? (k === "res" ? "bayc" : "bays") : k].push({ m: basis(p, y, oo), frame: trimColor, pane: paneTint() }), sh, levels, { W: x1 - x0, ys }),
       });
       stoops.push(...r.stoops);
       for (const q of r.garages) garages.push({ x: q.p[0], n: q.p[1], u: q.u, out: q.out, w: q.w });
@@ -605,7 +629,7 @@ function bay(g: Geo, trim: Geo, at: (t: number, o?: number) => P, c: number, y0:
       [[0, y0], [L, y0], [L, y1], [0, y1]], color);
     cornice(trim, a, b, so, y1 - 0.3, y1, 0.1, trimColor);
     for (const y of ys) {
-      if (y + 0.85 > y1 - 0.3 || (opts.ys && y - 0.85 < y0)) continue;
+      if (opts.ys ? y + 1.05 > y1 - 0.3 || y - 1.05 < y0 : y + 0.85 > y1 - 0.3) continue;
       place(i === 1 ? "res" : "narrow", mid, y, so);
     }
   }

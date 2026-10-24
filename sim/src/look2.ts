@@ -7,6 +7,8 @@
 //   - post: N8AO ambient occlusion, ACES via OutputPass, a light grade, SMAA
 //   - the per-building sheet public/local/moss_buildings.json (optional, local only), see loadBuildingSheet
 //   - osmFacades adds iron security gates and doorstep hedges; streetProps makes Moss's trees scrappier
+//   - Moss fronts (and some exposed side walls) from public/local/moss_facade_layouts.json (optional, local only):
+//     facadeLayouts.ts draws their real openings, arches, garage styles and bays; scripts/facade_layouts.py makes it
 import * as THREE from "three";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
