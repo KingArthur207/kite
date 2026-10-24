@@ -22,7 +22,7 @@ Detail lives in [STATUS](../../STATUS.md), [the shoot pack](../../shoot-day.md),
 | Area | State |
 |---|---|
 | Earpiece and voice | Done |
-| Claude judgment and vision | Done; judgment tuning in progress (agent) |
+| Claude judgment and vision | Done, including judgment tuning (#56: 23 of 24 scenarios, p95 1.65 s) |
 | Spacetime and dashboard | Done |
 | Live walk | Built and tested on recorded clips only. Never run on a live camera or a real phone. |
 | Detector | Stand-in done. Rex's `streetseg` not in this repo yet. |
