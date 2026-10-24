@@ -119,6 +119,32 @@ scripts/demo.sh streetview          # earpiece, relay, bridge, sim, dashboard, d
 
 Measured on Oct 24, walking the whole route in headless Chromium (10 panoramas, from the spawn to Howard's south side): the page loaded the Maps JavaScript API once and created one panorama, and made 14 `StreetViewService` lookups. The bridge made 10 metadata requests and 30 Static images (2 per view, 15 views counting the turns). Screenshots without imagery: `docs/streetview_walk_black_start.jpg` and `docs/streetview_walk_black_corner.jpg` (black screen and HUD).
 
+## Shots for the demo video (`?shot=`)
+
+The sim also films the recreation of Moss St that runs next to the real Tello footage in the video. `?shot=<name>` hides the HUD and debug drawing, opens no sockets, and stops the clock: nothing moves until `window.kiteShot.frame(dt)` steps it. A scripted walker in the casual model, with a white cane, walks the demo route, and a Tello-sized quadcopter built from primitives flies 1 m behind and 0.3 m above the head. Camera moves are Catmull-Rom keyframes for position and look-at, timed by a monotone cubic that eases in and out (`src/shots.ts`). `src/shot.ts` runs them and draws labels and pulse rings onto a 1920x1080 canvas.
+
+| Shot | World | Length | What it shows |
+|---|---|---|---|
+| `establishing` | tiles | 15 s | Starts 175 m over the Moss block looking down, with the route drawn in, then descends to 15 m behind the walker on Moss. Past the geofence there is no city, only the gray ground plane, so the camera frames along Moss. |
+| `follow` | tiles | 62 s | The drone's own view (Tello vertical FOV) from the spawn up Moss, stopping at the zebra curb. |
+| `corner` | tiles | 24 s | The walker stops short of the zebra while a car turns in from Howard without yielding, waits, then crosses. The camera orbits slowly over Howard. Labels read "Car turning in" and "Kite: Stop." |
+| `explainer` | moss | 40 s | Top-down view of one metrics walk (blind mode, seed 1, 2.4x speed), with the obstacles labelled, a red ring on each collision and the running count. |
+
+`?world=` overrides the default (`tiles`, `moss`, `real`, and `photo` once it exists). In the corner shot the car is scripted, so the street's own cars in Howard's left lane and on the turn into Moss are left out, and so is the pedestrian who walks the demo route.
+
+Record from the repo root (starts vite on port 6999; `--url` reuses a running sim):
+
+```
+uv run --no-project --with playwright python scripts/record_shot.py corner
+uv run --no-project --with playwright python scripts/record_shot.py follow --world moss
+uv run --no-project --with playwright python scripts/record_shot.py all
+uv run --no-project --with playwright python scripts/record_shot.py corner --preview 0,10.4,23   # PNG stills only
+```
+
+It steps headless Chromium (Metal) at a fixed 1/60 s, waits for the tiles to finish loading before each frame, writes PNGs to a temp dir, encodes H.264 at crf 18 with ffmpeg and deletes the frames. Output goes to `out/shots/<shot>-<world>.mp4` plus a 640 px still, both gitignored. The same shot gives the same motion on every run. On the tiles world the tiles are levelled once before the first frame and never again, so the ground can't jump mid-shot. The script fails if the camera leaves the geofence or a tile request falls outside it.
+
+MP4s and stills of the tiles world show Google Photorealistic 3D Tiles. They are for the demo video only: never commit or publish them on their own, and keep the Google attribution that is drawn into every frame. The video credits also need the CC-BY line from `public/models/CREDITS.md` (the bus and the Range Rover are in some shots).
+
 ## Run
 
 ```
