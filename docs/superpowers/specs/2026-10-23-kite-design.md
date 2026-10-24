@@ -195,6 +195,10 @@ Each owner pulls `main` and starts their agent with one of these. They assume th
 
 ## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
 
+Location: Moss Street at Howard Street, SoMa (OSM way 8916291). Moss is a one-way alley, 192 m from Folsom to Howard, with sidewalks on both sides. Where Moss meets Howard there is a marked zebra crosswalk across Moss with no signal and tactile paving (OSM node at 37.778352, -122.408768); cars turn into Moss from Howard across it. Howard is three lanes one-way at 25 mph with a protected bike track.
+
+Route: start on the NE sidewalk of Moss about 70 m before Howard, walk NW to the corner, turn left, cross Moss on the zebra, and stop about 20 m along Howard's south sidewalk. We never cross Howard. The whole of Moss would take over 5 minutes at 0.6 m/s, which is the entire battery, so we skip the first two thirds. The crossing is uncontrolled, so there is no signal to read: the drone's job there is spotting a car turning in from Howard, and Kite says to stop and wait. That fits section 4. The sim's origin is the zebra crossing node, so sim and real lat/lng line up.
+
 We have one charged Tello battery and no charger until someone buys a USB-C to Micro-USB cable in the morning (the Tello charges its battery in the drone over Micro-USB). Aneesh won't be at the apartment in the morning, so confirm tonight that we can still reach the corner and our gear.
 
 - Don't fly before the shoot. Ground checks only, kept short, because streaming video drains the battery too. Skip the stick 60 and 100 speed test; the walker just walks slowly.
