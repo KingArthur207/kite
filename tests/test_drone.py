@@ -592,3 +592,12 @@ def test_land_resend_interval_runs_on_the_injected_clock():
     assert gov.check(now, now) == "land" and fake.lands == 1  # within 2 s: not yet
     mono[0] += 0.2
     assert gov.check(now, now) == "land" and fake.lands == 2
+
+
+def test_garbled_state_values_read_as_unknown():
+    """telemetry() did float(v) on any value: a string or a huge int raised out of the governor's check()."""
+    d, fake = make()
+    fake.state = {"yaw": "x", "pitch": [1], "h": 10**400, "tof": float("inf"), "bat": float("nan"), "vgx": 3}
+    tel = d.telemetry()
+    assert (tel.yaw_deg, tel.pitch_deg, tel.height_m, tel.tof_m, tel.battery_pct) == (None,) * 5
+    assert tel.vx == pytest.approx(0.3)

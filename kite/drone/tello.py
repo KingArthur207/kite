@@ -347,9 +347,12 @@ class TelloDrone(Drone):
             self._state_t = time.time() if st else 0.0
         t = self._state_t
 
-        def num(k, scale=1.0):
-            v = st.get(k)
-            return None if v is None or (isinstance(v, float) and math.isnan(v)) else float(v) * scale
+        def num(k, scale=1.0):  # missing, non-numeric or non-finite -> None (unknown), never an exception
+            try:
+                v = float(st.get(k)) * scale
+            except (TypeError, ValueError, OverflowError):  # OverflowError: a 400-digit int
+                return None
+            return v if math.isfinite(v) else None
 
         tof = num("tof", 0.01)
         if tof is not None and not 0.1 <= tof <= 8.0:  # 6553 (out of range) / 10 cm on the ground
