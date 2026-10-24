@@ -10,6 +10,8 @@ from earpiece.config import Cfg
 
 # Tests never touch the network voices or real devices unless a test asks for it.
 os.environ.pop("ANTHROPIC_API_KEY", None)
+if not os.environ.get("KITE_LIVE_TESTS"):
+    os.environ.pop("GOOGLE_MAPS_API_KEY", None)    # routes come from fixtures, not the network
 
 
 @pytest.fixture
