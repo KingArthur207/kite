@@ -28,7 +28,7 @@ from .events import Msg, clock_phrase, distance_phrase
 from .listen import Listener
 from .memory import MemoryStore
 from .mixer import Engine
-from .output import DeviceOutput, NullOutput
+from .output import DeviceOutput, NullOutput, RustDeviceOutput
 from .sonar import Sonar
 from .speech import Speaker
 from .transport import Transport
@@ -45,9 +45,19 @@ class Earpiece:
         self.cfg = cfg or Cfg()
         self.log = log
         a = self.cfg.audio
-        self.engine = Engine(a.sample_rate, a.master_gain, a.limiter_ceiling, a.cue_gain, a.speech_gain,
-                             a.duck_cues_during_speech)
-        if output == "device":
+        from . import rust_engine
+        use_rust = a.engine == "rust" or (a.engine == "auto" and rust_engine.available())
+        if a.engine == "rust" and not rust_engine.available():
+            raise RuntimeError("audio.engine='rust' but kite_audio is not built "
+                               "(maturin develop --release -m native/Cargo.toml)")
+        E = rust_engine.RustEngine if use_rust else Engine
+        self.engine = E(a.sample_rate, a.master_gain, a.limiter_ceiling, a.cue_gain, a.speech_gain,
+                        a.duck_cues_during_speech)
+        log(f"[audio] engine: {'rust (kite_audio)' if use_rust else 'python'}")
+        if output == "device" and use_rust:
+            self.output = RustDeviceOutput(self.engine, a.output_substr, a.rust_block, a.device_poll_s,
+                                           on_change=self._output_changed, log=log, device=output_device)
+        elif output == "device":
             self.output = DeviceOutput(self.engine, a.output_substr, a.block, a.device_poll_s,
                                        on_change=self._output_changed, log=log, device=output_device)
         else:
@@ -96,13 +106,13 @@ class Earpiece:
             self.transport.start()
         self.memory.start()
         threading.Thread(target=self._control_loop, name="control", daemon=True).start()
-        if isinstance(self.output, DeviceOutput):
+        if isinstance(self.output, (DeviceOutput, RustDeviceOutput)):
             devices.on_device_change(lambda: None)    # keeps CoreAudio notifications flowing
             self.battery.start()
         if announce:
             self.engine.play(_stereo(sounds.ready()), bus="cue", gain=1.0)
             self.say("Kite is ready.", "system", ttl=20)
-            if isinstance(self.output, DeviceOutput) and not self.output.is_airpods:
+            if isinstance(self.output, (DeviceOutput, RustDeviceOutput)) and not self.output.is_airpods:
                 self.say("AirPods are not connected. Using the laptop speaker.", "system", ttl=20)
 
     def run_forever(self) -> None:
@@ -125,6 +135,8 @@ class Earpiece:
         time.sleep(0.1)
         self.speaker.stop()
         self.output.stop()
+        if hasattr(self.engine, "shutdown"):
+            self.engine.shutdown()
 
     # ================================================================== speaking
     def say(self, text: str, priority: str = "info", key: str | None = None, ttl: float | None = None,
@@ -457,7 +469,7 @@ class Earpiece:
         }
 
     def state(self) -> dict:
-        out = isinstance(self.output, DeviceOutput)
+        out = isinstance(self.output, (DeviceOutput, RustDeviceOutput))
         return {
             "context": self.context(),
             "tracks": self.sonar.summary()[:8],

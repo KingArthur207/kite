@@ -222,3 +222,88 @@ class DeviceOutput:
         self._stop.set()
         with self._lock:
             self._close()
+
+
+class RustDeviceOutput:
+    """Device output for the Rust engine: the stream itself lives in Rust; this class only
+    decides WHICH device (AirPods first) and reopens it when that changes or stalls."""
+
+    def __init__(self, engine, prefer_substr: str = "AirPods", block: int = 512, poll_s: float = 2.0,
+                 on_change: Callable[[str, bool, str | None], None] | None = None, log=print,
+                 device: str | None = None):
+        self.engine = engine
+        self.prefer = prefer_substr.lower()
+        self.block = block
+        self.poll_s = poll_s
+        self.on_change = on_change
+        self.log = log
+        self.forced = device
+        self.device_name: str | None = None
+        self.is_airpods = False
+        self.restarts = 0
+        self._stop = threading.Event()
+        self._lock = threading.RLock()
+
+    @property
+    def underflows(self) -> int:
+        return int(self.engine.snapshot_stats().get("glitches", 0))
+
+    def _open(self) -> None:
+        from . import devices
+        want = self.forced or (self.prefer if self.prefer and devices.airpods_output_present(self.prefer) else "")
+        name, ch, buf = self.engine.open(want or "", self.block)
+        prev = self.device_name
+        self.device_name = name
+        self.is_airpods = bool(self.prefer) and self.prefer in name.lower()
+        self.log(f"[audio] output (rust engine): {name} ({ch} ch, {self.engine.rate} Hz, "
+                 f"buffer {buf or 'default'})")
+        if self.on_change is not None and prev != name:
+            try:
+                self.on_change(name, self.is_airpods, prev)
+            except Exception as e:
+                self.log(f"[audio] on_change failed: {e}")
+
+    def start(self) -> None:
+        with self._lock:
+            self._open()
+        threading.Thread(target=self._watch, name="audio-watch", daemon=True).start()
+
+    def restart(self, why: str) -> None:
+        with self._lock:
+            self.log(f"[audio] reopening output ({why})")
+            for attempt in range(20):
+                try:
+                    self.engine.close()
+                    self._open()
+                    self.restarts += 1
+                    return
+                except Exception as e:
+                    self.log(f"[audio] no usable output yet ({e}); retrying")
+                    time.sleep(min(2.0, 0.25 * (attempt + 1)))
+
+    def _watch(self) -> None:
+        from . import devices
+        last_default = devices.default_output_name()
+        while not self._stop.wait(self.poll_s):
+            try:
+                age = self.engine.callback_age_ms()
+                if age is None or age > 1500:
+                    self.restart("stream stopped")
+                    last_default = devices.default_output_name()
+                    continue
+                cur = devices.default_output_name()
+                have = devices.airpods_output_present(self.prefer) if self.prefer else False
+                if have and not self.is_airpods:
+                    self.restart("AirPods appeared")
+                elif self.is_airpods and not have:
+                    self.restart("AirPods gone")
+                elif cur and last_default and cur != last_default and not self.is_airpods:
+                    self.restart(f"default output changed to {cur}")
+                last_default = cur
+            except Exception as e:
+                self.log(f"[audio] watcher: {type(e).__name__}: {e}")
+
+    def stop(self) -> None:
+        self._stop.set()
+        with self._lock:
+            self.engine.close()

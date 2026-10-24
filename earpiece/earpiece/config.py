@@ -27,9 +27,13 @@ _load_env()
 
 @dataclass
 class AudioCfg:
+    engine: str = field(default_factory=lambda: os.environ.get("KITE_AUDIO_ENGINE", "auto"))
+    # "rust" (kite_audio, real-time thread outside the GIL),
+    # "python" (numpy mixer), or "auto" = rust when the extension is built
     sample_rate: int = 48000          # AirPods A2DP native rate; Cartesia renders at it directly
-    block: int = 1024                 # ~21 ms per callback: headroom against GIL stalls (measured a
-    # 12.5 ms worst-case render at 512); Bluetooth itself adds 150-250 ms, so this is noise
+    block: int = 1024                 # python engine: ~21 ms per callback, headroom against GIL stalls
+    # (measured a 12.5 ms worst-case render at 512); Bluetooth itself adds 150-250 ms
+    rust_block: int = 512             # rust engine: no GIL in the audio path, so a smaller buffer is safe
     output_substr: str = "AirPods"    # preferred output device (name substring)
     master_gain: float = 0.9
     limiter_ceiling: float = 0.89     # -1 dBFS: protects hearing and avoids codec clipping
