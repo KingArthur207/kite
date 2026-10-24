@@ -32,6 +32,20 @@ class Camera:
     def vfov_deg(self) -> float:
         return math.degrees(2 * math.atan(self.height / (2 * self.fy)))
 
+    def scaled(self, width: int, height: int) -> Camera:
+        """The same field of view on a width x height image (itself if that is already its size)."""
+        if (width, height) == (self.width, self.height):
+            return self
+        sx, sy = width / self.width, height / self.height
+        return Camera(int(width), int(height), self.fx * sx, self.fy * sy, self.cx * sx, self.cy * sy,
+                      f"{self.source}, scaled to {width}x{height}")
+
+    @classmethod
+    def from_hfov(cls, width: int, height: int, hfov_deg: float, source: str) -> Camera:
+        """Square pixels, principal point at the centre, focal length from a horizontal field of view."""
+        f = width / (2 * math.tan(math.radians(hfov_deg) / 2))
+        return cls(int(width), int(height), f, f, width / 2, height / 2, source)
+
     def to_dict(self) -> dict:
         return asdict(self)
 

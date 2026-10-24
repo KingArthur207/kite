@@ -178,7 +178,7 @@ python -m pytest                        # + the H.264-over-UDP reader tests (nee
 |---|---|
 | `drone/tello.py` | `TelloDrone`: djitellopy for commands + state. Discrete moves are non-blocking (`busy()` / `last_result()`), late replies after `stop` are discarded, `streamon` is re-sent until video arrives, `dry_run=True` never sends motion. |
 | `drone/safety.py` | `SafetyGovernor`: wraps any drone; clamps rc, altitude ceiling/floor, lands on low battery or flight time, hovers on stale video/telemetry. Call `check()` every loop. |
-| `sources/` | Newest-frame video readers: `TelloVideoSource` (PyAV or the team's OpenCV `VideoStream`, auto-reconnect), `WebcamSource`, file replay. |
+| `sources/` | Newest-frame video readers: `TelloVideoSource` (PyAV or the team's OpenCV `VideoStream`, auto-reconnect), `WebcamSource`, file replay; `open_source(spec)` opens any of them, a take or the sim for perception (below). |
 | `config.py` | `DroneCfg` / `SafetyCfg` defaults. |
 
 ```python
@@ -231,6 +231,38 @@ python -m kite.record --source tello --out recordings --fly            # the sho
 - `kite/camera.py` holds the Tello intrinsics: fx 920 px until calibrated. `python -m kite.calibrate --source tello`
   fits them from a chessboard on a screen with the drone on the ground (at most 45 s of stream) and writes
   `data/tello_camera.json`. The pilot's shoot steps are in `docs/shoot-flight.md`.
+
+### Opening any frame source (detectors)
+
+`kite.sources.open_source(spec, **opts)` gives every detector the same object for every camera: `read() -> (ok, bgr)`,
+`.pose` (dict: `x, y, heading, cam_height, pitch, roll, t, battery, flying, tel_dt, heading_ref`, None where
+unknown), `.camera` (fx, fy, cx, cy at the size of the frames actually read), `.name`, `release()`, `with`.
+
+| Spec | Source | Frames | Pose | Camera |
+|---|---|---|---|---|
+| `tello` | live Tello, **dry run**: video + telemetry, motion never sent | newest | Tello telemetry (height, pitch, roll, yaw, battery) | `load_camera()` |
+| `recording:<dir>` or a take folder | `RecordingSource` (`realtime=True` paces it) | every | recorded telemetry | meta.json / `load_camera()`, scaled |
+| `clip.mp4`, `file:<path>` | a video file (`realtime=True` paces it) | every | `t` only (`cam_height=`, `pitch=` if given) | `load_camera()` scaled to the clip |
+| `webcam:<n>`, `<n>` | camera index n | newest | `cam_height=1.3`, `pitch=0` (options) | ~68 deg FOV guess, labelled uncalibrated |
+| `webcam:<name>`, e.g. `webcam:iPhone` | the camera whose name contains it (Continuity Camera) | newest | as webcam | as webcam |
+| `sim:drone`, `sim:chest` | `sim/frames.py` (relay running, needs `websockets`) | next | the sim's x, y, heading, cam_height, pitch | fx from `sim/src/config.ts` (1000) |
+
+`camera=Camera(...)` overrides the intrinsics of any source (`fx=` or `hfov_deg=` too, except for takes). Live sources return
+`(False, None)` after `timeout` s (default 5) with no new frame; files and takes at the end.
+
+```python
+from kite.sources import open_source
+
+with open_source("webcam:iPhone") as src:      # or "tello", "sim:chest", "clip.mp4", "recordings/<take>"
+    ok, bgr = src.read()
+    while ok:
+        events = process(bgr, src.camera, src.pose)
+        ok, bgr = src.read()
+```
+
+At the table: `python -m kite.sources.open --list-cameras` (indices and names; `--probe` grabs one frame from each),
+then `python -m kite.sources.open webcam:iPhone --preview` (or `tello`, `sim:chest`, a file, a take) prints fps,
+frame size, the camera and a few poses.
 
 ### Walker GPS (`kite.gps`)
 

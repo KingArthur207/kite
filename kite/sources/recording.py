@@ -49,9 +49,8 @@ import numpy as np
 from ..camera import Camera, load_camera
 from ..types import Frame
 from .base import FrameSource
+from .pose import MAX_GAP_S, PITCH_SIGN, TelemetryTrack, empty_pose
 
-MAX_GAP_S = 0.2  # a frame further than this from every state packet has no pose (the Tello sends ~10 per second)
-PITCH_SIGN = 1  # raw Tello 'pitch' -> pose pitch (+ = nose up). ASSUMED: +1 if the Tello reports nose-up as positive
 SEEK_GRAB_MAX = 30  # seeks up to this many frames ahead decode their way there; longer ones jump (indexed file)
 
 
@@ -105,10 +104,6 @@ def _read_frames_csv(path: Path) -> list[dict]:
             except (TypeError, ValueError, KeyError):
                 continue  # torn last row after a crash
     return out
-
-
-def _f(v) -> float:
-    return math.nan if v is None else float(v)
 
 
 def _num(v):
@@ -176,10 +171,8 @@ class RecordingSource:
             cam.source = "meta.json"
         vid = self.meta.get("video") or {}
         w, h = vid.get("width"), vid.get("height")
-        if w and h and (w, h) != (cam.width, cam.height):  # a dry run on another file: keep the field of view
-            sx, sy = w / cam.width, h / cam.height
-            cam = Camera(int(w), int(h), cam.fx * sx, cam.fy * sy, cam.cx * sx, cam.cy * sy,
-                         f"{cam.source}, scaled to {w}x{h}")
+        if w and h:  # a dry run on another file: keep the field of view
+            cam = cam.scaled(int(w), int(h))
         return cam
 
     def _flying_at(self) -> list[tuple[float, bool]]:
@@ -196,15 +189,7 @@ class RecordingSource:
     def _align(self) -> list[dict]:
         """One pose per frames.csv row (no decoding needed: pose_at(i) works before any read)."""
         n = len(self.rows)
-        tt = np.array([t.t for t in self.tel], dtype=float)
-        yaw = np.array([_f(t.yaw_deg) for t in self.tel])
-        cols = {
-            "cam_height": np.array([_f(t.floor_altitude_m()) for t in self.tel]),
-            "pitch": np.array([_f(t.pitch_deg) * self.pitch_sign if t.pitch_deg is not None else math.nan
-                               for t in self.tel]),
-            "roll": np.array([_f(t.roll_deg) for t in self.tel]),
-        }
-        bat = [t.battery_pct for t in self.tel]
+        track = TelemetryTrack(self.tel, self.pitch_sign)
         flips = self._flying_at()
         fl_t = np.array([f[0] for f in flips], dtype=float)
         # with telemetry but no flight events (record only, drone in hand) it never flew: only --fly can fly it
@@ -212,31 +197,10 @@ class RecordingSource:
         poses = []
         for i in range(n):
             t = self.times[i]
-            pose = {"x": None, "y": None, "heading": None, "cam_height": None, "pitch": None, "roll": None, "t": float(t),
-                    "battery": None, "flying": None, "tel_dt": None, "heading_ref": "tello_yaw"}
-            if len(tt):
-                j = int(np.searchsorted(tt, t))  # tt[j-1] <= t < tt[j]
-                lo, hi = j - 1, j
-                d_lo = t - tt[lo] if lo >= 0 else math.inf
-                d_hi = tt[hi] - t if hi < len(tt) else math.inf
-                near = lo if d_lo <= d_hi else hi
-                if min(d_lo, d_hi) <= self.max_gap_s:
-                    both = d_lo <= self.max_gap_s and d_hi <= self.max_gap_s and tt[hi] > tt[lo]
-                    w = (t - tt[lo]) / (tt[hi] - tt[lo]) if both else None
-                    for k, arr in cols.items():
-                        if both and math.isfinite(arr[lo]) and math.isfinite(arr[hi]):
-                            v = arr[lo] + w * (arr[hi] - arr[lo])
-                        else:
-                            v = arr[near]
-                        pose[k] = float(v) if math.isfinite(v) else None
-                    if both and math.isfinite(yaw[lo]) and math.isfinite(yaw[hi]):  # shortest way round +-180
-                        y = yaw[lo] + w * (((yaw[hi] - yaw[lo] + 180.0) % 360.0) - 180.0)
-                    else:
-                        y = yaw[near]
-                    pose["heading"] = float(y % 360.0) if math.isfinite(y) else None
-                    pose["battery"] = bat[near]
-                    pose["tel_dt"] = float(t - tt[near])
-                    pose["_tel"] = near
+            pose = empty_pose(float(t), heading_ref="tello_yaw")
+            near = track.fill(pose, t, self.max_gap_s)
+            if near is not None:
+                pose["_tel"] = near
             k = int(np.searchsorted(fl_t, t, side="right")) - 1
             pose["flying"] = flips[k][1] if k >= 0 else fl_default
             poses.append(pose)
