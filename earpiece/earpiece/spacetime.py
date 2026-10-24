@@ -35,6 +35,7 @@ THROTTLED = {"obstacles", "heartbeat"}
 THROTTLE_S = 0.5
 CAREGIVER = "caregiver"
 CAREGIVER_PREFIX = "Message from your caregiver: "
+CAREGIVER_SQL = "SELECT * FROM event WHERE source = 'caregiver'"   # fixed query, no inputs
 POLL_S = 1.0
 MAX_BACKOFF_S = 30.0
 
@@ -149,7 +150,7 @@ class CaregiverInbox:
         if self._token is None:
             self._token = _identity(http, self.host)
         r = http.post(f"{self.host}/v1/database/{self.db}/sql",
-                      content=f"SELECT * FROM event WHERE source = '{CAREGIVER}'",
+                      content=CAREGIVER_SQL,
                       headers={"Authorization": f"Bearer {self._token}"})
         r.raise_for_status()
         out = []
