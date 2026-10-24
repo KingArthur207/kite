@@ -444,7 +444,9 @@ def read_recording(rec: str | Path) -> tuple[np.ndarray, np.ndarray, dict]:
     if (rec / "frames.csv").exists():
         with open(rec / "frames.csv", newline="") as fh:
             for r in csv.DictReader(fh):
-                if _num(r.get("t_wall")) is not None:
+                # src_t is the last column: a row cut short by a crash (the recorder flushes every 30 rows) lacks it,
+                # and its t_wall may be a truncated number, not a time
+                if _num(r.get("t_wall")) is not None and _num(r.get("src_t")) is not None:
                     idx.append(int(r["index"]))
                     tw.append(float(r["t_wall"]))
     if not tw and "started_wall" in meta:  # no frames: at least place the start

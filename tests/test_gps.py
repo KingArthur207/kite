@@ -246,6 +246,18 @@ def make_take(tmp_path, n=45, fps=30.0):
         src.stop()
 
 
+def test_a_frames_csv_row_torn_by_a_crash_is_ignored(tmp_path):
+    """A hard crash cuts frames.csv mid-row. A row cut inside t_wall kept a truncated number ("17617") as the last
+    frame's wall time, which made the video span negative: no overlap, no position events."""
+    rec = make_take(tmp_path)
+    _, t_wall, _ = gps.read_recording(rec)
+    text = (rec / "frames.csv").read_text()
+    cut = text.rstrip("\n").rsplit("\n", 1)[0] + "\n45,46,123.456789,17617"  # torn inside t_wall, no src_t
+    (rec / "frames.csv").write_text(cut)
+    idx, tw, _ = gps.read_recording(rec)
+    assert len(tw) == len(t_wall) - 1 and tw[-1] == pytest.approx(t_wall[-2])
+
+
 def test_alignment_with_a_recording_and_replayable_events(tmp_path):
     rec = make_take(tmp_path)
     _, t_wall, meta = gps.read_recording(rec)
