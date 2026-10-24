@@ -14,6 +14,11 @@ from websockets.sync.client import connect
 from conftest import free_port, wait_for
 from earpiece.transport import MAX_BUCKETS, Transport, origin_allowed
 
+# Upper bounds for things that normally take milliseconds. They only matter when something is
+# broken, so they are generous: under four parallel workers a 3 s handshake budget ran out.
+OPEN_S = 15
+RECV_S = 10
+
 
 @pytest.fixture
 def net():
@@ -44,8 +49,8 @@ def udp_send(t: Transport, data: bytes, sock: socket.socket | None = None) -> No
                                     "http://localhost:5174", "http://[::1]:5173", "https://localhost",
                                     "http://192.168.1.5:5173"])
 def test_local_pages_and_non_browser_clients_connect(net, origin):
-    with connect(ws_url(net), origin=origin, open_timeout=3) as ws:
-        assert json.loads(ws.recv(timeout=2))["type"] == "state"
+    with connect(ws_url(net), origin=origin, open_timeout=OPEN_S) as ws:
+        assert json.loads(ws.recv(timeout=RECV_S))["type"] == "state"
         ws.send(json.dumps({"type": "say", "text": "hello", "source": "sim"}))
         assert wait_for(lambda: any(m.type == "say" for m in net.got), 3)
 
@@ -55,7 +60,7 @@ def test_local_pages_and_non_browser_clients_connect(net, origin):
                                     "chrome-extension://abcdef"])
 def test_other_web_pages_get_403_and_nothing_is_spoken(net, origin):
     with pytest.raises(InvalidStatus) as e:
-        with connect(ws_url(net), origin=origin, open_timeout=3) as ws:
+        with connect(ws_url(net), origin=origin, open_timeout=OPEN_S) as ws:
             ws.send(json.dumps({"type": "say", "text": "walk now", "priority": "critical"}))
     assert e.value.response.status_code == 403
     assert net.got == [] and net.stats["origin_rejected"] == 1 and net.stats["clients"] == 0
@@ -87,8 +92,8 @@ def test_parser_crashes_never_kill_the_udp_socket(net):
 
 
 def test_parser_crashes_never_close_the_websocket(net):
-    with connect(ws_url(net), open_timeout=3) as ws:
-        ws.recv(timeout=2)
+    with connect(ws_url(net), open_timeout=OPEN_S) as ws:
+        ws.recv(timeout=RECV_S)
         for raw in NASTY:
             ws.send(raw.decode("utf-8", "replace"))
         ws.send(json.dumps({"type": "scene", "text": "still here"}))
@@ -97,14 +102,14 @@ def test_parser_crashes_never_close_the_websocket(net):
 
 
 def test_oversized_websocket_frame_drops_only_that_client(net):
-    with connect(ws_url(net), open_timeout=3) as big:
-        big.recv(timeout=2)
+    with connect(ws_url(net), open_timeout=OPEN_S) as big:
+        big.recv(timeout=RECV_S)
         try:
             big.send("x" * (300 * 1024))
         except Exception:
             pass
-    with connect(ws_url(net), open_timeout=3) as ws:
-        ws.recv(timeout=2)
+    with connect(ws_url(net), open_timeout=OPEN_S) as ws:
+        ws.recv(timeout=RECV_S)
         ws.send(json.dumps({"type": "heartbeat"}))
         assert wait_for(lambda: len(net.got) == 1, 3)
 
@@ -175,10 +180,10 @@ def test_concurrent_udp_senders(net):
 def test_websocket_reconnect_storm_leaves_nothing_behind(net):
     def churn(k):
         for i in range(25):
-            with connect(ws_url(net), open_timeout=5) as ws:
+            with connect(ws_url(net), open_timeout=OPEN_S) as ws:
                 ws.send(json.dumps({"type": "heartbeat", "source": f"c{k}"}))
                 if i % 3 == 0:
-                    ws.recv(timeout=2)
+                    ws.recv(timeout=RECV_S)
     ths = [threading.Thread(target=churn, args=(k,)) for k in range(8)]
     for th in ths:
         th.start()
@@ -210,15 +215,15 @@ def test_a_stalled_client_is_closed_and_others_keep_receiving(net):
     slow = stalled_client(net)
     assert wait_for(lambda: net.stats["clients"] == 1, 3)
     try:
-        with connect(ws_url(net), open_timeout=3) as fast:
-            fast.recv(timeout=2)
+        with connect(ws_url(net), open_timeout=OPEN_S) as fast:
+            fast.recv(timeout=RECV_S)
             assert wait_for(lambda: net.stats["clients"] == 2, 3)
             blob = "x" * 20_000
             seen = set()
 
             def read_fast():
                 while len(seen) < 200:
-                    m = json.loads(fast.recv(timeout=5))
+                    m = json.loads(fast.recv(timeout=RECV_S))
                     if m["type"] == "spoken":
                         seen.add(m["i"])
             reader = threading.Thread(target=read_fast)
@@ -239,8 +244,8 @@ def test_stop_frees_ports_and_ends_the_thread():
     for _ in range(3):              # same ports every time: stop() really released them
         t = Transport(lambda m: None, "127.0.0.1", udp, ws, log=lambda *_: None)
         t.start()
-        with connect(f"ws://127.0.0.1:{ws}", open_timeout=3) as c:
-            c.recv(timeout=2) if t.state_provider else None
+        with connect(f"ws://127.0.0.1:{ws}", open_timeout=OPEN_S) as c:
+            c.recv(timeout=RECV_S) if t.state_provider else None
             t.stop()
         assert not t._thread.is_alive()
     t.stop()                        # idempotent

@@ -201,7 +201,9 @@ def test_global_ceiling_spreads_a_burst_and_counts_every_call(fake, make):
         b.publish({"type": "say", "text": "x", "n": i})
     assert b.flush(10)
     took = time.monotonic() - t0
-    assert 0.9 <= took < 3.0                                             # 5 at once, then 10/s
+    # 5 at once, then 10/s: at least 0.9 s however fast the machine is. The upper bound only
+    # catches a stall, so it leaves room for a loaded machine (flush(10) bounds it anyway).
+    assert 0.9 <= took < 9.0
     assert b.stats["calls"] == 15 == len(fake.calls)
     assert max(sum(1 for t in fake.times if s <= t < s + 1.0) for s in fake.times) <= 15
 

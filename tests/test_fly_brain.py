@@ -196,4 +196,6 @@ def test_hand_calibration_file():
 def test_calibration_runs_quick():
     rec = calibrate(out=None, repeats=1, settle_ms=100.0, measure_ms=300.0)
     assert rec["fit"]["r2"] > 0.6 and rec["params"]["dec_w_yaw_DNa02"] > 0 and len(rec["x"]) == 34
-    assert len(rec["rates"]["X"]) == 27 and rec["brain_ms_per_tick"] < 10.0
+    # speed is test_tick_speed's job; here only that it was measured (a timing bound in a
+    # correctness test made this fail whenever the machine was busy)
+    assert len(rec["rates"]["X"]) == 27 and rec["brain_ms_per_tick"] > 0
