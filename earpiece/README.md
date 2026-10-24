@@ -8,12 +8,12 @@ The AirPods layer of Kite: spatial obstacle sonar, a waypoint beacon, and a voic
 cd earpiece
 uv venv --python 3.12 .venv && source .venv/bin/activate
 uv pip install -e ".[mac,brain,memory,dev]"
-maturin develop --release -m native/Cargo.toml   # optional: Rust real-time audio engine
+maturin develop --release -m native/Cargo.toml   # optional: Rust audio engine + binaural renderer
 python -m earpiece selftest                      # check audio, voices, STT, controls, network
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
-python -m pytest                                 # 200+ tests
+python -m pytest                                 # 200+ tests (also with KITE_AUDIO_ENGINE=python)
 ```
 
 Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`). Everything degrades gracefully without them.
@@ -75,8 +75,8 @@ AirPods (or any Bluetooth headphones' play button): once = talk, twice = repeat,
 
 | Module | Job |
 |---|---|
-| `mixer.py` / `native/` (Rust) | real-time mixing, ducking, limiter, device output |
-| `spatial.py`, `sounds.py` | binaural rendering (Brown-Duda head model) and synthesised cues |
+| `mixer.py` / `native/` (Rust) | real-time mixing, ducking, limiter, device output; native binaural placement |
+| `spatial.py`, `sounds.py` | binaural rendering (Brown-Duda head model; runs in Rust when built, sample-identical) and synthesised cues |
 | `sonar.py`, `beacon.py` | obstacle warnings by time-to-contact; Soundscape-style waypoint beacon |
 | `speech.py`, `listen.py` | Cartesia TTS/STT, priorities, preemption, time-to-live, offline fallback |
 | `brain.py`, `memory.py` | local voice commands, Claude with tools, Moss memory of places and hazards |
