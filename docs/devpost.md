@@ -23,9 +23,9 @@ A small drone flies about 30 cm above and 1 m behind the walker's head. From the
 
 When something blocks the way, Kite tells the walker to stop and waits until it clears, the way a guide dog does. It doesn't plan detours, and nothing in Kite ever says a street is safe to cross.
 
-A caregiver dashboard shows the walker's position, active hazards, what Kite last said and device status, live, without any camera video.
+A caregiver dashboard shows the walker on a live map with the hazards around them, what Kite last said and device status, without any camera video.
 
-At the table, judges walk a simulated street corner with the screen black, guided only by Kite, and then see the view. [TODO: once the splat exists, say the corner is a Gaussian splat of a real San Francisco corner.] We also show real Tello footage of a walker on the same corner with Kite's cues on it. [TODO: confirm the shoot footage exists and say whether the drone was piloted.]
+At the table, judges walk a simulated street corner with the screen black, guided only by Kite, and then see the view. The corner is Moss Street at Howard Street in San Francisco, modeled from OpenStreetMap, including the zebra crossing at the end of Moss where cars turn in from Howard. We also show real Tello footage of a walker on the same corner with Kite's cues on it. [TODO: confirm the shoot footage exists and say whether the drone was piloted.]
 
 ## How we built it
 
@@ -35,9 +35,9 @@ Voice (Cartesia). Sonic TTS streamed over one persistent WebSocket, with every f
 
 Reasoning (Claude). Questions the earpiece can't answer locally go to Claude with a JSON snapshot of objects, hazards, route, drone scene text, position and the wearer's saved places. The answer streams back and is spoken sentence by sentence. Claude has tools to start navigation, change settings, remember a place and alert the caregiver. [TODO: describe the judgment layer (wait or continue at hazards) and Claude scene description of drone frames if they ship.]
 
-Shared state (SpacetimeDB). An `event` table and a `latest` table on Maincloud. The earpiece mirrors every event it receives into it over HTTP, and the React dashboard subscribes and re-renders live.
+Shared state (SpacetimeDB). An `event` table and a `latest` table on Maincloud. The earpiece mirrors every event it receives into it over HTTP, and the React dashboard subscribes and redraws a Leaflet map of the walker and hazards live.
 
-Sim (three.js). A browser street corner with an arrow-key walker, a virtual drone camera matched to the Tello (960×720, 0.3 m above the head and 1 m behind) and a chest-height camera. Both stream JPEG frames to a local relay for perception. Sim hazards come from the same detector that runs on real footage, not from the sim's own object list. [TODO: splat pipeline and tool, once Arthur has it.]
+Sim (three.js). A browser street corner with an arrow-key walker, a virtual drone camera matched to the Tello (960×720, 0.3 m above the head and 1 m behind) and a chest-height camera. Both stream JPEG frames to a local relay for perception. Sim hazards come from the same detector that runs on real footage, not from the sim's own object list. A metrics mode runs scripted walks through the same obstacles with and without Kite's cues and counts collisions.
 
 Perception. [TODO (Rex): `streetseg` models and what it detects; the same code runs on Tello footage, sim frames and the webcam.]
 
@@ -58,7 +58,7 @@ Routing. Google Routes API v2 and Places API (New) turn "the nearest pharmacy" o
 
 - The safety cues are deterministic and work with no internet: cached Cartesia phrases, local voice commands, sonar that doesn't wait on any model.
 - [TODO: the same detector running on real Tello footage, sim frames and the live webcam, if it does by submission.]
-- [TODO: collision numbers from the sim, with and without Kite, from metrics mode. Leave this out if we don't measure them.]
+- [TODO: collision numbers from the sim with Kite, from metrics mode. The blind baseline is 4.6 collisions per walk (20 walks); the oracle upper bound of 0.45 is not Kite and must not be quoted as Kite. Leave this out if we don't measure Kite.]
 - [TODO: the interview, and what changed in Kite because of it.]
 
 ## What we learned
@@ -74,7 +74,7 @@ Routing. Google Routes API v2 and Places API (New) turn "the nearest pharmacy" o
 
 ## Built with
 
-Python, Rust, TypeScript, React, Vite, three.js, SpacetimeDB, Cartesia (Sonic TTS, ink-whisper STT), Claude (Anthropic API), Google Routes API, Google Places API, DJI Tello, djitellopy, NumPy, SciPy, sounddevice, websockets, httpx, Moss. [TODO: perception models and libraries from Rex; splat tool from Arthur.]
+Python, Rust, TypeScript, React, Vite, three.js, Leaflet, OpenStreetMap, SpacetimeDB, Cartesia (Sonic TTS, ink-whisper STT), Claude (Anthropic API), Google Routes API, Google Places API, DJI Tello, djitellopy, NumPy, SciPy, sounddevice, websockets, httpx, Moss. [TODO: perception models and libraries from Rex.]
 
 ## Tracks and evidence
 

@@ -28,12 +28,12 @@ What is real and what is simulated, as of this commit:
 |---|---|
 | Earpiece: spatial sonar, waypoint beacon, speech queue, Cartesia voice in and out, Claude assistant, offline fallbacks | Real, runs on a laptop with any headphones or AirPods |
 | SpacetimeDB event tables and the caregiver dashboard | Real, live on Maincloud |
-| Sim street corner | Placeholder world (boxes and capsules), arrow-key walker, virtual drone and chest cameras matched to the Tello |
+| Sim street corner | Arrow-key walker, virtual drone and chest cameras matched to the Tello, collision counter. The world is a placeholder of boxes and capsules today; an OpenStreetMap model of the shoot corner (Moss St at Howard, SoMa) with realistic car and pedestrian models is in progress |
 | Hazards in the sim | Will come from the real detector running on sim frames. Until perception lands, the only sim hazard is a debug key (`H`) |
 | Perception (`streetseg`) | Coming; Rex is moving it into this repo |
 | Drone layer (`kite/`) | Written and tested, on the `feat/drone-layer` branch, not yet on `main` |
 | Real Tello footage | From the Saturday 7 AM shoot on the corner [TODO: confirm the take worked, and whether it was piloted or simple follow]. The drone does not fly at the venue (drones are banned there) |
-| Gaussian splat of the corner | Coming; replaces the placeholder world |
+| Collision numbers (sim metrics mode) | The harness runs. Scripted blind walks hit 4.6 obstacles per walk (seed 1, 20 walks). The number with Kite needs perception running and hasn't been measured |
 
 ## Repo map
 
@@ -44,7 +44,11 @@ What is real and what is simulated, as of this commit:
 | `sim/` | three.js street corner, frame relay (`relay.py`) and `SimFrameSource` for perception (`frames.py`). See `sim/README.md` |
 | `scripts/replay.py` | Replays a JSONL of events into the earpiece, and optionally into SpacetimeDB |
 | `scripts/audit.py` | Pre-submission check: secrets, `.env`, repo visibility, README, large files, model weights |
+| `scripts/netcheck.py` | Checks this laptop's setup: the earpiece over UDP and WebSocket, SpacetimeDB, internet to Claude, Cartesia and Google, and which keys are set |
+| `scripts/offline.sh` | Switches to a local SpacetimeDB server when the internet is gone (`scripts/offline.sh off` undoes it) |
+| `scripts/sim_metrics.py` | Runs sim metrics mode headless and prints collision counts |
 | `data/sample_walk.jsonl` | A recorded 40-second walk in the earpiece event format |
+| `data/sample_track.jsonl` | A moving walker track with hazards and a beacon, for testing the dashboard map |
 | `tests/drone_test.py` | Tello latency and ground-check script |
 | `docs/` | Team spec (`docs/superpowers/specs/`), Devpost draft, demo runbook |
 | `kite/` | Drone layer. Coming to `main` from `feat/drone-layer` |
@@ -114,7 +118,7 @@ KITE_EARPIECE_HOST=169.254.x.y                   # the address from bridge0 abov
 earpiece/.venv/bin/python scripts/replay.py data/sample_walk.jsonl
 ```
 
-`EarpieceClient` and `scripts/replay.py` both read `KITE_EARPIECE_HOST`. The sim's browser page still connects to the earpiece at `ws://127.0.0.1:5011`, so run the sim on the wearable laptop. If sends fail with `No route to host`, allow your terminal under System Settings > Privacy & Security > Local Network.
+Run `python3 scripts/netcheck.py` on both laptops to confirm the link; `docs/network.md` has the full setup. `EarpieceClient` and `scripts/replay.py` both read `KITE_EARPIECE_HOST`. The sim's browser page still connects to the earpiece at `ws://127.0.0.1:5011`, so run the sim on the wearable laptop. If sends fail with `No route to host`, allow your terminal under System Settings > Privacy & Security > Local Network.
 
 ## Cartesia features used
 
@@ -139,36 +143,37 @@ Still to build (spec section 5.6): the judgment layer that has Claude decide "wa
 
 The module in `dashboard/spacetimedb/src/index.ts` has two tables. `event` keeps the newest 500 events (`id`, `type`, `source`, `priority`, `payload` as JSON, `t`). `latest` holds the newest event per type and source, so a dashboard that opens mid-walk sees the current state right away. Reducers are `push` and `clear`.
 
-Python writes with plain HTTP calls to the `push` reducer (`earpiece/earpiece/spacetime.py`, no SDK), on a background queue that drops events instead of blocking the audio loop. High-rate `obstacles` and `heartbeat` events are throttled to two per second per source. The earpiece mirrors every event it receives when run with `--spacetime`, and `scripts/replay.py --spacetime` does the same. The dashboard subscribes over WebSocket and shows the walker's position trail, active hazards, the last spoken line, device status and a live feed. It shows no camera video. Its "Clear run" button calls `clear` before a new run.
+Python writes with plain HTTP calls to the `push` reducer (`earpiece/earpiece/spacetime.py`, no SDK), on a background queue that drops events instead of blocking the audio loop. High-rate `obstacles` and `heartbeat` events are throttled to two per second per source. The earpiece mirrors every event it receives when run with `--spacetime`, and `scripts/replay.py --spacetime` does the same. The dashboard subscribes over WebSocket and draws the walker on a live map (Leaflet over OpenStreetMap) with a heading arrow, trail, the active hazards placed around the walker by bearing and distance, and the next waypoint. Beside the map it lists hazards, the last spoken line, each device with how long since it last sent, and a live feed. It shows no camera video. Its "Clear run" button calls `clear` before a new run.
 
-Offline, the same module runs on a local server (`spacetime start --listen-addr 127.0.0.1:3000`, then `npm run spacetime:publish:local`). See `docs/demo-runbook.md`.
+Offline, the same module runs on a local server: `scripts/offline.sh` starts it, publishes the module and points the dashboard at it. See `docs/demo-runbook.md`.
 
 ## Known limitations
 
 - Perception isn't on `main` yet, so the sim produces no real hazards and nothing runs on webcam or Tello frames in this repo today.
-- The sim world is a placeholder. The splat of the real corner, realistic car and pedestrian models, and collision geometry lined up with the splat are still to come.
+- The sim world is a placeholder until the OpenStreetMap model of Moss St at Howard and the car and pedestrian models land. We decided against a Gaussian splat: the judge walks with the screen black, and the real Tello footage of the corner is what shows it.
 - Nothing in this repo makes the drone follow the walker on its own. [TODO: state whether the shoot footage was piloted.] The drone never flies at the venue.
 - The Tello tops out around 0.96 m/s at full stick (extrapolated from a stick-30 test), slower than the 1.2 to 1.3 m/s people usually walk, so the walker in our footage walks slowly. One battery gives about 6 to 8 minutes with video on.
 - From 30 cm above and 1 m behind, the Tello's fixed camera can't see the ground for the first few meters ahead. That is the chest webcam's job.
 - A pedestrian signal 20 m away is about 14 px tall in the Tello stream, too small to read reliably. Crossing locations come from maps data, and signal handling is shown in the sim.
 - Kite stops and waits; it never plans a detour around an obstacle.
 - Voice output and input, Claude and SpacetimeDB need internet. The fallbacks are cached phrases plus macOS `say`, local voice commands, and a local SpacetimeDB server.
-- The collision numbers with and without Kite (sim metrics mode) haven't been measured yet.
+- Sim metrics mode has a blind baseline (4.6 collisions per walk) and an oracle upper bound that reacts to ground truth (0.45). The oracle is not Kite. The number with Kite's real cues needs perception running.
+- In metrics mode the scripted walker steps 1.5 m to the side when something blocks it for a few seconds, the way a cane user would. Kite itself never suggests the sidestep.
 
 ## Credits
 
 - Stock street footage used for testing: [TODO: clip titles, authors and Pexels or Pixabay links]
 - 3D car and pedestrian models in the sim: [TODO: model names, authors, licenses]
-- Splat sample scene used to test the pipeline: [TODO: Mip-NeRF 360 scene name and citation]
+- Map tiles and street data: © OpenStreetMap contributors, ODbL
 - Perception models: [TODO: final list from Rex, with licenses]
-- Open-source libraries: djitellopy, three.js, SpacetimeDB, React, Vite, NumPy, SciPy, sounddevice, websockets, httpx, the Anthropic Python SDK, Moss (`inferedge-moss`)
+- Open-source libraries: djitellopy, three.js, SpacetimeDB, React, Leaflet, react-leaflet, Vite, NumPy, SciPy, sounddevice, websockets, httpx, the Anthropic Python SDK, Moss (`inferedge-moss`)
 - Head model for binaural rendering: Brown and Duda's spherical-head model
 
 ## Team
 
 | Name | Built |
 |---|---|
-| Arthur | Drone layer, flight and recording, splat |
-| Eddy | SpacetimeDB tables, dashboard, sim, replay, submission |
+| Arthur | Drone layer, flight and recording |
+| Eddy | SpacetimeDB tables, dashboard and map, sim and metrics mode, replay, network tools, submission |
 | Karthik | Earpiece: audio, Cartesia voice, Claude assistant, destinations |
 | Rex | Perception (`streetseg`), the interview, the shoot |

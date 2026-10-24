@@ -18,7 +18,8 @@ Do all of this on venue Wi-Fi ("Cal Hacks 13.0"), so the phrase cache and instal
 1. `git pull` on `main`. Installs already done: `earpiece/.venv`, `npm install` in `dashboard/` and `sim/`.
 2. `.env` at the repo root has `CARTESIA_API_KEY` and `ANTHROPIC_API_KEY`, and `KITE_EARPIECE_HOST=127.0.0.1`.
 3. `cd earpiece && source .venv/bin/activate && python -m earpiece selftest`. Every line should pass, or you should know why it doesn't.
-4. Set Do Not Disturb on the laptop so notification sounds don't play in the judge's ears.
+4. Once the earpiece is running (start order step 1), `python3 scripts/netcheck.py` should end with no failures.
+5. Set Do Not Disturb on the laptop so notification sounds don't play in the judge's ears.
 
 ## Start order
 
@@ -60,13 +61,11 @@ Claude is down. Nothing to do. Sonar, stops and `dont_walk` don't depend on Clau
 Maincloud is down, or the internet is gone. Switch SpacetimeDB to a local server on the same laptop:
 
 ```bash
-spacetime start --listen-addr 127.0.0.1:3000        # new terminal, leave it running
-cd dashboard && npm run spacetime:publish:local
-printf 'VITE_SPACETIMEDB_HOST=ws://localhost:3000\n' > .env.local
-npm run dev                                         # restart the dashboard
+scripts/offline.sh           # starts a local server, publishes the module, points the dashboard at it
+cd dashboard && npm run dev  # restart the dashboard
 ```
 
-Then set `SPACETIME_HOST=http://127.0.0.1:3000` in the repo-root `.env` and restart the earpiece (step 1 of the start order). Undo afterwards by deleting `dashboard/.env.local` and resetting `SPACETIME_HOST` to `https://maincloud.spacetimedb.com`.
+Then set `SPACETIME_HOST=http://127.0.0.1:3000` in the repo-root `.env` (the script prints the line) and restart the earpiece (step 1 of the start order). Undo afterwards with `scripts/offline.sh off` and reset `SPACETIME_HOST` to `https://maincloud.spacetimedb.com`.
 
 Wi-Fi is gone entirely. Phone hotspots are banned at the venue, so run fully offline: the local SpacetimeDB server above, cached phrases plus `say`, and local voice commands. The sim, relay, perception and earpiece all run on localhost and need no network.
 
@@ -89,4 +88,4 @@ Demo first. The presenter is whoever won Saturday night's timed tryout: [TODO: n
 | 1:25 to 1:45 | Hold an obstacle in front of the webcam; the judge hears the beeps speed up. Then the interview quote [TODO] and one measured number, collisions with and without Kite in the sim [TODO]. |
 | 1:45 to 2:00 | What's real and what isn't, then questions. |
 
-What to say at 1:45 when asked what's real: the earpiece, voice, Claude assistant, SpacetimeDB and dashboard run live on this laptop. The corner is a simulation [TODO: splat of the real corner, or placeholder]. The drone footage is real and was recorded before the event [TODO: piloted or follow]. The drone never flew here.
+What to say at 1:45 when asked what's real: the earpiece, voice, Claude assistant, SpacetimeDB and dashboard run live on this laptop. The corner is a simulation of Moss St at Howard, built from OpenStreetMap, not a 3D scan. The drone footage is real and was recorded before the event [TODO: piloted or follow]. The drone never flew here.
