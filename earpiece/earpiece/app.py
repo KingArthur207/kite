@@ -79,6 +79,7 @@ class Earpiece:
                                                  remember=self.remember, recall=self.recall),
                            self.say, self.cfg.anthropic_key, log=log)
         self._noted_places: set[str] = set()
+        self._walk_pending: dict[str, tuple[float, Msg]] = {}
         self.gestures = Gestures(self.gesture, log=log)
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
                                    self.cfg.net.ws_port, log=log) if network else None
@@ -228,8 +229,33 @@ class Earpiece:
             if out and msg.action not in ("repeat",):
                 self.say(out, "system", ttl=5)
 
+    WALK_CONFIRM_S = 0.6   # "walk" must hold this long before it is announced; "don't walk" is instant
+
     def _hazard(self, msg: Msg, now: float) -> None:
         key = msg.key or (msg.kind or "hazard")
+        if msg.kind == "crosswalk":
+            # Asymmetric on purpose: a one-frame "walk" misread must never send someone into
+            # traffic, while a "don't walk" is safe to act on at once.
+            if msg.state in ("walk", "go", "green"):
+                prev = self.hazards.get(key)
+                if not (prev and prev.get("state") in ("walk", "go", "green")):
+                    p = self._walk_pending.get(key)
+                    if p is None:
+                        self._walk_pending[key] = (now, msg)
+                    else:
+                        self._walk_pending[key] = (p[0], msg)
+                    return
+            else:
+                self._walk_pending.pop(key, None)
+        self._apply_hazard(key, msg, now)
+
+    def _confirm_walks(self, now: float) -> None:
+        for key, (since, msg) in list(self._walk_pending.items()):
+            if now - since >= self.WALK_CONFIRM_S:
+                del self._walk_pending[key]
+                self._apply_hazard(key, msg, now)
+
+    def _apply_hazard(self, key: str, msg: Msg, now: float) -> None:
         prev = self.hazards.get(key)
         changed = prev is None or prev.get("state") != msg.state or prev.get("text") != msg.text
         ttl = msg.ttl or 20.0
@@ -279,6 +305,7 @@ class Earpiece:
                 with self._lock:
                     chosen = self.sonar.tick(now)
                 self._watchdog(now)
+                self._confirm_walks(now)
                 warn = any(t.urgency > 0.3 for t in chosen)
                 self.beacon.duck = 0.35 if warn else 1.0
                 self.beacon.tick(now, speech_playing=self.engine.speaking or self.listener.active)

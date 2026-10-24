@@ -73,23 +73,41 @@ struct Engine {
 }
 
 fn bytes_to_f32(b: &[u8]) -> Vec<f32> {
-    b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
 }
 
-fn record(stats: &Stats, t0: Instant, epoch: Instant, expected_ns: u64, b: mixer::BlockStats, now_frames: u64) {
+fn record(
+    stats: &Stats,
+    t0: Instant,
+    epoch: Instant,
+    expected_ns: u64,
+    b: mixer::BlockStats,
+    now_frames: u64,
+) {
     stats.now.store(now_frames, Relaxed);
     let dt = t0.elapsed().as_nanos() as u64;
     stats.blocks.fetch_add(1, Relaxed);
     stats.max_render_ns.fetch_max(dt, Relaxed);
     let ema = stats.ema_render_ns.load(Relaxed);
-    stats.ema_render_ns.store(if ema == 0 { dt } else { ema - ema / 50 + dt / 50 }, Relaxed);
+    stats.ema_render_ns.store(
+        if ema == 0 {
+            dt
+        } else {
+            ema - ema / 50 + dt / 50
+        },
+        Relaxed,
+    );
     if b.limited {
         stats.limited_blocks.fetch_add(1, Relaxed);
     }
     stats.voices.store(b.voices as u64, Relaxed);
     stats.speaking.store(b.speaking, Relaxed);
     let prev_peak = f32::from_bits(stats.peak_bits.load(Relaxed) as u32);
-    stats.peak_bits.store((prev_peak * 0.95).max(b.peak).to_bits() as u64, Relaxed);
+    stats
+        .peak_bits
+        .store((prev_peak * 0.95).max(b.peak).to_bits() as u64, Relaxed);
     let now = epoch.elapsed().as_nanos() as u64;
     let last = stats.last_cb_ns.swap(now, Relaxed);
     if expected_ns > 0 && last > 0 && now - last > expected_ns * 2 + 5_000_000 {
@@ -111,7 +129,13 @@ impl Engine {
 
     fn send_params(&self) {
         let p = *self.params.lock().unwrap();
-        self.push(Cmd::Params { master: p.master, cue: p.cue, speech: p.speech, duck: p.duck, muted: p.muted });
+        self.push(Cmd::Params {
+            master: p.master,
+            cue: p.cue,
+            speech: p.speech,
+            duck: p.duck,
+            muted: p.muted,
+        });
     }
 }
 
@@ -133,18 +157,36 @@ fn pick_device(host: &cpal::Host, substr: &str) -> Result<(cpal::Device, String)
 }
 
 fn device_name(d: &cpal::Device) -> String {
-    d.description().map(|x| x.name().to_string()).unwrap_or_else(|_| "unknown".into())
+    d.description()
+        .map(|x| x.name().to_string())
+        .unwrap_or_else(|_| "unknown".into())
 }
 
 #[pymethods]
 impl Engine {
     #[new]
     #[pyo3(signature = (rate=48000, master_gain=0.9, ceiling=0.89, cue_gain=0.55, speech_gain=1.0, duck=0.45))]
-    fn new(rate: u32, master_gain: f32, ceiling: f32, cue_gain: f32, speech_gain: f32, duck: f32) -> Self {
+    fn new(
+        rate: u32,
+        master_gain: f32,
+        ceiling: f32,
+        cue_gain: f32,
+        speech_gain: f32,
+        duck: f32,
+    ) -> Self {
         let (cp, cc) = RingBuffer::<Cmd>::new(8192);
         let (ep, ec) = RingBuffer::<(u8, u64)>::new(4096);
         let (gp, gc) = RingBuffer::<Vec<f32>>::new(16384);
-        let mixer = Mixer::new(rate, master_gain, ceiling, cue_gain, speech_gain, duck, ep, gp);
+        let mixer = Mixer::new(
+            rate,
+            master_gain,
+            ceiling,
+            cue_gain,
+            speech_gain,
+            duck,
+            ep,
+            gp,
+        );
         Engine {
             core: Arc::new(Mutex::new(Core { mixer, cmds: cc })),
             producer: Mutex::new(cp),
@@ -152,7 +194,13 @@ impl Engine {
             garbage: Mutex::new(gc),
             stats: Arc::new(Stats::default()),
             device: Mutex::new(None),
-            params: Mutex::new(Params { master: master_gain, cue: cue_gain, speech: speech_gain, duck, muted: false }),
+            params: Mutex::new(Params {
+                master: master_gain,
+                cue: cue_gain,
+                speech: speech_gain,
+                duck,
+                muted: false,
+            }),
             epoch: Instant::now(),
             rate,
         }
@@ -197,15 +245,31 @@ impl Engine {
     }
 
     #[pyo3(signature = (master_gain=None, cue_gain=None, speech_gain=None, duck=None, cues_muted=None))]
-    fn set_params(&self, master_gain: Option<f32>, cue_gain: Option<f32>, speech_gain: Option<f32>,
-                  duck: Option<f32>, cues_muted: Option<bool>) {
+    fn set_params(
+        &self,
+        master_gain: Option<f32>,
+        cue_gain: Option<f32>,
+        speech_gain: Option<f32>,
+        duck: Option<f32>,
+        cues_muted: Option<bool>,
+    ) {
         {
             let mut p = self.params.lock().unwrap();
-            if let Some(x) = master_gain { p.master = x; }
-            if let Some(x) = cue_gain { p.cue = x; }
-            if let Some(x) = speech_gain { p.speech = x; }
-            if let Some(x) = duck { p.duck = x; }
-            if let Some(x) = cues_muted { p.muted = x; }
+            if let Some(x) = master_gain {
+                p.master = x;
+            }
+            if let Some(x) = cue_gain {
+                p.cue = x;
+            }
+            if let Some(x) = speech_gain {
+                p.speech = x;
+            }
+            if let Some(x) = duck {
+                p.duck = x;
+            }
+            if let Some(x) = cues_muted {
+                p.muted = x;
+            }
         }
         self.send_params();
     }
@@ -256,78 +320,104 @@ impl Engine {
         let substr = substr.to_string();
         let (res_tx, res_rx) = mpsc::channel::<Result<(String, u16, u32), String>>();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
-        let thread = std::thread::Builder::new().name("kite-audio-device".into()).spawn(move || {
-            let host = cpal::default_host();
-            let (dev, name) = match pick_device(&host, &substr) {
-                Ok(x) => x,
-                Err(e) => { let _ = res_tx.send(Err(e)); return; }
-            };
-            let channels: u16 = match dev.default_output_config() {
-                Ok(c) => c.channels().min(2).max(1),
-                Err(_) => 2,
-            };
-            let expected_ns = (block as u64) * 1_000_000_000 / rate as u64;
-            let make = |buf: cpal::BufferSize| {
-                let core = core.clone();
-                let stats = stats.clone();
-                let stats_err = stats.clone();
-                let mut scratch = vec![0.0f32; 16384 * 2];
-                let cfg = cpal::StreamConfig { channels, sample_rate: rate, buffer_size: buf };
-                dev.build_output_stream(
-                    cfg,
-                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        let t0 = Instant::now();
-                        let frames = data.len() / channels as usize;
-                        match core.try_lock() {
-                            Ok(mut g) => {
-                                let Core { mixer, cmds } = &mut *g;
-                                let b = if channels == 2 {
-                                    mixer.render(data, cmds)
-                                } else {
-                                    if scratch.len() < frames * 2 { scratch.resize(frames * 2, 0.0); }
-                                    let b = mixer.render(&mut scratch[..frames * 2], cmds);
-                                    for f in 0..frames { data[f] = 0.5 * (scratch[f * 2] + scratch[f * 2 + 1]); }
-                                    b
-                                };
-                                let now_frames = mixer.now;
-                                drop(g);
-                                record(&stats, t0, epoch, expected_ns, b, now_frames);
+        let thread = std::thread::Builder::new()
+            .name("kite-audio-device".into())
+            .spawn(move || {
+                let host = cpal::default_host();
+                let (dev, name) = match pick_device(&host, &substr) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        let _ = res_tx.send(Err(e));
+                        return;
+                    }
+                };
+                let channels: u16 = match dev.default_output_config() {
+                    Ok(c) => c.channels().min(2).max(1),
+                    Err(_) => 2,
+                };
+                let expected_ns = (block as u64) * 1_000_000_000 / rate as u64;
+                let make = |buf: cpal::BufferSize| {
+                    let core = core.clone();
+                    let stats = stats.clone();
+                    let stats_err = stats.clone();
+                    let mut scratch = vec![0.0f32; 16384 * 2];
+                    let cfg = cpal::StreamConfig {
+                        channels,
+                        sample_rate: rate,
+                        buffer_size: buf,
+                    };
+                    dev.build_output_stream(
+                        cfg,
+                        move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                            let t0 = Instant::now();
+                            let frames = data.len() / channels as usize;
+                            match core.try_lock() {
+                                Ok(mut g) => {
+                                    let Core { mixer, cmds } = &mut *g;
+                                    let b = if channels == 2 {
+                                        mixer.render(data, cmds)
+                                    } else {
+                                        if scratch.len() < frames * 2 {
+                                            scratch.resize(frames * 2, 0.0);
+                                        }
+                                        let b = mixer.render(&mut scratch[..frames * 2], cmds);
+                                        for f in 0..frames {
+                                            data[f] = 0.5 * (scratch[f * 2] + scratch[f * 2 + 1]);
+                                        }
+                                        b
+                                    };
+                                    let now_frames = mixer.now;
+                                    drop(g);
+                                    record(&stats, t0, epoch, expected_ns, b, now_frames);
+                                }
+                                Err(_) => {
+                                    data.fill(0.0); // an offline render holds the lock: never block here
+                                    stats.contended.fetch_add(1, Relaxed);
+                                }
                             }
-                            Err(_) => {
-                                data.fill(0.0); // an offline render holds the lock: never block here
-                                stats.contended.fetch_add(1, Relaxed);
-                            }
+                        },
+                        move |_err| {
+                            stats_err.stream_errors.fetch_add(1, Relaxed);
+                        },
+                        None,
+                    )
+                };
+                let (stream, used) = match make(cpal::BufferSize::Fixed(block)) {
+                    Ok(s) => (s, block),
+                    Err(_) => match make(cpal::BufferSize::Default) {
+                        Ok(s) => (s, 0),
+                        Err(e) => {
+                            let _ = res_tx.send(Err(format!("build stream: {e}")));
+                            return;
                         }
                     },
-                    move |_err| { stats_err.stream_errors.fetch_add(1, Relaxed); },
-                    None,
-                )
-            };
-            let (stream, used) = match make(cpal::BufferSize::Fixed(block)) {
-                Ok(s) => (s, block),
-                Err(_) => match make(cpal::BufferSize::Default) {
-                    Ok(s) => (s, 0),
-                    Err(e) => { let _ = res_tx.send(Err(format!("build stream: {e}"))); return; }
-                },
-            };
-            if let Err(e) = stream.play() {
-                let _ = res_tx.send(Err(format!("play: {e}")));
-                return;
-            }
-            let _ = res_tx.send(Ok((name, channels, used)));
-            let _ = stop_rx.recv(); // park until close() (or the Engine is dropped)
-            drop(stream);
-        }).map_err(|e| PyRuntimeError::new_err(format!("spawn: {e}")))?;
+                };
+                if let Err(e) = stream.play() {
+                    let _ = res_tx.send(Err(format!("play: {e}")));
+                    return;
+                }
+                let _ = res_tx.send(Ok((name, channels, used)));
+                let _ = stop_rx.recv(); // park until close() (or the Engine is dropped)
+                drop(stream);
+            })
+            .map_err(|e| PyRuntimeError::new_err(format!("spawn: {e}")))?;
         let res = py.detach(move || res_rx.recv_timeout(std::time::Duration::from_secs(5)));
         match res {
             Ok(Ok((name, ch, buf))) => {
                 self.stats.last_cb_ns.store(0, Relaxed);
                 *self.device.lock().unwrap() = Some(DeviceHandle {
-                    stop: stop_tx, thread: Some(thread), name: name.clone(), channels: ch, buffer: buf });
+                    stop: stop_tx,
+                    thread: Some(thread),
+                    name: name.clone(),
+                    channels: ch,
+                    buffer: buf,
+                });
                 Ok((name, ch, buf))
             }
             Ok(Err(e)) => Err(PyRuntimeError::new_err(e)),
-            Err(_) => Err(PyRuntimeError::new_err("timed out opening the audio device")),
+            Err(_) => Err(PyRuntimeError::new_err(
+                "timed out opening the audio device",
+            )),
         }
     }
 
@@ -336,13 +426,19 @@ impl Engine {
         if let Some(mut h) = h {
             let _ = h.stop.send(());
             if let Some(t) = h.thread.take() {
-                py.detach(|| { let _ = t.join(); });
+                py.detach(|| {
+                    let _ = t.join();
+                });
             }
         }
     }
 
     fn device(&self) -> Option<(String, u16, u32)> {
-        self.device.lock().unwrap().as_ref().map(|h| (h.name.clone(), h.channels, h.buffer))
+        self.device
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|h| (h.name.clone(), h.channels, h.buffer))
     }
 
     /// Milliseconds since the device last asked for audio (None if no device / never).
@@ -359,7 +455,14 @@ impl Engine {
         let host = cpal::default_host();
         let dflt = host.default_output_device().map(|d| device_name(&d));
         host.output_devices()
-            .map(|it| it.map(|d| { let n = device_name(&d); let is = Some(&n) == dflt.as_ref(); (n, is) }).collect())
+            .map(|it| {
+                it.map(|d| {
+                    let n = device_name(&d);
+                    let is = Some(&n) == dflt.as_ref();
+                    (n, is)
+                })
+                .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -384,10 +487,22 @@ impl Engine {
         let s = &self.stats;
         let mut m = std::collections::HashMap::new();
         m.insert("blocks".into(), s.blocks.load(Relaxed) as f64);
-        m.insert("limited_blocks".into(), s.limited_blocks.load(Relaxed) as f64);
-        m.insert("max_render_ms".into(), s.max_render_ns.load(Relaxed) as f64 / 1e6);
-        m.insert("avg_render_ms".into(), s.ema_render_ns.load(Relaxed) as f64 / 1e6);
-        m.insert("peak".into(), f32::from_bits(s.peak_bits.load(Relaxed) as u32) as f64);
+        m.insert(
+            "limited_blocks".into(),
+            s.limited_blocks.load(Relaxed) as f64,
+        );
+        m.insert(
+            "max_render_ms".into(),
+            s.max_render_ns.load(Relaxed) as f64 / 1e6,
+        );
+        m.insert(
+            "avg_render_ms".into(),
+            s.ema_render_ns.load(Relaxed) as f64 / 1e6,
+        );
+        m.insert(
+            "peak".into(),
+            f32::from_bits(s.peak_bits.load(Relaxed) as u32) as f64,
+        );
         m.insert("voices".into(), s.voices.load(Relaxed) as f64);
         m.insert("contended".into(), s.contended.load(Relaxed) as f64);
         m.insert("glitches".into(), s.glitches.load(Relaxed) as f64);
