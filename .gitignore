@@ -30,3 +30,6 @@ recordings/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Stock clips for local testing (Pexels/Mixkit), never committed
+clips/
