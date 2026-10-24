@@ -74,6 +74,7 @@
             <div><dt>Sonic, streamed and interruptible</dt><dd>About a tenth of a second to the first word, over one open WebSocket. A less urgent sentence is cut off mid-word when a hazard appears.</dd></div>
             <div><dt>A phrase cache for the moments that matter</dt><dd>"Stop.", "Don't walk." and every other fixed safety phrase are rendered by Sonic at startup, so they play instantly, even offline.</dd></div>
             <div><dt>Ink, listening while you talk</dt><dd>Press an AirPod once and speak. Ink transcribes as you talk, so the answer starts the moment you stop.</dd></div>
+            <div><dt>Hear it</dt><dd>The <a href="/#hear">41-second walk on the home page</a> is the real earpiece speaking in Cartesia's voice, with its waveform and a line-by-line transcript.</dd></div>
             <div><dt>Edge cases handled</dt><dd>With no internet, cached phrases still play and new sentences use a built-in voice. Late speech is dropped, not spoken.</dd></div>
           </dl>
         </article>
@@ -110,6 +111,10 @@
             <div><dt>Both ways, live</dt><dd>The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.</dd></div>
             <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"</dd></div>
           </dl>
+          <figure class="evidence one">
+            <img src="/assets/evidence/caregiver-dashboard.jpg" alt="Kite's caregiver dashboard, marked Live via SpacetimeDB. A dark map of Lyon Street shows the walker, a crosswalk, a crowd and a vehicle, with the last spoken line, Stop, person ahead. On the right, active hazards and a shared live state panel counting sources and events per minute; below, a timeline of stops and a caregiver message" width="900" height="562" loading="lazy" />
+            <figcaption>the caregiver's dashboard, live from SpacetimeDB, on a replayed test walk</figcaption>
+          </figure>
         </article>
 
         <article class="card track" id="moss">
@@ -210,8 +215,13 @@
             <div><dt>A lock-free Rust audio engine</dt><dd>Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.</dd></div>
             <div><dt>Binaural rendering from a model of the head</dt><dd>A spherical-head model sets the timing and loudness difference between your ears.</dd></div>
             <div><dt>Time-to-contact sonar and a time-aware speech scheduler</dt><dd>Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.</dd></div>
+            <div><dt>One detector, two cameras, measured</dt><dd>YOLO runs on the drone's view and the chest camera's. Scored against the browser simulation's ground truth on 168 frames, it finds 99% of people and 91% of cars from the drone, and 96% and 85% from the chest.</dd></div>
             <div><dt>Four cloud services, none on the safety path</dt><dd>Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.</dd></div>
           </dl>
+          <div class="evidence two">
+            <figure><img src="/assets/evidence/yolo-drone-view.jpg" alt="The drone's view of a simulated sidewalk: YOLO draws green boxes around the pedestrians and yellow boxes around the parked cars, each with a confidence score" width="640" height="480" loading="lazy" /><figcaption>drone view, YOLO boxes</figcaption></figure>
+            <figure><img src="/assets/evidence/yolo-chest-view.jpg" alt="The chest camera's view of the same simulated sidewalk: green boxes around the pedestrians, yellow around the cars, and thin white ground-truth boxes" width="640" height="480" loading="lazy" /><figcaption>chest view, same street</figcaption></figure>
+          </div>
         </article>
 
         <article class="card track" id="overall">

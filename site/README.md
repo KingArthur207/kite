@@ -12,3 +12,7 @@ The site at **https://trykite.pages.dev**: three static pages (`/`, `/how`, `/ju
 
 Deploy with `scripts/deploy-site.sh`: it rebuilds, runs the tests, and deploys `public/` with `functions/` from inside `site/` (wrangler only picks up `./functions` from the directory it runs in).
 There is no automatic deploy: the repo has no GitHub Actions (they cost Arthur real money), so deploy by hand with the command above.
+
+## Evidence images
+
+Evidence images in `public/assets/evidence/` are copies of real artifacts from this repo, resized with `sips`: `caregiver-dashboard.jpg` is `dashboard/docs/reveal-normal.png` (a replayed test walk), and `yolo-drone-view.jpg` and `yolo-chest-view.jpg` are `sim/docs/yolo_drone.jpg` and `sim/docs/yolo_chest.jpg` (YOLO on the browser simulation, scored in `sim/README.md`). Only add an image to a card when a real artifact proves the claim.

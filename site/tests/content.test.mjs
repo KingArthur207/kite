@@ -47,6 +47,19 @@ test("/judges cards run from most to least likely to win, and the contents list 
   assert.ok(judges.indexOf('id="spacexai"') < calhacks && calhacks < judges.indexOf('id="people"'));
 });
 
+test("evidence images are real local files, at most 900 px wide, each with alt text", () => {
+  const imgs = [...judges.matchAll(/<img src="(\/assets\/evidence\/[^"]+)" alt="([^"]{40,})" width="(\d+)" height="\d+" loading="lazy" \/>/g)];
+  assert.deepEqual(imgs.map((m) => m[1]).sort(), ["/assets/evidence/caregiver-dashboard.jpg", "/assets/evidence/yolo-chest-view.jpg", "/assets/evidence/yolo-drone-view.jpg"]);
+  for (const [, src, , w] of imgs) {
+    assert.ok(Number(w) <= 900, src);
+    assert.ok(existsSync(join(PUBLIC, src)), src);
+    assert.ok(statSync(join(PUBLIC, src)).size < 200 * 1024, src);
+  }
+  assert.match(card("spacetime"), /caregiver-dashboard\.jpg/);
+  assert.match(card("complex"), /yolo-drone-view\.jpg/);
+  assert.match(card("cartesia"), /href="\/#hear"/, "Cartesia links to the walk instead of copying it");
+});
+
 test("the SpaceXAI card names Cursor, Grok Bot, Grok Voice and Grok Imagine", () => {
   const c = card("spacexai");
   assert.match(c, /built Kite in Cursor and used Grok Bot for research, planning and team collaboration/);

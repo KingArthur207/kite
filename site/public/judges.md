@@ -65,6 +65,10 @@ About a tenth of a second to the first word, over one open WebSocket. A less urg
 
 Press an AirPod once and speak. Ink transcribes as you talk, so the answer starts the moment you stop.
 
+**Hear it**
+
+The [41-second walk on the home page](https://trykite.pages.dev/#hear) is the real earpiece speaking in Cartesia's voice, with its waveform and a line-by-line transcript.
+
 **Edge cases handled**
 
 With no internet, cached phrases still play and new sentences use a built-in voice. Late speech is dropped, not spoken.
@@ -115,6 +119,8 @@ The caregiver sees a live map, the last thing Kite said and every stop. They typ
 **Without it**
 
 Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"
+
+_the caregiver's dashboard, live from SpacetimeDB, on a replayed test walk_
 
 Best Use of Moss
 
@@ -275,9 +281,17 @@ A spherical-head model sets the timing and loudness difference between your ears
 
 Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.
 
+**One detector, two cameras, measured**
+
+YOLO runs on the drone's view and the chest camera's. Scored against the browser simulation's ground truth on 168 frames, it finds 99% of people and 91% of cars from the drone, and 96% and 85% from the chest.
+
 **Four cloud services, none on the safety path**
 
 Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.
+
+_drone view, YOLO boxes_
+
+_chest view, same street_
 
 First Overall · Hacker's Choice
 
