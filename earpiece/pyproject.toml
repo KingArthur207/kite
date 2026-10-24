@@ -18,6 +18,7 @@ dependencies = [
 mac = ["pyobjc-framework-MediaPlayer>=10", "pyobjc-framework-Cocoa>=10", "pyobjc-framework-Quartz>=10"]
 brain = ["anthropic>=0.40"]
 memory = ["inferedge-moss>=1.0.0b19"]
+camera = ["opencv-python-headless>=4.9"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 
 [project.scripts]

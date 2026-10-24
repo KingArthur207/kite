@@ -1,0 +1,196 @@
+{
+ "origin": [
+  37.8013,
+  -122.4477
+ ],
+ "destination": [
+  37.7975,
+  -122.4405
+ ],
+ "response": {
+  "routes": [
+   {
+    "legs": [
+     {
+      "steps": [
+       {
+        "distanceMeters": 52,
+        "polyline": {
+         "encodedPolyline": "caveFdqjjVVIdAK"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.8012983,
+          "longitude": -122.44770539999999
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.8008332,
+          "longitude": -122.4476011
+         }
+        },
+        "navigationInstruction": {
+         "maneuver": "DEPART",
+         "instructions": "Head south toward Richardson Ave"
+        }
+       },
+       {
+        "distanceMeters": 206,
+        "polyline": {
+         "encodedPolyline": "e~ueFnpjjVn@gAX_@Xe@GC@KDBx@sA@BP[E?NUF?f@w@"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.8008332,
+          "longitude": -122.4476011
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.7996458,
+          "longitude": -122.44589859999999
+         }
+        },
+        "navigationInstruction": {
+         "maneuver": "TURN_SLIGHT_LEFT",
+         "instructions": "Slight left onto Richardson Ave"
+        }
+       },
+       {
+        "distanceMeters": 12,
+        "polyline": {
+         "encodedPolyline": "yvueFzejjVCU"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.7996458,
+          "longitude": -122.44589859999999
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.799669699999995,
+          "longitude": -122.4457855
+         }
+        },
+        "navigationInstruction": {
+         "maneuver": "TURN_LEFT",
+         "instructions": "Turn left onto Chestnut St"
+        }
+       },
+       {
+        "distanceMeters": 26,
+        "polyline": {
+         "encodedPolyline": "}vueFdejjVRIDK?MHB"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.799669699999995,
+          "longitude": -122.4457855
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.799492,
+          "longitude": -122.4456309
+         }
+        }
+       },
+       {
+        "distanceMeters": 107,
+        "polyline": {
+         "encodedPolyline": "yuueFddjjV`BsCH]"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.799492,
+          "longitude": -122.4456309
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.7989506,
+          "longitude": -122.44474109999999
+         }
+        },
+        "navigationInstruction": {
+         "maneuver": "TURN_LEFT",
+         "instructions": "Turn left onto Richardson Ave"
+        }
+       },
+       {
+        "distanceMeters": 328,
+        "polyline": {
+         "encodedPolyline": "mrueFr~ijVDw@C??a@c@oHAAg@eI"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.7989506,
+          "longitude": -122.44474109999999
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.7993321,
+          "longitude": -122.441127
+         }
+        },
+        "navigationInstruction": {
+         "maneuver": "NAME_CHANGE",
+         "instructions": "Continue onto Lombard St"
+        }
+       },
+       {
+        "distanceMeters": 211,
+        "polyline": {
+         "encodedPolyline": "ytueF`hijVl@IdIaA"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.7993321,
+          "longitude": -122.441127
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.7974685,
+          "longitude": -122.44074699999999
+         }
+        },
+        "navigationInstruction": {
+         "maneuver": "TURN_RIGHT",
+         "instructions": "Turn right onto Scott St"
+        }
+       },
+       {
+        "distanceMeters": 14,
+        "polyline": {
+         "encodedPolyline": "eiueFteijVEq@"
+        },
+        "startLocation": {
+         "latLng": {
+          "latitude": 37.7974685,
+          "longitude": -122.44074699999999
+         }
+        },
+        "endLocation": {
+         "latLng": {
+          "latitude": 37.7974994,
+          "longitude": -122.44049989999999
+         }
+        },
+        "navigationInstruction": {
+         "maneuver": "TURN_LEFT",
+         "instructions": "Turn left onto Filbert St\nDestination will be on the left"
+        }
+       }
+      ]
+     }
+    ],
+    "distanceMeters": 957,
+    "duration": "909s"
+   }
+  ]
+ }
+}

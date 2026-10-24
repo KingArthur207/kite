@@ -13,6 +13,7 @@ Safety policy in one place:
 from __future__ import annotations
 
 import dataclasses
+import re
 import threading
 import time
 from collections import deque
@@ -26,17 +27,23 @@ from .brain import Actions, Brain
 from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
 from .events import PRIORITY_RANK, Msg, clock_phrase, distance_phrase
+from .camera import BodyCamera
 from .judgment import Judgment
+from .vision import Vision
 from .listen import Listener
 from .memory import MemoryStore
 from .mixer import Engine
 from .output import DeviceOutput, NullOutput, RustDeviceOutput
+from .route import RouteGuide
 from .sonar import Sonar
 from .speech import Speaker
 from .transport import Transport
 
 # Inbound types handle() mirrors itself; _event() skips them to avoid double rows.
 _MIRRORED_INBOUND = {"guidance", "hazard"}
+# Internal bookkeeping events: shown to WebSocket clients, not mirrored (what was SAID about
+# them is already mirrored as `spoken`, and the Spacetime module does not accept these types).
+_LOCAL_ONLY = {"judgment", "continue", "read_text"}
 
 
 def _stereo(mono: np.ndarray) -> np.ndarray:
@@ -77,18 +84,27 @@ class Earpiece:
         self.memory = memory if memory is not None else MemoryStore(log=log)
         self.brain = Brain(self.context, Actions(self.navigate, self.control, self.alert_caregiver,
                                                  self.stop_speaking, self.ear_check,
-                                                 remember=self.remember, recall=self.recall),
+                                                 remember=self.remember, recall=self.recall,
+                                                 describe_front=lambda: self.describe_front(),
+                                                 read_text=lambda: self.read_text()),
                            self.say, self.cfg.anthropic_key, log=log)
         self.judgment = Judgment(self.context, self.say, self.upgrade_hazard, self._event,
                                  api_key=self.cfg.anthropic_key if self.cfg.judgment else None, log=log)
         self._noted_places: set[str] = set()
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
+        self.vision = Vision(self.cfg.anthropic_key, log=log)
+        self._stop_since: float | None = None      # a "Stop."/wait is in force since this time
+        self._clear_since: float | None = None     # the way has looked clear since this time
+        self._last_scene_image = 0.0
+        self._chest_frame: tuple[bytes, float] | None = None   # newest chest-camera JPEG
+        self.camera = BodyCamera(log=log)
         self.gestures = Gestures(self.gesture, log=log)
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
                                    self.cfg.net.ws_port, log=log) if network else None
         if self.transport is not None:
             self.transport.state_provider = self.state
         self.bridges: list = []                    # extra sinks (e.g. SpacetimeDB) for outbound events
+        self.route = RouteGuide(self.handle, event=self._event, log=log)   # cues re-enter handle()
         self.battery = devices.BatteryWatch(lambda t: self.say(t, "system", key="airpods-battery", ttl=30))
         self._stop = threading.Event()
         self.paused = False
@@ -110,6 +126,7 @@ class Earpiece:
         self.speaker.start()
         if prewarm:
             self.speaker.prewarm()
+            threading.Thread(target=self.prewarm_cues, name="cue-prewarm", daemon=True).start()
         if self.transport is not None:
             self.transport.start()
         self.memory.start()
@@ -121,7 +138,22 @@ class Earpiece:
             self.engine.play(_stereo(sounds.ready()), bus="cue", gain=1.0)
             self.say("Kite is ready.", "system", ttl=20)
             if isinstance(self.output, (DeviceOutput, RustDeviceOutput)) and not self.output.is_airpods:
-                self.say("AirPods are not connected. Using the laptop speaker.", "system", ttl=20)
+                self.say("Headphones are not connected. Using the laptop speaker.", "system", ttl=20)
+
+    def prewarm_cues(self) -> int:
+        """Render the critical sonar cues and every beacon tick at all 5-degree bearings
+        ahead of time (batched in Rust when kite_audio is built), off the control loop."""
+        from . import beacon as beacon_mod, sonar as sonar_mod
+        t0 = time.perf_counter()
+        try:
+            n = sonar_mod.prewarm(self.cfg.sonar, self.engine.rate)
+            n += beacon_mod.prewarm(self.cfg.beacon, self.engine.rate)
+        except Exception as e:                 # a warm cache is an optimisation, never a failure
+            self.log(f"[audio] cue pre-warm failed: {e!r}")
+            return 0
+        self.log(f"[audio] pre-rendered {n} spatial cues in {(time.perf_counter() - t0) * 1e3:.0f} ms "
+                 f"({'rust' if spatial.NATIVE else 'python'} binaural)")
+        return n
 
     def run_forever(self) -> None:
         """Blocks the main thread (it pumps the macOS run loop for AirPods stem presses)."""
@@ -150,7 +182,43 @@ class Earpiece:
     # ================================================================== speaking
     def say(self, text: str, priority: str = "info", key: str | None = None, ttl: float | None = None,
             pre_sound: np.ndarray | None = None) -> str | None:
+        if priority == "critical" and text.startswith("Stop"):
+            self._begin_wait()
         return self.speaker.say(text, priority, key=key, ttl=ttl, pre_sound=pre_sound)
+
+    # ================================================================== stop and wait
+    CLEAR_HOLD_S = 1.5      # the way must look clear this long before "you can continue"
+    WAIT_GIVE_UP_S = 60.0   # after this, stop tracking the episode (no late "continue")
+
+    def _begin_wait(self) -> None:
+        self._stop_since = time.monotonic()
+        self._clear_since = None
+
+    def _way_blocked(self) -> bool:
+        with self._lock:
+            tracks = list(self.sonar.tracks.values())
+        if any(t.critical or t.urgency > 0.45 for t in tracks):
+            return True
+        return any(h.get("state") in ("wait", "blocked", "stop") and h.get("kind") != "crosswalk"
+                   for h in self.hazards.values())
+
+    def _check_continue(self, now: float) -> None:
+        """Guide-dog behaviour from the spec: stop, wait until the way is clear, then say so.
+        Deterministic code is the only thing allowed to clear a stop."""
+        if self._stop_since is None:
+            return
+        if now - self._stop_since > self.WAIT_GIVE_UP_S or self.perception_ok is False:
+            self._stop_since = self._clear_since = None     # never announce "clear" on stale data
+            return
+        if now - self._stop_since < 1.0 or self._way_blocked():
+            self._clear_since = None
+            return
+        if self._clear_since is None:
+            self._clear_since = now
+        elif now - self._clear_since >= self.CLEAR_HOLD_S:
+            self._stop_since = self._clear_since = None
+            self.speaker.say("Path is clear. You can continue.", "hazard", key="continue", ttl=3)
+            self._event("continue", {})
 
     def cue(self, name: str) -> None:
         snd = {"listening": sounds.listening, "heard": sounds.heard, "error": sounds.error}.get(name)
@@ -165,7 +233,7 @@ class Earpiece:
         self.events.append(obj)
         if self.transport is not None:
             self.transport.publish(obj)
-        if kind not in _MIRRORED_INBOUND:          # those already went out in _mirror()
+        if kind not in _MIRRORED_INBOUND and kind not in _LOCAL_ONLY:   # inbound went out in _mirror()
             self._bridge(obj)
 
     def _bridge(self, obj: dict) -> None:
@@ -183,7 +251,9 @@ class Earpiece:
 
     # ================================================================== inbound events
     def handle(self, msg: Msg) -> None:
-        if self.bridges and msg.source != "caregiver":   # caregiver rows are already in Spacetime
+        # caregiver rows are already in Spacetime; a raw JPEG stays local (its description is
+        # mirrored as a `scene` event instead)
+        if self.bridges and msg.source != "caregiver" and msg.type != "scene_image":
             self._mirror(msg)
         now = time.monotonic()
         t = msg.type
@@ -219,8 +289,11 @@ class Earpiece:
             self.scene = (msg.text, now)
             if fresh:
                 self.judgment.notify()
+        elif t == "scene_image":
+            self._scene_image(msg, now)
         elif t == "position":
             self.position = {k: v for k, v in msg.data.items() if v is not None}
+            self.route.position(self.position, now)
             place = self.position.get("place")
             if place and place not in self._noted_places:
                 self._noted_places.add(place)
@@ -235,6 +308,10 @@ class Earpiece:
             out = self.control(msg.action)
             if out and msg.action not in ("repeat",):
                 self.say(out, "system", ttl=5)
+
+    _HAZARD_NAMES = {"crowd": "Crowd", "vehicle": "Car", "overhead": "Overhead obstacle",
+                     "overhead_obstacle": "Overhead obstacle", "curb": "Curb", "construction": "Construction",
+                     "stairs_down": "Step down", "person": "Person", "bike": "Bike"}
 
     WALK_CONFIRM_S = 0.6   # "walk" must hold this long before it is announced; "don't walk" is instant
 
@@ -279,11 +356,15 @@ class Earpiece:
             if changed and snd is not None:
                 self.engine.play(spatial.render(snd, msg.bearing or 0.0, self.engine.rate), bus="cue", gain=0.9)
         elif not text:
-            where = f" {clock_phrase(msg.bearing)}" if msg.bearing is not None else ""
-            dist = f", {distance_phrase(msg.distance)}" if msg.distance is not None else ""
-            text = f"{(msg.kind or 'hazard').replace('_', ' ').capitalize()}{where}{dist}."
+            name = self._HAZARD_NAMES.get(msg.kind or "", (msg.kind or "hazard").replace("_", " ").capitalize())
+            where = clock_phrase(msg.bearing) if msg.bearing is not None else "ahead"
+            text = f"{name}, {where}."                        # same form as the cached sonar labels
+            if msg.state in ("wait", "blocked", "stop"):
+                text += " Wait."
         self.hazards[key] = {"kind": msg.kind, "state": msg.state, "text": text, "bearing": msg.bearing,
                              "distance": msg.distance, "until": now + ttl, "t": now, "priority": msg.priority}
+        if changed and msg.state in ("wait", "blocked", "stop") and msg.kind != "crosswalk":
+            self._begin_wait()
         if changed and text:
             self.say(text, msg.priority, key=f"hazard:{key}:{msg.state}", ttl=min(ttl, 8.0))
         self._event("hazard", {"key": key, "state": msg.state, "text": text})
@@ -303,6 +384,72 @@ class Earpiece:
         self._event("hazard", {"key": key, "state": h.get("state"), "text": h.get("text"),
                                "priority": priority, "upgraded_by": "judgment"})
         return True
+
+    # ================================================================== vision (Claude)
+    SCENE_IMAGE_EVERY_S = 3.0
+
+    def _scene_image(self, msg: Msg, now: float) -> None:
+        """A camera frame. Drone/sim frames: Claude describes them (off the hot path,
+        rate-limited) into the shared `scene` context. Chest frames are only kept, to answer
+        "what's in front of me?" on demand (the chest camera sees what the drone can't)."""
+        if msg.kind == "chest":
+            self._chest_frame = (msg.data["jpeg"], now)
+            return
+        if not self.vision.online or now - self._last_scene_image < self.SCENE_IMAGE_EVERY_S:
+            return
+        self._last_scene_image = now
+        where = {"drone": "flying just above and behind the walker's head",
+                 "chest": "worn on the walker's chest, pointing forward",
+                 "sim": "flying just above and behind the walker's head (a simulation)"}.get(msg.kind, "near the walker")
+
+        def work():
+            text = self.vision.describe_image(msg.data["jpeg"], where)
+            if text:
+                self.scene = (text, time.monotonic())
+                self._event("scene", {"text": text, "source": f"claude:{msg.kind}"})
+                self.judgment.notify()
+        threading.Thread(target=work, name="scene-image", daemon=True).start()
+
+    CHEST_FRAME_MAX_AGE_S = 3.0
+
+    def _body_frame(self) -> bytes | None:
+        """Newest body-camera frame: one streamed by perception in the last few seconds, else a
+        single frame grabbed from the local camera (indoor mode, no drone, no perception)."""
+        f = self._chest_frame
+        if f is not None and time.monotonic() - f[1] <= self.CHEST_FRAME_MAX_AGE_S:
+            return f[0]
+        return self.camera.capture_jpeg()
+
+    def describe_front(self) -> str | None:
+        """Claude looks at the body camera. None if there is no frame or Claude is unreachable
+        (the caller then answers from the obstacle tracks)."""
+        if not self.vision.online:
+            return None
+        jpeg = self._body_frame()
+        if jpeg is None:
+            return None
+        return self.vision.describe_image(jpeg, "worn on the walker's chest, pointing forward", timeout=7.0)
+
+    def read_text(self) -> str:
+        """Read printed or on-screen text aloud: a menu, a sign, a label, a monitor. The body
+        camera frames it, Claude transcribes it, Cartesia reads it sentence by sentence (so
+        "stop" or any warning cuts in between sentences)."""
+        if not self.vision.online:
+            return "Reading text needs the internet right now."
+        self.say("Hold it steady. Reading.", "answer", key="reading", ttl=10)
+        jpeg = self._body_frame()
+        if jpeg is None:
+            return "I can't see through the camera. Check that it's connected and allowed."
+        text = self.vision.read_text(jpeg)
+        if text is None:
+            return "Sorry, I couldn't read that."
+        if not text:
+            return "I can't see any text. Try holding it closer and a little steadier."
+        sentences = [x.strip() for x in re.split(r"(?<=[.!?:;])\s+", text) if x.strip()]
+        for sentence in sentences[:-1]:
+            self.say(sentence, "answer", ttl=120)
+        self._event("read_text", {"chars": len(text)})
+        return sentences[-1] if sentences else text
 
     def _status(self, msg: Msg) -> None:
         prev_state = self.drone.get("state")
@@ -329,6 +476,7 @@ class Earpiece:
                     chosen = self.sonar.tick(now)
                 self._watchdog(now)
                 self._confirm_walks(now)
+                self._check_continue(now)
                 warn = any(t.urgency > 0.3 for t in chosen)
                 self.beacon.duck = 0.35 if warn else 1.0
                 self.beacon.tick(now, speech_playing=self.engine.speaking or self.listener.active)
@@ -405,6 +553,8 @@ class Earpiece:
                                           "target_type": "memory", "name": name,
                                           "address": place.meta.get("address"), "lat": place.meta.get("lat"),
                                           "lng": place.meta.get("lng"), "memory_id": place.id})
+            if place.meta.get("lat") is not None and place.meta.get("lng") is not None:
+                self.route.start((place.meta["lat"], place.meta["lng"]), name)
             return f"Okay, heading to {name}."
         d = dst.classify(destination)
         if d.kind == "relative":
@@ -434,6 +584,8 @@ class Earpiece:
             where = f" on {r.address.split(',')[0]}" if r.address else ""
             lead = f"The nearest {d.query} is" if d.kind == "nearby" else "Found"
             self.say(f"{lead} {r.name}{where}{far}. Starting directions.", "answer", ttl=20)
+            if r.lat is not None and r.lng is not None:
+                self.route.start((r.lat, r.lng), r.name)
 
         threading.Thread(target=lookup, name="places", daemon=True).start()
         return f"Looking for the nearest {d.query}." if d.kind == "nearby" else f"Looking up {d.query}."
@@ -468,7 +620,8 @@ class Earpiece:
 
     def _place_notes(self, place: str) -> None:
         for h in self.memory.notes_for(place)[:1]:
-            self.say(f"Heads up: {h.text}", "hazard", key=f"memory:{h.id}", ttl=20)
+            # a remembered note is context, not an imminent danger: live directions go first
+            self.say(f"Heads up: {h.text}", "info", key=f"memory:{h.id}", ttl=30)
 
     def alert_caregiver(self, message: str) -> str:
         self._event("caregiver_alert", {"message": message, "position": self.position})
@@ -509,6 +662,7 @@ class Earpiece:
             self.beacon.enabled = False
             out = "Beacon off."
         elif action == "cancel_route":
+            self.route.cancel()
             self.beacon.clear()
             self._event("voice_request", {"intent": "cancel_route"})
             out = "Route cancelled."
@@ -541,10 +695,12 @@ class Earpiece:
         self._event("output", {"device": name, "airpods": is_airpods})
         if prev is None:
             return
+        ap = "airpods" in name.lower() or "airpods" in (prev or "").lower()
         if is_airpods:
-            self.say("AirPods connected.", "system", key="output", ttl=10)
+            self.say("AirPods connected." if ap else "Headphones connected.", "system", key="output", ttl=10)
         else:
-            self.say("AirPods disconnected. Using the laptop speaker.", "hazard", key="output", ttl=10)
+            self.say("AirPods disconnected. Using the laptop speaker." if ap else
+                     "Headphones disconnected. Using the laptop speaker.", "hazard", key="output", ttl=10)
 
     # ================================================================== state
     def context(self) -> dict:
@@ -562,6 +718,7 @@ class Earpiece:
                         for key, h in list(self.hazards.items())],
             "route": {"label": b.label, "bearing": b.bearing, "distance": b.distance,
                       "region": b.region} if b.active else None,
+            "directions": self.route.summary(),
             "last_instruction": None if self.last_guidance is None else {
                 "text": self.last_guidance[0], "seconds_ago": round(now - self.last_guidance[1])},
             "scene": self.scene[0] if self.scene and now - self.scene[1] < 90 else None,
@@ -581,12 +738,16 @@ class Earpiece:
                       "airpods": self.output.is_airpods, "underflows": self.output.underflows,
                       "master_gain": round(self.engine.master_gain, 2), "speaking": self.engine.speaking},
             "speech": {"online": self.speaker.online, "history": list(self.speaker.history)[-5:],
+                       "cartesia_chars_session": self.speaker.meter.session,
+                       "cartesia_chars_total": self.speaker.meter.total,
                        **{k: v for k, v in self.speaker.stats.items() if k != "first_audio_ms"},
                        "first_audio_ms": (sorted(self.speaker.stats["first_audio_ms"])[
                            len(self.speaker.stats["first_audio_ms"]) // 2]
                            if self.speaker.stats["first_audio_ms"] else None)},
             "listen": {"active": self.listener.active, "available": self.listener.available,
                        "mic": self.listener.device_name, **self.listener.stats},
+            "stop_in_force": self._stop_since is not None,
+            "vision": {"online": self.vision.online, **self.vision.stats},
             "brain": {"online": self.brain.online, **{k: v for k, v in self.brain.stats.items()
                                                       if k != "first_sentence_ms"}},
             "judgment": {"online": self.judgment.online, **self.judgment.stats},

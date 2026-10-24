@@ -124,6 +124,12 @@ class DeviceOutput:
         for i, d in outs:
             if self.prefer and self.prefer in d["name"].lower():
                 return i, d["name"]
+        from . import devices
+        bt = devices.headphones_output_name(self.prefer)       # any Bluetooth pair
+        if bt:
+            for i, d in outs:
+                if d["name"] == bt:
+                    return i, d["name"]
         try:
             d = sd.query_devices(kind="output")
             return None, d["name"]
@@ -158,7 +164,8 @@ class DeviceOutput:
         prev = self.device_name
         self._stream = stream
         self.device_name = name
-        self.is_airpods = self.prefer in name.lower() if self.prefer else False
+        from . import devices
+        self.is_airpods = name == devices.headphones_output_name(self.prefer)   # "headphones in use"
         self._last_cb = time.monotonic()
         self.log(f"[audio] output: {name} ({ch} ch, {self.engine.rate} Hz, "
                  f"latency {stream.latency * 1000:.0f} ms)")
@@ -207,7 +214,7 @@ class DeviceOutput:
                     last_default = devices.default_output_name()
                     continue
                 cur_default = devices.default_output_name()
-                want_airpods = devices.airpods_output_present(self.prefer) if self.prefer else False
+                want_airpods = devices.headphones_output_name(self.prefer) is not None
                 if want_airpods and not self.is_airpods:
                     self.restart("AirPods appeared")
                 elif self.is_airpods and want_airpods is False:
@@ -250,11 +257,11 @@ class RustDeviceOutput:
 
     def _open(self) -> None:
         from . import devices
-        want = self.forced or (self.prefer if self.prefer and devices.airpods_output_present(self.prefer) else "")
-        name, ch, buf = self.engine.open(want or "", self.block)
+        want = self.forced or devices.headphones_output_name(self.prefer) or ""
+        name, ch, buf = self.engine.open(want, self.block)
         prev = self.device_name
         self.device_name = name
-        self.is_airpods = bool(self.prefer) and self.prefer in name.lower()
+        self.is_airpods = name == devices.headphones_output_name(self.prefer)   # "headphones in use"
         self.log(f"[audio] output (rust engine): {name} ({ch} ch, {self.engine.rate} Hz, "
                  f"buffer {buf or 'default'})")
         if self.on_change is not None and prev != name:
@@ -292,7 +299,7 @@ class RustDeviceOutput:
                     last_default = devices.default_output_name()
                     continue
                 cur = devices.default_output_name()
-                have = devices.airpods_output_present(self.prefer) if self.prefer else False
+                have = devices.headphones_output_name(self.prefer) is not None
                 if have and not self.is_airpods:
                     self.restart("AirPods appeared")
                 elif self.is_airpods and not have:
