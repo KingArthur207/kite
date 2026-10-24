@@ -1,16 +1,16 @@
 // Streets for the Moss world: textured asphalt with lane lines, zebras and stop lines as decals,
 // concrete sidewalks on 15 cm curbs, driveway aprons in front of garages, tactile pads at the
-// lowered kerbs OSM maps, OSM street furniture, and (not in OSM, added by us) SF-style wooden
-// utility poles with overhead wires along Moss, cobra-head streetlights and street trees on Howard.
-// None of it collides; the walker's collision stays the building faces and curbs.
+// lowered kerbs OSM maps, OSM street furniture, and (not in OSM, added by us) cobra-head
+// streetlights on Howard. Poles, wires, street trees, parked cars and the rest of the dressing are in
+// streetDressing.ts. Nothing here collides; the walker's collision is the building faces and curbs.
 import * as THREE from "three";
-import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { Geo, pbr, seeded } from "./osmLook";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { Geo, pbr } from "./osmLook";
 import { inPoly, inQuad, type Garage } from "./osmFacades";
 
 type P = [number, number];
 type Quad = P[];
-interface Road { id: number; name: string; oneway: boolean; lanes: number; curbs: [number, number]; pts: P[] }
+interface Road { id: number; name: string; oneway: boolean; lanes: number; curbs: [number, number]; pts: P[]; curbs_at?: [number, number][] }
 interface Lane { road: number; pts: P[] }
 interface Crossing { x: number; y: number; markings: string; u: P; across: P; road: number }
 interface Furniture { id: number; kind: string; x: number; y: number; tags: Record<string, string> }
@@ -24,7 +24,7 @@ const CURB_H = 0.15;
 const MARK_Y = 0.012;
 const DASH_ON = 3, DASH_OFF = 9;       // m: SF lane line, 10 ft on, 30 ft off
 const LINE_W = 0.12;
-const MOSS_POLE_EVERY = 32, HOWARD_LIGHT_EVERY = 36, HOWARD_TREE_EVERY = 14;
+const HOWARD_LIGHT_EVERY = 36;
 const BBOX = { w: -80, s: -150, e: 140, n: 70 };
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
 const UP = new THREE.Vector3(0, 1, 0);
@@ -64,14 +64,21 @@ function dashes(pts: P[], w: number): Quad[] {
   return out;
 }
 
-const offsetPts = (pts: P[], o: number): P[] => pts.map((p, i) => {
+/** pts offset sideways (+ is left of travel) by o, or by o[i] at point i. */
+export const offsetPts = (pts: P[], o: number | number[]): P[] => pts.map((p, i) => {
+  const off = typeof o === "number" ? o : o[i];
   const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
   const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
-  return [p[0] - ((b[1] - a[1]) / L) * o, p[1] + ((b[0] - a[0]) / L) * o];
+  return [p[0] - ((b[1] - a[1]) / L) * off, p[1] + ((b[0] - a[0]) / L) * off];
 });
 
+/** Per-point offsets of a road's curb (side 1 = left of travel), `inset` further out toward the buildings
+ *  (negative: into the road). Uses the surveyed per-point curbs (`curbs_at`) when the road has them. */
+export const curbOffsets = (r: Road, side: 0 | 1, inset: number): number[] =>
+  r.pts.map((_, i) => (side ? (r.curbs_at?.[i]?.[1] ?? r.curbs[1]) + inset : (r.curbs_at?.[i]?.[0] ?? r.curbs[0]) - inset));
+
 /** Arc-length samples along a polyline: point, unit direction, distance along. */
-function* along(pts: P[], first: number, every: number) {
+export function* along(pts: P[], first: number, every: number) {
   let s0 = 0, next = first;
   for (let i = 0; i + 1 < pts.length; i++) {
     const [a, b] = [pts[i], pts[i + 1]];
@@ -86,7 +93,7 @@ function* along(pts: P[], first: number, every: number) {
   }
 }
 
-function nearestOnRoads(roads: Road[], p: P) {
+export function nearestOnRoads(roads: Road[], p: P) {
   let best = { d: Infinity, road: roads[0], q: p as P, u: [1, 0] as P, side: 0 };
   for (const r of roads) for (let i = 0; i + 1 < r.pts.length; i++) {
     const [a, b] = [r.pts[i], r.pts[i + 1]];
@@ -210,15 +217,12 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     green: new THREE.MeshStandardMaterial({ color: 0x40d070, emissive: 0x20c050, emissiveIntensity: 1.5, roughness: 0.3 }),
     unlit: new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.3 }),
     paystation: new THREE.MeshStandardMaterial({ color: 0x2e3946, roughness: 0.5, metalness: 0.4 }),
-    bark: new THREE.MeshStandardMaterial({ color: 0x4d3e33, roughness: 0.95 }),
-    leaves: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, vertexColors: true }),
-    soil: new THREE.MeshStandardMaterial({ color: 0x3b3027, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }),
     tactile: new THREE.MeshStandardMaterial({ color: 0xd8ae25, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2 }),
   };
   type MK = keyof typeof M;
   const parts = new Map<MK, THREE.BufferGeometry[]>();
   const put = (k: MK, g: THREE.BufferGeometry) => {
-    if (k !== "leaves") g.deleteAttribute("uv");
+    g.deleteAttribute("uv");
     (parts.get(k) ?? parts.set(k, []).get(k)!).push(g.index ? g.toNonIndexed() : g);
   };
   /** The `u` for place() that turns local +z toward f. */
@@ -274,33 +278,6 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     put("paystation", place(box(0.34, 1.45, 0.24).translate(0, 0.725, 0), p, y, u));
     put("unlit", place(box(0.22, 0.16, 0.02).translate(0, 1.2, 0.13), p, y, u));
   };
-  const tree = (p: P, id: number) => {
-    const r = seeded(id), y = ys(p);
-    put("soil", place(new THREE.PlaneGeometry(1.1, 1.1).rotateX(-Math.PI / 2).translate(0, 0.004, 0), p, y));
-    const h = 2.8 + r() * 0.8;
-    put("bark", place(cyl(0.11, 0.07, h + 1.6, 8), p, y));
-    const col = new THREE.Color().setHSL(0.22 + r() * 0.07, 0.3, 0.2 + r() * 0.07);
-    for (let k = 0; k < 9; k++) {
-      const ico = new THREE.IcosahedronGeometry(0.55 + r() * 0.5, 3);
-      ico.deleteAttribute("normal"); ico.deleteAttribute("uv");
-      const g = mergeVertices(ico);      // shared vertices: smooth normals, no facets
-      g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.getAttribute("position").count * 2), 2));
-      const pos = g.getAttribute("position");
-      for (let i = 0; i < pos.count; i++) {   // lumpy crown
-        const s = 0.82 + 0.3 * Math.abs(Math.sin(pos.getX(i) * 3.1 + id) * Math.cos(pos.getZ(i) * 2.7 + k));
-        pos.setXYZ(i, pos.getX(i) * s, pos.getY(i) * s * 0.85, pos.getZ(i) * s);
-      }
-      g.computeVertexNormals();
-      const c = new Float32Array(pos.count * 3);
-      for (let i = 0; i < pos.count; i++) {
-        const shade = (0.7 + 0.35 * ((pos.getY(i) + 1.7) / 3.4)) * (0.75 + 0.5 * Math.abs((Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1));
-        c.set([col.r * shade, col.g * shade, col.b * shade], i * 3);
-      }
-      g.setAttribute("color", new THREE.BufferAttribute(c, 3));
-      const a = r() * Math.PI * 2, d = k === 0 ? 0 : 0.5 + r() * 0.7;
-      put("leaves", place(g.translate(Math.cos(a) * d, h + 0.6 + r() * 1.6, Math.sin(a) * d), p, y));
-    }
-  };
   const stopSign = (p: P, face: P) => {
     const y = ys(p), u = zdir(face);
     put("steel", place(cyl(0.035, 0.035, 2.5, 6), p, y));
@@ -325,7 +302,6 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     else if (f.kind === "vending_machine") payStation(p, near.u);
     else if (f.kind === "pole" || f.kind === "utility_pole") woodPole(p, toRoad, false);
     else if (f.kind === "street_lamp") streetLight(p, toRoad);
-    else if (f.kind === "tree") tree(p, f.id);
     else if (f.kind === "kerb" && f.tags.tactile_paving === "yes") {
       const c = data.crossings.reduce((a, b) => (Math.hypot(b.x - p[0], b.y - p[1]) < Math.hypot(a.x - p[0], a.y - p[1]) ? b : a));
       const n: P = [-c.u[1], c.u[0]];
@@ -335,56 +311,23 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     }
   }
 
-  // Not in OSM: wooden poles with wires and a cobra-head light along Moss's SW curb, streetlights
-  // and trees along both Howard curbs.
-  const moss = data.roads.filter((r) => r.name === "Moss Street");
-  const poles: { p: P; u: P }[] = [];
-  for (const r of moss) {
-    for (const { p, u } of along(offsetPts(r.pts, r.curbs[0] - 0.35), 8, MOSS_POLE_EVERY)) {
-      if (!free(p, 1)) continue;
-      const across: P = [-u[1], u[0]];
-      woodPole(p, across, true);
-      poles.push({ p, u });
-    }
-  }
+  // Not in OSM: streetlights along both Howard curbs. Moss's poles and wires and the street trees
+  // (DataSF inventory trees included) are in streetDressing.ts.
   const howard = data.roads.filter((r) => r.name === "Howard Street");
   for (const r of howard) {
     for (const side of [0, 1] as const) {
       const off = side ? r.curbs[1] + 0.5 : r.curbs[0] - 0.5;
       const toRoad = (u: P): P => (side ? [u[1], -u[0]] : [-u[1], u[0]]);
       for (const { p, u } of along(offsetPts(r.pts, off), 10 + side * 18, HOWARD_LIGHT_EVERY)) if (free(p)) streetLight(p, toRoad(u));
-      const offT = side ? r.curbs[1] + 0.75 : r.curbs[0] - 0.75;
-      for (const { p, s } of along(offsetPts(r.pts, offT), 3 + side * 7, HOWARD_TREE_EVERY)) {
-        if (free(p, 2) && !data.furniture.some((f) => Math.hypot(f.x - p[0], f.y - p[1]) < 3)) tree(p, r.id + Math.round(s) * 7 + side);
-      }
     }
   }
 
   for (const [k, gs] of parts) {
     const mesh = new THREE.Mesh(mergeGeometries(gs)!, M[k]);
-    mesh.castShadow = k !== "soil" && k !== "tactile";
+    mesh.castShadow = k !== "tactile";
     mesh.receiveShadow = true;
     scene.add(mesh);
   }
-
-  // Overhead wires between consecutive Moss poles: three on the crossarm, sagging 0.35 m.
-  const wire: number[] = [];
-  for (let i = 0; i + 1 < poles.length; i++) {
-    const a = poles[i], b = poles[i + 1];
-    if (Math.hypot(b.p[0] - a.p[0], b.p[1] - a.p[1]) > MOSS_POLE_EVERY * 2.2) continue;
-    for (const z of [-1.0, 0, 1.0]) {
-      const ax: P = [a.p[0] - a.u[1] * z, a.p[1] + a.u[0] * z], bx: P = [b.p[0] - b.u[1] * z, b.p[1] + b.u[0] * z];
-      for (let k = 0; k < 12; k++) {
-        for (const t of [k / 12, (k + 1) / 12]) {
-          const sag = 0.35 * 4 * t * (1 - t);
-          wire.push(ax[0] + (bx[0] - ax[0]) * t, CURB_H + 9.75 - sag, -(ax[1] + (bx[1] - ax[1]) * t));
-        }
-      }
-    }
-  }
-  const wg = new THREE.BufferGeometry();
-  wg.setAttribute("position", new THREE.Float32BufferAttribute(wire, 3));
-  scene.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x1b1b1b })));
 }
 
 let stopTex: THREE.CanvasTexture | null = null;

@@ -158,6 +158,7 @@ class StreetViewSource:
         self.frames = 0
         self._i = 0
         self._last: tuple[str, float] | None = None
+        self._pano_meta: dict[str, dict] = {}  # view_jpeg: metadata by panorama id
         self._open = True
 
     # ---------------------------------------------------------------- HTTP
@@ -197,16 +198,33 @@ class StreetViewSource:
                 return m
         return None
 
+    def _jpeg(self, pano_id: str, heading: float) -> bytes:
+        return self._get("image", {"pano": pano_id, "heading": f"{heading:.1f}", "pitch": f"{self.pitch:g}",
+                                   "fov": f"{self.hfov_deg:g}", "size": f"{self.size[0]}x{self.size[1]}",
+                                   "return_error_code": "true"})
+
     def _image(self, pano_id: str, heading: float) -> np.ndarray:
         import cv2
 
-        data = self._get("image", {"pano": pano_id, "heading": f"{heading:.1f}", "pitch": f"{self.pitch:g}",
-                                   "fov": f"{self.hfov_deg:g}", "size": f"{self.size[0]}x{self.size[1]}",
-                                   "return_error_code": "true"})
-        img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        img = cv2.imdecode(np.frombuffer(self._jpeg(pano_id, heading), np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise RuntimeError("Street View image: the response is not an image")
         return img
+
+    def view_jpeg(self, pano_id: str, heading: float) -> tuple[bytes, dict]:
+        """One Static image of a panorama picked elsewhere (the sim's Street View walk names it by id): metadata
+        first (free) to check it is inside SCOPE and, with google_only, Google's own; then the JPEG as Google sent
+        it, not decoded or stored. Returns (jpeg, metadata). Metadata stays in memory per panorama id."""
+        m = self._pano_meta.get(pano_id)
+        if m is None:
+            m = json.loads(self._get("metadata", {"pano": pano_id}))
+            if m.get("status") != "OK":
+                raise RuntimeError(f"Street View metadata: {m.get('status')} for panorama {pano_id}")
+            self._pano_meta[pano_id] = m
+        _require_scope(m["location"]["lat"], m["location"]["lng"])
+        if self.google_only and not _is_google(m):
+            raise ValueError(f"streetview: panorama {pano_id} is not Google's ({m.get('copyright')})")
+        return self._jpeg(pano_id, float(heading) % 360), m
 
     # ---------------------------------------------------------------- source
     def read(self) -> tuple[bool, np.ndarray | None]:

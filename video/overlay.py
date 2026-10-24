@@ -13,6 +13,11 @@ and its <wav>.captions.jsonl (what the earpiece actually said) becomes the capti
 Drawn: captions (bottom), active hazards as a top banner with a bearing arrow and distance, a sonar
 indicator (left/right dots that grow as the nearest obstacle on that side gets closer), a corner
 badge. Needs opencv-python and numpy; ffmpeg (brew install ffmpeg) for H.264 and the audio track.
+
+--seg puts translucent street segmentation under all of that (walkable ground green, road grey, people
+orange, vehicles purple), the walker's corridor outline and a "walkable ahead" readout. It comes from
+sim/seg_standin.py, a STAND-IN until the streetseg perception package lands (ultralytics + weights/yolo26n-sem-ade20k.pt).
+--events is optional: without it there are no cues, which suits a --seg only render.
 """
 
 from __future__ import annotations
@@ -37,6 +42,9 @@ CENTER_DEG = 10.0        # objects this close to straight ahead light both dots
 FONT = cv2.FONT_HERSHEY_DUPLEX
 WHITE, BLACK = (255, 255, 255), (0, 0, 0)
 RED, ORANGE, GREEN = (40, 40, 230), (0, 150, 255), (90, 200, 90)
+SEG_COLORS = {"road": (70, 70, 70), "sidewalk": GREEN, "crosswalk": GREEN,      # painted in this order
+              "vehicle": (200, 60, 170), "person": ORANGE}                      # vehicles purple
+SEG_ALPHA = 0.4
 
 
 # ------------------------------------------------------------------ inputs
@@ -206,6 +214,30 @@ def draw_sonar(img, objects: list[dict], y_bottom: int, k: float) -> None:
     _text(img, "R", (x1 + pw - int(20 * k), y_bottom - int(8 * k)), 0.5 * k, grey, 1)
 
 
+def draw_seg(img, seg: dict, k: float) -> None:
+    """Translucent masks (seg_standin.Segmenter.segment output) and the walker's corridor outline."""
+    from seg_standin import corridor
+    tint = img.copy()
+    for name, color in SEG_COLORS.items():
+        m = seg["masks"].get(name)
+        if m is not None:
+            tint[m] = color
+    cv2.addWeighted(tint, SEG_ALPHA, img, 1 - SEG_ALPHA, 0, dst=img)
+    cv2.polylines(img, [corridor(*img.shape[:2])], True, WHITE, max(1, int(2 * k)), cv2.LINE_AA)
+
+
+def draw_walkable(img, walk: dict, y_bottom: int, k: float) -> None:
+    """Bottom right, mirroring the sonar panel: share of the walker's corridor that is sidewalk."""
+    pct = walk["ahead"]
+    color = GREEN if pct >= 0.5 else ORANGE if pct >= 0.2 else RED
+    pw, ph = int(190 * k), int(96 * k)
+    x2 = img.shape[1] - int(16 * k)
+    x1, y1 = x2 - pw, y_bottom - ph
+    _panel(img, x1, y1, x2, y_bottom, (30, 30, 30), 0.6)
+    _text(img, "WALKABLE AHEAD", (x1 + int(8 * k), y1 + int(20 * k)), 0.5 * k, (200, 200, 200), 1)
+    _text(img, f"{pct:.0%}", (x1 + int(8 * k), y_bottom - int(16 * k)), 1.4 * k, color, 3)
+
+
 def draw_caption(img, text: str | None, k: float) -> int:
     """Draws the caption; returns the y of its top edge (the sonar panel sits above it)."""
     h, w = img.shape[:2]
@@ -286,7 +318,7 @@ def ffmpeg_writer(out: Path, w: int, h: int, fps: float, wav: str | None, offset
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("src", help="kite.record take directory, or a video file")
-    p.add_argument("--events", required=True, help="JSONL of earpiece events with t")
+    p.add_argument("--events", help="JSONL of earpiece events with t (omit for a --seg only render)")
     p.add_argument("--offset", type=float, default=0.0, help="video time (s) of the first event (default 0)")
     p.add_argument("--wav", help="what the wearer heard (earpiece render --jsonl); muxed as the audio track")
     p.add_argument("--captions", help="captions JSONL (default: <wav>.captions.jsonl, else event text)")
@@ -294,6 +326,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--blur-faces", action="store_true", help="pixelate faces/heads (always for public footage)")
     p.add_argument("--yolo", default=str(Path(__file__).resolve().parents[1] / "weights" / "yolo11n.pt"),
                    help="person model for --blur-faces (falls back to Haar faces)")
+    p.add_argument("--seg", action="store_true",
+                   help="segmentation masks under the cues (stand-in: sim/seg_standin.py)")
     p.add_argument("--wall-clock", action="store_true",
                    help="take dir: place frames by frames.csv t_mono (for events stamped on t_mono)")
     p.add_argument("--seconds", type=float, help="stop after this much video")
@@ -312,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"{src}: cannot tell the video's length (no frame count)")
     dur = min(src_dur, a.seconds) if a.seconds else src_dur
 
-    evs = timed_events(load_jsonl(a.events), a.offset)
+    evs = timed_events(load_jsonl(a.events), a.offset) if a.events else []
     cap_path = a.captions or (str(Path(a.wav).with_suffix(".captions.jsonl")) if a.wav else None)
     if cap_path and Path(cap_path).exists():
         captions = [(c["t"] + a.offset, c.get("end", c["t"]) + a.offset, c["text"]) for c in load_jsonl(cap_path)]
@@ -322,6 +356,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[overlay] captions: from event text ({len(captions)} lines)")
     tl = Timeline(evs, captions)
     blur = FaceBlur(a.yolo) if a.blur_faces else None
+    segmenter = None
+    if a.seg:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sim"))
+        from seg_standin import Segmenter
+        segmenter = Segmenter()
 
     ok, frame = cap.read()
     if not ok:
@@ -351,12 +390,17 @@ def main(argv: list[str] | None = None) -> int:
             if not ok:
                 break
             frame = nxt
+        seg = segmenter.segment(frame) if segmenter else None   # on the raw frame, before the blur
         img = blur(frame.copy()) if blur else frame.copy()
+        if seg:
+            draw_seg(img, seg, k)                 # translucent, so blurred heads stay blurred
         st = tl.at(T)
         x_badge = draw_badge(img, a.badge, k)
         draw_hazards(img, st["hazards"], x_badge + int(16 * k), k)
         top = draw_caption(img, st["caption"], k)
         draw_sonar(img, st["objects"], top - int(12 * k), k)
+        if seg:
+            draw_walkable(img, seg["walkable"], top - int(12 * k), k)
         if proc:
             proc.stdin.write(img.tobytes())
         else:

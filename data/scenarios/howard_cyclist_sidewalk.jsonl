@@ -1,0 +1,31 @@
+{"type": "position", "source": "route-plan", "lat": 37.77826, "lng": -122.40884, "heading": 225.0, "place": "Howard St at Moss St", "t": 0.0}
+{"type": "guidance", "source": "route-plan", "text": "Continue southwest on Howard Street for 20 meters.", "key": "howard-1", "ttl": 10, "t": 0.3}
+{"type": "beacon", "source": "route-plan", "bearing": 0, "distance": 20, "label": "the end of the route on Howard Street", "t": 0.5}
+{"type": "scene", "source": "scene-drone", "text": "Sidewalk along Howard Street. A cyclist is riding on the sidewalk toward you, about 15 meters ahead, next to the bike lane.", "t": 1.0}
+{"type": "obstacles", "source": "webcam", "seq": 0, "objects": [{"id": "b1", "kind": "bike", "bearing": 4.0, "distance": 9.0, "confidence": 0.85}], "t": 3.0}
+{"type": "obstacles", "source": "webcam", "seq": 1, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.9, "distance": 8.74, "confidence": 0.85}], "t": 3.2}
+{"type": "obstacles", "source": "webcam", "seq": 2, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.8, "distance": 8.48, "confidence": 0.85}], "t": 3.4}
+{"type": "obstacles", "source": "webcam", "seq": 3, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.7, "distance": 8.22, "confidence": 0.85}], "t": 3.6}
+{"type": "obstacles", "source": "webcam", "seq": 4, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.6, "distance": 7.96, "confidence": 0.85}], "t": 3.8}
+{"type": "obstacles", "source": "webcam", "seq": 5, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.5, "distance": 7.7, "confidence": 0.85}], "t": 4.0}
+{"type": "obstacles", "source": "webcam", "seq": 6, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.4, "distance": 7.44, "confidence": 0.85}], "t": 4.2}
+{"type": "obstacles", "source": "webcam", "seq": 7, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.3, "distance": 7.18, "confidence": 0.85}], "t": 4.4}
+{"type": "obstacles", "source": "webcam", "seq": 8, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.2, "distance": 6.92, "confidence": 0.85}], "t": 4.6}
+{"type": "obstacles", "source": "webcam", "seq": 9, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.1, "distance": 6.66, "confidence": 0.85}], "t": 4.8}
+{"type": "obstacles", "source": "webcam", "seq": 10, "objects": [{"id": "b1", "kind": "bike", "bearing": 3.0, "distance": 6.4, "confidence": 0.85}], "t": 5.0}
+{"type": "obstacles", "source": "webcam", "seq": 11, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.9, "distance": 6.14, "confidence": 0.85}], "t": 5.2}
+{"type": "obstacles", "source": "webcam", "seq": 12, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.8, "distance": 5.88, "confidence": 0.85}], "t": 5.4}
+{"type": "scene", "source": "scene-drone", "text": "A cyclist on the sidewalk is 5 meters ahead, coming toward you.", "t": 5.5}
+{"type": "obstacles", "source": "webcam", "seq": 13, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.7, "distance": 5.62, "confidence": 0.85}], "t": 5.6}
+{"type": "obstacles", "source": "webcam", "seq": 14, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.6, "distance": 5.36, "confidence": 0.85}], "t": 5.8}
+{"type": "obstacles", "source": "webcam", "seq": 15, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.5, "distance": 5.1, "confidence": 0.85}], "t": 6.0}
+{"type": "obstacles", "source": "webcam", "seq": 16, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.4, "distance": 4.84, "confidence": 0.85}], "t": 6.2}
+{"type": "obstacles", "source": "webcam", "seq": 17, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.3, "distance": 4.58, "confidence": 0.85}], "t": 6.4}
+{"type": "obstacles", "source": "webcam", "seq": 18, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.2, "distance": 4.32, "confidence": 0.85}], "t": 6.6}
+{"type": "obstacles", "source": "webcam", "seq": 19, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.1, "distance": 4.06, "confidence": 0.85}], "t": 6.8}
+{"type": "obstacles", "source": "webcam", "seq": 20, "objects": [{"id": "b1", "kind": "bike", "bearing": 2.0, "distance": 3.8, "confidence": 0.85}], "t": 7.0}
+{"type": "obstacles", "source": "webcam", "seq": 21, "objects": [{"id": "b1", "kind": "bike", "bearing": 1.9, "distance": 3.54, "confidence": 0.85}], "t": 7.2}
+{"type": "obstacles", "source": "webcam", "seq": 22, "objects": [{"id": "b1", "kind": "bike", "bearing": 1.8, "distance": 3.28, "confidence": 0.85}], "t": 7.4}
+{"type": "obstacles", "source": "webcam", "seq": 23, "objects": [], "t": 7.6}
+{"type": "obstacles", "source": "webcam", "seq": 24, "objects": [], "t": 7.8}
+{"type": "obstacles", "source": "webcam", "seq": 25, "objects": [], "t": 8.0}

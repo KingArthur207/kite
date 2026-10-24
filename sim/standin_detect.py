@@ -1,7 +1,7 @@
 """Stand-in until streetseg lands; same events, same FrameSource.
 
 YOLO11n boxes -> earpiece events, so "real detector on sim frames -> beep in AirPods"
-works before Rex's streetseg exists. Swap this file out; nothing downstream changes.
+works before the streetseg perception package exists. Swap this file out; nothing downstream changes.
 
     python sim/standin_detect.py --download                  # once, fetches weights/yolo11n.pt
     python sim/standin_detect.py                             # sim chest + drone via sim/relay.py
@@ -41,7 +41,9 @@ DEFAULT_HEIGHT = {"chest": 1.2, "drone": 2.0}     # sim: CHEST_HEIGHT, HEAD_TOP 
 DRONE_BEHIND_M = 1.0
 MIN_D, MAX_D = 0.3, 50.0
 GROUND_MIN_PX = 12          # bbox bottom must be this far below the horizon to trust ground geometry
-EDGE_PX = 8                 # bbox this close to the bottom edge counts as cut off
+EDGE_PX = 16                # bbox this close to the bottom (or top) edge counts as cut off (YOLO boxes stop
+                            # a few px short of the edge: at 8 px one person flickered 1.3 m / 3.2 m)
+PERSON_W = 0.45             # m, a person's box width face-on; only used when head and feet are both out of frame
 
 KIND = {"person": "person", "bicycle": "bike", "car": "vehicle", "motorcycle": "vehicle",
         "bus": "vehicle", "truck": "vehicle", "fire hydrant": "fire_hydrant", "parking meter": "pole",
@@ -54,6 +56,10 @@ VEHICLE_RANGE, VEHICLE_LANE = 12.0, 1.5           # m ahead, m either side of th
                                                   # 3 m flagged oncoming cars while the walker was on the sidewalk)
 CROSS_HORIZON, CROSS_MIN_V = 3.0, 0.5             # a car further out counts if it reaches the path within 3 s
 ONSET_FRAMES, HAZARD_TTL, SCENE_EVERY = 3, 4.0, 10.0
+# parked cars (Street View on Moss: a car parked by the corner kept warning): a vehicle more than PARKED_LANE off the
+# path whose world position holds within STILL_M for STILL_S is parked and never a hazard. Off-path cars wait
+# STILL_S before they count, so a parked one never gets its 3-frame onset first.
+PARKED_LANE, STILL_M, STILL_S, STILL_KEEP_S = 0.8, 1.5, 0.5, 10.0
 
 
 # ------------------------------------------------------------------ pure geometry
@@ -71,9 +77,10 @@ def distance_m(y_bottom: float, box_h: float, cam_height: float, fx: float = DEF
                height: int = 720, real_h: float = 1.7, pitch: float = 0.0, y_top: float | None = None) -> float:
     """Flat-ground distance from the bbox bottom row; size-based when the foot point is
     at or above the horizon (or too close to it to be stable). Clamped to [0.3, 50] m.
-    Pass y_top when the box is cut off by the bottom edge (a person close to a chest camera):
-    the feet are below the frame, so the bottom row and box height only bound the distance
-    from above, and the top row (head at real_h) gives it when the object is taller than the camera."""
+    Pass y_top when the box is cut off by the bottom or the top edge (a person close to a chest camera):
+    the object is taller in the image than its box, so the bottom row and box height only bound the
+    distance from above, and the top row (head at real_h, or above it) gives it when the object is
+    taller than the camera."""
     stable = math.atan(GROUND_MIN_PX / fx)
     a = below_horizon(y_bottom, fx, height, pitch)
     size_d = real_h * fx / max(box_h, 1.0)
@@ -103,20 +110,47 @@ def objects_from_boxes(boxes, fx: float, cam_height: float, width: int, height: 
         if kind is None:
             continue
         real_h = TYPICAL_H.get(name, TYPICAL_H.get(kind, 1.0))
-        cut = y2 >= height - EDGE_PX
-        d = distance_m(y2, y2 - y1, cam_height, fx, height, real_h, pitch, y_top=y1 if cut else None)
+        cut, top_cut = y2 >= height - EDGE_PX, y1 <= EDGE_PX
+        # Head above the frame: the top row still bounds the distance, even when the bottom row looks like feet
+        # (a box ending 9 px above the edge read 3.2 m for someone at 1.3 m; live_walk_bench).
+        d = distance_m(y2, y2 - y1, cam_height, fx, height, real_h, pitch, y_top=y1 if cut or top_cut else None)
+        if cut and top_cut and kind == "person":
+            # head and feet both out of frame: no row can say how close (at 15 deg down on 960x540 every distance
+            # under 1.65 m read 1.65, so "Stop" never fired). Shoulder width still can.
+            d = max(MIN_D, min(d, PERSON_W * fx / max(x2 - x1, 1.0)))
         out.append({"id": str(tid if tid is not None else i), "kind": kind,
                     "bearing": round(bearing_deg((x1 + x2) / 2, fx, width), 1),
                     "distance": round(d, 2), "confidence": round(float(conf), 2), "cut_off": cut})
     return out
 
 
-def drone_hazards(objs: list[dict], lateral: live_walk.RangeFilter | None = None, t: float = 0.0) -> dict[str, dict]:
+class StillVehicles:
+    """Where off-path vehicles were seen, in world metres. judge() -> "parked" when one was seen within STILL_M of
+    the same spot at least STILL_S earlier (any track id: Street View steps break tracks), "moving" once its track
+    is STILL_S old and not parked, else "unknown"."""
+    # ponytail: a car creeping under STILL_M / STILL_S (3 m/s) counts as parked; fine off the path, where this applies
+
+    def __init__(self):
+        self.seen: list[tuple[float, float, float]] = []
+        self.first: dict[str, float] = {}
+
+    def judge(self, tid: str, t: float, x: float, y: float) -> str:
+        self.seen = [s for s in self.seen if t - s[0] <= STILL_KEEP_S]
+        parked = any(t - st >= STILL_S and math.hypot(sx - x, sy - y) <= STILL_M for st, sx, sy in self.seen)
+        self.seen.append((t, x, y))
+        first = self.first.setdefault(tid, t)
+        return "parked" if parked else "moving" if t - first >= STILL_S else "unknown"
+
+
+def drone_hazards(objs: list[dict], lateral: live_walk.RangeFilter | None = None, t: float = 0.0,
+                  pose: dict | None = None, still: StillVehicles | None = None) -> dict[str, dict]:
     """Drone objects -> candidate hazards {kind: {bearing, distance}} in the walker frame.
     A person cut off by the bottom edge is the walker and never counts. A vehicle counts when it is
     within VEHICLE_LANE of the walker's path, or (with `lateral`, a RangeFilter fed each car's
     sideways offset per track) when it is closing on the path fast enough to cross it within CROSS_HORIZON.
-    A car driving along the street beside the walker keeps its offset and never counts."""
+    A car driving along the street beside the walker keeps its offset and never counts.
+    With `still` and the walker's `pose` (x, y metres, compass heading), a vehicle more than PARKED_LANE off the
+    path counts only once StillVehicles has seen it move: parked cars never do."""
     people, cars = [], []
     for o in objs:
         if o["kind"] == "person" and o["cut_off"]:
@@ -128,6 +162,10 @@ def drone_hazards(objs: list[dict], lateral: live_walk.RangeFilter | None = None
             lat, v = abs(d * math.sin(math.radians(b))), None
             if lateral is not None:
                 lat, v = lateral.update(o["id"], t, lat)
+            if still is not None and pose and "x" in pose and lat > PARKED_LANE:
+                h = math.radians(pose["heading"] + b)
+                if still.judge(o["id"], t, pose["x"] + d * math.sin(h), pose["y"] + d * math.cos(h)) != "moving":
+                    continue
             if lat <= VEHICLE_LANE or (v is not None and v >= CROSS_MIN_V and lat / v <= CROSS_HORIZON):
                 cars.append((b, d))
     out = {}
@@ -314,11 +352,16 @@ def main() -> None:
             jsonl.write(json.dumps({"t": round(t, 3), **ev}, separators=(",", ":")) + "\n")
 
     gate, lateral, last_scene, writer = HazardGate(), live_walk.RangeFilter(), -SCENE_EVERY, None
+    still = StillVehicles()
     n, infer_s, warm = 0, 0.0, None
     rf, depth = live_walk.RangeFilter(), live_walk.DepthFallback(device) if a.depth else None
     reveal = live_walk.Reveal() if a.show else None
     fps, fps_t, fps_n, was_stop = 0.0, time.monotonic(), 0, False
     print(f"[standin] cams={cams} device={device} -> {ear.addr} source={a.source or a.relay}", flush=True)
+    for m in models.values():             # the first call takes seconds (mps kernels): pay it before the walk
+        m.predict(np.zeros((540, 960, 3), np.uint8), verbose=False, imgsz=640)
+    t0 = time.monotonic()                 # video t=0 is now: the bench lines frames up with speech by this
+    print(f"[standin] t0_wall={time.time():.3f}", flush=True)
     try:
         while True:
             if a.max_seconds and time.monotonic() - t0 > a.max_seconds:
@@ -343,12 +386,15 @@ def main() -> None:
                     img = cv2.resize(img, (960, round(img.shape[0] * 960 / img.shape[1])))
                 frames = {"chest": img}
             elif srcs is None:
-                for _ in range(step - 1):
-                    cap.grab()
+                want = fidx + step - 1
+                if not a.fast:      # behind real time: skip to the current frame, as a live camera would
+                    want = max(want, int((time.monotonic() - t0) * vfps))
+                while fidx < want and cap.grab():
+                    fidx += 1
                 ok, img = cap.read()
                 if not ok:
                     break
-                t = fidx * step / vfps
+                t = fidx / vfps
                 fidx += 1
                 if not a.fast:
                     lag = t - (time.monotonic() - t0)
@@ -379,9 +425,13 @@ def main() -> None:
                 else:
                     infer_s += dt
                     n += 1
-                objs = objects_from_boxes(boxes, fx, cam_h, w, h, a.pitch)
+                pc = poses.get(c) or {}
+                # sim/streetview_bridge.py sends each camera's fx and pitch (+ = up) in its pose
+                cfx = pc.get("fx") or fx
+                cpitch = -pc["pitch"] if pc.get("source") == "streetview" else a.pitch
+                objs = objects_from_boxes(boxes, cfx, cam_h, w, h, cpitch)
                 if c == "chest":
-                    extra = depth(img, fx, cam_h, a.pitch, objs) if depth else None
+                    extra = depth(img, cfx, cam_h, cpitch, objs) if depth else None
                     objs = live_walk.chest_step(objs, rf, t, a.stop_m)
                     if extra:
                         extra = live_walk.chest_step([extra], rf, t, a.stop_m)[0]
@@ -396,7 +446,7 @@ def main() -> None:
                     was_stop = bool(stop)
                     if reveal:
                         kept = [bx for bx in boxes if bx[4] in KIND]
-                        view = draw(img if a.no_blur else live_walk.blur_heads(img.copy(), kept, objs, fx),
+                        view = draw(img if a.no_blur else live_walk.blur_heads(img.copy(), kept, objs, cfx),
                                     objs, boxes, "chest")
                         if extra:
                             cv2.putText(view, f"depth: obstacle {extra['bearing']:+.0f}d {extra['distance']:.1f}m",
@@ -404,7 +454,7 @@ def main() -> None:
                         if not reveal.frame(view, sent, t, fps):
                             return
                 else:
-                    for ev in gate.step(drone_hazards(objs, lateral, t), t):
+                    for ev in gate.step(drone_hazards(objs, lateral, t, pc, still), t):
                         emit({**ev, "source": "standin-drone"}, t)
                         print(f"[standin] t={t:.1f} hazard {ev['kind']}: {ev['text']}", flush=True)
                     if t - last_scene >= SCENE_EVERY:

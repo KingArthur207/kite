@@ -54,7 +54,7 @@ from pathlib import Path
 
 from .config import Config
 from .sources.base import FrameSource
-from .sources.opencv_sources import SteppedVideoSource
+from .sources.opencv_sources import VIDEO_BACKENDS, SteppedVideoSource
 from .types import Frame
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -594,7 +594,7 @@ def _make_follow(args, frames, cfg):
     from .camera import load_camera
     from .follow import FollowCfg, FollowMode, YoloPersonDetector
 
-    fcfg = FollowCfg(height_m=args.follow_height, video_lag_s=cfg.drone.video_lag_s)
+    fcfg = FollowCfg(height_m=args.follow_height, video_lag_s=cfg.drone.video_lag_s, predict=args.follow_predict)
     if args.follow_behind:
         fcfg.behind_m = args.follow_behind
     print("follow: loading the person detector in the background ...", flush=True)
@@ -612,13 +612,16 @@ def main(argv: list[str] | None = None) -> int:
                    "SafetyCfg.max_rc = 50; default 30)")
     p.add_argument("--pulse", type=float, default=1.0, help="seconds one key press drives a stick (default 1.0)")
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds (default: Ctrl+C)")
-    p.add_argument("--video-backend", choices=["pyav", "opencv"], default=None, help="Tello H.264 decoder")
+    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
+                   help="Tello H.264 decoder (default: socket on macOS, else pyav)")
     p.add_argument("--follow", action="store_true", help="with --fly: g toggles follow mode (needs the 'follow' extra "
                    "and data/models/yolo11n.pt, see kite/follow.py)")
     p.add_argument("--follow-behind", type=float, default=None, help="follow distance behind the head, m (1.2)")
     p.add_argument("--follow-height", type=float, default=None, help="follow altitude, m above takeoff "
                    "(default: the height when g is pressed)")
     p.add_argument("--follow-weights", default=None, help="YOLO weights for --follow")
+    p.add_argument("--follow-predict", action="store_true", help="with --follow: steer on the walker prediction and "
+                   "the planned drone path (kite/predict.py); falls back to the reactive controller when unsure")
     args = p.parse_args(argv)
 
     if not 10 <= args.speed <= 100:
@@ -630,6 +633,8 @@ def main(argv: list[str] | None = None) -> int:
         p.error("--fly needs --source tello")
     if args.fly and not sys.stdin.isatty():
         p.error("--fly needs an interactive terminal for the keys")
+    if args.follow_predict and not args.follow:
+        p.error("--follow-predict needs --follow")
     if args.follow:
         from .follow import detector_available
 

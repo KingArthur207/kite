@@ -41,6 +41,7 @@ import numpy as np
 
 from .camera import DEFAULT_PATH, Camera, save_camera
 from .sources.base import FrameSource
+from .sources.opencv_sources import VIDEO_BACKENDS
 
 TELLO_SIZE = (960, 720)
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
@@ -521,7 +522,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-preview", action="store_true", help="no OpenCV windows")
     p.add_argument("--frames-dir", default=None, help="tello: where the captured frames go "
                    "(default recordings/calib_<stamp>)")
-    p.add_argument("--video-backend", choices=["pyav", "opencv"], default=None, help="Tello H.264 decoder")
+    p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
+                   help="Tello H.264 decoder (default: socket on macOS, else pyav)")
     p.add_argument("--show-board", action="store_true", help="show the chessboard full screen and exit")
     p.add_argument("--board-png", default=None, help="write the chessboard to this PNG and exit")
     p.add_argument("--known-object", type=float, metavar="WIDTH_M", help="fallback: width of an object (m)")

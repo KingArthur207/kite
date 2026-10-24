@@ -123,7 +123,7 @@ def check_public() -> None:
     elif out == "false":
         record("PASS", "repo is public")
     else:
-        record("WARN", "repo is public", f"{REPO} is private; Eddy decides when to make it public (judges need access to the code)")
+        record("WARN", "repo is public", f"{REPO} is private; the team decides when to make it public (judges need access to the code)")
 
 
 def check_readme() -> None:

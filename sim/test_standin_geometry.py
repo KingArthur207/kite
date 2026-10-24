@@ -66,6 +66,29 @@ cross = vehicle_frames([(6.0, 7.0 - 0.4 * i) for i in range(10)])  # 4 m/s towar
 assert not cross[0] and cross[-1] and cross.index(True) <= 5       # flagged while still > 4 m to the side
 assert all(vehicle_frames([(5.0, 0.8)] * 3))                       # in the path: flagged from the first frame
 
+# (c) parked cars (Street View, the Moss/Howard corner): with the walker's pose, a car 1.2 m off the path that
+# stays put is never a hazard, while the walker stands or walks past it; the same offset while driving still counts
+from standin_detect import StillVehicles  # noqa: E402
+
+
+def walk_past(car_xy, walker_y, dt=0.2, tid=lambda i: "c"):
+    """Walker heading north along x = 0; `car_xy(i)` is the car's world position at frame i."""
+    rf, still, out = RangeFilter(), StillVehicles(), []
+    for i, wy in enumerate(walker_y):
+        cx, cy = car_xy(i)
+        o = drone_car(cy - wy, cx, tid(i))
+        out.append("vehicle" in drone_hazards([o], rf, i * dt, {"x": 0.0, "y": wy, "heading": 0.0}, still))
+    return out
+
+
+assert any(vehicle_frames([(6.0, 1.2)] * 10))                                    # no pose: flagged as before
+assert not any(walk_past(lambda i: (1.2, 8.0), [0.0] * 15))                      # standing, car parked
+assert not any(walk_past(lambda i: (1.2, 9.0), [0.25 * i for i in range(20)]))   # walking past it
+assert not any(walk_past(lambda i: (1.2, 8.0), [0.0] * 15, tid=lambda i: f"t{i // 4}"))  # tracks break
+moving = walk_past(lambda i: (1.2, 11.0 - 1.0 * i), [0.0] * 8)                   # oncoming at 5 m/s
+assert not moving[0] and moving[3] and all(moving[3:])                           # counted after STILL_S
+assert all(walk_past(lambda i: (0.5, 6.0), [0.0] * 5))                           # in the path: always
+
 # gate: 3-frame onset, refresh keeps the same text, clearing sends nothing
 g, cand = HazardGate(), {"crowd": {"bearing": 0.0, "distance": 6.0}}
 assert g.step(cand, 0.0) == [] and g.step(cand, 0.1) == []
@@ -96,6 +119,22 @@ assert math.isclose(distance_m(720, 720 - y_top, 1.2, fx, 720, 1.7, 0.0, y_top=y
 assert distance_m(720, 720 - y_top, 1.2, fx, 720, 1.7) > 2.0     # bottom row alone says too far
 cut = objects_from_boxes([(300, y_top, 660, 720, "person", 0.9, 3)], fx, 1.2, 960, 720)
 assert cut[0]["cut_off"] and math.isclose(cut[0]["distance"], 1.5, abs_tol=0.01)
+
+# live geometry (scripts/demo.sh live): iPhone 1280x720 -> 960x540, fx 700, 1.2 m up, 15 deg down.
+# Closer than ~1.65 m the head is above the frame and the feet below it; no row can tell 1.2 m from 1.6 m,
+# so the shoulders (box width) must. Before: 1.65 m whatever the distance, and "Stop" (1.6 m) never fired.
+for d_true in (1.0, 1.2, 1.4):
+    half = 700 * 0.53 / d_true / 2                 # a 0.53 m wide person (the bench's sprite)
+    o = objects_from_boxes([(480 - half, 3, 480 + half, 530, "person", 0.9, 1)], 700, 1.2, 960, 540, 15)[0]
+    assert o["distance"] < 1.6 and o["distance"] <= d_true, (d_true, o)
+# head above the frame, box bottom 7 px or 20 px above the edge: the top row still bounds the distance.
+# Before: 3.2 m on one frame and 1.3 m on the next for the same person (bench clip "approach").
+far, near = (objects_from_boxes([(410, 1, 613, y2, "person", 0.9, 1)], 700, 1.2, 960, 540)[0]["distance"]
+             for y2 in (520, 533))
+assert far < 1.4 and math.isclose(far, near, abs_tol=0.05), (far, near)
+# feet in frame, head in frame: unchanged (ground row)
+assert math.isclose(objects_from_boxes([(450, 200, 510, 470, "person", 0.9, 1)], 700, 1.2, 960, 540)[0]["distance"],
+                    1.2 * 700 / 200, abs_tol=0.01)
 
 # live walk: median smoothing, closing speed, stop zone
 from live_walk import center_obstacle, chest_step, is_stop, to_event_objects  # noqa: E402
