@@ -14,6 +14,8 @@ import { clampToFence } from "./fence";
 import { SHOTS } from "./shots";
 import { startShot, shotCam } from "./shot";
 import { colliderOverlay } from "./colliders";
+import { look2, createPost } from "./look2";
+import { startCompare } from "./compare";
 
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
@@ -129,11 +131,18 @@ world.tune?.(renderer);
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setScissorTest(true);
 view.appendChild(renderer.domElement);
-const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
+// ?look=2 (look2.ts): AO, grade and SMAA on the main view and shots of the textured Moss world. Capture frames stay plain.
+const postReady = look2 && worldName === "moss" ? createPost(renderer, scene) : Promise.resolve(null);
+let post: ((cam: THREE.Camera) => void) | null = null;
+void postReady.then((p) => { post = p; }).catch((e) => console.error("[look2] post-processing off", e));
+const resize = () => renderer.setSize(view.clientWidth, view.clientHeight);
 if (!shot) { window.addEventListener("resize", resize); resize(); }
+// ?compare=1 (compare.ts): Street View beside the sim, synced to the drone camera.
+const compare = query.get("compare") === "1" && !shot && !metricsOn
+  ? startCompare({ walker, canvas: renderer.domElement, view }) : null;
 
 function drawScreen() {
-  const W = window.innerWidth, H = window.innerHeight;
+  const W = view.clientWidth, H = view.clientHeight;
   renderer.setScissor(0, 0, W, H);
   renderer.setClearColor(0x000000);
   renderer.clear();
@@ -144,7 +153,8 @@ function drawScreen() {
   world.view?.("screen");                          // tiles on (they may be off for ?detector=osm capture)
   if (world.overlay) world.overlay.visible = true; // screen only, never in camera frames
   if (colliders) { colliders.update(world.solids(), walker); colliders.group.visible = true; }
-  renderer.render(scene, topView ? topCam : worldName === "tiles" ? chaseCam : droneCam);
+  const cam = topView ? topCam : worldName === "tiles" ? chaseCam : droneCam;
+  if (post) post(cam); else renderer.render(scene, cam);
   const iw = w * 0.25, ih = iw / aspect, pad = 10;
   renderer.setViewport(x + w - iw - pad, y + pad, iw, ih);
   renderer.setScissor(x + w - iw - pad, y + pad, iw, ih);
@@ -280,10 +290,11 @@ function frame(now: number) {
   world.updateTiles?.();
   view.classList.toggle("hidden", black);
   if (!black) drawScreen();
+  compare?.frame();
   if (metrics) hud.textContent = metrics.hud(); else drawHud();
   requestAnimationFrame(frame);
 }
-if (shot) startShot({ name: shotName!, shot, scene, renderer, world, worldName, walker, metrics, place: placeCameras });
+if (shot) startShot({ name: shotName!, shot, scene, renderer, world, worldName, walker, metrics, place: placeCameras, post: postReady });
 else { placeCameras(); requestAnimationFrame(frame); }
 
 // Tell anyone wiring this up which numbers the cameras use.

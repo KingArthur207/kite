@@ -7,6 +7,7 @@ import { addSkyAndSun, tuneRenderer } from "./osmLook";
 import { buildFacades, capBays, type Building } from "./osmFacades";
 import { buildStreets, nearestOnRoads, ribbon, type StreetData } from "./osmStreet";
 import { buildStreetDressing } from "./streetDressing";
+import { look2, upgradeWorld } from "./look2";
 
 type P = [number, number];
 type Quad = P[];
@@ -122,6 +123,7 @@ export function buildOsmWorld(opts: {
     place: "Moss St at Howard St",
     tune: tuneRenderer,
   };
+  if (look2) upgradeWorld(scene);
   const actors = opts.actors === false ? null : spawnMossActors(scene, opts.walkers ?? (() => []), { scriptedCorner: opts.scriptedCorner });
   return { scene, osmMeshes: visible, update: (dt: number) => actors?.update(dt), solids: () => actors?.solids() ?? [], ...extras };
 }

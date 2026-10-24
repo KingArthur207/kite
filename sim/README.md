@@ -124,6 +124,14 @@ YOLO (yolo11n, `python sim/yolo_check.py --url '<sim>/?world=...'`, same walk as
 
 The `detector=osm` row matches OSM Moss within run-to-run noise (the traffic differs between runs). These person numbers are higher than the 32 to 38% measured earlier with the same script and the same sim code; the yolo11n weights were downloaded fresh for these runs, so compare rows within this table. With tiles in the capture frames the tiles hid 168 car and 506 person instances, which are left out of that row. Recall drops further because trees and photogrammetry cars partly cover the rest, and people past 20 m are found 3% of the time.
 
+### Street View compare (`?compare=1`)
+
+`?compare=1` puts the sim on the left and the live Google Street View panorama on the right, so you can see where the 3D street differs from the real one. It works with any world and with `?look=2`; it is off for `?metrics=1` and shots. `src/compare.ts` looks up the Google outdoor panorama nearest the drone camera (radius 15 m, again only after the camera moves 3 m) and gives it the walker's compass heading, pitch 0, and the drone camera's 51° horizontal FOV in a 4:3 box. Outside `SCOPE` it shows "outside permitted area" and no panorama. The label gives the pano id and date and where the panorama sits relative to the sim camera.
+
+Arrows walk as usual. X cycles the split (50/50, sim larger, Street View larger). P moves the walker so the sim camera sits on the panorama, which removes the 3 to 5 m position offset before you compare. C asks for an optional note and then, through the dev server's `/__compare` endpoint (`vite.config.ts`), writes the sim canvas to `out/compare/<stamp>_sim.png` and one line to `out/compare/notes.jsonl`: walker, camera lat/lng, pano id, POV, a `reopen` URL (`?at=x,n,heading` spawns the walker there) and a Google Maps link to the same panorama view. Street View pixels are never saved. Under `vite preview` the PNG and the line download instead.
+
+Street View's nominal FOV, 180 / 2^zoom, measured 59° at the nominal zoom, so the page adds 0.24 to the zoom (measured 51.3° after). `?svzoom=` overrides it.
+
 ### Street View walk (`?world=streetview`)
 
 Real imagery instead of a 3D world. `src/streetviewWalk.ts` puts a Google Street View panorama (Maps JavaScript API) full screen and walks it along the demo route on Moss St. It starts at the route start facing NW. Up and Down step to the linked panorama nearest the view heading, or behind it. At the corner Moss's panoramas don't link to Howard's, so when no link points the way you face, it takes the nearest Google panorama 8 to 22 m ahead. Left and Right turn 20°, and B, V and H work as in the 3D sim. Google's logo, copyright and terms stay on screen. Every other control is hidden, and clicking the image does nothing.

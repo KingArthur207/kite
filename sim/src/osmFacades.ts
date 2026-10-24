@@ -9,6 +9,8 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { Geo, facadeMaterial, pbr, seeded, type FacadeKind } from "./osmLook";
+import { buildingSheet, look2 } from "./look2";
+import { leafTexture } from "./streetProps";
 
 type P = [number, number];
 type Quad = P[];
@@ -156,9 +158,9 @@ function panelDoorTexture() {
 /** skip: walls drawn elsewhere (photo facades), as `${building id}:${edge index}`; they get no wall, windows or cornice.
  *  walk: the demo walk line; Victorian stoops stop short of it. Returns stoops as wall segments for collision. */
 export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQuads: Quad[], skip = new Set<string>(), walk: P[] = []) {
-  const glass = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.06, metalness: 0.65, envMapIntensity: 1.3 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.65 });
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+  const glass = new THREE.MeshStandardMaterial({ name: "glass", color: 0xffffff, roughness: 0.06, metalness: 0.65, envMapIntensity: 1.3 });
+  const trimMat = new THREE.MeshStandardMaterial({ name: "frame", color: 0xffffff, roughness: 0.65 });
+  const doorMat = new THREE.MeshStandardMaterial({ name: "door", color: 0xffffff, roughness: 0.5 });
   const shutter = pbr("shutter", 2.0, { roughness: 0.55 });
   const panels = new THREE.MeshStandardMaterial({ map: panelDoorTexture(), roughness: 0.6 });
   const KINDS = {
@@ -180,7 +182,10 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
   const trim = new Geo();
   const roofs: THREE.BufferGeometry[] = [];
   const garages: Garage[] = [];
-  const stoops: [number, number, number, number][] = [];   // wall segments around Victorian stoops
+  const stoops: [number, number, number, number][] = [];   // wall segments around Victorian stoops (and hedges)
+  const gates: THREE.Matrix4[] = [];
+  const hedges: Hedge[] = [];
+  const escapes: THREE.BufferGeometry[] = [];
   const open = (pts: P[]) => {   // ring without the closing point
     const r = pts.slice();
     if (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) r.pop();
@@ -212,15 +217,19 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     const ring = rings[bi];
     if (ring.length < 3) return;
     const rnd = seeded(b.id);
-    const kind = pickKind(b, rnd);
-    const color = tint(b, kind, rnd);
+    const sheet = look2 ? buildingSheet.get(b.id) : undefined;   // per-building look from Street View, if loaded
+    const rnd2 = seeded(b.id + 1);                                  // look-2 extras, so rnd's sequence stays as it was
+    const kind: FacadeKind = sheet?.cladding ?? pickKind(b, rnd);
+    const color = sheet?.main ? new THREE.Color(sheet.main) : tint(b, kind, rnd);
     const vic = b.style === "victorian", midrise = b.style === "midrise";
     const residential = vic || (!midrise && (kind === "stucco" || kind === "plaster" || kind === "siding" || RESIDENTIAL.has(b.tags?.building ?? "")) && !b.storefront);
     const lv = parseFloat(b.tags?.["building:levels"] ?? "");
-    const levels = Math.max(1, Number.isFinite(lv) ? Math.round(lv) : Math.round(b.h / STOREY));
+    const levels = sheet?.floors ?? Math.max(1, Number.isFinite(lv) ? Math.round(lv) : Math.round(b.h / STOREY));
     const sh = b.h / levels;
     const trimColor = new THREE.Color(vic ? 0xf7f5ef : midrise ? 0xcfcfca
       : residential ? (rnd() < 0.75 ? 0xf3f0e8 : 0x4a4f55) : rnd() < 0.5 ? 0x3b3833 : 0x8d9296);
+    if (sheet?.trim) trimColor.set(sheet.trim);
+    let bays = sheet?.bays ?? Infinity, garageCount = sheet?.garages ?? Infinity;
     const corniceH = vic ? VIC_CORNICE_H : CORNICE_H;
     const paneTint = () => new THREE.Color().setHSL(0.58, 0.12, rnd() < 0.15 ? 0.45 : 0.1 + rnd() * 0.08);
     const g = walls.get(kind) ?? walls.set(kind, new Geo()).get(kind)!;
@@ -268,6 +277,10 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
         const place = (k: KindName, t: number, y: number, frame = trimColor, pane = paneTint(), o = 0, oo = out) =>
           inst[k].push({ m: basis(at(t, o), y, oo), frame, pane });
         const busy: [number, number][] = [];   // along-wall spans taken by bays (upper floors)
+        if (look2 && low && street && levels >= 3 && L > 6 && (sheet?.fire_escape ?? (midrise && rnd2() < FIRE_ESCAPE_SHARE))) {
+          const fe = fireEscape(levels, sh, b.h);
+          if (fe) escapes.push(fe.applyMatrix4(basis(at(L * 0.4), 0, out)));
+        }
 
         // Ground floor on street fronts.
         if (!low) { /* upper part only */ } else if (street && vic) {
@@ -275,9 +288,10 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
           cornice(trim, a, c, out, sh - 0.12, sh + 0.04, 0.07, trimColor);         // belt course
           for (let j = 0; j < lots; j++) {
             const t0 = j * lw;
-            if (lw >= 4.6) {
+            if (lw >= 4.6 && garageCount-- > 0) {
               const gt = t0 + lw * 0.32;
-              place("vgarage", gt, 0.15 + KINDS.vgarage.h / 2, trimColor, new THREE.Color(VIC_GARAGES[Math.floor(rnd() * VIC_GARAGES.length)]));
+              const gc = new THREE.Color(VIC_GARAGES[Math.floor(rnd() * VIC_GARAGES.length)]);
+              place("vgarage", gt, 0.15 + KINDS.vgarage.h / 2, trimColor, sheet?.garage_colour ? gc.set(sheet.garage_colour) : gc);
               garages.push({ x: at(gt)[0], n: at(gt)[1], u, out, w: KINDS.vgarage.w });
             } else if (lw >= 2.2) place("vic", t0 + lw * 0.3, 1.6, trimColor);
             if (lw >= 2.2) {   // front door up a stoop, where the stoop stays clear of the demo walk
@@ -292,8 +306,20 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
                 for (let k = 0; k < 3; k++) stoops.push([...s[k], ...s[k + 1]] as [number, number, number, number]);
               }
               place("door", dt, 0.15 + rise + KINDS.door.h / 2, trimColor, new THREE.Color(VIC_DOORS[Math.floor(rnd() * VIC_DOORS.length)]));
+              if (look2 && (sheet?.gate ?? rnd2() < GATE_SHARE)) {   // iron security gate in front of the door
+                gates.push(basis(at(dt, KINDS.door.d + 0.03), 0.15 + rise + KINDS.door.h / 2 + 0.05, out));
+              }
+              const hedgeD = Math.min(HEDGE_D, room);
+              if (look2 && hedgeD >= HEDGE_MIN_D && (sheet?.hedge ?? rnd2() < HEDGE_SHARE)) {   // hedge beside the stoop
+                const h0 = dt + hw + 0.05, h1 = Math.min(t0 + lw - 0.1, h0 + 1.6);
+                if (h1 - h0 > 0.5) {
+                  hedges.push({ at, t0: h0, t1: h1, d: hedgeD, h: 0.9 + rnd2() * 0.5 });
+                  const s = [at(h0), at(h0, hedgeD), at(h1, hedgeD), at(h1)];
+                  for (let k = 0; k < 3; k++) stoops.push([...s[k], ...s[k + 1]] as [number, number, number, number]);
+                }
+              }
             }
-            if (high && levels >= 2 && lw >= 4.2) {   // an angled bay over the garage on every lot
+            if (high && levels >= 2 && lw >= 4.2 && bays-- > 0) {   // an angled bay over the garage on every lot
               const cx = t0 + lw / 2;
               bay(g, trim, at, cx, sh - 0.15, b.h - corniceH - 0.05, color, trimColor, (k, p, y, oo) =>
                 inst[k === "res" ? "vic" : k].push({ m: basis(p, y, oo), frame: trimColor, pane: paneTint() }), sh, levels);
@@ -349,7 +375,7 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     mesh.castShadow = mesh.receiveShadow = true;
     scene.add(mesh);
   }
-  const trimMesh = new THREE.Mesh(trim.build(), new THREE.MeshStandardMaterial({ roughness: 0.65, vertexColors: true }));
+  const trimMesh = new THREE.Mesh(trim.build(), new THREE.MeshStandardMaterial({ name: "trim", roughness: 0.65, vertexColors: true }));
   trimMesh.castShadow = trimMesh.receiveShadow = true;
   scene.add(trimMesh);
   const roofMesh = new THREE.Mesh(mergeGeometries(roofs)!, pbr("roof", 2.2, { roughness: 0.95, color: 0x9a9a98 }));
@@ -370,7 +396,100 @@ export function buildFacades(scene: THREE.Object3D, buildings: Building[], roadQ
     scene.add(frame, pane);
   }
   const windows = Object.values(inst).reduce((s, l) => s + l.length, 0);
+  if (gates.length) scene.add(gateMesh(gates, KINDS.door.w + 0.1, KINDS.door.h + 0.1));
+  if (hedges.length) scene.add(hedgeMesh(hedges));
+  if (escapes.length) {
+    const m = new THREE.Mesh(mergeGeometries(escapes)!, new THREE.MeshStandardMaterial({ name: "iron", color: 0x1a1a1a, roughness: 0.55, metalness: 0.5 }));
+    m.castShadow = m.receiveShadow = true;
+    scene.add(m);
+  }
   return { garages, windows, stoops };
+}
+
+// --- look 2: iron gates and doorstep hedges
+const GATE_SHARE = 0.55, HEDGE_SHARE = 0.45;   // Street View on Moss: most doors gated, many stoops with a hedge
+const HEDGE_D = 0.6, HEDGE_MIN_D = 0.35;       // m: hedge depth out from the wall, and the shallowest worth drawing
+interface Hedge { at: (t: number, o?: number) => P; t0: number; t1: number; d: number; h: number }
+
+const FIRE_ESCAPE_SHARE = 0.5;   // Howard's north side: about every other mid-rise has one on the street
+
+/** A painted-black fire escape, local frame (x along the wall, y up, z out): a grated landing on every floor
+ *  from the second up, railings with balusters, and a stair between landings. */
+function fireEscape(levels: number, sh: number, top: number) {
+  const W = 3.6, D = 1.0, parts: THREE.BufferGeometry[] = [];
+  const box = (w: number, h: number, d: number, x: number, y: number, z: number) => parts.push(new THREE.BoxGeometry(w, h, d).translate(x, y, z).toNonIndexed());
+  for (let k = 1; k < levels; k++) {
+    const y = k * sh - 0.1;
+    if (y + 1 > top) break;
+    box(W, 0.04, D, 0, y, D / 2 + 0.05);                                    // landing
+    box(W, 0.04, 0.04, 0, y + 0.95, D + 0.03); box(0.04, 0.04, D, -W / 2, y + 0.95, D / 2 + 0.05); box(0.04, 0.04, D, W / 2, y + 0.95, D / 2 + 0.05);
+    box(W, 0.03, 0.03, 0, y + 0.45, D + 0.03);
+    for (let x = -W / 2; x <= W / 2 + 1e-6; x += 0.15) box(0.015, 0.95, 0.015, x, y + 0.47, D + 0.03);
+    for (const sx of [-1, 1]) for (let z = 0.2; z < D; z += 0.15) box(0.015, 0.95, 0.015, sx * W / 2, y + 0.47, z);
+    if (k + 1 < levels && (k + 1) * sh - 0.1 + 1 <= top) {                // stair up to the next landing
+      const run = W * 0.7, rise = sh, len = Math.hypot(run, rise);
+      const stair = new THREE.BoxGeometry(len, 0.05, 0.6).rotateZ(Math.atan2(rise, run)).translate(0, y + rise / 2, 0.4);
+      parts.push(stair.toNonIndexed());
+    }
+  }
+  return parts.length ? mergeGeometries(parts)! : null;
+}
+
+/** Iron security door: a frame, vertical bars every 11 cm, three rails and a band of rings. */
+function gateMesh(ms: THREE.Matrix4[], w: number, h: number) {
+  const parts: THREE.BufferGeometry[] = [];
+  const bar = (bw: number, bh: number, x: number, y: number) => parts.push(new THREE.BoxGeometry(bw, bh, 0.025).translate(x, y, 0));
+  bar(0.05, h, -w / 2, 0); bar(0.05, h, w / 2, 0); bar(w, 0.05, 0, h / 2); bar(w, 0.05, 0, -h / 2);
+  for (const y of [-h * 0.3, h * 0.12, h * 0.32]) bar(w, 0.03, 0, y);
+  for (let x = -w / 2 + 0.11; x < w / 2 - 0.05; x += 0.11) bar(0.016, h, x, 0);
+  for (let x = -w / 2 + 0.12; x < w / 2 - 0.08; x += 0.17) parts.push(new THREE.TorusGeometry(0.06, 0.008, 4, 12).translate(x + 0.03, h * 0.22, 0));
+  const g = mergeGeometries(parts.map((p) => (p.index ? p.toNonIndexed() : p)))!;
+  const m = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ name: "iron", color: 0x121212, roughness: 0.45, metalness: 0.6 }), ms.length);
+  ms.forEach((x, i) => m.setMatrixAt(i, x));
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
+
+/** Clipped hedges: a dark green box core under small leaf cards scattered over its front, top and ends. */
+function hedgeMesh(hs: Hedge[]) {
+  const core: THREE.BufferGeometry[] = [];
+  const pos: number[] = [], nor: number[] = [], uv: number[] = [];
+  const r = seeded(31);
+  const UV = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  for (const hd of hs) {
+    const a = hd.at(hd.t0), b = hd.at(hd.t1), mid = hd.at((hd.t0 + hd.t1) / 2, hd.d / 2);
+    const out = hd.at(hd.t0, 1);
+    const len = hd.t1 - hd.t0;
+    // Local frame: x along the wall, z out of it, y up (three.js: north is -z).
+    const x = new THREE.Vector3(b[0] - a[0], 0, -(b[1] - a[1])).normalize();
+    const z = new THREE.Vector3(out[0] - a[0], 0, -(out[1] - a[1])).normalize();
+    const m = new THREE.Matrix4().makeBasis(x, new THREE.Vector3(0, 1, 0), z).setPosition(mid[0], 0, -mid[1]);
+    if (m.determinant() < 0) m.makeBasis(x.negate(), new THREE.Vector3(0, 1, 0), z).setPosition(mid[0], 0, -mid[1]);
+    core.push(new THREE.BoxGeometry(len - 0.1, hd.h - 0.08, hd.d - 0.1).translate(0, (hd.h - 0.08) / 2, 0).applyMatrix4(m));
+    const n = Math.ceil(len * hd.h * 30);
+    for (let k = 0; k < n; k++) {
+      const face = r();
+      const lp = face < 0.55 ? new THREE.Vector3((r() - 0.5) * len, r() * hd.h, hd.d / 2)
+        : face < 0.85 ? new THREE.Vector3((r() - 0.5) * len, hd.h, (r() - 0.5) * hd.d)
+        : new THREE.Vector3((r() < 0.5 ? -1 : 1) * len / 2, r() * hd.h, (r() - 0.5) * hd.d);
+      const nrm = face < 0.55 ? new THREE.Vector3(0, 0.3, 1) : face < 0.85 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(Math.sign(lp.x), 0.3, 0);
+      nrm.add(new THREE.Vector3(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(0.9)).normalize();
+      const p = lp.applyMatrix4(m), wn = nrm.transformDirection(m);
+      const t = new THREE.Vector3().crossVectors(wn, Math.abs(wn.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize();
+      const bt = new THREE.Vector3().crossVectors(wn, t);
+      const s = 0.2 + r() * 0.15;
+      const q = UV.map(([i, j]) => p.clone().addScaledVector(t, (i * 2 - 1) * s).addScaledVector(bt, (j * 2 - 1) * s));
+      for (const i of [0, 1, 2, 0, 2, 3]) { pos.push(q[i].x, q[i].y, q[i].z); nor.push(wn.x, wn.y, wn.z); uv.push(UV[i][0], UV[i][1]); }
+    }
+  }
+  const coreMesh = new THREE.Mesh(mergeGeometries(core.map((g) => g.toNonIndexed()))!, new THREE.MeshStandardMaterial({ color: 0x1d3018, roughness: 0.95 }));
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  lg.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  lg.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  const leaves = new THREE.Mesh(lg, new THREE.MeshStandardMaterial({ map: leafTexture(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.8, color: 0xc0d0b0 }));
+  coreMesh.castShadow = coreMesh.receiveShadow = leaves.castShadow = leaves.receiveShadow = true;
+  return new THREE.Group().add(coreMesh, leaves);
 }
 
 // --- helpers
