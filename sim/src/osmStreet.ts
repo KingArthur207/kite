@@ -112,6 +112,7 @@ export function nearestOnRoads(roads: Road[], p: P) {
   return best;
 }
 
+/** Draws the streets and furniture; returns the furniture's collision walls [x1, n1, x2, n2]. */
 export function buildStreets(scene: THREE.Object3D, data: StreetData, garages: Garage[]) {
   const asphalt = pbr("asphalt", 3.0, { rough: true });
   const sidewalk = pbr("sidewalk", 1.8, { rough: true });
@@ -209,7 +210,7 @@ export function buildStreets(scene: THREE.Object3D, data: StreetData, garages: G
   }
   if (!ramps.empty) add(ramps.build(), curb);
 
-  buildFurniture(scene, data, garages);
+  return buildFurniture(scene, data, garages);
 }
 
 /** The traffic-side edge of each cycle track quad (a to b), with side = +1/-1 for offsetPts toward the traffic. */
@@ -279,9 +280,16 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   const box = (x: number, y: number, z: number) => new THREE.BoxGeometry(x, y, z);
 
   const ys = (p: P) => (data.road_quads.some((q) => inQuad(p, q)) ? 0 : CURB_H);
+  // Collision: a square the size of each drawn base (poles, posts, hydrants, pay stations), so what you see blocks.
+  const walls: [number, number, number, number][] = [];
+  const solid = (p: P, r: number) => {
+    const k: P[] = [[p[0] - r, p[1] - r], [p[0] + r, p[1] - r], [p[0] + r, p[1] + r], [p[0] - r, p[1] + r]];
+    k.forEach((a, i) => walls.push([...a, ...k[(i + 1) % 4]]));
+  };
 
   const hydrant = (p: P) => {
     const y = ys(p);
+    solid(p, 0.17);
     put("hydrant", place(cyl(0.17, 0.17, 0.06, 12), p, y));
     put("hydrant", place(cyl(0.13, 0.12, 0.6, 12), p, y));
     put("hydrant", place(box(0.42, 0.09, 0.09).translate(0, 0.42, 0), p, y));
@@ -289,6 +297,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const woodPole = (p: P, across: P, light: boolean) => {   // across: toward the road
     const y = ys(p), u = zdir(across);
+    solid(p, 0.15);
     put("wood", place(cyl(0.15, 0.12, 10.5), p, y));
     put("wood", place(box(0.1, 0.1, 2.4).translate(0, 9.6, 0), p, y, u));              // crossarm across the street
     for (const z of [-1.0, 0, 1.0]) put("unlit", place(cyl(0.04, 0.03, 0.18, 6).translate(0, 9.65, z), p, y, u));
@@ -300,6 +309,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const streetLight = (p: P, toRoad: P) => {
     const y = ys(p), u = zdir(toRoad);   // arm along local +z, over the road
+    solid(p, 0.12);
     put("steel", place(cyl(0.12, 0.08, 8.5), p, y));
     put("steel", place(box(0.07, 0.07, 2.2).translate(0, 8.3, 1.1), p, y, u));
     put("steel", place(box(0.32, 0.15, 0.7).translate(0, 8.25, 2.3), p, y, u));
@@ -307,6 +317,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const signal = (p: P, face: P) => {
     const y = ys(p), u = zdir(face);
+    solid(p, 0.12);
     put("signal", place(cyl(0.12, 0.1, 5.2), p, y));
     put("signal", place(box(0.36, 1.05, 0.3).translate(0, 4.3, 0.2), p, y, u));
     put("unlit", place(new THREE.CircleGeometry(0.11, 12).translate(0, 4.62, 0.36), p, y, u));
@@ -315,11 +326,13 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   };
   const payStation = (p: P, u: P) => {
     const y = ys(p);
+    solid(p, 0.2);
     put("paystation", place(box(0.34, 1.45, 0.24).translate(0, 0.725, 0), p, y, u));
     put("unlit", place(box(0.22, 0.16, 0.02).translate(0, 1.2, 0.13), p, y, u));
   };
   const stopSign = (p: P, face: P) => {
     const y = ys(p), u = zdir(face);
+    solid(p, 0.05);
     put("steel", place(cyl(0.035, 0.035, 2.5, 6), p, y));
     const sign = new THREE.Mesh(new THREE.CircleGeometry(0.38, 8, Math.PI / 8), new THREE.MeshStandardMaterial({ map: stopTexture(), roughness: 0.5 }));
     sign.geometry.translate(0, 0, 0.05);
@@ -356,6 +369,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
   const banners = new Map<number, THREE.BufferGeometry[]>();
   howardLightSpots(data, garages).forEach(({ p, u, toRoad }, i) => {
     const y = ys(p), a = zdir(toRoad);
+    solid(p, 0.2);   // the red base
     put("banner", place(cyl(0.12, 0.08, 8.5), p, y));
     put("banner", place(box(0.07, 0.07, 2.2).translate(0, 8.3, 1.1), p, y, a));
     put("steel", place(box(0.32, 0.15, 0.7).translate(0, 8.25, 2.3), p, y, a));
@@ -389,6 +403,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     mesh.receiveShadow = true;
     scene.add(mesh);
   }
+  return walls;
 }
 
 let stopTex: THREE.CanvasTexture | null = null;
