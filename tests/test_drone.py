@@ -466,6 +466,17 @@ def test_governor_clamps_rc():
     assert fake.rcs[-1] == (30, -30, 0, 30)
 
 
+def test_non_finite_stick_values_hover_instead_of_raising():
+    """A NaN / inf stick (a controller dividing by zero) used to raise out of rc() and end the flight loop."""
+    nan, inf = float("nan"), float("inf")
+    gov, fake = governed(max_rc=30)
+    gov.rc(nan, inf, -inf, 10)
+    assert fake.rcs[-1] == (0, 0, 0, 10)
+    d, fake_tello = make()
+    d.rc(nan, inf, -inf, 10)
+    assert fake_tello.sent[-1] == ("rc", 0, 0, 0, 10)
+
+
 def test_governor_ceiling_and_floor():
     gov, fake = governed(height_m=2.5, max_altitude_m=2.3, min_altitude_m=0.5)
     gov.rc(0, 0, 50, 0)
