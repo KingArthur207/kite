@@ -30,9 +30,9 @@ DEFAULT_HOST = "https://maincloud.spacetimedb.com"
 DEFAULT_DB = "kite-sync-pl6rp"
 QUEUE_MAX = 1000
 TIMEOUT_S = 3.0
-# Perception frames arrive at 10-30 Hz; the dashboard only needs the latest few per second.
-THROTTLED = {"obstacles", "heartbeat"}
-THROTTLE_S = 0.5
+# Perception frames (10-30 Hz) and sim positions (5 Hz) would fill the 500-row event table in
+# minutes; the dashboard only needs a few per second. Minimum seconds between mirrors, per source.
+THROTTLE_S = {"obstacles": 0.5, "heartbeat": 2.0, "position": 1.0}
 CAREGIVER = "caregiver"
 CAREGIVER_PREFIX = "Message from your caregiver: "
 CAREGIVER_SQL = "SELECT * FROM event WHERE source = 'caregiver'"   # fixed query, no inputs
@@ -64,10 +64,11 @@ class SpacetimeBridge:
         threading.Thread(target=self._run, name="spacetime", daemon=True).start()
 
     def publish(self, obj: dict) -> None:
-        if obj.get("type") in THROTTLED:
+        gap = THROTTLE_S.get(obj.get("type"))
+        if gap is not None:
             key = (obj.get("type"), obj.get("source"))
             now = time.monotonic()
-            if now - self._last.get(key, 0.0) < THROTTLE_S:
+            if now - self._last.get(key, 0.0) < gap:
                 return
             self._last[key] = now
         try:
