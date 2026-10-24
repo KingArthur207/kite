@@ -544,3 +544,21 @@ def test_governor_hovers_when_video_or_telemetry_goes_stale_and_recovers():
     gov.rc(0, 40, 0, 0)
     assert fake.rcs[-1] == (0, 40, 0, 0)
     assert gov.check(now + 5.0, now + 5.0) == "hover"  # telemetry that stops updating also means hover
+
+
+def test_nan_or_future_frame_and_telemetry_stamps_mean_hover():
+    """NaN compared False with the timeout, so a NaN stamp (or one far in the future after the wall clock stepped
+    back) passed as fresh video / telemetry and the governor never hovered."""
+    nan = float("nan")
+    gov, fake = governed(frame_timeout_s=1.0, telemetry_timeout_s=1.0)
+    now = time.time()
+    fake.tel.t = now
+    assert gov.check(now, nan) == "hover"
+    assert gov.check(now, now + 3600.0) == "hover"
+    assert gov.check(now, now + 0.5) == "ok"  # within the timeout either way: a fresh frame
+    fake.tel.t = nan
+    assert gov.check(now, now) == "hover"
+    fake.tel.t = now + 3600.0
+    assert gov.check(now, now) == "hover"
+    fake.tel.t = now
+    assert gov.check(nan, now) == "hover"  # a broken clock is no evidence of live video either

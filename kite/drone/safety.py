@@ -9,7 +9,8 @@ Rules (config.SafetyCfg):
     min_altitude_m; discrete up/down moves that would cross a limit are refused
   * battery below min_battery_pct, or flight time above max_flight_s -> land
   * a land that was asked for (any reason) but failed / was never sent while it still flies is re-sent every 2 s
-  * no new video frame for frame_timeout_s, or stale telemetry -> hover (rc 0) until they come back
+  * no new video frame for frame_timeout_s, or stale telemetry -> hover (rc 0) until they come back; a NaN stamp
+    or one more than the timeout in the future (the wall clock stepped back) counts as stale too
 The mission code keeps working through the wrapper; refused commands report 'error: safety ...'.
 """
 
@@ -54,8 +55,9 @@ class SafetyGovernor(Drone):
                 return self._land(f"flight time > {c.max_flight_s:.0f} s")
             if self.land_requested:  # e.g. the 'l' key during a Wi-Fi drop: keep asking until it is down
                 return self._land("requested")
-            frame_stale = last_frame_t is None or now - last_frame_t > c.frame_timeout_s
-            tel_stale = now - tel.t > c.telemetry_timeout_s
+            # written so a NaN stamp, or one far in the future (wall clock stepped back), also counts as stale
+            frame_stale = last_frame_t is None or not abs(now - last_frame_t) <= c.frame_timeout_s
+            tel_stale = not abs(now - tel.t) <= c.telemetry_timeout_s
             if frame_stale or tel_stale:
                 self._event("video stale -> hover" if frame_stale else "telemetry stale -> hover")
                 self.hovering_for_safety = True
