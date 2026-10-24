@@ -143,19 +143,27 @@ def log_video(stream, rec, stop):
         prev = small
 
 
-def preview_loop(stream, hud, stop, scale):
-    """Show the live feed in a window. Daemon thread: it must never block or slow the flight.
+def preview_loop(ui, done, scale):
+    """Show the live feed in a window until the run ends. Runs on the MAIN thread: macOS only lets the
+    main thread create windows (from any other thread cv2.namedWindow fails with "Unknown C++ exception").
 
-    All HighGUI calls stay on this one thread. Closing the window or pressing q only ends the
-    preview; landing is still Ctrl+C in the terminal.
+    The flight runs in its own thread and hands over its stream through `ui` (ui["video"] is set once
+    the video is open or has failed). Closing the window or pressing q only ends the preview; landing
+    is still Ctrl+C in the terminal.
     """
     import cv2
 
+    while not ui["video"].wait(0.1):  # stay interruptible: Ctrl+C must reach the main thread
+        if done.is_set():
+            return
+    stream, hud = ui.get("stream"), ui["hud"]
+    if stream is None:
+        return
     win = "Tello live  -  q closes preview, Ctrl+C in terminal lands"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     last = -1
     try:
-        while not stop.is_set():
+        while not done.is_set():
             seq, img, ts = stream.read_seq(copy=True)  # we draw on it, so take a copy
             if img is None or seq == last:
                 cv2.waitKey(1)
@@ -377,6 +385,54 @@ def analyze(rec):
 
 # ------------------------------------------------------------------ flight
 def run(args):
+    """Without --preview the flight runs right here. With it, the flight runs in a thread and the main
+    thread shows the window (macOS); Ctrl+C is forwarded to the flight thread, which lands as before."""
+    if not args.preview:
+        fly(args, None)
+        return
+    ui = {"video": threading.Event(), "hud": {"phase": "starting"}}
+    done = threading.Event()
+    failed = []
+
+    def flight():
+        try:
+            fly(args, ui)
+        except BaseException as e:  # reported on the main thread
+            failed.append(e)
+        finally:
+            ui["video"].set()
+            done.set()
+
+    th = threading.Thread(target=flight, name="flight")
+    th.start()
+    interrupted = shown = False
+    while not done.is_set():
+        try:
+            if not (interrupted or shown):
+                shown = True  # q or closing the window ends the preview for good
+                preview_loop(ui, done, args.preview_scale)
+            done.wait(0.1)
+        except KeyboardInterrupt:
+            if interrupted:
+                print("  Ctrl+C ignored: still landing")
+            else:
+                interrupted = True
+                interrupt_thread(th)  # raises KeyboardInterrupt inside fly(): its handler lands
+    th.join()
+    for e in failed:
+        if not isinstance(e, KeyboardInterrupt):
+            raise e
+
+
+def interrupt_thread(th):
+    """Raise KeyboardInterrupt inside another thread (delivered at its next Python step, within ~50 ms
+    while flying: hold() sleeps in 0.05 s slices)."""
+    import ctypes
+
+    ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(th.ident), ctypes.py_object(KeyboardInterrupt))
+
+
+def fly(args, ui):
     import logging
 
     import cv2  # noqa: F401  - fail here, not silently inside the video thread
@@ -396,7 +452,7 @@ def run(args):
     if not args.ground and rec["meta"]["battery"] < args.min_battery:
         print(f"battery below {args.min_battery}% -> not flying")
         return
-    hud = {"phase": "starting"}
+    hud = ui["hud"] if ui is not None else {"phase": "starting"}
     threading.Thread(target=log_state, args=(tello, rec, stop), daemon=True).start()
 
     # One OpenCV/FFmpeg reader for both the recorder and the preview: djitellopy's PyAV reader
@@ -411,8 +467,9 @@ def run(args):
         print("continuing with telemetry only")
     else:
         threading.Thread(target=log_video, args=(stream, rec, stop), daemon=True).start()
-        if args.preview:
-            threading.Thread(target=preview_loop, args=(stream, hud, stop, args.preview_scale), daemon=True).start()
+    if ui is not None:  # the main thread draws it
+        ui["stream"] = stream
+        ui["video"].set()
     time.sleep(3.0)  # let the video decoder start
 
     rec["meta"]["rtt"] = []
