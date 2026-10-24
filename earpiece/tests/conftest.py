@@ -5,6 +5,9 @@ import time
 import numpy as np
 import pytest
 
+from earpiece.app import Earpiece
+from earpiece.config import Cfg
+
 # Tests never touch the network voices or real devices unless a test asks for it.
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
@@ -39,3 +42,20 @@ def wait_for(pred, timeout=5.0, step=0.02):
             return True
         time.sleep(step)
     return pred()
+
+
+@pytest.fixture
+def app(offline_speech):
+    cfg = Cfg()
+    cfg.speech.cache_dir = offline_speech / "cache"
+    cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
+    logs = []
+    from earpiece.memory import MemoryStore
+    mem = MemoryStore(project_id="", project_key="", store=offline_speech / "memory.json", log=logs.append)
+    a = Earpiece(cfg, output="null", record=True, log=logs.append, memory=mem)
+    a.logs = logs
+    a.start(prewarm=False, announce=False)
+    yield a
+    a.stop()
+
+

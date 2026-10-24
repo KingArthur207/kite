@@ -326,19 +326,56 @@ class Earpiece:
                 self.say("No directions yet.", "system", ttl=5)
 
     def navigate(self, destination: str) -> str:
-        """Resolve personal places through memory ('my coffee shop') before asking the
-        navigation side for a route; it receives the real name and coordinates."""
+        """Work out what the wearer means, then hand the navigation side something routable.
+        Saved places (Moss) resolve instantly; relative targets ("the end of the street") go
+        on as structured requests; nearby / named places are looked up with Google Places in
+        the background while Kite acknowledges right away."""
+        from . import destinations as dst
         destination = destination.strip().rstrip(".")
-        req = {"intent": "navigate", "destination": destination}
         place = self.memory.resolve_place(destination)
         if place is not None:
             name = place.meta.get("name") or place.text.split(":")[0]
-            req.update({"resolved": name, "address": place.meta.get("address"),
-                        "lat": place.meta.get("lat"), "lng": place.meta.get("lng"), "memory_id": place.id})
-            self._event("voice_request", req)
+            self._event("voice_request", {"intent": "navigate", "destination": destination,
+                                          "target_type": "memory", "name": name,
+                                          "address": place.meta.get("address"), "lat": place.meta.get("lat"),
+                                          "lng": place.meta.get("lng"), "memory_id": place.id})
             return f"Okay, heading to {name}."
-        self._event("voice_request", req)
-        return f"Okay, finding a route to {destination}."
+        d = dst.classify(destination)
+        if d.kind == "relative":
+            self._event("voice_request", d.request())
+            return f"Okay, I'll guide you to {d.spoken}."
+        pos = self.position or {}
+        lat, lng = pos.get("lat"), pos.get("lng")
+        if d.kind == "nearby" and lat is None:
+            self._event("voice_request", d.request())
+            return f"I don't have your location yet, so I've asked for the nearest {d.query}."
+
+        def lookup():
+            try:
+                r = dst.resolve(d, lat, lng, search=self.places_search)
+            except Exception as e:
+                self.log(f"[nav] place lookup failed ({type(e).__name__}: {e})")
+                self._event("voice_request", d.request())
+                self.say(f"I couldn't look that up, so I've asked the route planner for {destination}.",
+                         "answer", ttl=15)
+                return
+            if r.name is None:
+                self.say(f"I couldn't find {('a ' + d.query + ' nearby') if d.kind == 'nearby' else destination}.",
+                         "answer", ttl=15)
+                return
+            self._event("voice_request", r.request())
+            far = f", about {distance_phrase(r.distance_m)} away" if r.distance_m is not None else ""
+            where = f" on {r.address.split(',')[0]}" if r.address else ""
+            lead = f"The nearest {d.query} is" if d.kind == "nearby" else "Found"
+            self.say(f"{lead} {r.name}{where}{far}. Starting directions.", "answer", ttl=20)
+
+        threading.Thread(target=lookup, name="places", daemon=True).start()
+        return f"Looking for the nearest {d.query}." if d.kind == "nearby" else f"Looking up {d.query}."
+
+    @staticmethod
+    def places_search(query, lat, lng, nearby):
+        from . import destinations as dst
+        return dst.places_search(query, lat, lng, nearby)
 
     def remember(self, kind: str, text: str) -> str:
         text = text.strip().rstrip(".")

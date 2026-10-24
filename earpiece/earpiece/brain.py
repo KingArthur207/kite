@@ -189,6 +189,8 @@ class Brain:
             return ("remember_note", m.group("text").strip())
         if _RECALL.search(low):
             return ("recall", None)
+        if re.search(r"\b(?:take|bring|walk|guide|lead) me back\b|^go back\b", low) and not _NAV.search(o):
+            return ("navigate", "back the way I came")
         m = _NAV.search(o)
         if m and len(m.group("dest")) >= 2:
             return ("navigate", m.group("dest").strip())

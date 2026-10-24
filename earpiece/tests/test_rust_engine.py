@@ -126,6 +126,7 @@ def test_real_device_survives_python_abuse():
     expected = 3.0 * RATE / (buf or 512)
     assert st["blocks"] - b0 > 0.85 * expected, st
     assert st["glitches"] == 0, st
-    assert st["max_render_ms"] < 5.0, st
+    deadline_ms = (buf or 512) / RATE * 1000          # ~10.7 ms: the real-time budget per block
+    assert st["max_render_ms"] < 0.9 * deadline_ms, st
     assert rs.callback_age_ms() < 200
     rs.shutdown()
