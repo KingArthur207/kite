@@ -80,6 +80,8 @@ A caregiver who is driving, cooking, or blind or low vision can talk to Kite ins
 python -m earpiece caregiver                 # talk through the laptop mic and speakers
 python -m earpiece caregiver --text          # type instead (add --mute for no audio)
 python -m earpiece caregiver --dry-run       # no Grok session: print what the tools return, send nothing
+python -m earpiece caregiver --input-wav q1.wav --input-wav q2.wav --output-wav reply.wav --transcript t.json
+                                             # headless: recordings as the mic, Grok's voice to files
 ```
 
 It opens one realtime speech-to-speech session with xAI's Grok Voice Agent API (`XAI_API_KEY` in the repo-root `.env`; `--voice`, default `eve`; `--db`, default `kite-sync-pl6rp`) and gives Grok three tools over the shared SpacetimeDB state:
@@ -91,6 +93,33 @@ It opens one realtime speech-to-speech session with xAI's Grok Voice Agent API (
 | "Is she okay? Did she ask for help?" | `recent_alerts` | the walker's "tell my caregiver" alerts and recent stop warnings |
 
 While the line is open, a new walker alert is announced right away without being asked. Grok only knows what the tools return; when the newest update is more than 90 s old, the tool result says so and Grok says how old the information is. Rows from earlier walks (more than 15 minutes before the newest update) are left out. In code, messages are cut to 200 characters, a go-ahead to cross is never relayed, and a repeated message is not sent twice. Reads are cached for 3 s and share the Spacetime token bucket. The mic is paused while Kite talks so the laptop speaker cannot interrupt it (`--barge-in` keeps it open; use headphones). The call hangs up after `--max-minutes` (default 30).
+
+If the walker's earpiece has `KITE_CAREGIVER_TOKEN` set, set the same value on the caregiver's laptop: the line signs its messages exactly like the dashboard does, and the earpiece drops unsigned ones.
+
+Headless mode opens no sound device at all. Each `--input-wav` file (16-bit WAV, any rate, mixed down to mono 24 kHz) is one caregiver turn, streamed in 100 ms chunks at real-time pace and followed by a second of silence so Grok's turn detection hears the end. `--output-wav` writes the whole reply plus `reply.turnN.wav` per turn, and `--transcript` writes the transcript, every tool call with its result, and each turn's timing as JSON.
+
+### Headless end-to-end test
+
+```bash
+scripts/caregiver_e2e.sh                     # about a minute; prints PASS/FAIL per check
+KITE_LIVE_TESTS=1 python -m pytest tests/test_caregiver_e2e_live.py   # the same run as a test
+```
+
+Nothing is played aloud, and no microphone or camera is opened. The script starts a throwaway SpacetimeDB on a free `127.0.0.1` port, with its own data directory, JWT keys and CLI config, so Maincloud and `~/.config/spacetime` are never touched. It publishes `dashboard/spacetimedb` there and seeds a walk (a position on Lyon Street, the Palace of Fine Arts waypoint, a crowd hazard, a spoken line). The walker's earpiece runs as `run --null --spacetime --no-stem --no-judgment --no-prewarm` with `KITE_CAMERA=off` and logs every line it says as `[said] ...`.
+
+The caregiver's two questions, "How's the walk going?" and "Tell her I'm running five minutes late.", are rendered with `say -o`, which writes a file and does not play, and are sent to Grok with `--input-wav`. Both sides share a random `KITE_CAREGIVER_TOKEN`, so the signed path is what gets tested.
+
+The script checks five things:
+
+- Grok calls `walk_status`, and its reply names the seeded walk.
+- Grok calls `message_walker`, and the signed caregiver `say` row lands in the local database.
+- The silent earpiece says "Message from your caregiver: ...late..." within 10 s.
+- The earpiece mirrors that line back as a `spoken` row.
+- The caregiver side opens no audio device.
+
+Audio, transcripts and logs stay in `earpiece/.cache/caregiver-e2e/<time>/`: the questions, `grok-reply.turnN.wav`, `transcript.json`, `caregiver.log`, `walker.log` and `summary.json`.
+
+Live cost is one Grok session with two short turns, plus at most one new Cartesia line, the caregiver message. Phrase warm-up is skipped. `KITE_TTS_CACHE` points the earpiece at an existing phrase cache, and the script uses the main checkout's cache when it runs from a git worktree. Keys come from the repo-root `.env`, or from the main checkout's `.env` in a worktree. The script also needs the `spacetime` CLI, `openssl`, and node_modules for `dashboard/spacetimedb`, either installed or taken from the main checkout.
 
 ## Layout
 
