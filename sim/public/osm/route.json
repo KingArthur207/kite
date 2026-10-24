@@ -1,26 +1,26 @@
 {
   "attribution": "Map data (c) OpenStreetMap contributors, ODbL 1.0. https://www.openstreetmap.org/copyright",
-  "length_m": 98.0,
+  "length_m": 96.6,
   "points": [
     {
       "name": "spawn: Moss NE sidewalk",
-      "lat": 37.7779299,
-      "lng": -122.4081767
+      "lat": 37.7779348,
+      "lng": -122.4081703
     },
     {
       "name": "corner: Moss NE sidewalk at Howard",
-      "lat": 37.7783781,
-      "lng": -122.4087325
+      "lat": 37.7783723,
+      "lng": -122.4087128
     },
     {
       "name": "across the Moss zebra",
-      "lat": 37.7783268,
-      "lng": -122.4087976
+      "lat": 37.7783182,
+      "lng": -122.4087801
     },
     {
       "name": "Howard south sidewalk, 20 m SW",
-      "lat": 37.7781999,
-      "lng": -122.4089586
+      "lat": 37.7781901,
+      "lng": -122.4089394
     }
   ]
 }
