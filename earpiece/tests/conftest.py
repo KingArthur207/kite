@@ -10,6 +10,7 @@ from earpiece.config import Cfg
 
 # Tests never touch the network voices or real devices unless a test asks for it.
 os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ.pop("KITE_SPACETIME", None)       # and never mirror a test run to the live database
 
 
 @pytest.fixture
