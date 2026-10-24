@@ -6,6 +6,7 @@ import { spawnMossActors } from "./mossActors";
 import { addSkyAndSun, tuneRenderer } from "./osmLook";
 import { buildFacades, type Building } from "./osmFacades";
 import { buildStreets, ribbon, type StreetData } from "./osmStreet";
+import { buildStreetDressing } from "./streetDressing";
 
 type P = [number, number];
 type Quad = P[];
@@ -71,6 +72,7 @@ export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: num
 
   const walls: Wall[] = [...data.curbs];
   for (const b of data.buildings) for (let k = 0; k + 1 < b.pts.length; k++) walls.push([...b.pts[k], ...b.pts[k + 1]] as Wall);
+  walls.push(...buildStreetDressing(visible, data, garages));   // parked cars, trees, poles, signs: they collide too
 
   // Planned demo walk, drawn faintly on screen only (main.ts hides it for camera frames).
   const overlay = new THREE.Group();
