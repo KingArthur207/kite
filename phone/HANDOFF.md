@@ -2,13 +2,18 @@
 
 Started by Karthik on Oct 24; continued by Eddy. This is unfinished: read this first.
 
+**Update, Oct 24 evening: Bluetooth with the native app is now the primary path.** The walker's iPhone runs the
+React Native app in `phone-app/`, a BLE central that writes GPS fixes (no compass: the team dropped heading) to
+`python -m phone.ble` on the computer. Setup, the terminal line and troubleshooting: `docs/phone.md`. The Wi-Fi,
+HTTPS and certificate plan below (`certs.py`, the bridge server) is parked; leave it as it is.
+
 ## Goal
 The walker's phone sends GPS and compass heading (and optionally chest-camera frames) to the computer, which
 forwards them to the earpiece as `position` events (`earpiece/earpiece/events.py`). Blind-first: the iPhone
 **Action Button** opens it with a sound, and one tap anywhere connects.
 
 ## Decided
-- **Primary: Wi-Fi to the Windows computer, plain Safari or Chrome.** The Windows computer stays on the Tello Wi-Fi
+- **Parked (was primary): Wi-Fi to the Windows computer, plain Safari or Chrome.** The Windows computer stays on the Tello Wi-Fi
   and runs **Windows Mobile Hotspot** at the same time (check `netsh wlan show drivers`; a USB Wi-Fi adapter if the
   built-in one can't do both). The phone joins that hotspot and opens the bridge's **HTTPS** page (Safari only
   allows GPS, compass and camera on secure pages, so the bridge serves a local CA the phone installs once as a
@@ -17,8 +22,9 @@ forwards them to the earpiece as `position` events (`earpiece/earpiece/events.py
 - **Forward to the earpiece:** the earpiece runs on the Mac (macOS-only audio and AirPods controls). The Mac joins
   the Windows hotspot; the bridge forwards `position` (with heading) over UDP to `KITE_EARPIECE_HOST`, port 5010,
   the same protocol as `earpiece/earpiece/client.py`. Start the earpiece with `--bind 0.0.0.0`.
-- **Fallbacks:** Bluetooth LE via the free **Bluefy** iOS browser (Safari has no Web Bluetooth) or Android Chrome,
-  to `python -m phone.ble` on the computer; or a USB cable (iPhone Personal Hotspot over USB, which also gives the
+- **Primary now:** Bluetooth LE from the native app (`phone-app/`) to `python -m phone.ble` on the computer
+  (tested on a Mac: it advertises; `phone/fake_phone.py` stands in for the app from a second computer).
+- **Fallbacks:** a USB cable (iPhone Personal Hotspot over USB, which also gives the
   computer internet).
 - **Action Button:** a Shortcut that first **Speaks** "Kite opening" (Shortcuts can always make sound; web pages
   only after a tap), then opens the HTTPS URL in Safari. The page is one full-screen Connect target, announces status

@@ -30,8 +30,8 @@ skip() { SKIPPED+=("$1 ($2)"); printf -- '-- %s: skipped, %s\n' "$1" "$2"; }
 earpiece_venv() {
   [ -x "$PY" ] || (cd "$EAR" && uv venv -q --python 3.12 .venv)
   # every run: a no-op when satisfied, and it picks up dev dependencies added since the venv was made
-  # (camera = OpenCV, for the sim scene-describe tests that run on this venv)
-  uv pip install -q --python "$PY" -e "${EAR}[brain,memory,dev,camera]" maturin
+  # (camera = OpenCV, for the sim scene-describe tests that run on this venv; ble = bless, for phone/)
+  uv pip install -q --python "$PY" -e "${EAR}[brain,memory,dev,camera,ble]" maturin
   # rebuild the Rust engine when it is missing or older than its sources, so tests never run a stale build
   local so
   so="$("$PY" -c 'import glob, os, kite_audio; d = os.path.dirname(kite_audio.__file__); print(max(glob.glob(d + "/*.so"), key=os.path.getmtime))' 2>/dev/null)"
@@ -77,6 +77,8 @@ step_drone() {
   run "sim scene-describe tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q sim/test_scene_describe.py"
   # geometry, depth fusion, hazards and event contract with fake models; `-m slow` adds the real models
   run "perception tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q perception/tests"
+  # the phone's Bluetooth link with no radio: fix parsing, chunk reassembly, GATT writes, server build (bless)
+  run "phone link tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q phone/tests"
   # self-check scripts (no pytest functions): the relay's origin rule, the stand-in detector's geometry
   run "sim relay self-check" bash -c "cd '$ROOT' && '$PY' sim/test_relay.py"
   run "sim stand-in geometry self-check" bash -c "cd '$ROOT' && '$PY' sim/test_standin_geometry.py"
