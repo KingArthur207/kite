@@ -33,6 +33,7 @@ from .listen import Listener
 from .memory import MemoryStore
 from .mixer import Engine
 from .output import DeviceOutput, NullOutput, RustDeviceOutput
+from .route import RouteGuide
 from .sonar import Sonar
 from .speech import Speaker
 from .transport import Transport
@@ -101,6 +102,7 @@ class Earpiece:
         if self.transport is not None:
             self.transport.state_provider = self.state
         self.bridges: list = []                    # extra sinks (e.g. SpacetimeDB) for outbound events
+        self.route = RouteGuide(self.handle, event=self._event, log=log)   # cues re-enter handle()
         self.battery = devices.BatteryWatch(lambda t: self.say(t, "system", key="airpods-battery", ttl=30))
         self._stop = threading.Event()
         self.paused = False
@@ -270,6 +272,7 @@ class Earpiece:
             self._scene_image(msg, now)
         elif t == "position":
             self.position = {k: v for k, v in msg.data.items() if v is not None}
+            self.route.position(self.position, now)
             place = self.position.get("place")
             if place and place not in self._noted_places:
                 self._noted_places.add(place)
@@ -538,6 +541,8 @@ class Earpiece:
                                           "target_type": "memory", "name": name,
                                           "address": place.meta.get("address"), "lat": place.meta.get("lat"),
                                           "lng": place.meta.get("lng"), "memory_id": place.id})
+            if place.meta.get("lat") is not None and place.meta.get("lng") is not None:
+                self.route.start((place.meta["lat"], place.meta["lng"]), name)
             return f"Okay, heading to {name}."
         d = dst.classify(destination)
         if d.kind == "relative":
@@ -567,6 +572,8 @@ class Earpiece:
             where = f" on {r.address.split(',')[0]}" if r.address else ""
             lead = f"The nearest {d.query} is" if d.kind == "nearby" else "Found"
             self.say(f"{lead} {r.name}{where}{far}. Starting directions.", "answer", ttl=20)
+            if r.lat is not None and r.lng is not None:
+                self.route.start((r.lat, r.lng), r.name)
 
         threading.Thread(target=lookup, name="places", daemon=True).start()
         return f"Looking for the nearest {d.query}." if d.kind == "nearby" else f"Looking up {d.query}."
@@ -643,6 +650,7 @@ class Earpiece:
             self.beacon.enabled = False
             out = "Beacon off."
         elif action == "cancel_route":
+            self.route.cancel()
             self.beacon.clear()
             self._event("voice_request", {"intent": "cancel_route"})
             out = "Route cancelled."
@@ -697,6 +705,7 @@ class Earpiece:
                         for h in self.hazards.values()],
             "route": {"label": b.label, "bearing": b.bearing, "distance": b.distance,
                       "region": b.region} if b.active else None,
+            "directions": self.route.summary(),
             "last_instruction": None if self.last_guidance is None else {
                 "text": self.last_guidance[0], "seconds_ago": round(now - self.last_guidance[1])},
             "scene": self.scene[0] if self.scene and now - self.scene[1] < 90 else None,
