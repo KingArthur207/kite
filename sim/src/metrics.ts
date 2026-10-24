@@ -191,13 +191,13 @@ export function startMetrics(ctx: {
   const results: any[] = [];
   let trial = 0, obs: Obs[] = [], t = 0, s = 0, side = 0, sideTarget = 0, sideUntil = 0, ignoreUntil = 0;
   let stopped = false, stopAt = Infinity, lastAlarm = -1e9, waited = 0, blockedFor = 0;
-  let touching = new Set<object>(), collisions = 0, done = false, stops: number[] = [];
+  let touching = new Set<object>(), collisions = 0, wallContacts = 0, done = false, stops: number[] = [];
 
   function reset() {
     obs = makeObstacles(trial);
     t = 0; s = 0; side = 0; sideTarget = 0; sideUntil = 0; ignoreUntil = 0;
     stopped = false; stopAt = Infinity; lastAlarm = -1e9; waited = 0; blockedFor = 0;
-    touching = new Set(); collisions = 0; stops = [];
+    touching = new Set(); collisions = 0; wallContacts = 0; stops = [];
     obs.forEach(place);
     placeWalker();
   }
@@ -259,7 +259,10 @@ export function startMetrics(ctx: {
       // Block only on things we aren't already touching, so a car that drove into us can't pin us.
       const key = (e: object) => ("o" in e && "b" in e ? (e as { o: Obs }).o : e);
       const hereKeys = new Set(here.map(key));
-      const blocked = touches(nx, nn, ob, WALKER_RADIUS).some((e) => !hereKeys.has(key(e)));
+      // A sidestep only stops at walls and curbs: the route runs ~0.5 m from the building on Moss, and the bin's
+      // axis-aligned box caught every sideways sweep at its corner, so no walk got past it.
+      const blocked = (lateral ? walls(nx, nn, WALKER_RADIUS) : touches(nx, nn, ob, WALKER_RADIUS))
+        .some((e) => !hereKeys.has(key(e)));
       if (blocked && lateral) {
         sideTarget = side;   // the sidestep ran into something (a wall, a curb): stop there and walk on
       } else if (blocked) {
@@ -284,7 +287,7 @@ export function startMetrics(ctx: {
         continue;
       }
       now.add(e);
-      if (!touching.has(e)) collisions++;
+      if (!touching.has(e)) { collisions++; wallContacts++; }
     }
     touching = now;
     for (const { o, b } of ob) o.minClear = Math.min(o.minClear, clearance(walker.x, walker.n, b));
@@ -294,12 +297,14 @@ export function startMetrics(ctx: {
 
   function sidestep() {
     stopped = false; stopAt = Infinity; blockedFor = 0; waited = 0;
-    sideTarget = 1; sideUntil = s + SIDE_LEN; ignoreUntil = s + IGNORE_LEN;
+    // Still blocked after a sidestep that a wall or prop cut short: feel the other way (the street dressing
+    // left too little room toward the buildings at the bin, and every walk stalled there until the 150 s cap).
+    sideTarget = sideTarget > 0 ? -1 : 1; sideUntil = s + SIDE_LEN; ignoreUntil = s + IGNORE_LEN;
   }
 
   function finishTrial(completed: boolean) {
     results.push({
-      trial, collisions, near_misses: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).length,
+      trial, collisions, wall_contacts: wallContacts, near_misses: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).length,
       time_s: +t.toFixed(1), completed, stops_at_m: stops,   // route metres where the walker stopped on a cue
       hit: obs.filter((o) => o.hit).map((o) => o.name),
       near: obs.filter((o) => !o.hit && o.minClear < NEAR_MISS_M).map((o) => o.name),
@@ -315,6 +320,9 @@ export function startMetrics(ctx: {
     return {
       trials: results.length, collisions: sum("collisions"), collisions_per_walk: +(sum("collisions") / n).toFixed(2),
       walks_with_collision: results.filter((r) => r.collisions > 0).length,
+      // The scripted obstacles alone: walls and curbs the route clips (corner, route end) are the same in every mode.
+      obstacle_hits_per_walk: +(results.reduce((a, r) => a + r.hit.length, 0) / n).toFixed(2),
+      wall_contacts_per_walk: +(sum("wall_contacts") / n).toFixed(2),
       near_misses: sum("near_misses"), mean_time_s: +(sum("time_s") / n).toFixed(1),
       completed: results.filter((r) => r.completed).length,
     };
@@ -336,6 +344,7 @@ export function startMetrics(ctx: {
   }
 
   reset();
+  (window as any).__DBG = () => ({ s, t, x: walker.x, n: walker.n, h: walker.heading, car: poseOf(obs[3]), carT: obs[3].t });
   return {
     offline: mode !== "kite",
     step(dt: number) {
