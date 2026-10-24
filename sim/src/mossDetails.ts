@@ -10,7 +10,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import { WALKER_RADIUS } from "./config";
 import { Geo, seeded } from "./osmLook";
 import { segDist } from "./osmFacades";
-import { along, curbOffsets, offsetPts, type StreetData } from "./osmStreet";
+import { along, curbOffsets, nearestOnRoads, offsetPts, type StreetData } from "./osmStreet";
 import { boxSegs, PARK_SWAP_AT, sOn } from "./streetDressing";
 import { canvasTex, coverTexture, LeafSoup, leafTexture, limb, medallionTexture, signPostGeo, wireGeo } from "./streetProps";
 
@@ -19,31 +19,38 @@ type Seg = [number, number, number, number];
 type Data = StreetData & { route: P[]; buildings: { id: number; pts: P[]; ground?: P[] }[] };
 
 const CURB_H = 0.15;
-const MEDALLION_R = 1.9, MEDALLION2_AHEAD = 28;          // m: the second medallion, NW of the spawn (the first is at 6)
-const LANTERN_WIRES = 4, LANTERN_FROM = 20, LANTERN_STEP = 5, LANTERN_H = 6.4, LANTERN_EVERY = 1.5;   // m, from the zebra
+const MEDALLION_R = 1.9, MEDALLION2_AHEAD = 32;          // m: the second medallion, NW of the spawn (the first is at 6)
+const LANTERN_WIRES = 4, LANTERN_FROM = 21, LANTERN_STEP = 4, LANTERN_H = 7.2, LANTERN_EVERY = 2.2;   // m, from the zebra
 const PAVERS_FROM = 1.6, PAVERS_TO = 15;                  // m SE of the zebra: the grey brick paver patch
 const RED_CURB: [number, number] = [2, 7];                // m SE of the zebra on the SW curb
 const MANHOLES: P[] = [[22.8, -24.9], [8.3, -8.3]];
 const MANHOLE_R = 0.45;
 const NO_PARKING_SW: P = [23.5, -25.5];                   // NO PARKING ANY TIME, SW sidewalk, facing SE
 const REG_SIGNS_AHEAD = 16;                               // m NW of the spawn, SW sidewalk: 2-hour and street cleaning
-const FDC = { building: 260351180, near: [45.4, -36.7] as P };   // 33 Moss: red-capped fire department connection
+const FDC = { building: 260351180, near: [42.8, -39.1] as P };   // a sidewalk point in front of it   // 33 Moss: red-capped fire department connection
 const SHRUBS: { near: P; len: number; h: number }[] = [{ near: [35.5, -30], len: 3.2, h: 2.8 }, { near: [32, -25.5], len: 2.2, h: 3.2 }];
-const LANE_SHIFT = 1.2, LANE_TAPER = 8;                   // m toward the SW, and over how far it eases back
+const LANE_TAPER = 8, LANE_GAP = 0.2, CAR_HALF = 0.95, PARK_FROM_CURB = 1.25;   // m: lane ease-back, clearances (streetDressing)
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
 const add = (a: P, b: P, k = 1): P => [a[0] + b[0] * k, a[1] + b[1] * k];
 const dist = (a: P, b: P) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const at = (line: P[], s: number) => [...along(line, Math.max(0, s), 1e9)][0] ?? null;
 
-/** Moss's traffic lane with its NW half moved LANE_SHIFT m toward the SW, clear of the NE parked cars. */
-export function mossLaneClear<L extends { name: string; pts: P[] }>(lanes: L[]): L[] {
+/** Moss's traffic lane, its NW half moved toward the SW to run midway between the SW curb and the cars parked on
+ *  the NE curb (a 1.9 m wide car in a 1.25 m-from-curb slot, LANE_GAP clear of it). */
+export function mossLaneClear<L extends { name: string; pts: P[] }>(lanes: L[], moss: StreetData["roads"][number]): L[] {
+  const sw = curbOffsets(moss, 0, 0), ne = curbOffsets(moss, 1, 0);
   return lanes.map((l) => {
     if (l.name !== "Moss Street") return l;
     const swap = sOn(l.pts, PARK_SWAP_AT);
     let s = 0;
     const off = l.pts.map((p, i) => {
       if (i) s += dist(l.pts[i - 1], p);
-      return -LANE_SHIFT * Math.min(1, Math.max(0, (swap + LANE_TAPER - s) / LANE_TAPER));   // + is left of travel (NE)
+      const near = nearestOnRoads([moss], p);
+      let k = 0;   // nearest surveyed curb point
+      moss.pts.forEach((q, j) => { if (dist(q, p) < dist(moss.pts[k], p)) k = j; });
+      const want = (sw[k] + CAR_HALF + (ne[k] - PARK_FROM_CURB - CAR_HALF - LANE_GAP - CAR_HALF)) / 2;
+      const ease = Math.min(1, Math.max(0, (swap + LANE_TAPER - s) / LANE_TAPER));
+      return Math.min(0, want - near.side) * ease;   // + is left of travel (NE); only ever toward the SW
     });
     return { ...l, pts: offsetPts(l.pts, off) };
   });
@@ -52,10 +59,10 @@ export function mossLaneClear<L extends { name: string; pts: P[] }>(lanes: L[]):
 // --- textures
 const paverTexture = () => canvasTex(512, (g, S) => {   // 1 m square: grey concrete pavers, 20 x 10 cm, running bond
   const r = seeded(41), bw = S / 5, bh = S / 10;
-  g.fillStyle = "#4a4946"; g.fillRect(0, 0, S, S);
+  g.fillStyle = "#26272a"; g.fillRect(0, 0, S, S);
   for (let row = 0; row < 10; row++) for (let k = -1; k < 5; k++) {
-    const x = k * bw + (row % 2) * bw / 2, l = 52 + r() * 16;
-    g.fillStyle = `hsl(40, ${3 + r() * 4}%, ${l}%)`;
+    const x = k * bw + (row % 2) * bw / 2, l = 27 + r() * 9;
+    g.fillStyle = `hsl(215, ${4 + r() * 5}%, ${l}%)`;
     g.fillRect(x + 2, row * bh + 2, bw - 4, bh - 4);
   }
   for (let i = 0; i < 1500; i++) { g.fillStyle = `rgba(30,28,25,${r() * 0.15})`; g.fillRect(r() * S, r() * S, 3, 3); }
@@ -132,7 +139,7 @@ export function buildMossDetails(group: THREE.Object3D, data: Data): Seg[] {
       if (a) red.push(new THREE.BoxGeometry(0.52, CURB_H + 0.01, 0.2).applyMatrix4(
         new THREE.Matrix4().makeRotationY(Math.atan2(a.u[1], a.u[0])).setPosition(a.p[0] + a.u[0] * 0.25, CURB_H / 2, -(a.p[1] + a.u[1] * 0.25))));
     }
-    solid(new THREE.MeshStandardMaterial({ color: 0xb3262a, roughness: 0.7 }), red);
+    solid(new THREE.MeshStandardMaterial({ color: 0x9c3a35, roughness: 0.8 }), red);
   }
 
   // --- lanterns: white paper globes in drops of two or three, on wires zigzagging across mid-block
@@ -147,11 +154,11 @@ export function buildMossDetails(group: THREE.Object3D, data: Data): Seg[] {
       const w = wireGeo(A, B, 0.06 * span, 0.008, Math.max(2, Math.round(span / LANTERN_EVERY)));
       wires.push(...w.mesh);
       for (const q of w.line.slice(1, -1)) {
-        const n = 2 + (r() < 0.5 ? 1 : 0);
-        let y = q.y - 0.25;
-        wires.push(limb(q, new THREE.Vector3(q.x, q.y - 0.25 - n * 0.42, q.z), 0.005, 0.005, 3));
+        const n = 1 + (r() < 0.6 ? 1 : 0);
+        let y = q.y - 0.15;
+        wires.push(limb(q, new THREE.Vector3(q.x, q.y - 0.15 - n * 0.27, q.z), 0.005, 0.005, 3).deleteAttribute("uv"));   // wireGeo's have none
         for (let i = 0; i < n; i++) {
-          const rad = 0.15 + r() * 0.05;
+          const rad = 0.1 + r() * 0.03;
           globes.push(new THREE.SphereGeometry(rad, 12, 8).scale(1, 1.12, 1).translate(q.x, y - rad, q.z));
           y -= rad * 2.2 + 0.05;
         }
@@ -178,7 +185,7 @@ export function buildMossDetails(group: THREE.Object3D, data: Data): Seg[] {
     }
     segs.push(...boxSegs(a.p, a.u, 0.05, 0.05));
   };
-  sign(sOn(moss.pts, NO_PARKING_SW), [{ tex: noParkingArrowTexture(), w: 0.3, h: 0.3, top: 2.6 }]);
+  sign(sOn(moss.pts, NO_PARKING_SW) - 2.5, [{ tex: noParkingArrowTexture(), w: 0.3, h: 0.3, top: 2.6 }]);
   sign(spawnS - REG_SIGNS_AHEAD, [{ tex: regSignTexture("sweep"), w: 0.3, h: 0.3, top: 2.65 }, { tex: regSignTexture("2hr"), w: 0.3, h: 0.3, top: 2.3 }]);
   solid(metal, posts);
 
@@ -206,7 +213,7 @@ export function buildMossDetails(group: THREE.Object3D, data: Data): Seg[] {
   {
     const w = wallAt(FDC.near, FDC.building);
     if (w) {
-      const chrome = new THREE.MeshStandardMaterial({ color: 0xd0d2d4, metalness: 1, roughness: 0.25 });
+      const chrome = new THREE.MeshStandardMaterial({ color: 0xe4e5e6, metalness: 0.8, roughness: 0.35 });
       const red = new THREE.MeshStandardMaterial({ color: 0xc2272d, roughness: 0.4 });
       const M = new THREE.Matrix4().makeRotationY(Math.atan2(w.n[1], w.n[0])).setPosition(w.q[0], CURB_H, -w.q[1]);   // local +x out of the wall
       const cyl = (r: number, h: number) => new THREE.CylinderGeometry(r, r, h, 14);

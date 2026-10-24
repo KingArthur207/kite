@@ -422,7 +422,7 @@ const PAINT = [0xb9bcc0, 0xe9e8e4, 0x15171a, 0x4a4f56, 0x1d2a45, 0x6b1a1e, 0xa9a
 
 const MOTO_AHEAD = look2 ? 16 : 13;   // m NW of the spawn
 // ?look=2, from Street View (2026-09): cars line the SW curb from Folsom to about 33 Moss, where the SW side turns
-// into warehouse doors (NO PARKING), then the NE curb from there to the corner. No empty spaces, the block is full.
+// into warehouse doors (NO PARKING), then the NE curb from there to the corner. No empty spaces and no driveway gaps.
 export const PARK_SWAP_AT: P = [33, -33];
 function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: StreetData["roads"][number], hydrant: P | null, segs: Seg[]) {
   const sw = offsetPts(moss.pts, curbOffsets(moss, 0, -PARK_FROM_CURB));   // the surveyed curb, so cars stay in the parking lane
@@ -438,7 +438,7 @@ function parkCars(root: THREE.Object3D, data: Data, garages: Garage[], moss: Str
     const len = line.slice(1).reduce((s, b, i) => s + dist(line[i], b), 0);
     const blocked: [number, number][] = [];
     for (const c of data.crossings) if (c.road === moss.id) { const s = sOn(line, [c.x, c.y]); blocked.push([s - 9, s + 7]); }
-    for (const g of side ? [] : garages) {   // Street View: NE cars park across the garages too
+    for (const g of look2 ? [] : garages) {   // ?look=2: Street View shows the curbs full, driveways or not
       const near = nearestOnRoads([moss], [g.x, g.n]);
       if (near.side >= 0 || near.road !== moss || Math.abs(near.side) + moss.curbs[0] > 8) continue;
       const s = sOn(line, [g.x, g.n]);

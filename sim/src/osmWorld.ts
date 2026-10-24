@@ -37,7 +37,7 @@ export interface WorldExtras {
 }
 
 // ?look=2 parks cars on the NE curb in the NW half of Moss, so its lane moves over (mossDetails.ts).
-export const lanes: Lane[] = look2 ? mossLaneClear(data.lanes) : data.lanes;
+export const lanes: Lane[] = look2 ? mossLaneClear(data.lanes, data.roads.find((r) => r.name === "Moss Street")!) : data.lanes;
 export const route: P[] = data.route;
 export const crossings = data.crossings;
 
