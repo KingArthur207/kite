@@ -67,11 +67,19 @@ def cmd_run(a) -> int:
     if a.no_judgment:
         cfg.judgment = False
     app = Earpiece(cfg, output="null" if a.null else "device", log=_log, output_device=a.output)
+    chained = app.speaker.on_spoken
+
+    def on_spoken(rec: dict) -> None:            # every line Kite says (or drops) is in the log,
+        _log(f"[said] [{rec['priority']}/{rec['result']}] {rec['text']}")   # so a --null run shows it
+        if chained is not None:
+            chained(rec)
+
+    app.speaker.on_spoken = on_spoken
     if a.spacetime or cfg.net.spacetime_enabled:
         from .spacetime import CaregiverInbox, SpacetimeBridge
         app.bridges.append(SpacetimeBridge(cfg.net.spacetime_host, cfg.net.spacetime_db,
                                            source="earpiece", log=_log))
-    app.start()
+    app.start(prewarm=not a.no_prewarm)
     if a.spacetime or cfg.net.spacetime_enabled:
         CaregiverInbox(app.handle, cfg.net.spacetime_host, cfg.net.spacetime_db, log=_log)
     if not a.no_stem:
@@ -210,6 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--ws-port", type=int, default=5011)
     r.add_argument("--no-judgment", action="store_true", help="turn off the Claude judgment layer (also KITE_JUDGMENT=0)")
     r.add_argument("--spacetime", action="store_true", help="mirror events to SpacetimeDB (SPACETIME_HOST) and speak caregiver messages from it")
+    r.add_argument("--no-prewarm", action="store_true", help="skip the phrase and cue warm-up (test runs: "
+                   "no Cartesia calls for phrases that are not cached yet)")
     rr = sub.add_parser("render", help="render a scenario or a JSONL timeline to a WAV file")
     rr.add_argument("scenario", nargs="?", choices=["walk", "car", "dropout", "crowd"])
     rr.add_argument("out")

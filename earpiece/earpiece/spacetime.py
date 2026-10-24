@@ -459,6 +459,8 @@ class CaregiverInbox:
         self.stats["polls"] += 1
         if self.last_id is None:                  # startup: old messages are history, not news
             self.last_id = rows[-1][0] if rows else -1
+            self.log(f"[caregiver] inbox ready on {self.db}: speaking new caregiver messages "
+                     f"({len(rows)} earlier skipped)")
             return
         for rid, payload in rows:
             if rid <= self.last_id:
