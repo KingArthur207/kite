@@ -5,7 +5,8 @@
 # Python
 __pycache__/
 *.py[cod]
-.venv/
+.venv
+*.nosync
 *.egg-info/
 .pytest_cache/
 
