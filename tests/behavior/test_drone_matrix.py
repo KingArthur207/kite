@@ -1751,19 +1751,15 @@ def test_explicit_land_on_the_ground_is_still_passed_on(clock):
     assert inner.lands == 1 and gov.land_requested
 
 
-def test_land_requested_is_never_cleared_so_a_second_takeoff_lands_again(clock):
-    # pinned (docs: "restart the recorder to fly again"): the latch survives landing and a new takeoff
+def test_a_second_takeoff_after_a_land_is_refused(clock):
+    # the land latch survives landing ("restart the recorder to fly again"): a new takeoff is refused outright
     gov, inner = governed(clock)
     gov.land()
     inner._flying, inner._busy = False, False
     now = clock.time()
     assert gov.check(now, now) == "ok" and gov.land_requested
     gov.takeoff()
-    assert inner.named("takeoff") == [()]  # takeoff itself is passed on
-    inner._flying, inner._busy = True, False
-    clock.advance(3)
-    inner.tel.t = clock.time()
-    assert gov.check(clock.time(), clock.time()) == "land" and inner.lands == 2
+    assert inner.named("takeoff") == []
 
 
 # ====================================================================== SafetyGovernor: rc / move / rotate per state
@@ -1869,13 +1865,13 @@ def test_governor_rotate_while_landing_refuses_even_an_invalid_angle_silently(cl
 
 @pytest.mark.parametrize("call, name", [(lambda g: g.move("forward", 100), "move"), (lambda g: g.rotate(90), "rotate")],
                          ids=["move", "rotate"])
-def test_governor_discrete_commands_still_pass_during_a_safety_hover(clock, call, name):
-    # pinned (see report): the stale-data hover blocks rc only; a discrete move/rotation is still forwarded
+def test_governor_refuses_discrete_commands_during_a_safety_hover(clock, call, name):
+    # the stale-data hover blocks discrete moves and rotations too, not only rc
     gov, inner = governed(clock)
     now = clock.time()
     assert gov.check(now, None) == "hover"
     call(gov)
-    assert len(inner.named(name)) == 1
+    assert inner.named(name) == []
 
 
 # ====================================================================== SafetyGovernor: pass-throughs

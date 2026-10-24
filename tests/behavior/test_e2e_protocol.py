@@ -782,7 +782,7 @@ def test_preflight_drone_checks_go_against_the_emulator(tello_emulator):
     bad = {n: (c.status, c.detail) for n, c in checks.items() if c.status != GO}
     assert not bad, bad
     assert set(checks) == {"drone link", "drone battery", "drone temperature", "video", "frame size", "telemetry",
-                           "command latency", "drone link closed"}
+                           "telemetry gaps", "imu", "command latency", "drone link closed"}
     sent = tello_emulator.emu.commands()
     assert sent[0] == "command" and set(sent) <= {"command", "battery?"}  # dry run: nothing that moves
 

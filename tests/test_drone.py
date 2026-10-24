@@ -597,7 +597,7 @@ def test_a_refused_takeoff_on_the_ground_stays_on_the_ground():
 
 def test_an_rc_that_djitellopy_would_throttle_is_not_taken_as_news_about_the_link():
     class Throttling(_LinkFake):
-        TIME_BTW_RC_CONTROL_COMMANDS = 0.5
+        TIME_BTW_RC_CONTROL_COMMANDS = 0.001  # djitellopy's real gate
         last_rc_control_timestamp = 0.0
 
         def send_rc_control(self, *v):
@@ -611,7 +611,7 @@ def test_an_rc_that_djitellopy_would_throttle_is_not_taken_as_news_about_the_lin
     d.rc(0, 10, 0, 0)  # sent, fails: the link is down
     assert d.link_error is not None
     fake.last_rc_control_timestamp = time.time()
-    d.rc(0, 10, 0, 0)  # djitellopy would drop it unsent: still down, not "works again"
+    d.rc(0, 10, 0, 0)  # inside djitellopy's gate: kite waits it out and really sends, so the failure is seen
     assert d.link_error is not None
 
 

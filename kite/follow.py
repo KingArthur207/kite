@@ -17,9 +17,18 @@ Pieces (each testable without a drone):
   WalkerTracker     picks the walker among the boxes: acquires only a box touching the bottom edge, then follows
                     the box nearest the previous one; tolerates missed frames
   FollowController  track + telemetry -> rc (lr, fb, ud, yaw): yaw centres the walker, fb holds the distance
-                    (plus feed-forward of the walker's estimated speed), ud holds the altitude, small lr.
-                    Deadbands, per-channel clamps, slew limits. Track older than lost_s -> rc 0 (hover); it
-                    never searches by moving.
+                    (plus feed-forward of the walker's estimated speed and a clamped integral for wind), ud holds the
+                    altitude, small lr. Deadbands, per-channel clamps, slew limits (braking is never rate limited).
+                    Track older than lost_s -> rc 0 (hover); it never searches by moving.
+                    Video lag: the range seen in a frame is carried forward to now with the walker's estimated speed
+                    and the drone's modelled travel since the frame (stick -> speed dead time + lag).
+                    Head guard (last, on every command, the planner's too): forward speed never above the walker's
+                    speed plus a closing speed it can still brake from before min_range_m; inside the standoff fb
+                    never increases; closer than min_range_m no forward stick and no descent.
+                    Speed limit: the Tello does ~0.96 m/s at full stick (0.0096 m/s per unit), and SafetyCfg.max_rc
+                    caps it lower. A walker faster than that for outpace_s (or out past max_follow_m) puts follow in
+                    'outpaced': it hovers in place (fb, lr 0; yaw keeps facing the walker, altitude held) and warns,
+                    and resumes once the walker is slower again. It never chases at full stick.
                     Prediction (kite/predict.py, opt in: FollowCfg.predict, --follow-predict / --predict): while
                     following, a walker motion model (IMM Kalman filter) and a short-horizon drone planner replace
                     lr, fb and yaw; the reactive command stays when the filter is not confident yet. Coast, lost
@@ -89,10 +98,28 @@ class FollowCfg:
     k_fb: float = 35.0  # fb stick per metre of distance error
     k_ud: float = 50.0  # ud stick per metre of height error
     ff: float = 0.8  # fraction of the walker's estimated speed fed forward into fb
-    stick_m_s: float = 0.01  # m/s per stick unit (~1 m/s at stick 100, kite-notes-02 / spec 3)
+    # m/s per stick unit: 0.27-0.30 m/s at stick 30 in the team's step tests, ~0.96 m/s at 100 (extrapolated)
+    stick_m_s: float = 0.0096
     response_s: float = 0.4  # drone speed lag (first order), for the speed estimate behind the feed-forward
+    dead_s: float = 0.3  # stick -> speed dead time (step tests: 0.3-0.47 s on fb), in the same model
+    lag_comp: bool = True  # carry the measured range forward to now (video lag + the drone's modelled travel)
+    k_i_fb: float = 8.0  # fb stick per metre-second of range error: wind and model error (0: off)
+    i_max: float = 20.0  # integral clamp, stick units (anti-windup: also frozen while fb is saturated)
+    brake_m_s2: float = 0.8  # deceleration the closing-speed cap assumes (it must stop before min_range_m)
+    # speed honesty: the drone cannot fly faster than min(max_fb, SafetyCfg.max_rc) x stick_m_s
+    # outpaced (hover in place, warn) when for outpace_s fb is saturated (or the walker is past max_follow_m), the
+    # walker is outpace_err_m behind the standoff, and the range is not progress_m shorter than at the start
+    outpace_s: float = 4.0
+    outpace_err_m: float = 1.0
+    progress_m: float = 0.05
+    outpace_fast_s: float = 1.5  # ... or sooner, after this long, if the range has grown by outpace_grow_m
+    outpace_grow_m: float = 0.5
+    max_follow_m: float = 4.0  # no resume from outpaced while the walker is further than this
+    resume_frac: float = 0.7  # outpaced -> following once the walker is slower than this x top speed ...
+    resume_s: float = 1.5  # ... for this long, with the range not growing by more than progress_m meanwhile
     video_lag_s: float = 0.25  # DroneCfg.video_lag_s: a frame shows the world this long ago
-    speed_tau_s: float = 0.8  # smoothing of the walker speed estimate
+    speed_tau_s: float = 0.8  # smoothing of the walker speed estimate (a speed-up is believed this slowly) ...
+    stop_tau_s: float = 0.25  # ... a slow-down this quickly: braking for a stop never waits for the slow filter
     db_yaw_deg: float = 2.0  # deadbands
     db_lat_m: float = 0.1
     db_range_m: float = 0.1
@@ -102,9 +129,25 @@ class FollowCfg:
     max_fb: int = 100  # follow speed is limited by the governor (SafetyCfg.max_rc): raise that to go faster
     max_ud: int = 30
     slew: float = 150.0  # stick units per second on every channel (rate limit); a hover is never rate limited
-    min_range_m: float = 0.7  # closer than this: no feed-forward, back off
+    # more forward stick, slower: speeding up tilts the nose (and camera) down, which reads as the walker further
+    # away, which asks for more speed. 60/s keeps the tilt to ~3 deg. Braking is never rate limited (it reads closer)
+    slew_fb_up: float = 60.0
+    # closer than this: no feed-forward, no forward stick, no descent. The head top leaves the frame below
+    # above_m / tan(half the vertical FOV) = 0.3 / (360 / 920) = 0.77 m, so the guard must act before that
+    min_range_m: float = 0.9
+    # reactive standoff = behind_m + headway_s x walker speed (constant time gap, as in adaptive cruise control).
+    # A stop shows up ~0.85 s late (video 0.25 + detection + estimate + 0.3 dead time) and the drone needs ~0.45 s
+    # x speed more to brake: a dead stop costs ~1.3 s x speed. behind_m + headway_s x v >= min_range_m + 1.3 v + 0.1
+    # needs headway_s ~1.0 s at 0.6 m/s (0.8 s at 0.4 m/s)
+    headway_s: float = 1.0
     max_range_m: float = 5.0  # head near or above the horizon reads as this far
     pitch_comp: float = 0.0  # 0: off. +1/-1 adds telemetry pitch (sign unverified, see recording.PITCH_SIGN)
+    # A quadcopter tilts to accelerate (a = g tan(tilt)) and the camera tilts with it: 2.5 deg moves the head row as
+    # much as 0.4 m of range at 1.6 m, and the range rate turns that into a false walker speed (a feedback loop).
+    # tilt_comp adds back this fraction of the tilt the drone's modelled acceleration needs, at the frame's time.
+    # It needs no telemetry sign. A steady tilt (wind, drag) is only removed by pitch_comp (once its sign is known).
+    tilt_comp: float = 0.0  # off by default: it helps when the model matches, hurts under dead-time / lag mismatch
+    tilt_tau_s: float = 0.15  # attitude-loop lag in that model (the tilt cannot jump)
     auto_resume: bool = True  # after a loss, resume when a walker touching the bottom edge is tracked again
     # prediction (kite/predict.py). It always runs (the overlay draws it); predict=True lets its plan steer
     predict: bool = False  # opt in: --follow-predict (kite.record), --predict (rehearsal)
@@ -263,8 +306,11 @@ class FollowCmd:
     fb: int = 0
     ud: int = 0
     yaw: int = 0
-    state: str = "off"  # following | coast | lost | off
-    range_m: float | None = None  # horizontal distance to the walker's head (estimate)
+    state: str = "off"  # following | coast | outpaced | lost | off
+    range_m: float | None = None  # horizontal distance to the walker's head (estimate, as measured in the frame)
+    range_now_m: float | None = None  # the same carried forward to now (lag compensation)
+    warning: str | None = None  # outpaced: what to tell the pilot / walker
+    guard: str | None = None  # which head-guard rule cut fb or ud this tick (None: none)
     bearing_deg: float | None = None  # + = walker to the right
     walker_m_s: float | None = None  # estimated walker speed (feed-forward)
     height_err_m: float | None = None
@@ -359,9 +405,18 @@ class FollowController:
         self._t: float | None = None
         self._out = np.zeros(4)  # last command, float, lr fb ud yaw
         self._v_cmd = 0.0  # modelled forward speed of the drone (m/s)
+        self._a_cmd = 0.0  # modelled forward acceleration (m/s^2): its tilt is atan(a / g)
         self._v_hist: deque = deque(maxlen=64)  # (t, modelled speed): the speed when the frame was taken
+        self._fb_hist: deque = deque(maxlen=64)  # (t, fb sent): the model's input, dead_s later
+        self._a_hist: deque = deque(maxlen=256)  # (t, modelled forward acceleration m/s^2): the tilt at a frame time
         self._v_rel = 0.0  # d(range)/dt, smoothed
+        self._v_rel_fast = 0.0  # the same, smoothed over stop_tau_s
         self._last_meas: tuple[float, float] | None = None  # (frame t, range)
+        self._i_fb = 0.0  # integral of the range error (stick units)
+        self._slow_t: float | None = None  # outpaced: since when the walker has looked slow enough to resume
+        self._sat: tuple[float, float] | None = None  # (since when fb has been saturated far behind, range then)
+        self._rng_s: float | None = None  # smoothed range, for the progress test
+        self._slow_rng = 0.0  # outpaced: the smoothed range when the walker first looked slow
         # prediction: dead-reckoned drone pose (x, y, heading) from the sticks sent and telemetry yaw
         self.filter = WalkerFilter(accel=self.cfg.walker_accel)
         self.planner = DronePlanner(PlannerCfg(stick_m_s=self.cfg.stick_m_s, response_s=self.cfg.response_s,
@@ -382,13 +437,16 @@ class FollowController:
         cam = cam or self.camera
         return cam.cy + cam.fy * self.cfg.above_m / self.cfg.behind_m
 
-    def measure(self, track: Track, pitch_deg: float | None = None) -> tuple[float, float, float]:
-        """(range m, bearing deg, sideways offset m) of the walker's head top."""
+    def measure(self, track: Track, pitch_deg: float | None = None, tilt_deg: float = 0.0) -> tuple[float, float, float]:
+        """(range m, bearing deg, sideways offset m) of the walker's head top. tilt_deg: the body's nose-down tilt
+        when the frame was taken (the camera is fixed to the body: tilted down, the head top shows higher, i.e.
+        further away), added back to the depression."""
         c = self.cfg
         cam = scaled_camera(self.camera, *track.size)
         x1, y1, x2, _ = track.box
         bearing = math.atan2((x1 + x2) / 2 - cam.cx, cam.fx)
         down = math.atan2(y1 - cam.cy, cam.fy)  # depression of the head top below the optical axis
+        down += math.radians(tilt_deg)
         if c.pitch_comp and pitch_deg is not None:
             down += c.pitch_comp * math.radians(pitch_deg)
         rng = c.max_range_m if down <= math.atan2(c.above_m, c.max_range_m) else c.above_m / math.tan(down)
@@ -414,51 +472,203 @@ class FollowController:
             if c.auto_resume and track is not None and track.confirmed and track.touches_bottom and age <= c.fresh_s:
                 self.state = "following"
                 self._last_meas = None
+                self._slow_t = self._sat = self._rng_s = None
+                self._i_fb = 0.0
                 self._reset_prediction()
                 self._reset_yaw_source()  # its memory of the walker is from before the loss
         elif age > c.lost_s:
             self.state = "lost"
-        else:
+            self._i_fb = 0.0
+        elif self.state != "outpaced":
             self.state = "following" if age <= c.fresh_s else "coast"
 
         if self.state == "lost":
             out = np.zeros(4)  # hover now: never rate limited, never searching
-        elif self.state == "coast":
+        elif self.state == "coast" or (self.state == "outpaced" and age > c.fresh_s):
             out = self._out * c.coast_decay ** (dt / 0.1)
+            if self.state == "outpaced":
+                out[0] = out[1] = 0.0
             out[2] = self._ud(tel, cmd)
             out = self._limit(out, dt)
         else:
-            rng, bearing, lateral = self.measure(track, tel.pitch_deg if tel else None)
+            # (open loop, on a file: the sticks were never flown, so the model's tilt is not the camera's)
+            tilt = 0.0 if self.open_loop else c.tilt_comp * math.degrees(
+                math.atan2(self._at(self._a_hist, track.t - c.video_lag_s), 9.81))
+            rng, bearing, lateral = self.measure(track, tel.pitch_deg if tel else None, tilt)
             cmd.range_m, cmd.bearing_deg = rng, bearing
             # walker speed = drone speed (modelled, at the frame's time) + rate of change of the range
             if self._last_meas is not None and track.t > self._last_meas[0] + 1e-3:
                 dr = (rng - self._last_meas[1]) / (track.t - self._last_meas[0])
-                a = min(1.0, (track.t - self._last_meas[0]) / c.speed_tau_s)
+                # the head-row range's noise grows with range squared: smooth its rate as much more further out
+                k = max(1.0, (rng / c.behind_m) ** 2)
+                a = min(1.0, (track.t - self._last_meas[0]) / (c.speed_tau_s * k))
                 self._v_rel += a * (max(-1.5, min(1.5, dr)) - self._v_rel)
+                a = min(1.0, (track.t - self._last_meas[0]) / (c.stop_tau_s * k))
+                self._v_rel_fast += a * (max(-1.5, min(1.5, dr)) - self._v_rel_fast)
             if self._last_meas is None or track.t > self._last_meas[0]:
                 self._last_meas = (track.t, rng)
-            v_walker = max(0.0, min(1.2, self._speed_at(track.t - c.video_lag_s) + self._v_rel))
+            t_cap = track.t - c.video_lag_s  # when the frame was taken
+            # asymmetric: the slower of the two estimates, so a stop shows within ~stop_tau_s and a start is not
+            # believed before speed_tau_s (the integral makes up the small low bias this leaves while walking)
+            v_walker = max(0.0, min(1.2, self._speed_at(t_cap) + min(self._v_rel, self._v_rel_fast)))
             cmd.walker_m_s = v_walker
-            fb = c.k_fb * _db(rng - c.behind_m, c.db_range_m)
-            if rng >= c.min_range_m:
-                fb += c.ff * v_walker / c.stick_m_s
-            yaw = self._yaw(t, track, bearing, rng, c.k_yaw * _db(bearing, c.db_yaw_deg))
-            out = np.array([c.k_lr * _db(lateral, c.db_lat_m), fb, self._ud(tel, cmd), yaw])
-            cmd.planner = "reactive"
-            plan = self._predict(track, rng, lateral, t, walker_xy)
-            if c.predict and plan is not None:
-                out[0], out[1], out[3] = plan.lr, plan.fb, plan.yaw
-                cmd.planner = "predict"
+            rng_now = rng
+            if c.lag_comp:  # the walker kept walking and the drone kept flying since the frame was taken
+                rng_now += max(-0.5, min(0.5, v_walker * (t - t_cap) - self._travel(t_cap, t)))
+            cmd.range_now_m = rng_now
+            self._outpace_check(rng, v_walker, t)
+            if self.state == "outpaced":
+                # hover in place, keep facing the walker (so it can resume), hold the altitude; never chase
+                out = np.array([0.0, 0.0, self._ud(tel, cmd), c.k_yaw * _db(bearing, c.db_yaw_deg)])
+                self._i_fb = 0.0
+            else:
+                # constant time gap (as in adaptive cruise control): braking room for a stop the video shows late
+                err = _db(rng_now - (c.behind_m + c.headway_s * v_walker), c.db_range_m)
+                fb = c.k_fb * err
+                if rng_now >= c.min_range_m:
+                    fb += c.ff * v_walker / c.stick_m_s
+                lim_fb = min(c.max_fb, self.max_rc)
+                if c.k_i_fb and self.state == "following":  # conditional integration: frozen while saturated
+                    pushing = (err > 0 and self._out[1] >= lim_fb - 0.5) or (err < 0 and self._out[1] <= -lim_fb + 0.5)
+                    if not pushing:
+                        self._i_fb = max(-c.i_max, min(c.i_max, self._i_fb + c.k_i_fb * err * dt))
+                stopping = v_walker < 0.15 and self._v_rel_fast < -0.15  # the walker stopped: the gap is closing
+                if (err < 0 or stopping) and self._i_fb > 0:
+                    self._i_fb = 0.0  # no forward push survives inside the standoff or a stop (never fly into it)
+                fb += self._i_fb
+                yaw = self._yaw(t, track, bearing, rng, c.k_yaw * _db(bearing, c.db_yaw_deg))
+                out = np.array([c.k_lr * _db(lateral, c.db_lat_m), fb, self._ud(tel, cmd), yaw])
+                cmd.planner = "reactive"
+                plan = self._predict(track, rng, lateral, t, walker_xy)
+                if c.predict and plan is not None:
+                    out[0], out[1], out[3] = plan.lr, plan.fb, plan.yaw
+                    cmd.planner = "predict"
             out = self._limit(out, dt)
+            out = self._guard(out, min(rng, rng_now), v_walker, cmd)
+        if self.state == "outpaced":
+            out[0] = out[1] = 0.0  # stop translating at once (like braking, never rate limited)
+            v = self._v_walker_last if cmd.walker_m_s is None else cmd.walker_m_s
+            cmd.warning = (f"walker {v:.1f} m/s, the drone tops out at {self.top_speed():.2f} m/s: hovering, ask the "
+                           "walker to slow down")
+        if cmd.walker_m_s is not None:
+            self._v_walker_last = cmd.walker_m_s
         self._out = out
-        # modelled drone speed, for the feed-forward (first-order response to the fb actually sent)
-        self._v_cmd += (out[1] * c.stick_m_s - self._v_cmd) * min(1.0, dt / c.response_s)
+        # modelled drone speed, for the feed-forward: the fb sent dead_s ago through a first-order lag
+        self._fb_hist.append((t, float(out[1])))
+        n = max(1, int(math.ceil(dt / 0.02)))  # sub-steps: the attitude lag is shorter than a control tick
+        for k in range(n):
+            ts = t - dt + (k + 1) * dt / n
+            u = self._at(self._fb_hist, ts - c.dead_s)
+            a_want = (u * c.stick_m_s - self._v_cmd) / c.response_s  # the speed loop asks for this ...
+            self._a_cmd += (a_want - self._a_cmd) * min(1.0, dt / n / c.tilt_tau_s)  # ... the attitude loop gives this
+            self._v_cmd += self._a_cmd * dt / n
+            self._a_hist.append((ts, self._a_cmd))
         self._v_hist.append((t, self._v_cmd))
         cmd.lr, cmd.fb, cmd.ud, cmd.yaw = (int(round(v)) for v in out)
         cmd.state = self.state
         if self.state != "lost" and self.prediction is not None:
             self._display(cmd)
         return cmd
+
+    def top_speed(self) -> float:
+        """The fastest the drone can follow (m/s): its forward stick limit x stick_m_s."""
+        c = self.cfg
+        return min(c.max_fb, self.max_rc, 100) * c.stick_m_s
+
+    def _travel(self, t0: float, t1: float) -> float:
+        """Modelled forward distance flown between t0 and t1 (speed piecewise constant between control ticks)."""
+        if t1 <= t0 or not self._v_hist:
+            return 0.0
+        d, prev = 0.0, None
+        for tt, v in self._v_hist:
+            if prev is not None:
+                a, b = max(prev[0], t0), min(tt, t1)
+                if b > a:
+                    d += prev[1] * (b - a)
+            prev = (tt, v)
+        if t1 > prev[0]:  # since the last tick: the current speed
+            d += prev[1] * (t1 - max(prev[0], t0))
+        return d
+
+    @staticmethod
+    def _at(hist: deque, t: float) -> float:
+        """The value of a (t, value) history at time t (the last one at or before t; 0 before it starts)."""
+        for tt, v in reversed(hist):
+            if tt <= t:
+                return v
+        return 0.0
+
+    def _outpace_check(self, rng: float, v_walker: float, t: float) -> None:
+        """following <-> outpaced. Outpaced when the drone makes no progress for outpace_s: fb saturated (or the
+        walker past max_follow_m) with the walker outpace_err_m behind the standoff, and the smoothed range not
+        progress_m shorter than when that started (a walker or a headwind it cannot beat). It judges progress, not
+        the walker-speed estimate: that one is a derivative of the head row, too noisy past 2 m to decide on.
+        Back: the walker within max_follow_m, slower than resume_frac x top speed and the gap no longer growing, for
+        resume_s (the drone then closes the gap at its own speed, head guard on). Further away it keeps hovering and
+        warning: the head-row range is capped at max_range_m out there, so progress could not be judged."""
+        c = self.cfg
+        top = self.top_speed()
+        a = min(1.0, 0.1 / 0.5)  # ~0.5 s smoothing of the range (per measurement), for the progress test
+        self._rng_s = rng if self._rng_s is None else self._rng_s + a * (rng - self._rng_s)
+        if self.state == "outpaced":
+            # resume once the walker looks slow AND the gap has stopped growing (hovering, a drone that drifts back
+            # in the wind while the walker walks on must not resume and fall back again)
+            if v_walker >= c.resume_frac * top or rng >= c.max_follow_m:  # too far: the pilot brings it closer
+                self._slow_t = None
+            elif self._slow_t is None:
+                self._slow_t, self._slow_rng = t, self._rng_s
+            elif self._rng_s > self._slow_rng + c.progress_m:
+                self._slow_t, self._slow_rng = t, self._rng_s  # still pulling away: start the window again
+            elif t - self._slow_t >= c.resume_s:
+                self.state, self._slow_t, self._sat = "following", None, None
+            return
+        lim_fb = min(c.max_fb, self.max_rc)
+        behind = rng - (c.behind_m + c.headway_s * min(v_walker, top))
+        # judged only at full speed: while it accelerates, the nose-down tilt reads as the walker pulling away
+        at_speed = self._v_cmd >= 0.9 * top
+        stuck = (self._out[1] >= lim_fb - 1 or rng > c.max_follow_m) and behind > c.outpace_err_m and at_speed
+        if not stuck:
+            self._sat = None
+        elif self._sat is None:
+            self._sat = (t, self._rng_s)
+        elif t - self._sat[0] >= c.outpace_fast_s and self._rng_s - self._sat[1] > c.outpace_grow_m:
+            self.state = "outpaced"  # clearly pulling away at full stick: no need to wait the whole window
+        elif t - self._sat[0] >= c.outpace_s:
+            if self._rng_s > self._sat[1] - c.progress_m:
+                self.state = "outpaced"
+            else:
+                self._sat = (t, self._rng_s)  # gaining on it: start a new window
+        if self.state == "outpaced":
+            self._slow_t = self._sat = None
+
+    def _guard(self, out: np.ndarray, rng: float, v_walker: float, cmd: FollowCmd) -> np.ndarray:
+        """Head guard, after everything else (the planner's command too): never speed up toward the walker's head.
+          * forward speed <= the walker's speed + the closing speed it can still brake from (brake_m_s2) over the gap
+            to min_range_m, given the whole loop delay (video lag + dead time + response)
+          * inside the standoff (closer than behind_m - deadband): fb never increases, and never goes above the
+            walker's own feed-forward
+          * closer than min_range_m: no forward stick at all, and no descent."""
+        c = self.cfg
+        out = out.copy()
+        why = None
+        delay = c.video_lag_s + c.dead_s + c.response_s
+        gap = rng - c.min_range_m
+        a = c.brake_m_s2
+        v_close = 0.0 if gap <= 0 else -a * delay + math.sqrt((a * delay) ** 2 + 2 * a * gap)
+        cap = (v_walker + v_close) / c.stick_m_s
+        if out[1] > cap:
+            out[1], why = cap, "closing speed"
+        if rng < c.behind_m - c.db_range_m and out[1] > 0:
+            hold = max(0.0, min(self._out[1], c.ff * v_walker / c.stick_m_s))
+            if out[1] > hold:
+                out[1], why = hold, "inside standoff"
+        if rng < c.min_range_m:
+            if out[1] > 0:
+                out[1], why = 0.0, "too close"
+            if out[2] < 0:
+                out[2], why = 0.0, "too close"
+        cmd.guard = why
+        return out
 
     # -- prediction
     def _reset_prediction(self) -> None:
@@ -540,9 +750,13 @@ class FollowController:
     def _limit(self, out: np.ndarray, dt: float) -> np.ndarray:
         c = self.cfg
         lim = np.minimum([c.max_lr, c.max_fb, c.max_ud, c.max_yaw], self.max_rc)
-        out = np.clip(out, -lim, lim)
+        out = np.clip(np.nan_to_num(out), -lim, lim)
         step = c.slew * max(dt, 1e-3)
-        return np.clip(out, self._out - step, self._out + step)
+        lo, hi = self._out - step, self._out + step
+        if self._out[1] > 0:
+            lo[1] = min(lo[1], -step)  # braking (less forward stick) is never rate limited
+        hi[1] = min(hi[1], max(self._out[1], 0.0) + min(c.slew, c.slew_fb_up) * max(dt, 1e-3))
+        return np.clip(out, lo, hi)
 
 
 # ------------------------------------------------------------------ opt-in yaw sources (kite.fly)
@@ -763,6 +977,13 @@ class FollowMode:
             if cmd.state == "lost":
                 print("\a", end="", flush=True)  # terminal bell: the pilot is watching the drone, not the screen
                 self.log(f"follow: walker lost for {self.cfg.lost_s:g} s -> hover (rc 0), waiting for the walker")
+            elif cmd.state == "outpaced":
+                print("\a", end="", flush=True)
+                self.log(f"follow: OUTPACED -> hover in place (fb, lr 0), still facing the walker: {cmd.warning}",
+                         walker_m_s=None if cmd.walker_m_s is None else round(cmd.walker_m_s, 2),
+                         top_speed_m_s=round(self.ctrl.top_speed(), 2))
+            elif prev == "outpaced" and cmd.state == "following":
+                self.log("follow: walker slow enough again -> following")
             elif prev == "lost":
                 self.log("follow: walker found again -> following")
         self._log_yaw_fallback()
@@ -772,6 +993,7 @@ class FollowMode:
                  bearing_deg=None if cmd.bearing_deg is None else round(cmd.bearing_deg, 1),
                  walker_m_s=None if cmd.walker_m_s is None else round(cmd.walker_m_s, 2),
                  height_err_m=None if cmd.height_err_m is None else round(cmd.height_err_m, 2), planner=cmd.planner,
+                 range_now_m=None if cmd.range_now_m is None else round(cmd.range_now_m, 2), guard=cmd.guard,
                  **self._yaw_fields())
         return cmd.rc
 
@@ -798,6 +1020,8 @@ class FollowMode:
         line = f"FOLLOW {s.state.upper()} {walker}"
         if s.range_m is not None:
             line += f" r {s.range_m:.1f}m b {s.bearing_deg:+.0f}°"
+        if s.state == "outpaced":
+            line += f" - TOO FAST: walker slower than {self.ctrl.top_speed():.1f} m/s"
         return f"{line} {yaw}" if yaw else line
 
 
@@ -957,8 +1181,9 @@ def rehearse(source: str | Path, detector: Detector, cfg: FollowCfg | None = Non
     ctrl: FollowController | None = None
     cmd, next_tick, t0 = FollowCmd(), None, None
     vw = None
-    stats = {"frames": 0, "walker_frames": 0, "following_ticks": 0, "coast_ticks": 0, "lost_ticks": 0, "ticks": 0,
-             "losses": 0, "engaged_at_s": None, "yaw_source": yaw_source_label(yaw_source), "yaw_source_error": None}
+    stats = {"frames": 0, "walker_frames": 0, "following_ticks": 0, "coast_ticks": 0, "lost_ticks": 0,
+             "outpaced_ticks": 0, "ticks": 0, "losses": 0, "engaged_at_s": None,
+             "yaw_source": yaw_source_label(yaw_source), "yaw_source_error": None}
     try:
         with open(out_csv, "w", newline="") as fh:
             out = csv.writer(fh)

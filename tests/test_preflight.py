@@ -27,6 +27,7 @@ FAST = {"first_frame_s": 0.3, "measure_s": 0.3}
 def quick_queries(monkeypatch):
     monkeypatch.setattr(pf, "RTT_GAP_S", 0.01)
     monkeypatch.setattr(pf, "RTT_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(pf, "STATE_S", 0.35)
 
 
 def statuses(checks):
@@ -208,7 +209,8 @@ class FakeRawTello:
 
     def __init__(self, state_hz=10.0, reply_s=0.02, bat=90, temph=55):
         self.state_hz, self.reply_s = state_hz, reply_s
-        self.base = {"bat": bat, "templ": temph - 2, "temph": temph, "h": 0, "tof": 10}
+        self.base = {"bat": bat, "templ": temph - 2, "temph": temph, "h": 0, "tof": 10,
+                     "pitch": 0, "roll": 1, "agx": -9.0, "agy": -1.0, "agz": -998.0}  # a level Tello at rest
         self.udp = {"responses": [], "state": {}}
         self.sent = []
         self._tick, self._state = -1, dict(self.base)
@@ -324,6 +326,37 @@ def test_wrong_frame_size_warns():
 @pytest.mark.parametrize("hz, want", [(0.0, pf.NO_GO), (3.0, pf.WARN)])
 def test_slow_telemetry(hz, want):
     assert run_drone(measure_s=0.5, state_hz=hz)[0]["telemetry"] == want  # 0.5 s holds at least one 3 Hz packet
+
+
+@pytest.mark.parametrize("change, want", [
+    ({}, pf.GO),
+    ({"pitch": 9}, pf.WARN),  # not level (or an IMU that needs calibrating)
+    ({"roll": -7}, pf.WARN),
+    ({"agz": -600.0}, pf.WARN),  # does not read 1 g at rest
+    ({"agx": 0.0, "agy": 0.0, "agz": 0.0}, pf.WARN),
+])
+def test_imu_at_rest(change, want):
+    drone = FakeLinkDrone()
+    drone.tello.base.update(change)
+    checks = {c.name: c for c in pf._state_checks(drone.tello, 0.35)}
+    assert checks["imu"].status == want, checks["imu"]
+    if want == pf.WARN:
+        assert "Calibrate IMU" in checks["imu"].detail
+
+
+def test_imu_skipped_without_attitude_fields():
+    drone = FakeLinkDrone()
+    for k in ("pitch", "agx", "agy", "agz"):
+        drone.tello.base.pop(k)
+    assert {c.name: c.status for c in pf._state_checks(drone.tello, 0.3)}["imu"] == pf.SKIP
+    assert pf._state_checks(None)[0].status == pf.SKIP
+
+
+@pytest.mark.parametrize("hz, want", [(10.0, pf.GO), (1.5, pf.WARN)])
+def test_state_packet_gaps(hz, want):
+    drone = FakeLinkDrone(state_hz=hz)
+    checks = {c.name: c for c in pf._state_checks(drone.tello, 1.5)}
+    assert checks["telemetry gaps"].status == want, checks["telemetry gaps"]
 
 
 def test_no_command_replies_is_no_go():

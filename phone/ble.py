@@ -1,5 +1,5 @@
-"""The laptop as a Bluetooth LE peripheral: the phone page (https://trykite.pages.dev/phone, in Bluefy on iPhone or
-Chrome on Android) connects to it and writes GPS + compass fixes a few times a second.
+"""The laptop as a Bluetooth LE peripheral: the walker's phone app (phone-app/, a native BLE central) connects to it
+and writes GPS fixes about twice a second (a compass heading too, if the app ever sends one).
 
     python -m phone.ble                       # advertise "Kite", print the walker's position live, feed the earpiece
     python -m phone.ble --seconds 20          # stop by itself (a quick advertise check)
@@ -108,7 +108,7 @@ async def build_server(handlers: GattHandlers, name: str = ADVERTISED_NAME, serv
     await server.add_new_characteristic(
         SERVICE_UUID, STATUS_CHAR_UUID,
         GATTCharacteristicProperties.read | GATTCharacteristicProperties.notify,
-        bytearray(b"{}"), GATTAttributePermissions.readable)
+        None, GATTAttributePermissions.readable)   # no cached value: CoreBluetooth refuses one on a notify char
     return server
 
 
@@ -139,13 +139,15 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
     try:
         server = await build_server(handlers, args.name, server_cls)
         await server.start()
+        advertising = await server.is_advertising()
     except Exception as e:
         printer.log(f"[phone] could not start the Bluetooth peripheral: {type(e).__name__}: {e}")
         printer.log("        macOS: allow Bluetooth for this terminal app in System Settings > Privacy & Security > "
                     "Bluetooth, and check that Bluetooth is on.")
         return 1
-    printer.log(f"[phone] advertising {args.name!r}, service {SERVICE_UUID}")
-    printer.log("        on the phone: open https://trykite.pages.dev/phone (iPhone: in Bluefy) and tap Connect")
+    printer.log(f"[phone] {'advertising' if advertising else 'started (advertising not confirmed)'} {args.name!r}, "
+                f"service {SERVICE_UUID}")
+    printer.log("        on the phone: open the Kite app (phone-app/) and connect")
     if send is None:
         printer.log("        --no-send: positions are printed only, not sent to the earpiece")
     stop = stop or asyncio.Event()

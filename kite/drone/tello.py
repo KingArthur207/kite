@@ -17,6 +17,14 @@ mission with the drone sitting on a table / held in hand.
 A Wi-Fi drop never raises out of a flight call: sendto's OSError (ENETUNREACH, ENOBUFS...) is logged once, kept in
 link_error, and the call is retried by the next one (rc every tick; a discrete command fails at once with
 'error: not sent' so it can be re-sent). Intervals use time.monotonic(), so a wall-clock step cannot stall the loop.
+
+rc robustness:
+  * djitellopy 2.5 silently drops an rc sent within 1 ms of the previous one (TIME_BTW_RC_CONTROL_COMMANDS): a
+    hover right after a stick would be lost and the drone would keep the stick. rc() waits that 1 ms out instead.
+  * dead-man: a non-zero stick that is not refreshed for rc_hold_s (the control loop stalled: a GC pause, a
+    blocked print, a hung detector) is followed by ONE rc 0 0 0 0 from a watchdog thread. Nothing is sent after
+    that, so a dead program still lets the Tello's own auto-land (15 s without a command) happen. The SDK says rc
+    gets no reply, and reports differ on whether a stick persists without updates: assume it does.
 """
 
 from __future__ import annotations
@@ -24,6 +32,7 @@ from __future__ import annotations
 import logging
 import math
 import socket
+import threading
 import time
 from dataclasses import dataclass
 
@@ -37,6 +46,8 @@ log = logging.getLogger("kite.tello")
 MIN_GAP_S = 0.1  # the Tello drops commands sent closer together than this (djitellopy's TIME_BTW_COMMANDS)
 STOP_SETTLE_S = 1.0  # after 'stop', replies within this window belong to the stop / the cancelled command
 STREAMON_TRIES, VIDEO_WAIT_S = 4, 3.0  # streamon is re-sent until video packets arrive
+RC_GATE_S = 0.0015  # djitellopy drops an rc closer than 1 ms to the previous one: wait this long instead
+RC_HOLD_S = 0.6  # dead-man: a non-zero stick not refreshed for this long gets one rc 0 0 0 0 (the loop runs at 10 Hz)
 NO_VIDEO = ("the Tello answers commands but sends no video to UDP {port}. Make sure no other device or app is "
             "connected to the drone's Wi-Fi, then restart the drone. Windows: allow Python through the firewall on "
             "Private AND Public networks (inbound UDP 8890 and {port}). macOS: allow incoming connections for "
@@ -104,10 +115,11 @@ class TelloDrone(Drone):
     def __init__(self, tello=None, video: bool = True, dry_run: bool = False, move_speed_cm_s: int = 50,
                  yaw_sign: int = 1, velocity_scale: float = 0.1, video_fps: int = 60, video_backend: str | None = None, host: str = "192.168.10.1",
                  video_bitrate: str | None = None, video_resolution: str | None = None,
-                 video_stream_fps: str | None = None):
+                 video_stream_fps: str | None = None, rc_hold_s: float | None = RC_HOLD_S):
         """tello: an existing djitellopy.Tello (or a test double); created on connect() if None.
         velocity_scale: state vgx/vgy/vgz -> m/s (the Tello reports dm/s; check with the latency test).
-        video_bitrate / video_resolution / video_stream_fps: sent before streamon (None: not sent), see DroneCfg."""
+        video_bitrate / video_resolution / video_stream_fps: sent before streamon (None: not sent), see DroneCfg.
+        rc_hold_s: the dead-man delay (None: no watchdog)."""
         self._tello = tello
         self._host = host
         self.video_enabled = video
@@ -128,6 +140,14 @@ class TelloDrone(Drone):
         self.log: list[tuple[float, str]] = []
         self._last_state = None
         self._state_t = 0.0
+        self.rc_hold_s = rc_hold_s
+        self._rc_lock = threading.Lock()
+        self._rc_live = False  # the last stick sent was not all zeros
+        self._rc_call_t = 0.0  # monotonic time of the last rc() call (sent or not)
+        self._rc_sent_t = 0.0  # monotonic time of the last rc packet
+        self._watchdog: threading.Thread | None = None
+        self._closing = threading.Event()
+        self.watchdog_trips = 0
 
     # ------------------------------------------------------------------ setup
     @property
@@ -168,6 +188,7 @@ class TelloDrone(Drone):
         self._source = TelloVideoSource(url, fps=self.video_fps, backend=self.video_backend).start()
 
     def close(self) -> None:
+        self._closing.set()
         try:
             taking_off = self._pending is not None and self._pending.cmd == "takeoff"  # airborne before its 'ok'
             if (self._flying or taking_off) and not self.dry_run:
@@ -231,6 +252,7 @@ class TelloDrone(Drone):
             time.sleep(wait)
         self._ignore_until = 0.0
         self._replies().clear()  # anything queued now is stale
+        self._rc_live = False  # a discrete command replaces the stick
         self._result = None
         self._pending = _Pending(cmd, time.monotonic(), timeout_s, expected_s)
         if not self._send(cmd):
@@ -267,6 +289,7 @@ class TelloDrone(Drone):
         return True
 
     def rc(self, lr: int, fb: int, ud: int, yaw: int) -> None:
+        self._rc_call_t = time.monotonic()
         if self._pending is not None:
             return  # an rc packet would abort the running discrete command
         vals = (clamp_rc(lr), clamp_rc(fb), clamp_rc(ud), clamp_rc(yaw))
@@ -274,12 +297,44 @@ class TelloDrone(Drone):
             if any(vals):
                 self.log.append((time.time(), "rc {} {} {} {}".format(*vals)))
             return
-        last = getattr(self._tello, "last_rc_control_timestamp", 0.0)
-        if last > time.time():
-            self._tello.last_rc_control_timestamp = last = 0.0  # wall clock stepped back: djitellopy would drop every rc
-        if time.time() - last <= getattr(self._tello, "TIME_BTW_RC_CONTROL_COMMANDS", 0.0):
-            return  # kite: djitellopy drops an rc this soon after the last one without sending: not news about the link
-        self._udp(self._tello.send_rc_control, *vals)
+        self._send_rc(vals)
+        if any(vals) and self.rc_hold_s is not None:
+            self._start_watchdog()
+
+    def _send_rc(self, vals: tuple[int, int, int, int]) -> bool:
+        with self._rc_lock:
+            last = getattr(self._tello, "last_rc_control_timestamp", 0.0)
+            if not isinstance(last, (int, float)):
+                last = 0.0
+            if last > time.time():
+                self._tello.last_rc_control_timestamp = 0.0  # wall clock stepped back: djitellopy would drop every rc
+            else:
+                wait = RC_GATE_S - (time.time() - last)
+                if wait > 0:  # inside djitellopy's 1 ms gate it would drop this packet without a word
+                    time.sleep(min(wait, RC_GATE_S))
+            ok = self._udp(self._tello.send_rc_control, *vals)
+            if ok:
+                self._rc_live = any(vals)
+                self._rc_sent_t = time.monotonic()
+            return ok
+
+    def _start_watchdog(self) -> None:
+        if self._watchdog is None or not self._watchdog.is_alive():
+            self._watchdog = threading.Thread(target=self._watch, daemon=True, name="tello-rc-deadman")
+            self._watchdog.start()
+
+    def _watch(self) -> None:
+        """Dead-man: one rc 0 after a non-zero stick that the control loop stopped refreshing."""
+        while not self._closing.wait(0.05):
+            hold = self.rc_hold_s
+            if hold is None:
+                return
+            if (self._rc_live and self._pending is None and self._flying
+                    and time.monotonic() - self._rc_call_t > hold):
+                if self._send_rc((0, 0, 0, 0)):
+                    self.watchdog_trips += 1
+                    self.log.append((time.time(), f"rc watchdog: no stick update for {hold:g} s -> rc 0 0 0 0"))
+                    log.warning("no rc update for %.1f s (control loop stalled?): sent rc 0 0 0 0", hold)
 
     def move(self, direction: str, cm: int) -> None:
         cm = check_move(direction, cm)
@@ -355,6 +410,14 @@ class TelloDrone(Drone):
     def set_speed(self, cm_s: int) -> None:
         self._start(f"speed {int(cm_s)}", 5.0, 0.2)  # raises while busy: change nothing then
         self.move_speed_cm_s = int(cm_s)
+
+    def temperature_c(self) -> float | None:
+        """Highest board temperature from the state stream ('temph', C), None if not reported."""
+        v = self._state().get("temph")
+        try:
+            return None if v is None else float(v)
+        except (TypeError, ValueError):
+            return None
 
     def telemetry(self) -> Telemetry:
         st = self._state()
