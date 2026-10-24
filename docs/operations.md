@@ -108,7 +108,7 @@ python -m kite.record --source tello --out recordings --fly            # the sho
   `src.camera` (fx, fy, cx, cy).
 - `kite/camera.py` holds the Tello intrinsics: fx 920 px until calibrated. `python -m kite.calibrate --source tello`
   fits them from a chessboard on a screen with the drone on the ground (at most 45 s of stream) and writes
-  `data/tello_camera.json`. The pilot's shoot steps are in `docs/shoot-flight.md`.
+  `data/tello_camera.json`. The pilot's shoot steps are in `docs/internal/shoot-flight.md`.
 
 ### Opening any frame source (detectors)
 

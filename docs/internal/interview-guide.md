@@ -26,7 +26,7 @@ Say roughly this:
 >
 > If you work for an organisation, are you speaking for yourself or for them?
 
-Write down their answers to all four: notes, recording, how to be named, own view or the organisation's. No quote goes into `docs/devpost.md` or the pitch without the second yes, after they hear the exact words.
+Write down their answers to all four: notes, recording, how to be named, own view or the organisation's. No quote goes into `docs/internal/devpost.md` or the pitch without the second yes, after they hear the exact words.
 
 ## Questions (about 8 minutes)
 

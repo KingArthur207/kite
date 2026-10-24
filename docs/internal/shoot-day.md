@@ -1,6 +1,6 @@
 # Shoot day: Moss St at Howard, Sat Oct 24, 7:00 AM
 
-Print section 1 for everyone. The appendix has the positions, the scripted beats, the backups and every command. Spec section 8 says why the shoot looks like this; Arthur's flight steps are in `docs/shoot-flight.md`.
+Print section 1 for everyone. The appendix has the positions, the scripted beats, the backups and every command. Spec section 8 says why the shoot looks like this; Arthur's flight steps are in `docs/internal/shoot-flight.md`.
 
 ## 1. One page for the crew
 
@@ -74,7 +74,7 @@ The walker waits facing NW because that is where the drone's camera can see a ca
 
 ## Appendix B: Who records what
 
-Tello video and telemetry (Arthur's laptop). Steps 2 to 7 of "At the corner" in `docs/shoot-flight.md`:
+Tello video and telemetry (Arthur's laptop). Steps 2 to 7 of "At the corner" in `docs/internal/shoot-flight.md`:
 
 ```bash
 source .venv/bin/activate
@@ -98,7 +98,7 @@ Then put that frame number and the time on the phone into this, which prints the
 python -c "import csv,sys,datetime as d; n,clk,f=int(sys.argv[1]),sys.argv[2],sys.argv[3]; tw=next(float(r['t_wall']) for r in csv.DictReader(open(f)) if int(r['index'])==n); c=d.datetime.combine(d.datetime.fromtimestamp(tw).date(),d.time.fromisoformat(clk)).timestamp(); print(f'--offset-s {c-tw:+.2f}')" 412 06:57:41 $TAKE/frames.csv
 ```
 
-Eddy's side angle. Phone in landscape, 4K at 30 fps, horizon level, no zoom past 2x. One continuous clip from the clock shot to the landing. Positions are in appendix A. This is the opening shot of the video (0:00 to 0:08 in `docs/video-runbook.md`).
+Eddy's side angle. Phone in landscape, 4K at 30 fps, horizon level, no zoom past 2x. One continuous clip from the clock shot to the landing. Positions are in appendix A. This is the opening shot of the video (0:00 to 0:08 in `docs/internal/video-runbook.md`).
 
 Facade photos for the sim (new, about 5 minutes, after sunrise). Eddy, or Eddy and the spotter in parallel. Two passes on Moss and one on Howard:
 
@@ -140,7 +140,7 @@ git pull && source .venv/bin/activate && pip install -e ".[dev]"
 python -m kite.preflight --quick
 ```
 
-Give his terminal app Local Network access and let Python accept incoming connections (System Settings > Privacy & Security), and turn key repeat on, as in `docs/shoot-flight.md`. At the corner it is the same as on Arthur's laptop:
+Give his terminal app Local Network access and let Python accept incoming connections (System Settings > Privacy & Security), and turn key repeat on, as in `docs/internal/shoot-flight.md`. At the corner it is the same as on Arthur's laptop:
 
 ```bash
 source .venv/bin/activate
@@ -176,7 +176,7 @@ python -m kite.gps walk.gpx --recording $TAKE --offset-s <offset>
 
 `kite.gps` prints the overlap between the GPS and the video. A whole hour off means a time zone mistake, and "NO OVERLAP" means the offset is wrong.
 
-Then the video runbook's pipeline (`docs/video-runbook.md`). The stand-in detector runs in a throwaway uv environment, as in `sim/README.md`. Set `--cam-height` to the height the status line showed in flight:
+Then the video runbook's pipeline (`docs/internal/video-runbook.md`). The stand-in detector runs in a throwaway uv environment, as in `sim/README.md`. Set `--cam-height` to the height the status line showed in flight:
 
 ```bash
 DETECT="uv run --no-project --with ultralytics --with opencv-python-headless --with lap --with websockets --with python-dotenv --with numpy --with scipy"

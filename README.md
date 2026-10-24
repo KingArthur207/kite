@@ -505,12 +505,13 @@ Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walke
 | `scripts/osm_corner.py` | Rebuilds the sim's Moss St world from OpenStreetMap |
 | `scripts/check.sh` | Every check before a merge: tests, lint, build, secret and dependency scans (`quick` for the short set) |
 | `scripts/deploy-site.sh` | Deploys the landing site to trykite.pages.dev |
-| `video/overlay.py` | Draws Kite's captions, hazards and sonar over footage for the demo video. See `docs/video-runbook.md` |
+| `video/overlay.py` | Draws Kite's captions, hazards and sonar over footage for the demo video. See [`docs/internal/video-runbook.md`](docs/internal/video-runbook.md) |
 | `site/` | The landing page at trykite.pages.dev |
 | `data/sample_walk.jsonl` | A recorded 40-second walk in the earpiece event format |
 | `data/sample_track.jsonl` | A moving walker track with hazards and a beacon, for testing the dashboard map |
 | `tests/drone_test.py` | Tello latency and ground-check script |
-| `docs/` | Team spec (`docs/superpowers/specs/`), Devpost draft, demo and video runbooks, shoot checklist, sourced facts, Google permission, status |
+| `docs/` | Operations and networking guides, sourced facts, and the Google permission record. Index in [`docs/README.md`](docs/README.md) |
+| `docs/internal/` | The team's working notes from the hackathon (spec, runbooks, drafts). Not needed to understand Kite |
 
 ## Known limitations
 

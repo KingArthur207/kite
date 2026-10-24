@@ -2,14 +2,14 @@
 
 Cal Hacks 13, Sun Oct 25, live table judging 10:30 AM to 12:30 PM at the Palace of Fine Arts. Each judge gives us 2 minutes of pitch and 2 of questions. Tables are shared by 2 or 3 teams, so the walk has 3 to 4 m of aisle in a crowded hall. The whole team stays at the table for the full window, or we are not judged.
 
-This follows section 4 of the spec (`docs/superpowers/specs/2026-10-23-kite-design.md`). The table kit and the failure fixes are in `docs/demo-runbook.md`. Every number here traces to the repo; sources and caveats are in `docs/research/facts.md`. Anything in [TODO] or marked FLAG is not true yet or not confirmed. Do not fill a TODO with a number or a quote we do not have.
+This follows section 4 of the spec (`docs/internal/spec.md`). The table kit and the failure fixes are in `docs/internal/demo-runbook.md`. Every number here traces to the repo; sources and caveats are in `docs/research/facts.md`. Anything in [TODO] or marked FLAG is not true yet or not confirmed. Do not fill a TODO with a number or a quote we do not have.
 
 ## 0. Fill these in before 10:30
 
 1. Presenter: whoever won Saturday night's timed tryout. [TODO: name]
 2. There is no interview. We did not talk to a blind traveler this weekend, so the script has no quote and nobody claims user research. Do not add one.
 3. Kite-mode collision number from `scripts/sim_metrics.py` (20 walks, seed 1). The blind baseline is 3.05 collisions per walk. The oracle's 0 is not Kite and is never quoted as Kite. [TODO]
-4. How the Moss St footage was flown: piloted, follow mode, or handheld (`docs/shoot-day.md`, appendix D). Arthur. [TODO]
+4. How the Moss St footage was flown: piloted, follow mode, or handheld (`docs/internal/shoot-day.md`, appendix D). Arthur. [TODO]
 5. Whether the footage shows a car turning in from Howard. If it does not, say what it does show. Beat 4 changes.
 6. Whether the judge's "Kite, what's in front of me?" works at the table, and how the judge triggers it. The AirPods mic puts the AirPods in mono, so the earpiece uses the laptop mic. The demo driver may have to press talk. Settle this at the 6 PM rehearsal.
 7. The key that opens the reveal window and the dashboard's presentation mode (P). The runbook says V for the sim; the live reveal may differ. Check on the day.
@@ -79,7 +79,7 @@ Presenter: "Mask off. This is what Kite saw, with faces blurred and nothing save
 
 Presenter: "A chest camera sees a few meters. The drone sees the street. Drones are banned in this hall, so this is Tello footage from Moss Street, recorded Saturday at 7 AM, [TODO: flown by hand / follow mode / handheld]. A car turns in from Howard, and Kite says stop. Same detector. The audio is rendered afterward from the detector's events; the walker heard a spotter that day."
 
-[FLAG: that last sentence is required, because on the day the walker did not hear Kite (`docs/shoot-day.md`, appendix C). If the overlay video carries an on-screen caption saying the same, cut the sentence to keep the time. If the clip has no turning car, replace the car sentence with what it does show.]
+[FLAG: that last sentence is required, because on the day the walker did not hear Kite (`docs/internal/shoot-day.md`, appendix C). If the overlay video carries an on-screen caption saying the same, cut the sentence to keep the time. If the clip has no turning car, replace the car sentence with what it does show.]
 
 ### Beat 5. 1:35 to 1:50. The number
 

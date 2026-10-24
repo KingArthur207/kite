@@ -68,7 +68,7 @@ Karthik built the Claude judgment layer integration, the camera descriptions ("w
 | Who | What | When |
 |---|---|---|
 | Eddy | Ground check and calibration on Arthur's laptop; live walk on the iPhone | Now |
-| Eddy, Arthur, Rex | The 7:30 AM shoot (`docs/shoot-day.md`, `docs/shoot-flight.md`), starting with `python -m kite.preflight`. Eddy films the side angle, splat walkthrough, facade photos and the Moss crossing width. | Sat 7:30 AM |
+| Eddy, Arthur, Rex | The 7:30 AM shoot (`docs/internal/shoot-day.md`, `docs/internal/shoot-flight.md`), starting with `python -m kite.preflight`. Eddy films the side angle, splat walkthrough, facade photos and the Moss crossing width. | Sat 7:30 AM |
 | Arthur | Charge, then a follow-mode test flight in an open area away from cars and the venue | After the shoot |
 | Arthur, Eddy | Actions off in Settings; decide repo visibility | Sat |
 | Rex | Bring `streetseg` in; sign off on `docs/research/facts.md`; shoot logistics | Sat |

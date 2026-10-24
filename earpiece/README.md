@@ -13,7 +13,7 @@ python -m earpiece selftest                      # check audio, voices, STT, con
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
-python -m earpiece render --jsonl events.jsonl out/heard.wav   # same, from a JSONL timeline (docs/video-runbook.md)
+python -m earpiece render --jsonl events.jsonl out/heard.wav   # same, from a JSONL timeline (docs/internal/video-runbook.md)
 python -m pytest                                 # 330+ tests (also with KITE_AUDIO_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
 ```
 

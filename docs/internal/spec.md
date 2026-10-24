@@ -7,7 +7,7 @@ This is the shared contract for all four of us and our Claude sessions. If your 
 
 ## 0. Where we are (Sat Oct 24, 4:15 AM) and what we're aiming for
 
-Detail lives in [STATUS](../../STATUS.md), [the shoot pack](../../shoot-day.md), [the pitch](../../pitch.md) and [the demo runbook](../../demo-runbook.md).
+Detail lives in [STATUS](STATUS.md), [the shoot pack](shoot-day.md), [the pitch](pitch.md) and [the demo runbook](demo-runbook.md).
 
 **The target at judging (Sun 10:30 AM).**
 - The judge wears Kite (phone chest camera, headphones, sleep mask) and walks 3 to 4 m. A teammate steps in. Kite says "Stop. Person ahead." and later "Path is clear. You can continue."
@@ -37,7 +37,7 @@ Detail lives in [STATUS](../../STATUS.md), [the shoot pack](../../shoot-day.md),
 
 **Next, in order.**
 - Eddy (role changed Sat 4:30 AM; Arthur takes all physical drone work): the live walk on the iPhone (first real-camera test), then demo, pitch and submission lead: record the non-drone video segments (live walk, reveal, dashboard, sim), judge sim accuracy against the real street, Devpost and pitch rehearsal, the table kit (Target: chest clip, sleep masks, wipes; over-ear headphones). At the shoot (when Arthur runs it): side-angle video. 3 PM cut. 6 PM rehearsal. 8 PM freeze. Devpost draft Sat night. Sun 8 AM audit, 9 AM submit.
-- Arthur (owns everything physical about the drone, on his own laptop, on his schedule): ground check and camera calibration (`docs/shoot-flight.md`; no flying), the shoot (`docs/shoot-day.md`; after the 7:27 sunrise), follow-mode tests (first in the 3D sim, then a real flight in an open area away from cars and the venue), and the Gaussian splat of Moss St from the phone walkthrough (pipeline paused on Eddy's laptop for RAM; branch `worktree-agent-acf911a6a9b755945` has partial work). Owner tasks: Actions off in Settings, repo visibility with Eddy. Kickoff prompt in 7.1.
+- Arthur (owns everything physical about the drone, on his own laptop, on his schedule): ground check and camera calibration (`docs/internal/shoot-flight.md`; no flying), the shoot (`docs/internal/shoot-day.md`; after the 7:27 sunrise), follow-mode tests (first in the 3D sim, then a real flight in an open area away from cars and the venue), and the Gaussian splat of Moss St from the phone walkthrough (pipeline paused on Eddy's laptop for RAM; branch `worktree-agent-acf911a6a9b755945` has partial work). Owner tasks: Actions off in Settings, repo visibility with Eddy. Kickoff prompt in 7.1.
 - Rex: bring `streetseg` in as an upgrade, sign off on `docs/research/facts.md`, run shoot logistics.
 - Karthik: review #8 and #56, decide the Moss track row in the README with Eddy.
 - Agents on Eddy's laptop now: Kite-mode collision number, 40-walk live-walk bench, precise Moss St from SF open data (Blender), Tello camera model for sim frames, follow-mode path prediction, earpiece safety fixes from the overnight review (for Karthik). Paused and handed to Arthur: the splat pipeline and flying follow mode against the sim.
@@ -81,7 +81,7 @@ Anti-goals (failure even if it technically works)
 - Laptops are macOS on Apple Silicon, no NVIDIA GPU. ASUS lends 30 GX10s at the venue; we don't plan to use one, since YOLO11n runs at about 40 fps on a Mac.
 - Each judging table is shared by 2 or 3 teams (hacker guide), so the live walk has 3 or 4 m of aisle, in a crowded hall.
 - The Tello is the standard model: its own Wi-Fi access point, no internet on that link, no GPS, one controller at a time.
-- Measured or published Tello limits (details in `kite-notes-02.md`):
+- Measured or published Tello limits (details in `docs/internal/kite-notes-02.md`):
   - Forward speed is about 0.96 m/s at full stick, extrapolated from a stick-30 test. Walkers do 1.2 to 1.3 m/s. `SafetyCfg.max_rc` is 50 (about 0.5 m/s).
   - Battery: about 6 to 8 minutes of flight with video on.
   - Video stream: 960×720 at about 30 fps, cropped from the photo spec. fx is about 920 px (published) to 1077 px (VIGIL measured), which is about 48° to 55° wide.
@@ -137,7 +137,7 @@ Crossing signals: a signal head 20 m away is about 14 px tall in the Tello strea
 
 ### 5.1 The contract: Karthik's earpiece events
 
-We use the event types already defined in `earpiece/earpiece/events.py` (validated by `events.parse()`; summary in `earpiece/README.md` and `kite-notes-02.md` section 7). Producers send them with `earpiece.client.EarpieceClient` (`.obstacles()`, `.hazard()`, `.guidance()`, `.beacon()`, ...). Nobody invents a parallel format.
+We use the event types already defined in `earpiece/earpiece/events.py` (validated by `events.parse()`; summary in `earpiece/README.md` and `docs/internal/kite-notes-02.md` section 7). Producers send them with `earpiece.client.EarpieceClient` (`.obstacles()`, `.hazard()`, `.guidance()`, `.beacon()`, ...). Nobody invents a parallel format.
 
 - Frame: bearings in degrees in the walker's frame, 0 straight ahead, +90 right, −90 left, ±180 behind. Distances in meters.
 - Types: `obstacles`, `hazard`, `guidance`, `beacon`, `position`, `status`, `scene`, `say`, `heartbeat`, `control`.
@@ -249,14 +249,14 @@ Also owned: Rex verifies the guide dog figures. Eddy owns the clock, the demo vi
 
 These were the kickoff prompts on Friday night. The owner table above is current.
 
-- Arthur (current, Sat): "git pull. Read docs/superpowers/specs/2026-10-23-kite-design.md sections 0, 7, 8, docs/shoot-flight.md and docs/shoot-day.md. You own everything physical about the drone on this laptop. 1) Ground check and camera calibration with the drone on the table, no flying (`python -m kite.calibrate --board-png board.png`, then `python -m kite.calibrate --source tello`, then `python -m kite.record --source tello --out recordings --fly --dry-run --max-s 30`); commit data/tello_camera.json in a PR and share the recording folder with Eddy. 2) Before flying follow mode for real, test it against the 3D sim (continue branch worktree-agent-a1a531857b01ba419: a sim drone with Tello-like dynamics flown by the unmodified kite.follow code). 3) The shoot per docs/shoot-day.md. 4) The Gaussian splat of Moss St from the phone walkthrough (continue branch worktree-agent-acf911a6a9b755945; trainer that runs on Apple Silicon, loader `?world=splat`, landmark alignment). Every code change via a PR; no GitHub Actions."
+- Arthur (current, Sat): "git pull. Read docs/internal/spec.md sections 0, 7, 8, docs/internal/shoot-flight.md and docs/internal/shoot-day.md. You own everything physical about the drone on this laptop. 1) Ground check and camera calibration with the drone on the table, no flying (`python -m kite.calibrate --board-png board.png`, then `python -m kite.calibrate --source tello`, then `python -m kite.record --source tello --out recordings --fly --dry-run --max-s 30`); commit data/tello_camera.json in a PR and share the recording folder with Eddy. 2) Before flying follow mode for real, test it against the 3D sim (continue branch worktree-agent-a1a531857b01ba419: a sim drone with Tello-like dynamics flown by the unmodified kite.follow code). 3) The shoot per docs/internal/shoot-day.md. 4) The Gaussian splat of Moss St from the phone walkthrough (continue branch worktree-agent-acf911a6a9b755945; trainer that runs on Apple Silicon, loader `?world=splat`, landmark alignment). Every code change via a PR; no GitHub Actions."
 - Rex: "Read the spec sections 5.1, 5.3, 6 and 7, and earpiece/earpiece/events.py. Bring streetseg into this repo as a top-level package. Replace its glasses `turn` output with earpiece events sent through earpiece.client.EarpieceClient, plus a `--jsonl` option that writes the same events to a file. Done when `python -m streetseg --source <stock clip> --jsonl out.jsonl --overlay out.mp4` works."
 - Karthik: "Read the spec sections 5.1, 5.2, 5.6 and 7. Add the Claude judgment layer to the earpiece under the safety rule in 5.6, cache the fixed Cartesia phrases, and mirror every received and spoken event to SpacetimeDB through the existing bridge hook. Done when `python -m earpiece run --sim walk` and a replayed JSONL both sound right on laptop speakers."
 - Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
 
 ## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
 
-The run sheet for the morning is `docs/shoot-day.md`: the timeline, positions, who records what, props, backups and the commands for after the take.
+The run sheet for the morning is `docs/internal/shoot-day.md`: the timeline, positions, who records what, props, backups and the commands for after the take.
 
 Location: Moss Street at Howard Street, SoMa (OSM way 8916291). Moss is a one-way alley, 192 m from Folsom to Howard, with sidewalks on both sides. Where Moss meets Howard there is a marked zebra crosswalk across Moss with no signal and tactile paving (OSM node at 37.778352, -122.408768); cars turn into Moss from Howard across it. Howard is three lanes one-way at 25 mph with a protected bike track.
 

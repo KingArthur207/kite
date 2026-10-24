@@ -4,8 +4,8 @@ This gets the demo video cut fast after the shoot (spec section 8) and covers th
 
 What ends up in the video is real. The audio track is the earpiece's own output: `python -m earpiece render` runs the full earpiece app (sonar, beacon, speech queue, hazard rules) against the detector's events and records what it would have played into the AirPods, mixed binaurally. The captions are the lines the earpiece actually spoke during that render, with their times. Nothing is typed in by hand.
 
-![Obstacle cue on a stock clip](img/overlay-obstacle.png)
-![Hazard banner on a stock clip](img/overlay-hazard.png)
+![Obstacle cue on a stock clip](../img/overlay-obstacle.png)
+![Hazard banner on a stock clip](../img/overlay-hazard.png)
 
 Both frames are from the test run on a stock street clip with `data/sample_walk.jsonl`, so the cues don't match what's in the picture. On the shoot footage they come from the detector running on that footage.
 
@@ -87,8 +87,8 @@ uv run --no-project --with ultralytics python video/overlay.py $TAKE --events ou
 
 `--events` is optional, so `video/overlay.py clip.mp4 --seg --blur-faces -o out/seg.mp4` renders the masks alone. `python sim/seg_standin.py clip.mp4` prints the speed and the `scene` hints ("Sidewalk narrows ahead.", "No sidewalk ahead.") it would send. A hint has to hold for 5 frames before it goes out, and it never triggers a stop. On an M-series Mac, `segment()` takes about 49 ms per 960×720 frame on `mps` (20 fps), model and mask cleanup included. The corridor shape is a guess for a drone 1 m behind and 0.3 m above the walker, so check it on the shoot footage (`CORRIDOR_*` in `sim/seg_standin.py`).
 
-![Segmentation on a stock sidewalk clip](img/seg-sidewalk.png)
-![Segmentation on a stock Times Square clip](img/seg-street.png)
+![Segmentation on a stock sidewalk clip](../img/seg-sidewalk.png)
+![Segmentation on a stock Times Square clip](../img/seg-street.png)
 
 Both frames are stock footage, not the shoot: Mixkit "Sidewalk in a city with a couple of people walking" (`assets.mixkit.co/videos/35810/35810-720.mp4`) and "Times Square during a sunny day" (`assets.mixkit.co/videos/4442/4442-720.mp4`), both under the Mixkit free license. The sonar and captions in the first one come from `data/sample_walk.jsonl` and don't match the picture.
 
