@@ -588,7 +588,9 @@ class Speaker:
         t0 = time.monotonic()
         done = 0
         if self.tts.available:
-            sem = asyncio.Semaphore(4)
+            # Cartesia allows 2 concurrent requests for the whole team: prewarm uses one,
+            # leaving the other for live speech (KITE_CARTESIA_PREWARM to change).
+            sem = asyncio.Semaphore(max(1, int(os.environ.get("KITE_CARTESIA_PREWARM", "1"))))
 
             async def one(p: str) -> None:
                 nonlocal done
