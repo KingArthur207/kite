@@ -9,8 +9,13 @@
 //! It also owns cue *placement*: `render_binaural` is the Brown-Duda renderer of
 //! `spatial.py` in Rust, so the whole audible path (placement, mixing, output)
 //! is native and runs without the GIL.
+//!
+//! And it owns the sonar's *decisions*: `Sonar` is the per-tick logic of
+//! `sonar.py` (tracks, time-to-contact, urgency, beep scheduling, "Stop."), so
+//! when each warning beep is due no longer depends on Python bytecode.
 
 mod mixer;
+pub mod sonar;
 pub mod spatial;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
