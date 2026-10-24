@@ -20,6 +20,7 @@ brain = ["anthropic>=0.40"]
 memory = ["inferedge-moss>=1.0.0b19"]
 camera = ["opencv-python-headless>=4.9"]
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+evals = ["pillow>=10"]          # evals/run_live.py draws signs onto test images
 
 [project.scripts]
 kite-earpiece = "earpiece.__main__:main"
