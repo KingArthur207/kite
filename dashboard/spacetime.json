@@ -1,0 +1,5 @@
+{
+  "server": "maincloud",
+  "database": "kite-sync-pl6rp",
+  "module-path": "./spacetimedb"
+}
