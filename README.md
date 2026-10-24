@@ -2,8 +2,6 @@
 
 **A guide dog that flies. Kite tells a blind pedestrian what's coming before they reach it.**
 
-[![CI](https://github.com/KingArthur207/kite/actions/workflows/ci.yml/badge.svg)](https://github.com/KingArthur207/kite/actions/workflows/ci.yml)
-[![Security](https://github.com/KingArthur207/kite/actions/workflows/security.yml/badge.svg)](https://github.com/KingArthur207/kite/actions/workflows/security.yml)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-audio%20engine-000000?logo=rust&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-sim%20%2B%20dashboard-3178C6?logo=typescript&logoColor=white)
@@ -284,7 +282,7 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 - **Moss's index load stalls Python for about 1.9 s at startup.** The audio is unaffected because the Rust engine runs outside the GIL; with the Python engine, the stall could be audible.
 - **Reading text needs a camera frame and the internet.** Without either, Kite says so instead of guessing.
 - **English only**, one voice ("Daniel").
-- **No API keys are in this repo.** Keys live in a git-ignored `.env`, and gitleaks scans the full history in CI.
+- **No API keys are in this repo.** Keys live in a git-ignored `.env`, and `scripts/check.sh` runs gitleaks over the full history before every merge.
 
 ## 🧠 Anthropic: Claude makes the careful calls
 
@@ -378,7 +376,7 @@ Moss's first example use is voice agents that listen, respond and act in real ti
 - *Privacy:* the dashboard shows positions and events, never camera video, and camera frames sent to Claude are not mirrored anywhere. The team's rule is that faces in any stored frame are blurred, and no frames are stored during the live demo.
 - *Local safety path:* obstacle cues travel over localhost UDP and never through the cloud. Claude, Cartesia, Moss and SpacetimeDB can all be down and Kite still beeps and still says "Stop."
 - *Hearing:* a limiter caps output at -1 dBFS, and critical warnings can't be muted or paused by any remote command.
-- *Security:* see [`SECURITY.md`](SECURITY.md). Inputs bind to localhost by default, Claude's tools are allow-listed, and CI runs gitleaks, pip-audit, bandit, npm audit and cargo audit.
+- *Security:* see [`SECURITY.md`](SECURITY.md). Inputs bind to localhost by default, Claude's tools are allow-listed, and [`scripts/check.sh`](scripts/check.sh) runs gitleaks, pip-audit, bandit, npm audit and cargo audit.
 
 **End to end on one laptop.** The [Quick start](#-quick-start) below runs the sim, the earpiece, a replayed walk and the dashboard together. No drone or AirPods are needed.
 
@@ -400,7 +398,7 @@ Moss's first example use is voice agents that listen, respond and act in real ti
 ## ⚙️ Most Technically Complex
 
 - **A real-time audio engine in Rust** ([`earpiece/native/`](earpiece/native/)): the device callback runs on CoreAudio's thread through `cpal`, never touches the Python interpreter, and talks to Python only through lock-free single-producer rings (`rtrb`). Nothing in `render` allocates, locks or blocks; finished buffers go back through a second ring to be freed off the real-time thread. Cue, alert and speech buses with ducking, fades and a limiter, at 512-sample blocks. A test asserts the worst block renders in under 90 % of its ~10.7 ms budget while Python is saturated.
-- **Two engines, one sound.** The Rust mixer is a line-for-line port of the Python mixer, so either engine can run, and CI tests both on macOS and Linux.
+- **Two engines, one sound.** The Rust mixer is a line-for-line port of the Python mixer, so either engine can run, and [`scripts/check.sh`](scripts/check.sh) runs the full suite on both.
 - **Binaural rendering from first principles** ([`spatial.py`](earpiece/earpiece/spatial.py)): interaural time difference plus a head-shadow filter from a spherical-head model, a gentle low-pass for sources behind, and distinct sounds for "behind" to cover front-back confusion. No HRTF dataset needed.
 - **Sonar by time-to-contact** ([`sonar.py`](earpiece/earpiece/sonar.py)): tracks objects across frames, works out how fast the gap is closing, and maps it to beep rate and pitch with hysteresis, at most two sources at once.
 - **A speech scheduler that reasons about time**: priorities, mid-word preemption with re-queueing, per-utterance time-to-live, de-duplication, and a phrase cache, on one Cartesia WebSocket.
@@ -478,6 +476,8 @@ scripts/demo.sh sim        # or: live <camera-index>, replay <file.jsonl>, statu
    You should hear beeps and speech from the earpiece and see the walker, hazards and spoken lines appear on the dashboard. `--speed 2` and `--loop` also work.
 
 Tests: `cd earpiece && python -m pytest`, and `earpiece/.venv/bin/python sim/test_relay.py` for the relay.
+
+**Before you merge:** `scripts/check.sh quick` (about 3 minutes) or `scripts/check.sh` for everything: both audio engines, Rust, the drone layer, the dashboard build and the security scans. There are no hosted CI runners. The landing site deploys with `scripts/deploy-site.sh`.
 
 ## Two laptops over a Thunderbolt bridge
 
@@ -676,7 +676,7 @@ earpiece/.venv/bin/python scripts/replay.py recordings/<dir>/gps/positions.jsonl
 | **Microsoft: Built for the Real World and Customer Impact** | Customer understanding, measured numbers, an offline safety path, the seams from prototype to production, responsible design, end to end on one laptop. [Details](#-microsoft-built-for-the-real-world-with-real-customer-impact) | [`test_app_stress.py`](earpiece/tests/test_app_stress.py), [`test_rust_engine.py`](earpiece/tests/test_rust_engine.py), [`SECURITY.md`](SECURITY.md), [`scripts/replay.py`](scripts/replay.py) |
 | **Best Hardware Hack** | Tello above and behind the head, chest camera for the near field, AirPods as a managed output with stem-press controls, a real-time Rust audio engine | [`native/src/`](earpiece/native/src/), [`controls.py`](earpiece/earpiece/controls.py), [`devices.py`](earpiece/earpiece/devices.py), [`tests/drone_test.py`](tests/drone_test.py), [`sim/`](sim/) |
 | **Best People-First Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; caregiver alerts; no video on the dashboard | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
-| **Most Technically Complex** | Lock-free Rust audio engine with a Python twin, binaural rendering from a head model, time-to-contact sonar, a time-aware speech scheduler, four cloud services kept off the safety path | [`native/src/lib.rs`](earpiece/native/src/lib.rs), [`native/src/mixer.rs`](earpiece/native/src/mixer.rs), [`spatial.py`](earpiece/earpiece/spatial.py), [`sonar.py`](earpiece/earpiece/sonar.py), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) |
+| **Most Technically Complex** | Lock-free Rust audio engine with a Python twin, binaural rendering from a head model, time-to-contact sonar, a time-aware speech scheduler, four cloud services kept off the safety path | [`native/src/lib.rs`](earpiece/native/src/lib.rs), [`native/src/mixer.rs`](earpiece/native/src/mixer.rs), [`spatial.py`](earpiece/earpiece/spatial.py), [`sonar.py`](earpiece/earpiece/sonar.py), [`scripts/check.sh`](scripts/check.sh) |
 
 ## 🪁 The bet
 
