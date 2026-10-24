@@ -558,7 +558,8 @@ class Speaker:
                 self.stats["spoken"] += 1
                 if u.priority == "nav":
                     self.last_nav = u
-            rec = {"t": time.time(), "t_start": started, "text": u.text, "priority": u.priority, "result": how}
+            rec = {"t": time.time(), "t_start": started, "text": u.text, "priority": u.priority, "result": how,
+                   "key": u.key}
             self.history.append(rec)
             if self.on_spoken is not None:
                 try:
