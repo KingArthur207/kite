@@ -234,7 +234,7 @@ export function buildStreetDressing(group: THREE.Object3D, data: Data, garages: 
       const e = o ? new THREE.BoxGeometry(1.04, 0.02, 0.03).translate(0, 0.01, s * 0.51) : new THREE.BoxGeometry(0.03, 0.02, 1.04).translate(s * 0.51, 0.01, 0);
       batch.put(M.metal, place(e, p, y, u));
     }
-    const half = size.trunkR ? Math.max(0.1, size.trunkR * 1.15 + 0.03) : 0.2;   // the trunk's base
+    const half = (size.trunkR ?? 0.1 + h * 0.012) * 1.15;   // the drawn trunk's base radius (streetTree's default when unset)
     batch.segs.push(...boxSegs(p, u, half, half));
     return rnd;
   };
