@@ -242,6 +242,66 @@ export function scooterGeo(hex: number) {
   ];
 }
 
+/** Parked motorcycle on its side stand, front along +x, about 2.1 m long, leaning a little. */
+export function motorcycleGeo() {
+  const K = 0x16171a, P = 0x6b0f14, C = 0xb8bcc0;   // black, deep red tank, chrome
+  const wheel = (x: number) => [
+    col(new THREE.TorusGeometry(0.29, 0.08, 8, 20).translate(x, 0.33, 0), K),
+    col(new THREE.CylinderGeometry(0.13, 0.13, 0.1, 12).rotateX(Math.PI / 2).translate(x, 0.33, 0), C),
+  ];
+  return [
+    ...wheel(0.72), ...wheel(-0.72),
+    boxG(0.55, 0.36, 0.3, 0x3a3b3e).translate(-0.02, 0.5, 0),                       // engine
+    col(new THREE.SphereGeometry(0.24, 12, 8).scale(1.4, 0.75, 0.9).translate(0.2, 0.86, 0), P),   // tank
+    boxG(0.7, 0.1, 0.3, K).translate(-0.42, 0.84, 0).rotateZ(0.04),                 // seat
+    boxG(0.5, 0.08, 0.2, P).translate(-0.82, 0.8, 0).rotateZ(0.12),                 // tail
+    cylG(0.035, 0.035, 0.75, C, 8).rotateZ(0.42).translate(0.57, 0.33, 0.1),        // forks
+    cylG(0.035, 0.035, 0.75, C, 8).rotateZ(0.42).translate(0.57, 0.33, -0.1),
+    cylG(0.02, 0.02, 0.72, K, 6).rotateX(Math.PI / 2).translate(0.42, 1.08, 0),     // handlebar
+    col(new THREE.SphereGeometry(0.09, 10, 8).translate(0.62, 0.95, 0), C),          // headlight
+    cylG(0.045, 0.04, 0.8, C, 8).rotateZ(Math.PI / 2 - 0.08).translate(0.1, 0.3, 0.2),   // exhaust
+  ].map((g) => g.rotateX(0.1));
+}
+
+/** Concrete sidewalk planter with a clipped shrub: about 1.1 x 0.45 m, 1.1 m tall. Box along x. */
+export function planterGeo(seed: number) {
+  const r = seeded(seed);
+  const shrub = col(new THREE.IcosahedronGeometry(0.42, 1).scale(1.3, 0.85, 0.6).translate(0, 0.78, 0), [0x3f6b34, 0x4d7a3a, 0x36602f][Math.floor(r() * 3)]);
+  return [boxG(1.1, 0.5, 0.45, 0xb9b4aa).translate(0, 0.25, 0), boxG(1.0, 0.04, 0.36, 0x3b2f25).translate(0, 0.5, 0), shrub];
+}
+
+/** Brick-paver street medallion: concentric rings of red and buff pavers, for a disc with UVs 0..1. */
+export const medallionTexture = () => canvasTex(512, (g, S) => {
+  const r = seeded(23), c = S / 2;
+  const rings = [[0.5, "#9a4a3a"], [0.46, "#b8705a"], [0.3, "#a3523f"], [0.27, "#c48a6c"], [0.12, "#9a4a3a"]] as const;
+  for (const [f, hex] of rings) { g.fillStyle = hex; g.beginPath(); g.arc(c, c, f * S, 0, Math.PI * 2); g.fill(); }
+  g.strokeStyle = "rgba(60,40,32,0.45)"; g.lineWidth = 2;
+  for (let rad = 14; rad < S / 2; rad += 14) {           // paver courses
+    g.beginPath(); g.arc(c, c, rad, 0, Math.PI * 2); g.stroke();
+    const n = Math.round((2 * Math.PI * rad) / 26), off = r() * 6;
+    for (let k = 0; k < n; k++) {
+      const a = off + (k / n) * Math.PI * 2;
+      g.beginPath(); g.moveTo(c + Math.cos(a) * (rad - 14), c + Math.sin(a) * (rad - 14)); g.lineTo(c + Math.cos(a) * rad, c + Math.sin(a) * rad); g.stroke();
+    }
+  }
+  for (let i = 0; i < 3000; i++) {                       // wear
+    g.fillStyle = `rgba(${r() < 0.5 ? "40,30,25" : "230,220,205"},${r() * 0.12})`;
+    g.fillRect(r() * S, r() * S, 2 + r() * 4, 2 + r() * 4);
+  }
+});
+
+/** A street banner (no text): bold shapes on a coloured field, the kind SoMa hangs on Howard's light poles. */
+export const bannerTexture = (seed: number) => canvasTex(256, (g, S) => {
+  const r = seeded(seed);
+  const fields = ["#1f5f8b", "#c0392b", "#f2b134", "#2a7a4b", "#6c3483"];
+  g.fillStyle = fields[Math.floor(r() * fields.length)]; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 7; i++) {
+    g.fillStyle = ["#f4efe2", "#f2b134", "#e74c3c", "#1b2631", "#48c9b0"][Math.floor(r() * 5)];
+    g.beginPath(); g.arc(r() * S, r() * S, 20 + r() * 60, 0, Math.PI * 2); g.fill();
+  }
+  g.fillStyle = "#f4efe2"; g.fillRect(0, S * 0.84, S, S * 0.16);
+});
+
 /** Galvanized sign post, 2.7 m. */
 export const signPostGeo = () => [cylG(0.03, 0.03, 2.7, 0x9a9d9b, 6)];
 

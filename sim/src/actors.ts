@@ -84,8 +84,11 @@ export async function loadPerson(name: PersonName, idle: boolean) {
   const want = idle ? /idle|standing/i : /walk/i;
   const clip = g.animations.find((a) => want.test(a.name)) ?? g.animations[0];
   if (clip) mixer.clipAction(clip).play();
-  return { obj, mixer };
+  return { obj, mixer, clips: g.animations };
 }
+
+/** Resolves once every model requested so far has loaded or failed (shot.ts waits on it). */
+export const modelsSettled = () => Promise.allSettled([...gltfs.values()]);
 
 // World box of a model as drawn: skinned meshes need their bones posed first, or they measure
 // in bind space (Blender exports lie along z there).
