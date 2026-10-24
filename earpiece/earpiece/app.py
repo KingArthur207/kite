@@ -601,7 +601,8 @@ class Earpiece:
 
     def _place_notes(self, place: str) -> None:
         for h in self.memory.notes_for(place)[:1]:
-            self.say(f"Heads up: {h.text}", "hazard", key=f"memory:{h.id}", ttl=20)
+            # a remembered note is context, not an imminent danger: live directions go first
+            self.say(f"Heads up: {h.text}", "info", key=f"memory:{h.id}", ttl=30)
 
     def alert_caregiver(self, message: str) -> str:
         self._event("caregiver_alert", {"message": message, "position": self.position})
