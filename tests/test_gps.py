@@ -139,6 +139,39 @@ def test_time_parsing_zones_and_epochs():
         assert gps.parse_time(s, tz) == pytest.approx(want, abs=1e-3), s
 
 
+def test_a_row_with_a_garbled_time_is_skipped_not_fatal(tmp_path):
+    """One unreadable time (a logger killed mid-write, a hand edit) used to abort the whole track."""
+    t, lat, lng, acc = noisy_fixes(seed=1)
+    good = gps.read_track(write_csv(tmp_path / "w.csv", t, lat, lng, acc), gps.parse_tz("-07:00"))
+    lines = (tmp_path / "w.csv").read_text().splitlines()
+    lines[5] = "2026-10-24 07:0x:00.000," + lines[5].split(",", 1)[1]
+    (tmp_path / "bad.csv").write_text("\n".join(lines) + "\n")
+    fixes = gps.read_track(tmp_path / "bad.csv", gps.parse_tz("-07:00"))
+    assert len(fixes) == len(good) - 1
+    gpx = write_gpx(tmp_path / "w.gpx", t, lat, lng, acc).read_text()
+    first = gpx.index("<time>")
+    (tmp_path / "bad.gpx").write_text(gpx[:first] + "<time>not a time</time>" + gpx[gpx.index("</time>", first) + 7:])
+    assert len(gps.read_track(tmp_path / "bad.gpx")) == len(good) - 1
+    (tmp_path / "none.csv").write_text("time,lat,lon\nsoon,37.7783,-122.4087\nlater,37.7784,-122.4087\n")
+    with pytest.raises(ValueError, match="unreadable time 'soon'"):  # nothing readable: still a clear error
+        gps.read_track(tmp_path / "none.csv")
+
+
+def test_a_fix_with_an_impossible_date_cannot_blow_up_the_grid(tmp_path):
+    """Track sampled the whole time span at 10 Hz: one 1970 placeholder fix (loggers write epoch 0 before the first
+    satellite fix) made it allocate ~1.8e10 grid points and die of MemoryError (or swap the laptop to a halt)."""
+    t, lat, lng, acc = noisy_fixes(seed=2)
+    good = len(gps.read_track(write_csv(tmp_path / "w.csv", t, lat, lng, acc), gps.parse_tz("-07:00")))
+    t = t.copy()
+    t[0], t[-1] = 0.0, 5e9  # epoch 0, and the year 2128
+    fixes = gps.read_track(write_csv(tmp_path / "bad.csv", t, lat, lng, acc), gps.parse_tz("-07:00"))
+    assert len(fixes) == good - 2
+    gps.Track(fixes)  # fits
+    wrong_year = fixes[:-1] + [gps.Fix(fixes[-1].t + 365 * 86400.0, fixes[-1].lat, fixes[-1].lng)]
+    with pytest.raises(ValueError, match="wrong date"):  # a fix a year off: a clear error, not a 300 M point grid
+        gps.Track(wrong_year)
+
+
 def test_gpx_with_offset_and_csv_with_local_naive_times_read_the_same(tmp_path):
     t, lat, lng, acc = noisy_fixes()
     a = gps.read_track(write_gpx(tmp_path / "w.gpx", t, lat, lng, acc))
@@ -211,6 +244,18 @@ def make_take(tmp_path, n=45, fps=30.0):
                         {"source": str(path), "source_kind": "file"}).run()
     finally:
         src.stop()
+
+
+def test_a_frames_csv_row_torn_by_a_crash_is_ignored(tmp_path):
+    """A hard crash cuts frames.csv mid-row. A row cut inside t_wall kept a truncated number ("17617") as the last
+    frame's wall time, which made the video span negative: no overlap, no position events."""
+    rec = make_take(tmp_path)
+    _, t_wall, _ = gps.read_recording(rec)
+    text = (rec / "frames.csv").read_text()
+    cut = text.rstrip("\n").rsplit("\n", 1)[0] + "\n45,46,123.456789,17617"  # torn inside t_wall, no src_t
+    (rec / "frames.csv").write_text(cut)
+    idx, tw, _ = gps.read_recording(rec)
+    assert len(tw) == len(t_wall) - 1 and tw[-1] == pytest.approx(t_wall[-2])
 
 
 def test_alignment_with_a_recording_and_replayable_events(tmp_path):

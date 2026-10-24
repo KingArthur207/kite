@@ -135,6 +135,20 @@ def test_cam_height_uses_h_when_tof_disagrees_and_none_beyond_the_gap(take, tmp_
     assert src.pose_at(5)["cam_height"] == pytest.approx(1.5)
 
 
+def test_malformed_telemetry_values_are_unknown_not_a_crash(take, tmp_path):
+    """A non-numeric state value made TelloDrone.telemetry() raise in float(), so the take could not be opened at all;
+    inf passed through as a reading and a NaN t_mono broke the time sort."""
+    ft = frame_times(take)
+    packets = [state(ft[3], h="abc", pitch=[1], bat=10**400), {**state(ft[4]), "t_mono": float("nan")},
+               state(ft[5], bat=float("inf"), h=float("-inf"), tof=float("nan"))]
+    src = RecordingSource(with_telemetry(take, tmp_path, packets))
+    assert len(src.raw_telemetry) == 2  # the packet with no usable time is skipped
+    p3, p5 = src.pose_at(3), src.pose_at(5)
+    assert p3["cam_height"] == pytest.approx(1.0) and p3["pitch"] is None  # bad h: the ToF is all there is
+    assert p5["battery"] is None and p5["cam_height"] is None
+    assert len(read_all(src)) == N
+
+
 def test_seek_by_index_t_and_sec(take):
     src = RecordingSource(take)
     ft = frame_times(take)

@@ -590,7 +590,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _known_object(args, tello: bool) -> int:
-    import cv2
 
     if args.known_object <= 0 or args.distance_m <= 0:
         print("--known-object and --distance-m must be > 0")

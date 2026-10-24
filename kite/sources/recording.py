@@ -89,7 +89,8 @@ def _read_jsonl(path: Path) -> list[dict]:
             rec = json.loads(line)
         except ValueError:
             continue
-        if isinstance(rec, dict) and isinstance(rec.get("t_mono"), (int, float)):
+        t = rec.get("t_mono") if isinstance(rec, dict) else None
+        if isinstance(t, (int, float)) and math.isfinite(t):  # a NaN time would break the sort
             out.append(rec)
     return out
 

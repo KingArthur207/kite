@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "scipy>=1.11", "cma>=3.3"]  # the kite.fly tests run in the not-slow suite
+dev = ["pytest>=8", "scipy>=1.11", "cma>=3.3", "hypothesis>=6.100"]  # kite.fly tests run in the not-slow suite; hypothesis: safety-governor property tests
 follow = ["ultralytics>=8.3"]  # kite.follow person detector (YOLO11n); weights: see kite/follow.py, never fetched at runtime
 fly = ["scipy>=1.11"]                              # kite.fly: the fly-brain yaw source (sparse LIF network)
 train = ["scipy>=1.11", "cma>=3.3", "modal>=1.0"]  # kite.fly.train: CMA-ES fine-tuning, locally or on Modal
@@ -33,3 +33,23 @@ python_files = ["test_*.py"]  # tests/drone_test.py is a flight script, not a te
 addopts = "-q"
 markers = ["slow: needs ffmpeg, streams real H.264 over local UDP"]
 filterwarnings = ["ignore::DeprecationWarning"]
+
+# One lint config for the whole repo (earpiece/pyproject.toml extends it), so results don't
+# depend on anyone's personal ruff settings. Bug-finding rules only; style is left alone.
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["site", "video", "dashboard", "sim/node_modules", "sim/blender", "earpiece/native"]  # blender: runs inside Blender
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "W6", "B"]
+ignore = [
+    "E402", "E702", "E731", "E741",   # imports after sys.path setup, one-liners, named lambdas, short names
+    "B007", "B008", "B027",    # unused loop variables, call defaults, empty base-class hooks
+    "B904", "B905",            # raise-from inside except, zip(strict=)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"earpiece/tests/test_rust_sonar.py" = ["B023"]   # closures called inside the loop that defines them
+"earpiece/evals/run_live.py" = ["B023"]
+

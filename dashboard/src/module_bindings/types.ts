@@ -30,3 +30,9 @@ export const Latest = __t.object("Latest", {
 });
 export type Latest = __Infer<typeof Latest>;
 
+export const Meta = __t.object("Meta", {
+  key: __t.string(),
+  t: __t.timestamp(),
+});
+export type Meta = __Infer<typeof Meta>;
+

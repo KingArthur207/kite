@@ -98,7 +98,10 @@ class Earpiece:
         self._noted_places: set[str] = set()
         self._asking: dict | None = None           # "which bench?": the candidates, until an answer
         self._undo: tuple[object, float] | None = None   # last forgotten memory, for "undo"
+        self._place_notes_busy = threading.Lock()   # one memory lookup at a time, never a thread per message
+        self._memory_writes: deque = deque(maxlen=self.MEMORY_WRITES_PER_MIN)   # inbound memory rate limit
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
+        self._hazard_lock = threading.RLock()      # transport thread and control loop both apply hazards
         self.vision = Vision(self.cfg.anthropic_key, log=log)
         self._stop_since: float | None = None      # a "Stop."/wait is in force since this time
         self._clear_since: float | None = None     # the way has looked clear since this time
@@ -108,7 +111,8 @@ class Earpiece:
         self.gestures = Gestures(self.gesture, log=log)
         self.gestures.on_press = self.barge_in            # cut at the press, not after classifying it
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
-                                   self.cfg.net.ws_port, log=log) if network else None
+                                   self.cfg.net.ws_port, log=log,
+                                   allow_origins=self.cfg.net.allow_origins) if network else None
         if self.transport is not None:
             self.transport.state_provider = self.state
         self.bridges: list = []                    # extra sinks (e.g. SpacetimeDB) for outbound events
@@ -137,6 +141,8 @@ class Earpiece:
             threading.Thread(target=self.prewarm_cues, name="cue-prewarm", daemon=True).start()
         if self.transport is not None:
             self.transport.start()
+            # with port 0 the OS picked free ports: publish them where every caller looks
+            self.cfg.net.udp_port, self.cfg.net.ws_port = self.transport.udp_port, self.transport.ws_port
         self.memory.start()
         threading.Thread(target=self._control_loop, name="control", daemon=True).start()
         if isinstance(self.output, (DeviceOutput, RustDeviceOutput)):
@@ -178,11 +184,16 @@ class Earpiece:
         self._stop.set()
         self._stopped = True
         self.judgment.stop()
+        self.brain.stop()
+        self.vision.stop()
+        self.gestures.stop()
         self.listener.stop()
         self.battery.stop()
         self.speaker.cancel_all(keep_critical=False)
         time.sleep(0.1)
         self.speaker.stop()
+        if self.transport is not None:
+            self.transport.stop()
         self.output.stop()
         if hasattr(self.engine, "shutdown"):
             self.engine.shutdown()
@@ -211,7 +222,7 @@ class Earpiece:
         if any(t.critical or t.urgency > 0.45 for t in tracks):
             return True
         return any(h.get("state") in ("wait", "blocked", "stop") and h.get("kind") != "crosswalk"
-                   for h in self.hazards.values())
+                   for h in list(self.hazards.values()))     # snapshot: the transport thread adds hazards
 
     def _check_continue(self, now: float) -> None:
         """Guide-dog behaviour from the spec: stop, wait until the way is clear, then say so.
@@ -269,7 +280,8 @@ class Earpiece:
         now = time.monotonic()
         t = msg.type
         if t in ("obstacles", "obstacle"):
-            self.perception_sources.add(msg.source)
+            if len(self.perception_sources) < self.MAX_SOURCES:
+                self.perception_sources.add(msg.source)
             self.last_perception = now
             with self._lock:
                 if t == "obstacles":
@@ -306,10 +318,18 @@ class Earpiece:
             self.position = {k: v for k, v in msg.data.items() if v is not None}
             self.route.position(self.position, now)
             place = self.position.get("place")
-            if place and place not in self._noted_places:
+            # one lookup thread at a time: a sender cycling place names must not spawn a thread
+            # per message (a place skipped while busy is looked up on its next position fix)
+            if place and place not in self._noted_places and self._place_notes_busy.acquire(blocking=False):
+                if len(self._noted_places) >= self.MAX_NOTED_PLACES:
+                    self._noted_places.clear()
                 self._noted_places.add(place)
-                threading.Thread(target=self._place_notes, args=(place,), daemon=True).start()
+                threading.Thread(target=self._place_notes, args=(place,), name="place-notes", daemon=True).start()
         elif t == "memory":
+            if len(self._memory_writes) == self._memory_writes.maxlen and now - self._memory_writes[0] < 60.0:
+                self.log(f"[memory] ignoring a memory from {msg.source}: over {self.MEMORY_WRITES_PER_MIN} a minute")
+                return
+            self._memory_writes.append(now)
             meta = {k: v for k, v in msg.data.items() if v is not None}
             m = self.memory.remember(msg.kind, msg.text, meta)
             self._event("memory", {"id": m.id, "kind": m.kind, "text": m.text, "source": msg.source})
@@ -328,27 +348,33 @@ class Earpiece:
 
     def _hazard(self, msg: Msg, now: float) -> None:
         key = msg.key or (msg.kind or "hazard")
-        if msg.kind == "crosswalk":
-            # Asymmetric on purpose: a one-frame "walk" misread must never send someone into
-            # traffic, while a "don't walk" is safe to act on at once.
-            if msg.state in ("walk", "go", "green"):
-                prev = self.hazards.get(key)
-                if not (prev and prev.get("state") in ("walk", "go", "green")):
-                    p = self._walk_pending.get(key)
-                    if p is None:
-                        self._walk_pending[key] = (now, msg)
-                    else:
-                        self._walk_pending[key] = (p[0], msg)
-                    return
-            else:
-                self._walk_pending.pop(key, None)
-        self._apply_hazard(key, msg, now)
+        with self._hazard_lock:
+            if msg.kind == "crosswalk":
+                # Asymmetric on purpose: a one-frame "walk" misread must never send someone into
+                # traffic, while a "don't walk" is safe to act on at once.
+                if msg.state in ("walk", "go", "green"):
+                    prev = self.hazards.get(key)
+                    if not (prev and prev.get("state") in ("walk", "go", "green")):
+                        p = self._walk_pending.get(key)
+                        self._walk_pending[key] = (now if p is None else p[0], msg)
+                        return
+                else:
+                    self._walk_pending.pop(key, None)
+            self._apply_hazard(key, msg, now)
+
+    MAX_HAZARDS = 64           # active hazards kept (each one is in every prompt Claude gets)
+    MAX_SOURCES = 32           # perception sources tracked for heartbeats
+    MAX_NOTED_PLACES = 512
+    MEMORY_WRITES_PER_MIN = 30  # inbound `memory` messages (each one rewrites the store and syncs to Moss)
 
     def _confirm_walks(self, now: float) -> None:
-        for key, (since, msg) in list(self._walk_pending.items()):
-            if now - since >= self.WALK_CONFIRM_S:
-                del self._walk_pending[key]
-                self._apply_hazard(key, msg, now)
+        """Under the hazard lock: a "don't walk" arriving on the transport thread must never be
+        overtaken by a pending "walk" this loop had already picked up."""
+        with self._hazard_lock:
+            for key, (since, msg) in list(self._walk_pending.items()):
+                if now - since >= self.WALK_CONFIRM_S:
+                    del self._walk_pending[key]
+                    self._apply_hazard(key, msg, now)
 
     def _apply_hazard(self, key: str, msg: Msg, now: float) -> None:
         prev = self.hazards.get(key)
@@ -372,6 +398,10 @@ class Earpiece:
             text = f"{name}, {where}."                        # same form as the cached sonar labels
             if msg.state in ("wait", "blocked", "stop"):
                 text += " Wait."
+        if prev is None and len(self.hazards) >= self.MAX_HAZARDS:     # forget the stalest one
+            oldest = min(list(self.hazards.items()), key=lambda kv: kv[1]["t"], default=None)
+            if oldest is not None:
+                self.hazards.pop(oldest[0], None)
         self.hazards[key] = {"kind": msg.kind, "state": msg.state, "text": text, "bearing": msg.bearing,
                              "distance": msg.distance, "until": now + ttl, "t": now, "priority": msg.priority}
         if changed and msg.state in ("wait", "blocked", "stop") and msg.kind != "crosswalk":
@@ -491,8 +521,8 @@ class Earpiece:
                 warn = any(t.urgency > 0.3 for t in chosen)
                 self.beacon.duck = 0.35 if warn else 1.0
                 self.beacon.tick(now, speech_playing=self.engine.speaking or self.listener.active)
-                for k in [k for k, h in self.hazards.items() if h["until"] < now]:
-                    del self.hazards[k]
+                for k in [k for k, h in list(self.hazards.items()) if h["until"] < now]:
+                    self.hazards.pop(k, None)
             except Exception as e:
                 self.log(f"[control] {type(e).__name__}: {e}")
             nxt += period
@@ -711,11 +741,16 @@ class Earpiece:
                 for h in self.memory.search(query, top_k=3)]
 
     def _place_notes(self, place: str) -> None:
-        for h in self.memory.notes_for(place)[:1]:
-            # a remembered note is context, not an imminent danger: live directions go first;
-            # an old one is said more softly and gives up sooner
-            text, ttl = self.memory.heads_up(h)
-            self.say(text, "info", key=f"memory:{h.id}", ttl=ttl)
+        try:
+            for h in self.memory.notes_for(place)[:1]:
+                # a remembered note is context, not an imminent danger: live directions go first;
+                # an old one is said more softly and gives up sooner
+                text, ttl = self.memory.heads_up(h)
+                self.say(text, "info", key=f"memory:{h.id}", ttl=ttl)
+        except Exception as e:
+            self.log(f"[memory] place notes failed ({type(e).__name__}: {e})")
+        finally:
+            self._place_notes_busy.release()
 
     def alert_caregiver(self, message: str) -> str:
         self._event("caregiver_alert", {"message": message, "position": self.position})

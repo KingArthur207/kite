@@ -28,10 +28,28 @@ const latest = table(
   }
 );
 
-const spacetimedb = schema({ event, latest });
+// Private bookkeeping, not visible to clients: when `clear` last ran.
+const meta = table(
+  { name: 'meta' },
+  {
+    key: t.string().primaryKey(),
+    t: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({ event, latest, meta });
 export default spacetimedb;
 
 const KEEP_EVENTS = 500n;
+// Auto-increment ids have gaps (they jump after a server restart), so deleting `id - KEEP_EVENTS`
+// alone can miss rows and let the log grow forever; past this many extra rows a sweep drops the oldest.
+const SWEEP_SLACK = 50n;
+// Distinct (type, source) pairs kept in `latest`. Sources are caller-chosen, so without a cap any
+// caller could grow the table (and every dashboard's copy of it) without bound.
+const MAX_LATEST = 200n;
+// `push` and `clear` are open to any identity (the dashboard connects anonymously), so this is
+// what stops a stranger from keeping the caregiver's view permanently empty.
+const CLEAR_COOLDOWN_US = 60_000_000n;
 const MAX_PAYLOAD = 16 * 1024;
 const TYPES = new Set([
   'obstacles', 'hazard', 'guidance', 'beacon', 'position', 'status', 'scene', 'say',
@@ -44,28 +62,55 @@ const IDENT = /^[\w.:-]{1,64}$/;
 export const push = spacetimedb.reducer(
   { type: t.string(), source: t.string(), priority: t.string(), payload: t.string() },
   (ctx, { type, source, priority, payload }) => {
-    if (!TYPES.has(type)) throw new SenderError(`unknown type ${type}`);
+    // earpiece/earpiece/spacetime.py matches the "unknown type" prefix: keep it.
+    if (!TYPES.has(type)) throw new SenderError(`unknown type ${type.slice(0, 32)}`);
     if (!IDENT.test(source)) throw new SenderError('bad source');
     if (!PRIORITIES.has(priority)) throw new SenderError('bad priority');
     if (payload.length > MAX_PAYLOAD) throw new SenderError('payload too large');
+    let parsed: unknown;
     try {
-      JSON.parse(payload);
+      parsed = JSON.parse(payload);
     } catch {
       throw new SenderError('payload is not JSON');
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new SenderError('payload is not a JSON object');
     }
 
     const row = ctx.db.event.insert({ id: 0n, type, source, priority, payload, t: ctx.timestamp });
     if (row.id > KEEP_EVENTS) ctx.db.event.id.delete(row.id - KEEP_EVENTS);
+    if (ctx.db.event.count() > KEEP_EVENTS + SWEEP_SLACK) {
+      const ids = [...ctx.db.event.iter()].map(r => r.id).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+      for (const id of ids.slice(0, ids.length - Number(KEEP_EVENTS))) ctx.db.event.id.delete(id);
+    }
 
     const key = `${type}:${source}`;
     const next = { key, type, source, priority, payload, t: ctx.timestamp };
-    if (ctx.db.latest.key.find(key)) ctx.db.latest.key.update(next);
-    else ctx.db.latest.insert(next);
+    if (ctx.db.latest.key.find(key)) {
+      ctx.db.latest.key.update(next);
+      return;
+    }
+    if (ctx.db.latest.count() >= MAX_LATEST) {
+      // Evict the stalest pair: live producers refresh theirs every second or so.
+      let oldest: typeof next | undefined;
+      for (const r of ctx.db.latest.iter()) {
+        if (!oldest || r.t.microsSinceUnixEpoch < oldest.t.microsSinceUnixEpoch) oldest = r;
+      }
+      if (oldest) ctx.db.latest.key.delete(oldest.key);
+    }
+    ctx.db.latest.insert(next);
   }
 );
 
-// Start a fresh demo run: drop the log and the latest state.
+// Start a fresh demo run: drop the log and the latest state. At most once a minute.
 export const clear = spacetimedb.reducer(ctx => {
+  const last = ctx.db.meta.key.find('clear');
+  if (last && ctx.timestamp.microsSinceUnixEpoch - last.t.microsSinceUnixEpoch < CLEAR_COOLDOWN_US) {
+    throw new SenderError('cleared less than a minute ago; try again shortly');
+  }
   for (const r of [...ctx.db.event.iter()]) ctx.db.event.id.delete(r.id);
   for (const r of [...ctx.db.latest.iter()]) ctx.db.latest.key.delete(r.key);
+  const stamp = { key: 'clear', t: ctx.timestamp };
+  if (last) ctx.db.meta.key.update(stamp);
+  else ctx.db.meta.insert(stamp);
 });

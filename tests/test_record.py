@@ -288,3 +288,41 @@ def test_follow_yaw_choices_match_kite_follow():
 
     act = next(a for a in build_parser()._actions if a.dest == "follow_yaw")
     assert tuple(act.choices) == YAW_CHOICES  # record keeps its own literal so --help never imports kite.follow
+
+
+def test_a_full_disk_keeps_the_live_telemetry_on_the_status_line(tmp_path, monkeypatch):
+    """A failed telemetry.jsonl write raised out of the telemetry thread and killed it: the status line then showed
+    the battery of the last packet before the disk filled (or none) for the rest of the flight."""
+    import errno
+
+    import kite.record as record_mod
+
+    real_open = open
+
+    class FullDisk:
+        def __init__(self, fh):
+            self.fh = fh
+
+        def write(self, s):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        def flush(self):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.fh.close()
+
+    def fake_open(path, *a, **kw):
+        fh = real_open(path, *a, **kw)
+        return FullDisk(fh) if str(path).endswith("telemetry.jsonl") else fh
+
+    monkeypatch.setattr(record_mod, "open", fake_open, raising=False)
+    drone, fake = fake_drone(dry_run=True)
+    rec = Recorder(LiveImage(), drone, RecordCfg(out_dir=str(tmp_path), max_s=0.8), {"source_kind": "fake"})
+    rec.run()
+    drone.close()
+    assert rec.last_state.get("yaw", 0) >= fake.get_current_state()["yaw"] - 2  # still following the packets
+    assert "telemetry.jsonl" in (rec.writer_error or "") and rec.tel_lines == 0

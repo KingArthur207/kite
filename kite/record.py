@@ -350,10 +350,13 @@ class Recorder:
                 last = st
                 rec = {"t_mono": round(time.monotonic(), 6), "t_wall": round(time.time(), 6)}
                 rec.update({k: _clean(v) for k, v in st.items()})
-                fh.write(json.dumps(rec) + "\n")
-                fh.flush()
+                try:  # a full disk loses the log, not the live battery / height on the status line
+                    fh.write(json.dumps(rec) + "\n")
+                    fh.flush()
+                    self.tel_lines += 1
+                except (OSError, ValueError) as e:
+                    self.writer_error = self.writer_error or f"telemetry.jsonl: {e!r}"
                 self.last_state = st
-                self.tel_lines += 1
 
     # ------------------------------------------------------------------ flight control (main thread)
     def _follow_key(self, ch: str) -> bool:

@@ -61,6 +61,8 @@ M_PER_DEG_LAT = 111320.0  # same constant as sim/src/config.ts toLatLng
 MOSS_BEARING_DEG = 315.0  # APPROXIMATE: Moss St towards Howard, NW (the SoMa grid is ~45 deg off north)
 STOP_WINDOW_S = 4.0  # speed window for the standing-still test (longer than the heading window: steadier)
 GRID_HZ = 10.0  # internal sampling of the smoothed track
+MIN_T, MAX_T = 946684800.0, 4102444800.0  # 2000-01-01 .. 2100-01-01 UTC: a fix outside is a placeholder or garbage
+MAX_SPAN_S = 24 * 3600.0  # a walk log longer than this has a fix with a wrong date (the grid would not fit in memory)
 PLACE = "Moss St at Howard St"
 
 
@@ -142,9 +144,13 @@ def _local(tag: str) -> str:
 ACCURACY_KEYS = ("accuracy", "horizontalaccuracy", "hacc", "haccuracy", "acc", "horizontal_accuracy")
 
 
+TIME_ERRORS = (ValueError, OverflowError, OSError)  # parse_time / datetime.timestamp on a garbled time
+
+
 def read_gpx(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
+    """Points with an unreadable time are skipped; if no point has a readable one, the first error is raised."""
     root = ET.parse(path).getroot()
-    fixes = []
+    fixes, bad = [], None
     for el in root.iter():
         if _local(el.tag) not in ("trkpt", "rtept"):
             continue
@@ -158,8 +164,14 @@ def read_gpx(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
         acc = next((_num(vals[k]) for k in ACCURACY_KEYS if k in vals), None)
         if acc is None and "hdop" in vals and _num(vals["hdop"]) is not None:
             acc = 5.0 * _num(vals["hdop"])  # rough: HDOP x ~5 m user range error
-        fixes.append(Fix(parse_time(vals["time"], tz), lat, lng, _num(vals.get("ele")), acc,
-                         _num(vals.get("speed")), _num(vals.get("course"))))
+        try:
+            t = parse_time(vals["time"], tz)
+        except TIME_ERRORS as e:
+            bad = bad or e
+            continue
+        fixes.append(Fix(t, lat, lng, _num(vals.get("ele")), acc, _num(vals.get("speed")), _num(vals.get("course"))))
+    if not fixes and bad is not None:
+        raise bad
     return fixes
 
 
@@ -180,6 +192,7 @@ CSV_COLS = {
 
 
 def read_csv(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
+    """Rows with an unreadable time are skipped; if no row has a readable one, the first error is raised."""
     text = Path(path).read_text(encoding="utf-8-sig")
     try:
         dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t")
@@ -195,28 +208,35 @@ def read_csv(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
     if col["time"] is None or col["lat"] is None or col["lng"] is None:
         raise ValueError(f"{path}: need time, lat and lon columns, got {rows[0]}")
     split_date = keys[col["time"]] == "time" and "date" in keys  # separate date and time-of-day columns
-    fixes = []
+    fixes, bad = [], None
     for r in rows[1:]:
         if len(r) < len(keys):
             continue
-        get = lambda f: r[col[f]] if col[f] is not None else None  # noqa: E731
+        get = lambda f: r[col[f]] if col[f] is not None else None  # noqa: E731, B023 (used at once)
         lat, lng, ts = _num(get("lat")), _num(get("lng")), get("time")
         if lat is None or lng is None or not ts or not ts.strip():
             continue
         if split_date and not re.search(r"\d{4}-\d{2}-\d{2}|^\d+(\.\d+)?$", ts):
             ts = f"{r[keys.index('date')].strip()} {ts.strip()}"
-        fixes.append(Fix(parse_time(ts, tz), lat, lng, _num(get("ele")), _num(get("accuracy")),
-                         _num(get("speed")), _num(get("course"))))
+        try:
+            t = parse_time(ts, tz)
+        except TIME_ERRORS as e:  # one garbled row (a logger killed mid-write) must not lose the whole walk
+            bad = bad or e
+            continue
+        fixes.append(Fix(t, lat, lng, _num(get("ele")), _num(get("accuracy")), _num(get("speed")), _num(get("course"))))
+    if not fixes and bad is not None:
+        raise bad
     return fixes
 
 
 def read_track(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
-    """GPX or CSV, by content. Sorted by time, one fix per timestamp, impossible coordinates dropped."""
+    """GPX or CSV, by content. Sorted by time, one fix per timestamp, impossible coordinates and times dropped
+    (before 2000 or from 2100 on: loggers write 1970 before the first fix, GPS week rollovers jump back ~20 years)."""
     head = Path(path).read_text(encoding="utf-8-sig", errors="replace")[:512].lstrip()
     fixes = read_gpx(path, tz) if head.startswith("<") else read_csv(path, tz)
     by_t = {}
     for f in fixes:
-        if -90 <= f.lat <= 90 and -180 <= f.lng <= 180 and not (f.lat == 0 and f.lng == 0) and math.isfinite(f.t):
+        if -90 <= f.lat <= 90 and -180 <= f.lng <= 180 and not (f.lat == 0 and f.lng == 0) and MIN_T <= f.t < MAX_T:
             by_t[f.t] = f
     return [by_t[t] for t in sorted(by_t)]
 
@@ -266,6 +286,9 @@ class Track:
         self.t, self.raw_x, self.raw_y, self.acc = t[keep], x[keep], y[keep], acc[keep]
         self.x, self.y = _kernel_fit(self.t, self.raw_x, self.raw_y, w[keep], self.t, smooth_s)
         self.t0, self.t1 = float(self.t[0]), float(self.t[-1])
+        if not self.t1 - self.t0 <= MAX_SPAN_S:
+            raise ValueError(f"the GPS fixes span {(self.t1 - self.t0) / 3600:.1f} h (epoch {self.t0:.0f} to "
+                             f"{self.t1:.0f} s), over {MAX_SPAN_S / 3600:g} h: a fix with a wrong date? Trim the log")
         self.max_gap_s, self.heading_window_s, self.stop_speed = max_gap_s, heading_window_s, stop_speed
         # regular grid: interpolated smoothed positions, then speed / heading / moving / held heading
         n = int(math.floor((self.t1 - self.t0) * GRID_HZ)) + 1
@@ -421,7 +444,9 @@ def read_recording(rec: str | Path) -> tuple[np.ndarray, np.ndarray, dict]:
     if (rec / "frames.csv").exists():
         with open(rec / "frames.csv", newline="") as fh:
             for r in csv.DictReader(fh):
-                if _num(r.get("t_wall")) is not None:
+                # src_t is the last column: a row cut short by a crash (the recorder flushes every 30 rows) lacks it,
+                # and its t_wall may be a truncated number, not a time
+                if _num(r.get("t_wall")) is not None and _num(r.get("src_t")) is not None:
                     idx.append(int(r["index"]))
                     tw.append(float(r["t_wall"]))
     if not tw and "started_wall" in meta:  # no frames: at least place the start

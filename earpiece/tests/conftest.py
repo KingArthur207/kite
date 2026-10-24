@@ -5,8 +5,15 @@ import time
 import numpy as np
 import pytest
 
+from hypothesis import settings
+
 from earpiece.app import Earpiece
 from earpiece.config import Cfg
+
+# Fuzz depth: the default keeps `scripts/check.sh quick` quick; HYPOTHESIS_PROFILE=thorough digs.
+settings.register_profile("default", max_examples=60, deadline=None)
+settings.register_profile("thorough", max_examples=3000, deadline=None)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
 
 # Tests never touch the network voices or real devices unless a test asks for it.
 LIVE_ANTHROPIC_KEY = os.environ.pop("ANTHROPIC_API_KEY", None)   # kept only for opt-in live tests
@@ -53,7 +60,7 @@ def wait_for(pred, timeout=5.0, step=0.02):
 def app(offline_speech):
     cfg = Cfg()
     cfg.speech.cache_dir = offline_speech / "cache"
-    cfg.net.udp_port, cfg.net.ws_port = free_port(), free_port()
+    cfg.net.udp_port, cfg.net.ws_port = 0, 0       # the OS picks free ports; start() reports them
     logs = []
     from earpiece.memory import MemoryStore
     mem = MemoryStore(project_id="", project_key="", store=offline_speech / "memory.json", log=logs.append)

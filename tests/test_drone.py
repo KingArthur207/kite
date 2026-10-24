@@ -466,6 +466,17 @@ def test_governor_clamps_rc():
     assert fake.rcs[-1] == (30, -30, 0, 30)
 
 
+def test_non_finite_stick_values_hover_instead_of_raising():
+    """A NaN / inf stick (a controller dividing by zero) used to raise out of rc() and end the flight loop."""
+    nan, inf = float("nan"), float("inf")
+    gov, fake = governed(max_rc=30)
+    gov.rc(nan, inf, -inf, 10)
+    assert fake.rcs[-1] == (0, 0, 0, 10)
+    d, fake_tello = make()
+    d.rc(nan, inf, -inf, 10)
+    assert fake_tello.sent[-1] == ("rc", 0, 0, 0, 10)
+
+
 def test_governor_ceiling_and_floor():
     gov, fake = governed(height_m=2.5, max_altitude_m=2.3, min_altitude_m=0.5)
     gov.rc(0, 0, 50, 0)
@@ -479,6 +490,13 @@ def test_governor_ceiling_and_floor():
     fake.tel.height_m = 0.7
     gov.rc(0, 0, -50, 0)
     assert -50 < fake.rcs[-1][2] < 0
+
+
+def test_ceiling_push_down_stays_within_max_rc():
+    """Above the ceiling the governor pushed down with a fixed -20, beyond a max_rc below 20."""
+    gov, fake = governed(height_m=2.5, max_altitude_m=2.3, max_rc=10)
+    gov.rc(0, 0, 50, 0)
+    assert fake.rcs[-1][2] == -10
 
 
 def test_governor_refuses_moves_across_the_limits():
@@ -526,3 +544,60 @@ def test_governor_hovers_when_video_or_telemetry_goes_stale_and_recovers():
     gov.rc(0, 40, 0, 0)
     assert fake.rcs[-1] == (0, 40, 0, 0)
     assert gov.check(now + 5.0, now + 5.0) == "hover"  # telemetry that stops updating also means hover
+
+
+def test_nan_or_future_frame_and_telemetry_stamps_mean_hover():
+    """NaN compared False with the timeout, so a NaN stamp (or one far in the future after the wall clock stepped
+    back) passed as fresh video / telemetry and the governor never hovered."""
+    nan = float("nan")
+    gov, fake = governed(frame_timeout_s=1.0, telemetry_timeout_s=1.0)
+    now = time.time()
+    fake.tel.t = now
+    assert gov.check(now, nan) == "hover"
+    assert gov.check(now, now + 3600.0) == "hover"
+    assert gov.check(now, now + 0.5) == "ok"  # within the timeout either way: a fresh frame
+    fake.tel.t = nan
+    assert gov.check(now, now) == "hover"
+    fake.tel.t = now + 3600.0
+    assert gov.check(now, now) == "hover"
+    fake.tel.t = now
+    assert gov.check(nan, now) == "hover"  # a broken clock is no evidence of live video either
+
+
+def test_land_resend_is_not_held_back_by_a_wall_clock_step(monkeypatch):
+    """The re-send interval was timed on time.time(): after the wall clock stepped back (NTP, a Wi-Fi switch) a
+    lost land was not re-sent until the clock caught up again. It is timed on a monotonic clock now."""
+    import kite.drone.safety as safety_mod
+
+    gov, fake = governed()
+    gov.land()
+    assert fake.lands == 1
+    fake._busy = False  # the land reply was lost, it still flies
+    gov._land_sent -= 3.0  # the 2 s re-send interval has passed
+    wall = time.time()
+    monkeypatch.setattr(safety_mod.time, "time", lambda: wall - 3600.0)  # the wall clock steps back an hour
+    fake.tel.t = wall
+    assert gov.check(wall, wall) == "land" and fake.lands == 2
+
+
+def test_land_resend_interval_runs_on_the_injected_clock():
+    mono = [100.0]
+    fake = FakeDrone()
+    gov = SafetyGovernor(fake, SafetyCfg(), clock=lambda: mono[0])
+    gov.land()
+    fake._busy = False
+    now = time.time()
+    fake.tel.t = now
+    mono[0] += 1.9
+    assert gov.check(now, now) == "land" and fake.lands == 1  # within 2 s: not yet
+    mono[0] += 0.2
+    assert gov.check(now, now) == "land" and fake.lands == 2
+
+
+def test_garbled_state_values_read_as_unknown():
+    """telemetry() did float(v) on any value: a string or a huge int raised out of the governor's check()."""
+    d, fake = make()
+    fake.state = {"yaw": "x", "pitch": [1], "h": 10**400, "tof": float("inf"), "bat": float("nan"), "vgx": 3}
+    tel = d.telemetry()
+    assert (tel.yaw_deg, tel.pitch_deg, tel.height_m, tel.tof_m, tel.battery_pct) == (None,) * 5
+    assert tel.vx == pytest.approx(0.3)

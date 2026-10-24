@@ -1,7 +1,6 @@
 """Routing under real-world mess: GPS jitter and drift, wrong turns and U-turns, flaky or
 rate-limited Google, and the wording the walker hears. No network: Google is faked."""
 
-import math
 import random
 import re
 import time
