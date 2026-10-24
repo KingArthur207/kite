@@ -14,7 +14,9 @@ import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
 import { clampToFence } from "./fence";
 import { SHOTS } from "./shots";
 import { startShot, shotCam } from "./shot";
+import { colliderOverlay } from "./colliders";
 import { look2, createPost } from "./look2";
+import { startCompare } from "./compare";
 
 // ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
@@ -44,7 +46,7 @@ const chestCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
 const cams = [droneCam, chestCam]; // index = camera id on the wire
 // ?debug=1: T swaps the on-screen drone view for a north-up view from TOP_VIEW_M over the walker,
 // low enough that its footprint (about 110 x 150 m) stays inside the tiles geofence.
-const TOP_VIEW_M = 120;
+const TOP_VIEW_M = Number(query.get("top")) || 120;   // ?top=<m> lowers it (collider screenshots)
 const debug = query.get("debug") === "1";
 const topCam = new THREE.PerspectiveCamera(50, aspect, 1, 1000);
 let topView = false;
@@ -96,6 +98,8 @@ const body = new THREE.Mesh(
 scene.add(body);
 const metrics = metricsOn ? startMetrics({ walker, scene, walls: world.walls! }, query) : null;
 if (shot) body.visible = false;   // the shot has its own walker model
+// ?colliders=1: every collider and the walker's circle, drawn on screen only (colliders.ts).
+const colliders = query.get("colliders") === "1" && world.walls ? colliderOverlay(scene, world.walls(0, 0, Infinity) as number[][], WALKER_RADIUS) : null;
 
 function forward() {
   const h = THREE.MathUtils.degToRad(walker.heading);
@@ -141,11 +145,14 @@ view.appendChild(renderer.domElement);
 const postReady = look2 && worldName === "moss" ? createPost(renderer, scene) : Promise.resolve(null);
 let post: ((cam: THREE.Camera) => void) | null = null;
 void postReady.then((p) => { post = p; }).catch((e) => console.error("[look2] post-processing off", e));
-const resize = () => renderer.setSize(window.innerWidth, window.innerHeight);
+const resize = () => renderer.setSize(view.clientWidth, view.clientHeight);
 if (!shot) { window.addEventListener("resize", resize); resize(); }
+// ?compare=1 (compare.ts): Street View beside the sim, synced to the drone camera.
+const compare = query.get("compare") === "1" && !shot && !metricsOn
+  ? startCompare({ walker, canvas: renderer.domElement, view }) : null;
 
 function drawScreen() {
-  const W = window.innerWidth, H = window.innerHeight;
+  const W = view.clientWidth, H = view.clientHeight;
   renderer.setScissor(0, 0, W, H);
   renderer.setClearColor(0x000000);
   renderer.clear();
@@ -155,6 +162,7 @@ function drawScreen() {
   renderer.setScissor(x, y, w, h);
   world.view?.("screen");                          // tiles on (they may be off for ?detector=osm capture)
   if (world.overlay) world.overlay.visible = true; // screen only, never in camera frames
+  if (colliders) { colliders.update(world.solids(), walker); colliders.group.visible = true; }
   const cam = topView ? topCam : worldName === "tiles" ? chaseCam : droneCam;
   if (post) post(cam); else renderer.render(scene, cam);
   const iw = w * 0.25, ih = iw / aspect, pad = 10;
@@ -162,6 +170,7 @@ function drawScreen() {
   renderer.setScissor(x + w - iw - pad, y + pad, iw, ih);
   renderer.render(scene, chestCam);
   if (world.overlay) world.overlay.visible = false;
+  if (colliders) colliders.group.visible = false;
 }
 
 // --- sockets
@@ -224,6 +233,7 @@ window.addEventListener("blur", () => keys.clear());
 
 // --- movement + collision (AABB on the ground plane)
 let collisions = 0;
+const SLIDE_DEG = [20, -20, 40, -40, 60, -60];   // step deflections tried when the straight step is blocked
 let touching = false;
 let status = "";
 let lastDebug = -1e9;
@@ -242,19 +252,30 @@ function step(dt: number) {
   const dir = (keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0);
   const boxes = world.solids();
   const here = hits(walker.x, walker.n, boxes);
-  let blocked = false;
+
   let moved = false;
   if (dir !== 0) {
-    const f = forward();
-    const nx = walker.x + f.x * dir * WALK_SPEED * dt;
-    const nn = walker.n - f.z * dir * WALK_SPEED * dt;
+    const f = forward(), d = dir * WALK_SPEED * dt;
     // Block only on boxes we aren't already inside, so a car that drove into us can't pin us.
-    blocked = hits(nx, nn, boxes).some((b) => !here.includes(b));
-    if (!blocked) { walker.x = nx; walker.n = nn; moved = true; }
+    const free = (dx: number, dn: number) => !hits(walker.x + dx, walker.n + dn, boxes).some((b) => !here.includes(b));
+    const blocked = !free(f.x * d, -f.z * d);
+    // Glancing contact slides along the obstacle (the step turned up to 60 degrees, shortened by the cosine)
+    // instead of stopping dead: brushing a trunk or a curb no longer freezes the walker.
+    const slide = blocked ? SLIDE_DEG.map((a) => THREE.MathUtils.degToRad(a)).find((a) => {
+      const c = Math.cos(a), s = Math.sin(a);
+      return free((f.x * c + f.z * s) * d * c, (-f.z * c + f.x * s) * d * c);
+    }) : 0;
+    if (slide !== undefined) {
+      const c = Math.cos(slide), s = Math.sin(slide);
+      walker.x += (f.x * c + f.z * s) * d * c;
+      walker.n += (-f.z * c + f.x * s) * d * c;
+      moved = true;
+    }
   }
   // Count each new contact once; the 10 cm margin stops creeping up to a wall from re-counting.
   const contact = hits(walker.x, walker.n, boxes, WALKER_RADIUS + 0.1).length > 0;
   if (contact && !touching) collisions++;
+  if (colliders) (window as unknown as { __kiteContacts: unknown }).__kiteContacts = hits(walker.x, walker.n, boxes, WALKER_RADIUS + 0.1);
   touching = contact;
 
   const s = moved ? "walking" : "stopped";
@@ -283,6 +304,7 @@ function frame(now: number) {
   world.updateTiles?.();
   view.classList.toggle("hidden", black);
   if (!black) drawScreen();
+  compare?.frame();
   if (metrics) hud.textContent = metrics.hud(); else drawHud();
   requestAnimationFrame(frame);
 }

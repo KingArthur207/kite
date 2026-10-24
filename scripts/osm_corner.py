@@ -44,6 +44,14 @@ CAR_ROADS = {"primary", "secondary", "tertiary", "residential", "unclassified",
 MPH = 0.44704
 DEFAULT_MPH = {"residential": 15}   # CA alley limit; Moss has no maxspeed tag
 MOSS, HOWARD = 8916291, 1469149564
+# Street View is the authority for how Moss looks. Measured Oct 24 from Static views at 5 panoramas 16 to 99 m
+# SE of the zebra (camera height 1.95 +/- 0.1 m, from a parked Honda CR-V's wheelbase and Howard's lane width,
+# consistent with the OSM building faces to 1-6%): Moss's roadway is 5.6 to 6.1 m curb to curb, 5.9 on average,
+# against DataSF's 6.39 (7.92 past 94 m). DataSF's SW curb agrees with Street View within the 0.4 m scatter;
+# its NE curb sits about 1 m too far NE, which squeezed the NE sidewalk to 1.5 m (Street View: 2.0 to 3.0 m).
+# So the NE curb is the SW curb plus this width. Building ground floors (bays clipped at the property line) and the
+# demo walk line keep DataSF's NE curb (`hi_datasf`), so buildings and the metrics course don't move.
+SV_MOSS_ROADWAY_M = 5.9
 # Street furniture nodes kept in moss.json `furniture` (kind = the first matching tag value).
 FURNITURE_FILTERS = ['"highway"~"^(street_lamp|traffic_signals|stop|give_way)$"', '"natural"="tree"',
                      '"emergency"="fire_hydrant"',
@@ -134,15 +142,16 @@ def cumlen(pts):
     return s
 
 
-def curbs_at(r, s):
-    """(lo, hi) curb offsets of road r at distance s along it."""
+def curbs_at(r, s, hi="hi"):
+    """(lo, hi) curb offsets of road r at distance s along it. hi="hi_datasf": Moss's NE curb before Street View."""
     if "lo" not in r:
         return r["curbs"]
+    hi = hi if hi in r else "hi"
     ss = cumlen(r["pts"])
     for i in range(len(ss) - 1):
         if s <= ss[i + 1] or i == len(ss) - 2:
             t = 0 if ss[i + 1] == ss[i] else max(0.0, min(1.0, (s - ss[i]) / (ss[i + 1] - ss[i])))
-            return (r["lo"][i] + (r["lo"][i + 1] - r["lo"][i]) * t, r["hi"][i] + (r["hi"][i + 1] - r["hi"][i]) * t)
+            return (r["lo"][i] + (r["lo"][i + 1] - r["lo"][i]) * t, r[hi][i] + (r[hi][i + 1] - r[hi][i]) * t)
     return r["curbs"]
 
 
@@ -286,6 +295,9 @@ def layout(way, buildings, sf=None):
         sidewalk = sw_data
     if real:
         los, his = [round(a, 2) for a, _ in real], [round(b, 2) for _, b in real]
+        datasf_his = his
+        if way["id"] == MOSS:   # Moss runs SE, so lo is the SW curb and hi the NE curb
+            his = [round(a + SV_MOSS_ROADWAY_M, 2) for a in los]
         lo, hi = statistics.median(los), statistics.median(his)
         if lane_w != LANE_W:   # untagged alley: the lane fills the real roadway
             lane_w = (hi - lo - PARKING_W * (park_l + park_r)) / lanes
@@ -311,6 +323,8 @@ def layout(way, buildings, sf=None):
            "sidewalk_src": "DataSF 4g86-grxu" if sw_data else "estimate"}
     if real:
         out["lo"], out["hi"] = los, his
+        if his != datasf_his:
+            out["hi_datasf"] = datasf_his
     return out
 
 
@@ -337,7 +351,7 @@ def ground_footprints(buildings, roads):
     for r in roads:
         if "lo" not in r or r["sidewalk_src"] == "estimate":
             continue
-        for offs, sgn in ((r["hi"], 1), (r["lo"], -1)):
+        for offs, sgn in ((r.get("hi_datasf", r["hi"]), 1), (r["lo"], -1)):
             prop = offset(r["pts"], [o + sgn * r["sidewalk"] for o in offs])
             lines.append((r, prop, sgn))
     for b in buildings:
@@ -484,11 +498,11 @@ def build(raw, sf=None):
     # between the curb and the narrowest NE face along the walk (Moss runs SE: left (+) is NE).
     faces = []
     for k in range(int(SPAWN_BEFORE_CROSSING) + 3):
-        hi_k = curbs_at(moss, s_cross + k)[1]
+        hi_k = curbs_at(moss, s_cross + k, "hi_datasf")[1]
         o = point_at(moss["pts"], s_cross + k, hi_k)
         u = unit(sub(point_at(moss["pts"], s_cross + k + 0.5), point_at(moss["pts"], s_cross + k)))
-        faces.append((hi_k + ray_hit(o, left(u), ground_polys, 20.0), hi_k))
-    ne_face, ne_curb = min(faces, key=lambda f: f[0] - f[1])
+        faces.append((hi_k + ray_hit(o, left(u), ground_polys, 20.0), hi_k, curbs_at(moss, s_cross + k)[1]))
+    ne_face, ne_curb, ne_curb_now = min(faces, key=lambda f: f[0] - f[1])   # ne_curb: DataSF's, for the walk line
     ne_off = (ne_curb + ne_face) / 2
     hpts = offset(howard["pts"], hs_off)
     def on_howard(off):   # where a Moss offset line meets Howard's south sidewalk centreline
@@ -499,7 +513,7 @@ def build(raw, sf=None):
     # Spawn on the NE sidewalk centre (curb + surveyed width / 2): back there the bays overhang from 3 m up
     # and don't narrow the walk, so the narrowest-face line above would put it about 0.8 m off the curb.
     s_spawn = s_cross + SPAWN_BEFORE_CROSSING
-    spawn_off = curbs_at(moss, s_spawn)[1] + moss["sidewalk"] / 2
+    spawn_off = curbs_at(moss, s_spawn, "hi_datasf")[1] + moss["sidewalk"] / 2
     corner, far = on_howard(ne_off), on_howard(sw_off)
     # The first leg slants toward the curb, so nudge the spawn NE until it passes every street tree trunk
     # (they collide in the sim) with TRUNK_CLEAR to spare. The nudge at a tree scales with its share of the leg.
@@ -530,8 +544,8 @@ def build(raw, sf=None):
                                  round(max(h - l for l, h in zip(moss["lo"], moss["hi"])), 2)] if "lo" in moss else None,
         "moss_row_building_to_building_m": round(sum(moss["row"]), 2) if moss["row"] else None,
         "moss_sidewalk_m": round(moss["sidewalk"], 2),
-        "moss_ne_sidewalk_narrowest_m": round(ne_face - ne_curb, 2),
-        "moss_ne_walk_line_from_curb_m": round(ne_off - ne_curb, 2),
+        "moss_ne_sidewalk_narrowest_m": round(ne_face - ne_curb_now, 2),
+        "moss_ne_walk_line_from_curb_m": round(ne_off - ne_curb_now, 2),
         "moss_spawn_from_curb_m": round(spawn_off - curbs_at(moss, s_spawn)[1], 2),
         "moss_length_m": round(along_len(moss["pts"]), 1),
         "zebra_curb_to_curb_m": round(zebra["across"][1] - zebra["across"][0], 2),

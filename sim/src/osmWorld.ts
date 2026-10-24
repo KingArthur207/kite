@@ -97,10 +97,10 @@ export function buildOsmWorld(opts: {
   const buildings = opts.skipWalls?.size ? data.buildings : data.buildings.map((b) => styled(b, data.roads));
   const world = { ...data, buildings };
   const { garages, windows, stoops } = buildFacades(visible, buildings, data.road_quads, opts.skipWalls, data.route);
-  buildStreets(visible, world, garages);
+  const furniture = buildStreets(visible, world, garages);   // poles, signals, hydrants: they collide
   console.info(`[osmWorld] ${buildings.length} buildings, ${windows} windows and doors, ${garages.length} garages`);
 
-  const walls: Wall[] = [...data.curbs, ...stoops];
+  const walls: Wall[] = [...data.curbs, ...stoops, ...furniture];
   // Ground floors: footprints are roof outlines, and bays overhanging the sidewalk (from 3 m up) don't block.
   for (const b of buildings) {
     const g = (b as { ground?: number[][] }).ground ?? b.pts;
