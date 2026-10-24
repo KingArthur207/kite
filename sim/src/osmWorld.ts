@@ -3,6 +3,9 @@
 import * as THREE from "three";
 import moss from "../public/osm/moss.json";
 import { spawnMossActors } from "./mossActors";
+import { addSkyAndSun, tuneRenderer } from "./osmLook";
+import { buildFacades, type Building } from "./osmFacades";
+import { buildStreets, ribbon, type StreetData } from "./osmStreet";
 
 type P = [number, number];
 type Quad = P[];
@@ -11,13 +14,12 @@ export type Wall = [number, number, number, number];
 /** A car lane: points in travel order, metres east/north. */
 export interface Lane { road: number; name: string; width: number; speed_mps: number; pts: P[] }
 
-interface MossData {
+interface MossData extends StreetData {
   spawn: { x: number; y: number; heading: number };
   route: P[];
-  buildings: { id: number; h: number; pts: P[] }[];
+  buildings: Building[];
   lanes: Lane[];
-  crossings: { x: number; y: number; markings: string; u: P; across: P }[];
-  road_quads: Quad[]; track_quads: Quad[]; sidewalk_quads: Quad[];
+  crossings: StreetData["crossings"];
   curbs: Wall[];
 }
 const data = moss as unknown as MossData;
@@ -28,6 +30,7 @@ export interface WorldExtras {
   walls?: (x: number, n: number, r: number) => object[];
   overlay?: THREE.Object3D;   // screen-only helpers (route line), hidden in camera frames
   place?: string;
+  tune?: (r: THREE.WebGLRenderer) => void;   // renderer settings; main.ts applies them to both renderers
 }
 
 export const lanes: Lane[] = data.lanes;
@@ -36,60 +39,15 @@ export const crossings = data.crossings;
 
 const CURB_H = 0.15;
 const v3 = (p: P, y: number) => new THREE.Vector3(p[0], y, -p[1]);
-const mat = (color: number, extra: THREE.MeshLambertMaterialParameters = {}) =>
-  new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide, ...extra });
 
 // Flat quads at height y as one mesh.
 function flat(quads: Quad[], y: number, m: THREE.Material) {
   const pos: number[] = [];
-  for (const q of quads) for (const i of [0, 1, 2, 0, 2, 3]) pos.push(q[i][0], y, -q[i][1]);
+  for (const q of quads) for (const i of [0, 1, 2, 0, 2, 3]) pos.push(...v3(q[i], y).toArray());
   const g = new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   g.computeVertexNormals();
   return new THREE.Mesh(g, m);
-}
-
-// Quads raised to height h: top plus four side faces (the curb faces).
-function slab(quads: Quad[], h: number, m: THREE.Material) {
-  const pos: number[] = [];
-  const push = (...ps: THREE.Vector3[]) => ps.forEach((p) => pos.push(p.x, p.y, p.z));
-  for (const q of quads) {
-    const t = q.map((p) => v3(p, h)), b = q.map((p) => v3(p, 0));
-    push(t[0], t[1], t[2], t[0], t[2], t[3]);
-    for (let i = 0; i < 4; i++) {
-      const j = (i + 1) % 4;
-      push(b[i], b[j], t[j], b[i], t[j], t[i]);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
-  g.computeVertexNormals();
-  return new THREE.Mesh(g, m);
-}
-
-function zebraQuads(): Quad[] {
-  const out: Quad[] = [];
-  for (const c of data.crossings) {
-    if (!["zebra", "yes", "ladder"].includes(c.markings)) continue;
-    const [ux, uy] = c.u, nx = -uy, ny = ux;          // u along the road, n across it
-    for (let o = c.across[0] + 0.5; o < c.across[1] - 0.3; o += 1.0) {
-      const cx = c.x + nx * o, cy = c.y + ny * o;
-      const corner = (a: number, b: number): P => [cx + ux * a + nx * b, cy + uy * a + ny * b];
-      out.push([corner(-1.5, -0.25), corner(1.5, -0.25), corner(1.5, 0.25), corner(-1.5, 0.25)]);
-    }
-  }
-  return out;
-}
-
-function ribbon(pts: P[], w: number): Quad[] {
-  const out: Quad[] = [];
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const [a, b] = [pts[i], pts[i + 1]];
-    const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    const nx = (-(b[1] - a[1]) / d) * w / 2, ny = ((b[0] - a[0]) / d) * w / 2;
-    out.push([[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]]);
-  }
-  return out;
 }
 
 function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
@@ -102,33 +60,16 @@ function distToSeg(x: number, n: number, [x1, n1, x2, n2]: Wall) {
  *  osmMeshes is the drawn street (ground, roads, buildings); the tiles world shows it to the capture cameras only. */
 export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: number; n: number }[] } = {}) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x9ec9ff);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x666655, 1.6));
-  const sun = new THREE.DirectionalLight(0xffffff, 1.5);
-  sun.position.set(30, 60, 20);
-  scene.add(sun);
-
+  // Sun shadows cover the demo walk and the corner; the sky HDRI lights everything else.
+  addSkyAndSun(scene, { x: 15, n: -25 }, 160);
   const visible = new THREE.Group();
   scene.add(visible);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), mat(0x8a8780));
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.y = -0.02;
-  visible.add(ground);
-  visible.add(flat(data.road_quads, 0, mat(0x3a3a3c)));
-  visible.add(flat(data.track_quads, 0.005, mat(0x4f6b52)));   // Howard's protected cycle track
-  visible.add(flat(zebraQuads(), 0.01, mat(0xf2f2f2)));
-  visible.add(slab(data.sidewalk_quads, CURB_H, mat(0xbdbdb5)));
+  const { garages, windows } = buildFacades(visible, data.buildings, data.road_quads);
+  buildStreets(visible, data, garages);
+  console.info(`[osmWorld] ${data.buildings.length} buildings, ${windows} windows and doors, ${garages.length} garages`);
 
-  // Buildings: extruded footprints, a few shades so faces read in the camera frames.
-  const shades = [0xc9a27e, 0xa7b4c2, 0xd8cfc4, 0xb98b73, 0x8f9aa8, 0xcfc39b, 0xb0a99f];
   const walls: Wall[] = [...data.curbs];
-  data.buildings.forEach((b, i) => {
-    const shape = new THREE.Shape(b.pts.map(([x, y]) => new THREE.Vector2(x, y)));
-    const g = new THREE.ExtrudeGeometry(shape, { depth: b.h, bevelEnabled: false });
-    g.rotateX(-Math.PI / 2);                                   // shape y (north) -> -z, depth -> up
-    visible.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: shades[i % shades.length] })));
-    for (let k = 0; k + 1 < b.pts.length; k++) walls.push([...b.pts[k], ...b.pts[k + 1]] as Wall);
-  });
+  for (const b of data.buildings) for (let k = 0; k + 1 < b.pts.length; k++) walls.push([...b.pts[k], ...b.pts[k + 1]] as Wall);
 
   // Planned demo walk, drawn faintly on screen only (main.ts hides it for camera frames).
   const overlay = new THREE.Group();
@@ -143,6 +84,7 @@ export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: num
     walls: (x, n, r) => walls.filter((w) => distToSeg(x, n, w) < r),
     overlay,
     place: "Moss St at Howard St",
+    tune: tuneRenderer,
   };
   const actors = opts.actors === false ? null : spawnMossActors(scene, opts.walkers ?? (() => []));
   return { scene, osmMeshes: visible, update: (dt: number) => actors?.update(dt), solids: () => actors?.solids() ?? [], ...extras };
