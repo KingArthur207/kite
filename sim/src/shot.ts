@@ -68,6 +68,7 @@ export function startShot(opts: {
   // --- cast: the walker (with a white cane), the drone, the turning car
   const walkerObj = new THREE.Group();
   scene.add(walkerObj);
+  walkerObj.visible = !shot.pov;
   walkerObj.add(cane());
   let walk: THREE.AnimationAction | null = null, idle: THREE.AnimationAction | null = null, mixer: THREE.AnimationMixer | null = null;
   const loads: Promise<unknown>[] = [
@@ -182,7 +183,7 @@ export function startShot(opts: {
     const head = new THREE.Vector3(walker.x, 2.5, -walker.n);
     let stack = 0;
     for (const c of cues) if (t >= c.from && t < c.to) label(head, c.text, c.color ?? "#fff", fade(c), stack++);
-    if (metrics) {
+    if (metrics && !shot.pov) {
       const live = metrics.live();
       for (const o of live.obstacles) {
         const near = o.pos.distanceTo(new THREE.Vector3(walker.x, 0, -walker.n));
@@ -261,8 +262,9 @@ export function startShot(opts: {
     t += dt;
     if (metrics) {
       metrics.step(dt);
+      if (shot.pov && shot.walk) stepWalker(dt);   // overrides the metrics walker; its obstacles still move
       const live = metrics.live();
-      if (live.collisions > seenCollisions) cues.push({ from: t, to: t + 1.6, text: "Collision", ring: true, color: "#ff5a4e" });
+      if (!shot.pov && live.collisions > seenCollisions) cues.push({ from: t, to: t + 1.6, text: "Collision", ring: true, color: "#ff5a4e" });
       seenCollisions = live.collisions;
     } else {
       world.update(dt);

@@ -40,6 +40,7 @@ export interface Shot {
   cues?: Cue[];
   fog?: [number, number];
   hideDrone?: boolean;          // the camera is the drone
+  pov?: boolean;                // the walker's chest camera: no walker model or metrics labels; `walk` overrides the metrics walker
   marker?: boolean;             // a steady ring under the walker, for wide shots
   still: number;                // shot second for the README still
   camera(k: ShotCtx): CamPose;
@@ -164,5 +165,24 @@ const explainer = (() => {
   } satisfies Shot;
 })();
 
-export const SHOTS: Record<string, Shot> = { establishing, follow, corner, explainer };
+// (e) POV: the walker's chest camera, for the passive demo (spec section 4). The metrics walk's obstacles (a person
+// crossing, the bin, the head-height sign; metrics.ts, seed 1, real time) on Moss, but the walker is scripted along
+// the route to the zebra curb. It never reacts (the blind metrics walker jams between the bin and the wall). No
+// turning car: the chest path only beeps for it, it never says "Car", so it would end on "Path is clear" with a car
+// in front (the metrics car still turns in at about 59 s, so the shot ends at 58). The detector runs on this video,
+// so the lens matches what scripts/pov.sh tells it: 1.3 m up, POV_PITCH down, fx 700 px at 960 wide (LIVE_FX).
+// Record at --fps 25 or 50: metrics steps in 0.02 s, so other rates run its obstacles fast.
+export const POV_HEIGHT = 1.3, POV_PITCH = 10, POV_FX_960 = 700;
+const pov: Shot = {
+  query: { world: "moss", metrics: "1", mode: "blind", trials: "1", seed: "1", speed: "1" },
+  duration: 58, fov: (2 * Math.atan(270 / POV_FX_960) * 180) / Math.PI, still: 37.5, pov: true, hideDrone: true,
+  walk: { from: 0, stops: [{ at: S_CURB - 0.8, until: 1e9 }] },
+  camera: (k) => {
+    const h = k.heading * DEG, f = new THREE.Vector3(Math.sin(h), -Math.tan(POV_PITCH * DEG), -Math.cos(h));
+    const pos = k.walker.clone().setY(POV_HEIGHT);
+    return { pos, look: pos.clone().add(f) };
+  },
+};
+
+export const SHOTS: Record<string, Shot> = { establishing, follow, corner, explainer, pov };
 export const DRONE_HEIGHT = HEAD_TOP + DRONE_ABOVE_HEAD;
