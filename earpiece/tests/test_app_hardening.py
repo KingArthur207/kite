@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import threading
 import time
 
+from conftest import wait_for
 from earpiece.events import Msg
 
 
@@ -21,3 +23,39 @@ def test_control_loop_survives_hazards_added_from_another_thread(app):
         i += 1
     assert i > 1000
     assert not [m for m in app.logs if m.startswith("[control]")]
+
+
+def test_cycling_place_names_never_spawn_a_thread_per_message(app):
+    """Every new `place` in a position fix started a memory-lookup thread, with no limit."""
+    peak = 0
+    for i in range(500):
+        app.handle(Msg("position", "phone", data={"lat": 37.8, "lng": -122.4, "place": f"Street {i}"}))
+        peak = max(peak, sum(1 for t in threading.enumerate() if t.name == "place-notes"))
+    assert peak <= 1
+    assert len(app._noted_places) <= app.MAX_NOTED_PLACES
+    assert wait_for(lambda: not any(t.name == "place-notes" for t in threading.enumerate()), 3)
+    app.handle(Msg("position", "phone", data={"lat": 37.8, "lng": -122.4, "place": "Moss Street"}))
+    assert "Moss Street" in app._noted_places            # lookups still happen once the worker is free
+
+
+def test_hazard_table_is_bounded(app):
+    """Hazards live up to 120 s and each one goes into every prompt Claude gets."""
+    for i in range(1000):
+        app.handle(Msg("hazard", "nav", kind="construction", key=f"site-{i}", ttl=120.0, priority="info"))
+    assert len(app.hazards) == app.MAX_HAZARDS
+    assert set(app.hazards) == {f"site-{i}" for i in range(1000 - app.MAX_HAZARDS, 1000)}   # newest kept
+    assert len(app.context()["hazards"]) == app.MAX_HAZARDS
+
+
+def test_inbound_memories_are_rate_limited(app):
+    """Each `memory` message rewrites the local store and (with Moss keys) syncs to the cloud."""
+    for i in range(100):
+        app.handle(Msg("memory", "dashboard", kind="note", text=f"note {i}", data={}))
+    assert app.memory.stats["writes"] == app.MEMORY_WRITES_PER_MIN
+    assert any("over 30 a minute" in m for m in app.logs)
+
+
+def test_perception_source_set_is_bounded(app):
+    for i in range(1000):
+        app.handle(Msg("obstacles", f"cam{i}", seq=1, objects=[]))
+    assert len(app.perception_sources) == app.MAX_SOURCES
