@@ -65,13 +65,13 @@ class Clock:
         return self.t
 
 
-def make_link(fake=None, clock=None):
+def make_link(fake=None, clock=None, token=""):
     fake = fake or FakeSpacetime()
     http = httpx.Client(transport=httpx.MockTransport(fake))
     bridge = SpacetimeBridge("http://st.test", "kite", source="caregiver", log=lambda *_: None,
                              start=False, max_calls_per_s=1000, backoff_s=0.001)
     link = cv.KiteLink("http://st.test", "kite", http=http, bridge=bridge, clock=clock or Clock(),
-                       log=lambda *_: None, cache_s=0)
+                       log=lambda *_: None, cache_s=0, token=token)
     return link, fake
 
 
@@ -176,6 +176,33 @@ def test_dry_run_never_pushes():
     t = cv.Tools(link, log=lambda *_: None, dry_run=True)
     assert json.loads(t.call("message_walker", '{"text": "hello"}'))["sent"] is False
     assert fake.pushes == []
+
+
+@pytest.mark.parametrize("line_token, spoken", [("s3cret", True), ("", False), ("other", False)])
+def test_an_earpiece_that_requires_the_token_speaks_only_signed_line_messages(line_token, spoken):
+    """Found by the headless end-to-end run: with KITE_CAREGIVER_TOKEN set on the earpiece, the
+    line's messages were pushed unsigned, so Grok said "sent" and the walker never heard them."""
+    import time
+
+    from earpiece.spacetime import CaregiverInbox
+    fake = FakeSpacetime()
+    link, _ = make_link(fake, clock=time.time, token=line_token)
+    heard: list = []
+    inbox = CaregiverInbox(heard.append, "http://st.test", "kite", log=lambda *_: None, start=False, token="s3cret")
+    http = httpx.Client(transport=httpx.MockTransport(fake))
+    inbox.poll(http)                                         # startup: older rows are history
+    assert json.loads(cv.Tools(link, log=lambda *_: None).call(
+        "message_walker", '{"text": "Running five minutes late"}'))["sent"] is True
+    [call] = fake.pushes
+    fake.events.append([1, call["type"], call["source"], call["priority"], call["payload"], [int(time.time() * 1e6)]])
+    inbox.poll(http)
+    assert [m.text for m in heard] == (["Message from your caregiver: Running five minutes late"] if spoken else [])
+    assert inbox.stats["unsigned"] == (0 if spoken else 1)
+    payload = json.loads(call["payload"])
+    want = ["type", "source", "priority", "text", "key"] + (["ts", "sig"] if line_token else [])
+    assert list(payload) == want                             # the dashboard's order, then its signature
+    if line_token:
+        assert payload["key"] == f"caregiver-{payload['ts']}"
 
 
 # ------------------------------------------------------------------ walk_status and alerts
@@ -476,6 +503,151 @@ def test_cli_dry_run_prints_tools_and_never_connects(monkeypatch, capsys):
     assert main(["caregiver", "--dry-run", "--db", "kite"]) == 0
     out = capsys.readouterr().out
     assert '"walk_status"' in out and "Lyon Street" in out and fake.pushes == []
+
+
+# ------------------------------------------------------------------ headless: recordings in, files out
+
+def _wav(path, pcm: bytes, rate=24000, channels=1):
+    import wave
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(channels)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return str(path)
+
+
+def _tone(seconds: float, rate=24000, channels=1) -> bytes:
+    import numpy as np
+    t = np.arange(int(seconds * rate)) / rate
+    x = (8000 * np.sin(2 * np.pi * 300 * t)).astype("<i2")
+    return np.repeat(x[:, None], channels, axis=1).tobytes()
+
+
+def test_read_wav_mixes_down_and_resamples(tmp_path):
+    import numpy as np
+    pcm = cv.read_wav_pcm16(_wav(tmp_path / "s.wav", _tone(0.5, 48000, 2), 48000, 2), 24000)
+    x = np.frombuffer(pcm, dtype="<i2")
+    assert x.size == 12000 and 7000 < np.abs(x).max() <= 8000
+    same = _tone(0.25)
+    assert cv.read_wav_pcm16(_wav(tmp_path / "m.wav", same), 24000) == same
+    with pytest.raises(ValueError):
+        cv.read_wav_pcm16(_wav(tmp_path / "empty.wav", b""), 24000)
+
+
+def test_recorded_turn_streams_like_the_mic_then_waits_for_turn_detection():
+    async def go():
+        ws = FakeWS()
+        s = cv.Session(ws, tools()[0], log=lambda *_: None)
+        pcm = _tone(0.25)
+        turn = asyncio.create_task(cv.send_recorded_turn(s, pcm, tail_s=0.5, pace=0, start_timeout_s=2))
+        await asyncio.sleep(0.05)
+        await s.handle({"type": "response.created"})          # server VAD answered
+        assert await turn is True
+        appends = [m for m in ws.sent if m["type"] == "input_audio_buffer.append"]
+        assert sent_types(ws) == ["input_audio_buffer.append"] * len(appends)     # no manual commit
+        audio = b"".join(base64.b64decode(m["audio"]) for m in appends)
+        assert audio == pcm + b"\x00" * (12000 * 2)           # the recording, then 0.5 s of silence
+        assert max(len(base64.b64decode(m["audio"])) for m in appends) == 2400 * 2   # 100 ms chunks
+    asyncio.run(go())
+
+
+def test_recorded_turn_commits_by_hand_when_turn_detection_stays_quiet():
+    async def go():
+        ws = FakeWS()
+        logs: list = []
+        s = cv.Session(ws, tools()[0], log=logs.append)
+        assert await cv.send_recorded_turn(s, _tone(0.1), tail_s=0.1, pace=0, start_timeout_s=0.05,
+                                           log=logs.append) is False
+        assert sent_types(ws)[-2:] == ["input_audio_buffer.commit", "response.create"]
+        assert not s.idle.is_set() and any("by hand" in m for m in logs)
+    asyncio.run(go())
+
+
+def test_headless_cli_never_opens_a_sound_device(monkeypatch, tmp_path):
+    """--input-wav turns against a scripted server: tool calls, per-turn WAVs and the transcript,
+    with sounddevice unimportable and Audio forbidden."""
+    import functools
+    import sys
+    import wave
+
+    from websockets.asyncio.server import serve
+
+    monkeypatch.setitem(sys.modules, "sounddevice", None)          # any import of it now fails
+    monkeypatch.setattr(cv, "Audio", lambda *a, **k: pytest.fail("headless mode opened an audio device"))
+    monkeypatch.setattr(cv, "send_recorded_turn", functools.partial(cv.send_recorded_turn, tail_s=0.3, pace=0))
+    monkeypatch.setattr(cv, "_xai_key", lambda: "test-key")
+    link, fake = make_link(clock=time_clock())
+    live_walk(fake)
+    monkeypatch.setattr(cv, "KiteLink", lambda **kw: link)
+    script = [("walk_status", "{}", "She is on Lyon Street."),
+              ("message_walker", json.dumps({"text": "Running five minutes late"}), "Sent.")]
+
+    async def server(ws):
+        await ws.recv()                                               # session.update
+        await ws.send(json.dumps({"type": "session.updated", "session": {}}))
+        for name, args, said in script:
+            heard_audio = False
+            async for raw in ws:                                      # wait for the silence after speech
+                m = json.loads(raw)
+                pcm = base64.b64decode(m.get("audio", ""))
+                heard_audio |= any(pcm)
+                if heard_audio and pcm and not any(pcm):
+                    break
+            for ev in ({"type": "input_audio_buffer.speech_stopped"},
+                       {"type": "conversation.item.input_audio_transcription.completed", "transcript": name},
+                       {"type": "response.created"},
+                       {"type": "response.function_call_arguments.done", "name": name, "call_id": name,
+                        "arguments": args},
+                       {"type": "response.done", "response": {"status": "completed"}}):
+                await ws.send(json.dumps(ev))
+            while json.loads(await ws.recv())["type"] != "response.create":
+                pass
+            for ev in ({"type": "response.created"},
+                       {"type": "response.output_audio.delta", "delta": base64.b64encode(b"\x07\x00" * 2400).decode()},
+                       {"type": "response.output_audio_transcript.done", "transcript": said},
+                       {"type": "response.done", "response": {"status": "completed"}}):
+                await ws.send(json.dumps(ev))
+        await ws.wait_closed()
+
+    async def go():
+        async with serve(server, "127.0.0.1", 0) as srv:
+            port = srv.sockets[0].getsockname()[1]
+            real = cv._connect
+            monkeypatch.setattr(cv, "_connect", lambda url, key: real(f"ws://127.0.0.1:{port}/", key))
+            args = ["caregiver", "--no-greeting", "--alerts", "0", "--output-wav", str(tmp_path / "out.wav"),
+                    "--transcript", str(tmp_path / "t.json")]
+            for i in (1, 2):
+                args += ["--input-wav", _wav(tmp_path / f"q{i}.wav", _tone(0.2))]
+            from earpiece.__main__ import build_parser
+            return await cv.run_line(build_parser().parse_args(args), log=lambda *_: None)
+
+    assert asyncio.run(go()) == 0
+    tr = json.loads((tmp_path / "t.json").read_text())
+    assert [[c["name"] for c in t["tools"]] for t in tr["turns"]] == [["walk_status"], ["message_walker"]]
+    assert tr["turns"][0]["tools"][0]["result"]["position"]["place"] == "Lyon Street"
+    assert tr["turns"][1]["tools"][0]["result"]["sent"] is True
+    assert [x["text"] for x in tr["turns"][1]["said"] if x["who"] == "kite"] == ["Sent."]
+    assert json.loads(fake.pushes[0]["payload"])["text"] == "Running five minutes late"
+    for i in (1, 2):
+        with wave.open(str(tmp_path / f"out.turn{i}.wav")) as w:
+            assert (w.getframerate(), w.getnframes()) == (24000, 2400)
+    with wave.open(str(tmp_path / "out.wav")) as w:
+        assert w.getnframes() == 4800
+
+
+def time_clock():
+    import time
+    return time.time
+
+
+def test_headless_flags_that_cannot_work_are_refused(tmp_path):
+    from earpiece.__main__ import build_parser
+    run = lambda *args: asyncio.run(cv.run_line(build_parser().parse_args(["caregiver", *args]), log=lambda *_: None))
+    assert run("--output-wav", str(tmp_path / "o.wav")) == 2                   # nothing to listen with
+    assert run("--text", "--input-wav", "x.wav") == 2
+    (tmp_path / "bad.wav").write_bytes(b"not a wav")
+    assert run("--input-wav", str(tmp_path / "bad.wav")) == 2
 
 
 # ------------------------------------------------------------------ live (opt in)
