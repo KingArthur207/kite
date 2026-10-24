@@ -57,4 +57,63 @@ assert turned and turned[0]["text"] != first[0]["text"] and "left" not in first[
 assert g.step({}, 2.6) == []
 assert g.step(cand, 2.7) == []          # must hold 3 frames again
 
+# pitch (+ = tilted down): the horizon moves up the image by fx*tan(pitch)
+assert math.isclose(distance_m(480, 200, 1.2, pitch=0.0), 10.0)
+assert math.isclose(distance_m(360, 200, 1.2, pitch=10), 1.2 / math.tan(math.radians(10)))  # optical centre
+# a foot 1.5 m away from a 1.2 m chest camera tilted 20 deg down: 38.7 deg below horizontal
+y = 360 + 1000 * math.tan(math.atan(1.2 / 1.5) - math.radians(20))
+assert math.isclose(distance_m(y, 300, 1.2, pitch=20), 1.5)
+assert distance_m(y, 300, 1.2) > 1.5            # ignoring the tilt reads farther (the danger)
+
+# cut off at the bottom: the head top (1.7 m) gives the distance; size and bottom row only bound it
+fx, d_true = 700, 1.5
+y_top = 360 - fx * 0.5 / d_true                  # head 0.5 m above a 1.2 m camera, pitch 0
+assert math.isclose(distance_m(720, 720 - y_top, 1.2, fx, 720, 1.7, 0.0, y_top=y_top), d_true)
+assert distance_m(720, 720 - y_top, 1.2, fx, 720, 1.7) > 2.0     # bottom row alone says too far
+cut = objects_from_boxes([(300, y_top, 660, 720, "person", 0.9, 3)], fx, 1.2, 960, 720)
+assert cut[0]["cut_off"] and math.isclose(cut[0]["distance"], 1.5, abs_tol=0.01)
+
+# live walk: median smoothing, closing speed, stop zone
+from live_walk import RangeFilter, center_obstacle, chest_step, is_stop, to_event_objects  # noqa: E402
+
+rf = RangeFilter()
+for i in range(10):
+    d, v = rf.update("a", i * 0.1, 3.0 - 0.1 * i + (2.0 if i == 5 else 0.0))   # 1 m/s with one outlier
+assert math.isclose(d, 2.2, abs_tol=0.05) and v is not None and 0.6 < v < 1.4
+assert is_stop(0, 1.5, None) and not is_stop(0, 2.0, 0.2) and is_stop(0, 2.0, 2.5)
+assert not is_stop(45, 1.2, None)               # 0.85 m to the side: not in the path
+
+# what the earpiece does with it: a person stepping in 1.5 m ahead must go critical and say Stop
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "earpiece"))
+from earpiece.config import SonarCfg  # noqa: E402
+from earpiece.events import parse  # noqa: E402
+from earpiece.sonar import Sonar  # noqa: E402
+
+sonar, rf, said = Sonar(None, SonarCfg()), RangeFilter(), []
+sonar.speak = lambda text, prio, **kw: said.append((text, prio))
+for i, dist in enumerate([3.0, 2.8, 2.6, 2.4, 2.2, 2.0, 1.8, 1.6, 1.5, 1.4]):
+    objs = chest_step([{"id": "7", "kind": "person", "bearing": 3.0, "distance": dist, "confidence": 0.9,
+                        "cut_off": True}], rf, i * 0.1)
+    msg = parse({"type": "obstacles", "source": "standin-chest", "seq": i + 1, "objects": to_event_objects(objs)})
+    sonar.update_frame(msg.source, msg.objects, msg.seq, now=i * 0.1)
+    tr = sonar.tracks["standin-chest:7"]
+    sonar._score(tr)
+    sonar._maybe_speak(tr, i * 0.1)
+    if objs[0]["distance"] > 2.0:
+        assert not tr.critical, (dist, objs)
+assert tr.critical and ("Stop. Person ahead.", "critical") in said
+
+# depth fallback: flat floor is not an obstacle, a wall 1.2 m ahead is
+import numpy as np  # noqa: E402
+from live_walk import floor_depth  # noqa: E402
+
+h, w, f = 252, 336, 245.0
+floor = np.repeat(floor_depth(h, f, 1.2, 15)[:, None], w, axis=1)
+floor[~np.isfinite(floor)] = 20.0
+assert center_obstacle(floor, f, 1.2, 15) is None
+wall = floor.copy()
+wall[:200, 100:240] = 1.2
+o = center_obstacle(wall, f, 1.2, 15)
+assert o and math.isclose(o["distance"], 1.2) and abs(o["bearing"]) < 5
+
 print("standin geometry ok")
