@@ -1,0 +1,20 @@
+[package]
+name = "kite_audio"
+version = "0.1.0"
+edition = "2021"
+description = "Real-time audio engine for Kite's earpiece: lock-free mixer, limiter and device output"
+license = "MIT"
+
+[lib]
+name = "kite_audio"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
+cpal = "0.18"
+rtrb = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
