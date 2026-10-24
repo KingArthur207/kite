@@ -1,0 +1,15 @@
+{
+  "scene": "doorway",
+  "frames_with_objects": 72,
+  "kinds": [
+    "person"
+  ],
+  "first_seen_s": 0.0,
+  "closest_m": 1.98,
+  "would_stop": false,
+  "kite_said": [
+    "3.9s Person, ahead.",
+    "8.2s Obstacle detection paused."
+  ],
+  "kite_should": "person beeps from the right, then 'Stop.' when he is close and in the corridor"
+}

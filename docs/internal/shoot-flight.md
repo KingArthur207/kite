@@ -29,6 +29,18 @@ Camera calibration runs in this same power-on window, right after step 3, not se
 - Power off as soon as "closing the drone link" prints. If it says BAD or "only N good views", rerun on the saved frames with `--source recordings/calib_<stamp>`: no drone needed.
 - If the board is never detected (screen glare), use one object of known width at a taped distance: `--source tello --known-object 0.60 --distance-m 2.0`, then click its two edges.
 
+### If the video shows no image on a Mac
+
+`--video-backend socket` is an opt-in decoder (the default stays `pyav` until socket has run against a real Tello): kite binds UDP 11111 itself with the largest receive buffer the OS allows (8 MB on our Macs) and feeds PyAV's parser, with no FFmpeg network code involved. The other readers are `--video-backend pyav` (default) and `opencv`; all three work in `kite.record`, `kite.preflight` and `kite.calibrate` all accept).
+
+1. Check the permissions first, because they block every decoder the same way:
+   - System Settings > Privacy & Security > Local Network: your terminal app (Terminal, iTerm, VS Code) is on.
+   - System Settings > Network > Firewall: off, or python is allowed to accept incoming connections.
+   - The Tello phone app is closed, and so is any other Tello script.
+   - `lsof -nP -iUDP:11111` prints nothing before you start.
+2. `python -m kite.preflight --video-backend socket`. When there is no frame, the NO-GO line says which case you are in: no packets at all (permissions, firewall, the port is held, or the drone isn't streaming), packets but no keyframe yet, or keyframes that never decode cleanly (packet loss).
+3. If the socket reader also shows nothing, try `--video-backend pyav`, then run `python -m kite.video_doctor` (Arthur's tool, once `fix/mac-video` is merged). It records the raw packets and decodes them offline, so send the folder it writes to whoever is debugging the video.
+
 ## At the corner, 7:00 AM
 
 Positions: the walker starts on the NE sidewalk of Moss about 70 m before Howard. Take off from the sidewalk about 1 m behind the walker, on flat paving, away from cars. The pilot walks 3 to 5 m behind the drone, laptop open on one forearm, with someone at the pilot's elbow watching the ground (the pilot is watching the screen).

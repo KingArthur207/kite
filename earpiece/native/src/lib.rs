@@ -9,8 +9,14 @@
 //! It also owns cue *placement*: `render_binaural` is the Brown-Duda renderer of
 //! `spatial.py` in Rust, so the whole audible path (placement, mixing, output)
 //! is native and runs without the GIL.
+//!
+//! And it owns the sonar's *decisions*: `Sonar` is the per-tick logic of
+//! `sonar.py` (tracks, time-to-contact, urgency, beep scheduling, "Stop."), so
+//! when each warning beep is due no longer depends on Python bytecode.
 
 mod mixer;
+pub mod sonar;
+mod sonar_py;
 pub mod spatial;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -628,6 +634,8 @@ fn fractional_delay<'py>(
 #[pymodule]
 fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
+    m.add_class::<sonar_py::PySonar>()?;
+    m.add_class::<sonar_py::TrackState>()?;
     m.add_function(wrap_pyfunction!(render_binaural, m)?)?;
     m.add_function(wrap_pyfunction!(render_binaural_batch, m)?)?;
     m.add_function(wrap_pyfunction!(fractional_delay, m)?)?;

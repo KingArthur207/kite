@@ -1,7 +1,7 @@
 """Stand-in until streetseg lands; same events, same FrameSource.
 
 YOLO11n boxes -> earpiece events, so "real detector on sim frames -> beep in AirPods"
-works before Rex's streetseg exists. Swap this file out; nothing downstream changes.
+works before the streetseg perception package exists. Swap this file out; nothing downstream changes.
 
     python sim/standin_detect.py --download                  # once, fetches weights/yolo11n.pt
     python sim/standin_detect.py                             # sim chest + drone via sim/relay.py
@@ -41,7 +41,9 @@ DEFAULT_HEIGHT = {"chest": 1.2, "drone": 2.0}     # sim: CHEST_HEIGHT, HEAD_TOP 
 DRONE_BEHIND_M = 1.0
 MIN_D, MAX_D = 0.3, 50.0
 GROUND_MIN_PX = 12          # bbox bottom must be this far below the horizon to trust ground geometry
-EDGE_PX = 8                 # bbox this close to the bottom edge counts as cut off
+EDGE_PX = 16                # bbox this close to the bottom (or top) edge counts as cut off (YOLO boxes stop
+                            # a few px short of the edge: at 8 px one person flickered 1.3 m / 3.2 m)
+PERSON_W = 0.45             # m, a person's box width face-on; only used when head and feet are both out of frame
 
 KIND = {"person": "person", "bicycle": "bike", "car": "vehicle", "motorcycle": "vehicle",
         "bus": "vehicle", "truck": "vehicle", "fire hydrant": "fire_hydrant", "parking meter": "pole",
@@ -75,9 +77,10 @@ def distance_m(y_bottom: float, box_h: float, cam_height: float, fx: float = DEF
                height: int = 720, real_h: float = 1.7, pitch: float = 0.0, y_top: float | None = None) -> float:
     """Flat-ground distance from the bbox bottom row; size-based when the foot point is
     at or above the horizon (or too close to it to be stable). Clamped to [0.3, 50] m.
-    Pass y_top when the box is cut off by the bottom edge (a person close to a chest camera):
-    the feet are below the frame, so the bottom row and box height only bound the distance
-    from above, and the top row (head at real_h) gives it when the object is taller than the camera."""
+    Pass y_top when the box is cut off by the bottom or the top edge (a person close to a chest camera):
+    the object is taller in the image than its box, so the bottom row and box height only bound the
+    distance from above, and the top row (head at real_h, or above it) gives it when the object is
+    taller than the camera."""
     stable = math.atan(GROUND_MIN_PX / fx)
     a = below_horizon(y_bottom, fx, height, pitch)
     size_d = real_h * fx / max(box_h, 1.0)
@@ -107,8 +110,14 @@ def objects_from_boxes(boxes, fx: float, cam_height: float, width: int, height: 
         if kind is None:
             continue
         real_h = TYPICAL_H.get(name, TYPICAL_H.get(kind, 1.0))
-        cut = y2 >= height - EDGE_PX
-        d = distance_m(y2, y2 - y1, cam_height, fx, height, real_h, pitch, y_top=y1 if cut else None)
+        cut, top_cut = y2 >= height - EDGE_PX, y1 <= EDGE_PX
+        # Head above the frame: the top row still bounds the distance, even when the bottom row looks like feet
+        # (a box ending 9 px above the edge read 3.2 m for someone at 1.3 m; live_walk_bench).
+        d = distance_m(y2, y2 - y1, cam_height, fx, height, real_h, pitch, y_top=y1 if cut or top_cut else None)
+        if cut and top_cut and kind == "person":
+            # head and feet both out of frame: no row can say how close (at 15 deg down on 960x540 every distance
+            # under 1.65 m read 1.65, so "Stop" never fired). Shoulder width still can.
+            d = max(MIN_D, min(d, PERSON_W * fx / max(x2 - x1, 1.0)))
         out.append({"id": str(tid if tid is not None else i), "kind": kind,
                     "bearing": round(bearing_deg((x1 + x2) / 2, fx, width), 1),
                     "distance": round(d, 2), "confidence": round(float(conf), 2), "cut_off": cut})
@@ -247,6 +256,7 @@ def main() -> None:
     ap.add_argument("--list-cameras", action="store_true", help="print the cameras (index, name, size) and exit")
     ap.add_argument("--camera", choices=("chest", "drone", "both"), default="both")
     ap.add_argument("--relay", default="ws://127.0.0.1:5020/sub")
+    ap.add_argument("--ear-port", type=int, default=5010, help="earpiece UDP port")
     ap.add_argument("--fx", type=float, help=f"focal length in px at 960 wide (default {DEFAULT_FX:.0f}, "
                                               f"{LIVE_FX:.0f} for a live camera)")
     ap.add_argument("--cam-height", type=float, help="override camera height (m); sim uses its pose")
@@ -305,8 +315,7 @@ def main() -> None:
     if a.show and cams != ("chest",):
         sys.exit("--show is the chest view; use --camera chest")
     models = {c: YOLO(str(WEIGHTS)) for c in cams}           # one tracker per camera
-    ear = EarpieceClient(host=os.environ.get("KITE_EARPIECE_HOST", "127.0.0.1"),
-                         port=int(os.environ.get("KITE_EARPIECE_PORT", "5010")), source="standin")
+    ear = EarpieceClient(host=os.environ.get("KITE_EARPIECE_HOST", "127.0.0.1"), port=a.ear_port, source="standin")
     jsonl = open(a.jsonl, "w") if a.jsonl else None
     t0 = time.monotonic()
 
@@ -349,6 +358,10 @@ def main() -> None:
     reveal = live_walk.Reveal() if a.show else None
     fps, fps_t, fps_n, was_stop = 0.0, time.monotonic(), 0, False
     print(f"[standin] cams={cams} device={device} -> {ear.addr} source={a.source or a.relay}", flush=True)
+    for m in models.values():             # the first call takes seconds (mps kernels): pay it before the walk
+        m.predict(np.zeros((540, 960, 3), np.uint8), verbose=False, imgsz=640)
+    t0 = time.monotonic()                 # video t=0 is now: the bench lines frames up with speech by this
+    print(f"[standin] t0_wall={time.time():.3f}", flush=True)
     try:
         while True:
             if a.max_seconds and time.monotonic() - t0 > a.max_seconds:
@@ -373,12 +386,15 @@ def main() -> None:
                     img = cv2.resize(img, (960, round(img.shape[0] * 960 / img.shape[1])))
                 frames = {"chest": img}
             elif srcs is None:
-                for _ in range(step - 1):
-                    cap.grab()
+                want = fidx + step - 1
+                if not a.fast:      # behind real time: skip to the current frame, as a live camera would
+                    want = max(want, int((time.monotonic() - t0) * vfps))
+                while fidx < want and cap.grab():
+                    fidx += 1
                 ok, img = cap.read()
                 if not ok:
                     break
-                t = fidx * step / vfps
+                t = fidx / vfps
                 fidx += 1
                 if not a.fast:
                     lag = t - (time.monotonic() - t0)

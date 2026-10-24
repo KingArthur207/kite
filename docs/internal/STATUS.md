@@ -74,7 +74,7 @@ Karthik built the Claude judgment layer integration, the camera descriptions ("w
 | Rex | Bring `streetseg` in; sign off on `docs/research/facts.md`; shoot logistics | Sat |
 | Karthik | Review #8 and #56; decide the Moss track row in the README with Eddy | Sat |
 | Eddy | Footage into `recordings/`, cable, demo video edit | After the shoot |
-| Eddy | Google representative's name and role in `docs/google-permission.md` | Sat |
+| Eddy | Google representative's role in `docs/google-permission.md` | Sat |
 | Eddy or Rex | Micro-USB cable, phone chest clip, sleep masks, wipes, over-ear headphones (Target, if needed) | About 8 AM |
 | Everyone | 3 PM cut (live walk reliable, or the sim walk becomes the demo); 6 PM rehearsal, 40 walks; 8 PM freeze | Sat |
 | Eddy | Devpost draft | Sat night |

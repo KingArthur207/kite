@@ -1,0 +1,17 @@
+{
+  "scene": "cyclist",
+  "frames_with_objects": 72,
+  "kinds": [
+    "bike",
+    "person",
+    "vehicle"
+  ],
+  "first_seen_s": 0.0,
+  "closest_m": 6.05,
+  "would_stop": false,
+  "kite_said": [
+    "5.1s Obstacle detection is back.",
+    "7.7s Obstacle detection paused."
+  ],
+  "kite_should": "beeps from the left that speed up; 'Stop.' if the bike crosses the walking corridor"
+}

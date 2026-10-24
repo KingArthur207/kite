@@ -72,3 +72,10 @@ test("titles name the product, not just the brand", () => {
   assert.match(title, /Kite/);
   assert.match(title, /blind/i);
 });
+
+test("security headers stay strict", () => {
+  const h = read("_headers");
+  assert.match(h, /Cross-Origin-Opener-Policy: same-origin/);
+  assert.match(h, /Content-Security-Policy: default-src 'self'; script-src 'self';/);
+  assert.match(h, /X-Frame-Options: DENY/);
+});

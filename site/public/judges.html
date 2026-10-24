@@ -55,7 +55,7 @@
       <h2 id="tracks-h" class="display">Every track, <em>criterion by criterion.</em></h2>
       <p class="lede">Each track's judging criteria in its own words, then how Kite answers them.</p>
       <nav class="toc" aria-label="Tracks on this page">
-        <a href="#overall">Overall</a><a href="#cartesia">Cartesia</a><a href="#anthropic">Anthropic</a><a href="#microsoft">Microsoft</a><a href="#spacetime">SpacetimeDB</a><a href="#moss">Moss</a><a href="#meta">Meta</a><a href="#complex">Technically Complex</a><a href="#hardware">Hardware</a><a href="#people">People-First</a><a href="#commit">Commit Fellowship</a>
+        <a href="#cartesia">Cartesia</a><a href="#anthropic">Anthropic</a><a href="#spacetime">SpacetimeDB</a><a href="#moss">Moss</a><a href="#microsoft">Microsoft</a><a href="#meta">Meta</a><a href="#spacexai">SpaceXAI</a><a href="#people">People-First</a><a href="#hardware">Hardware</a><a href="#complex">Technically Complex</a><a href="#overall">Overall</a><a href="#commit">Commit Fellowship</a>
       </nav>
     </section>
 
@@ -65,6 +65,7 @@
 
         <article class="card track" id="cartesia">
           <div class="meta">
+            <img class="track-logo" src="/assets/logos/cartesia.svg" alt="Cartesia logo" width="132" height="19" />
             <p class="sticker">Best Use of Cartesia</p>
             <h2>Cartesia is <mark>Kite's voice and ears</mark>.</h2>
             <div class="crit"><p class="crit-h">judged on</p><ul><li>Problem and originality</li><li>Use of Cartesia</li><li>Execution</li><li>Impact and responsibility</li></ul></div>
@@ -74,12 +75,14 @@
             <div><dt>Sonic, streamed and interruptible</dt><dd>About a tenth of a second to the first word, over one open WebSocket. A less urgent sentence is cut off mid-word when a hazard appears.</dd></div>
             <div><dt>A phrase cache for the moments that matter</dt><dd>"Stop.", "Don't walk." and every other fixed safety phrase are rendered by Sonic at startup, so they play instantly, even offline.</dd></div>
             <div><dt>Ink, listening while you talk</dt><dd>Press an AirPod once and speak. Ink transcribes as you talk, so the answer starts the moment you stop.</dd></div>
+            <div><dt>Hear it</dt><dd>The <a href="/#hear">41-second walk on the home page</a> is the real earpiece speaking in Cartesia's voice, with its waveform and a line-by-line transcript.</dd></div>
             <div><dt>Edge cases handled</dt><dd>With no internet, cached phrases still play and new sentences use a built-in voice. Late speech is dropped, not spoken.</dd></div>
           </dl>
         </article>
 
         <article class="card track" id="anthropic">
           <div class="meta">
+            <img class="track-logo" src="/assets/logos/anthropic.svg" alt="Anthropic logo" width="125" height="14" />
             <p class="sticker">Anthropic</p>
             <h2>Claude is <mark>Kite's judgment</mark>.</h2>
             <div class="crit"><p class="crit-h">judged on</p><ul><li>A named community</li><li>A real problem</li><li>It works</li><li>Thoughtful use of Claude, and knowing where it could go wrong</li></ul></div>
@@ -98,8 +101,42 @@
           </dl>
         </article>
 
+        <article class="card track" id="spacetime">
+          <div class="meta">
+            <img class="track-logo" src="/assets/logos/spacetimedb.svg" alt="SpacetimeDB logo" width="100" height="24" />
+            <p class="sticker">SpacetimeDB</p>
+            <h2>SpacetimeDB is <mark>Kite's nervous system</mark>.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>SpacetimeDB as the core real-time backend: live shared state, instant sync between users, agents and systems</li></ul></div>
+          </div>
+          <dl>
+            <div><dt>One live world</dt><dd>The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.</dd></div>
+            <div><dt>Two tables, two reducers</dt><dd><code>event</code> holds the walk's recent history and <code>latest</code> the newest state of every device, so a dashboard opened mid-walk is current at once. <code>push</code> and <code>clear</code> do the rest.</dd></div>
+            <div><dt>Both ways, live</dt><dd>The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.</dd></div>
+            <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"</dd></div>
+          </dl>
+          <figure class="evidence one">
+            <img src="/assets/evidence/caregiver-dashboard.jpg" alt="Kite's caregiver dashboard, marked Live via SpacetimeDB. A dark map of Lyon Street shows the walker, a crosswalk, a crowd and a vehicle, with the last spoken line, Stop, person ahead. On the right, active hazards and a shared live state panel counting sources and events per minute; below, a timeline of stops and a caregiver message" width="900" height="562" loading="lazy" />
+            <figcaption>the caregiver's dashboard, live from SpacetimeDB, on a replayed test walk</figcaption>
+          </figure>
+        </article>
+
+        <article class="card track" id="moss">
+          <div class="meta">
+            <img class="track-logo" src="/assets/logos/moss.svg" alt="Moss logo" width="90" height="22" />
+            <p class="sticker">Best Use of Moss</p>
+            <h2>Moss is <mark>Kite's memory of you</mark>.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Voice AI that listens, responds and acts in real time</li><li>A personal agent that remembers you</li></ul></div>
+          </div>
+          <dl>
+            <div><dt>Searched on every sentence you speak</dt><dd>Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.</dd></div>
+            <div><dt>A personal agent</dt><dd>"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.</dd></div>
+            <div><dt>Without it</dt><dd>Every walk starts from zero, and "my usual" means nothing.</dd></div>
+          </dl>
+        </article>
+
         <article class="card track" id="microsoft">
           <div class="meta">
+            <img class="track-logo" src="/assets/logos/microsoft.png" alt="Microsoft logo" width="103" height="22" />
             <p class="sticker">Microsoft · Built for the Real World · Customer Impact</p>
             <h2>A production-minded agent for getting around.</h2>
             <div class="crit"><p class="crit-h">judged on</p><ul><li>Customer understanding</li><li>Measurable usefulness</li><li>Path from prototype to production</li><li>Responsible design</li><li>End-to-end functionality</li></ul></div>
@@ -113,35 +150,9 @@
           </dl>
         </article>
 
-        <article class="card track" id="spacetime">
-          <div class="meta">
-            <p class="sticker">SpacetimeDB</p>
-            <h2>SpacetimeDB is <mark>Kite's nervous system</mark>.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>SpacetimeDB as the core real-time backend: live shared state, instant sync between users, agents and systems</li></ul></div>
-          </div>
-          <dl>
-            <div><dt>One live world</dt><dd>The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.</dd></div>
-            <div><dt>Two tables, two reducers</dt><dd><code>event</code> holds the walk's recent history and <code>latest</code> the newest state of every device, so a dashboard opened mid-walk is current at once. <code>push</code> and <code>clear</code> do the rest.</dd></div>
-            <div><dt>Both ways, live</dt><dd>The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.</dd></div>
-            <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"</dd></div>
-          </dl>
-        </article>
-
-        <article class="card track" id="moss">
-          <div class="meta">
-            <p class="sticker">Best Use of Moss</p>
-            <h2>Moss is <mark>Kite's memory of you</mark>.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Voice AI that listens, responds and acts in real time</li><li>A personal agent that remembers you</li></ul></div>
-          </div>
-          <dl>
-            <div><dt>Searched on every sentence you speak</dt><dd>Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.</dd></div>
-            <div><dt>A personal agent</dt><dd>"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.</dd></div>
-            <div><dt>Without it</dt><dd>Every walk starts from zero, and "my usual" means nothing.</dd></div>
-          </dl>
-        </article>
-
         <article class="card track" id="meta">
           <div class="meta">
+            <img class="track-logo" src="/assets/logos/meta.svg" alt="Meta logo" width="82" height="18" />
             <p class="sticker">Meta · Bringing People Closer Together</p>
             <h2>Getting out the door is how people meet.</h2>
             <div class="crit"><p class="crit-h">judged on</p><ul><li>How meaningfully it strengthens human connection</li><li>How essential the AI is</li><li>Originality</li><li>The working demo</li></ul></div>
@@ -152,34 +163,39 @@
             <div><dt>Essential AI</dt><dd>Claude describes the world in a sentence, Cartesia speaks it, Moss remembers the places that matter to you.</dd></div>
           </dl>
         </article>
+
+        <article class="card track" id="spacexai">
+          <div class="meta">
+            <img class="track-logo" src="/assets/logos/xai.svg" alt="SpaceXAI logo" width="58" height="22" />
+            <p class="sticker">SpaceXAI · Make it Legendary</p>
+            <h2>Grok is Kite's <mark>caregiver line and its test street</mark>.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Built with Cursor</li><li>Uses the Grok Imagine or Voice API</li><li>Bonus: Grok Bot for planning and teamwork</li></ul></div>
+          </div>
+          <dl>
+            <div><dt>Grok Voice: a caregiver who can just ask</dt><dd>Run <code>python -m earpiece caregiver</code> and talk. "How's the walk going?" makes Grok read the live walk from SpacetimeDB and answer out loud; "tell her I'm five minutes late" becomes a message the walker hears in their AirPods. For a caregiver who is driving, cooking or blind themselves.</dd></div>
+            <div><dt>Grok Imagine: the street we can't film</dt><dd>A cyclist cutting across, a car turning into the crosswalk, someone stepping out of a doorway: Grok Imagine generates each one from the walker's chest height, and Kite's real detector and earpiece play it. On the doorway and oncoming clips Kite says "Person, ahead."</dd></div>
+            <div><dt>Built in Cursor, planned with Grok Bot</dt><dd>The team built Kite in Cursor and used Grok Bot for research, planning and team collaboration throughout the weekend.</dd></div>
+          </dl>
+          <div class="imagined" aria-label="Scenes generated by Grok Imagine">
+            <figure><img src="/assets/imagined/cyclist.jpg" alt="Grok Imagine scene: a cyclist crossing a zebra crosswalk in San Francisco, seen from chest height at the curb" width="640" height="360" loading="lazy" /><figcaption>cyclist at the crosswalk</figcaption></figure>
+            <figure><img src="/assets/imagined/car_turning.jpg" alt="Grok Imagine scene: a silver sedan turning right into a crosswalk, seen from the curb" width="640" height="360" loading="lazy" /><figcaption>a car turning in</figcaption></figure>
+            <figure><img src="/assets/imagined/doorway.jpg" alt="Grok Imagine scene: a man stepping out of a shop doorway onto a narrow sidewalk ahead" width="640" height="360" loading="lazy" /><figcaption>out of a doorway</figcaption></figure>
+          </div>
+        </article>
       </div>
 
-      <p class="group-title" id="overall">Cal Hacks prizes</p>
+      <p class="group-title" id="calhacks">Cal Hacks prizes</p>
       <div class="tracks">
-        <article class="card track">
+        <article class="card track" id="people">
           <div class="meta">
-            <p class="sticker">First Overall · Hacker's Choice</p>
-            <h2>The whole idea in one walk.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Impact</li><li>Quality</li><li>Technical complexity</li><li>Creativity</li><li>A live demo</li></ul></div>
+            <p class="sticker">Best People-First Hack</p>
+            <h2>Designed around one person's walk.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Putting people first</li></ul></div>
           </div>
           <dl>
-            <div><dt>Impact</dt><dd>Guide dogs cost $50,000 each and there are fewer than 10,000 in the US. Kite is a guide for everyone else, from parts you can buy today.</dd></div>
-            <div><dt>Creativity</dt><dd>A kite that flies behind you, not a robot that drags you. Sound instead of a screen, and a beep that speeds up instead of a sentence that arrives too late.</dd></div>
-            <div><dt>Live demo</dt><dd>At our table you wear the AirPods and walk; drones aren't allowed indoors, so the drone's view comes from recorded footage and a browser simulation of a real San Francisco corner.</dd></div>
-          </dl>
-        </article>
-
-        <article class="card track" id="complex">
-          <div class="meta">
-            <p class="sticker">Most Technically Complex</p>
-            <h2>Hard real-time, on purpose.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Technical complexity</li></ul></div>
-          </div>
-          <dl>
-            <div><dt>A lock-free Rust audio engine</dt><dd>Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.</dd></div>
-            <div><dt>Binaural rendering from a model of the head</dt><dd>A spherical-head model sets the timing and loudness difference between your ears.</dd></div>
-            <div><dt>Time-to-contact sonar and a time-aware speech scheduler</dt><dd>Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.</dd></div>
-            <div><dt>Four cloud services, none on the safety path</dt><dd>Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.</dd></div>
+            <div><dt>Stop and wait, never detour</dt><dd>Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.</dd></div>
+            <div><dt>You stay in charge</dt><dd>Pause guidance any time; warnings stay on. Ask anything, in your own words.</dd></div>
+            <div><dt>Dignity and privacy</dt><dd>Your caregiver sees where you are, never what your camera sees.</dd></div>
           </dl>
         </article>
 
@@ -196,16 +212,35 @@
           </dl>
         </article>
 
-        <article class="card track" id="people">
+        <article class="card track" id="complex">
           <div class="meta">
-            <p class="sticker">Best People-First Hack</p>
-            <h2>Designed around one person's walk.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Putting people first</li></ul></div>
+            <p class="sticker">Most Technically Complex</p>
+            <h2>Hard real-time, on purpose.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Technical complexity</li></ul></div>
           </div>
           <dl>
-            <div><dt>Stop and wait, never detour</dt><dd>Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.</dd></div>
-            <div><dt>You stay in charge</dt><dd>Pause guidance any time; warnings stay on. Ask anything, in your own words.</dd></div>
-            <div><dt>Dignity and privacy</dt><dd>Your caregiver sees where you are, never what your camera sees.</dd></div>
+            <div><dt>A lock-free Rust audio engine</dt><dd>Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.</dd></div>
+            <div><dt>Binaural rendering from a model of the head</dt><dd>A spherical-head model sets the timing and loudness difference between your ears.</dd></div>
+            <div><dt>Time-to-contact sonar and a time-aware speech scheduler</dt><dd>Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.</dd></div>
+            <div><dt>One detector, two cameras, measured</dt><dd>YOLO runs on the drone's view and the chest camera's. Scored against the browser simulation's ground truth on 168 frames, it finds 99% of people and 91% of cars from the drone, and 96% and 85% from the chest.</dd></div>
+            <div><dt>Four cloud services, none on the safety path</dt><dd>Cartesia, Claude, Moss and SpacetimeDB all run off the audio thread, with offline fallbacks.</dd></div>
+          </dl>
+          <div class="evidence two">
+            <figure><img src="/assets/evidence/yolo-drone-view.jpg" alt="The drone's view of a simulated sidewalk: YOLO draws green boxes around the pedestrians and yellow boxes around the parked cars, each with a confidence score" width="640" height="480" loading="lazy" /><figcaption>drone view, YOLO boxes</figcaption></figure>
+            <figure><img src="/assets/evidence/yolo-chest-view.jpg" alt="The chest camera's view of the same simulated sidewalk: green boxes around the pedestrians, yellow around the cars, and thin white ground-truth boxes" width="640" height="480" loading="lazy" /><figcaption>chest view, same street</figcaption></figure>
+          </div>
+        </article>
+
+        <article class="card track" id="overall">
+          <div class="meta">
+            <p class="sticker">First Overall · Hacker's Choice</p>
+            <h2>The whole idea in one walk.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>Impact</li><li>Quality</li><li>Technical complexity</li><li>Creativity</li><li>A live demo</li></ul></div>
+          </div>
+          <dl>
+            <div><dt>Impact</dt><dd>Guide dogs cost $50,000 each and there are fewer than 10,000 in the US. Kite is a guide for everyone else, from parts you can buy today.</dd></div>
+            <div><dt>Creativity</dt><dd>A kite that flies behind you, not a robot that drags you. Sound instead of a screen, and a beep that speeds up instead of a sentence that arrives too late.</dd></div>
+            <div><dt>Live demo</dt><dd>At our table you wear the AirPods and walk; drones aren't allowed indoors, so the drone's view comes from recorded footage and a browser simulation of a real San Francisco corner.</dd></div>
           </dl>
         </article>
 
