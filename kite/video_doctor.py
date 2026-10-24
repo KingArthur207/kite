@@ -2,6 +2,10 @@
 
     python -m kite.video_doctor                 # drone on, laptop on its Wi-Fi, nothing else using the Tello ports
     python -m kite.video_doctor --seconds 20    # longer capture
+    python -m kite.video_doctor --video-bitrate 2 --video-resolution low   # measure a lighter stream
+
+Ends with one link line (GOOD / FAIR / POOR: packet rate, gaps, loss estimated from the H.264 stream), on any OS.
+On Windows it also lists every Wi-Fi adapter (netsh) and warns when two of them sit on 2.4 GHz.
 
 Talks to the drone over plain UDP sockets (no djitellopy, no FFmpeg network code): `command`, `streamon` (re-sent
 until video arrives), `streamoff` at the end. Every video datagram is stored with its arrival time, so the exact
@@ -24,6 +28,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from .config import add_video_link_args
+
 NAL_NAMES = {1: "slice", 5: "IDR", 6: "SEI", 7: "SPS", 8: "PPS", 9: "AUD"}
 HEALTHY_KB_S = 100  # a Tello streaming normally sends well over this; the starved Mac link gave ~32 KB/s
 
@@ -37,10 +43,46 @@ def _cmd(args: list[str], timeout: float = 40.0) -> str:
         return ""
 
 
+def parse_netsh_interfaces(text: str) -> list[dict]:
+    """`netsh wlan show interfaces` -> one {key: value} per Wi-Fi adapter (English Windows key names)."""
+    out: list[dict] = []
+    for line in text.splitlines():
+        key, sep, value = line.partition(" : ")
+        key = key.strip()
+        if not sep or not key:
+            continue
+        if key == "Name":
+            out.append({})
+        if out:
+            out[-1][key] = value.strip()
+    return out
+
+
+def windows_link_snapshot() -> dict:
+    """Windows: every Wi-Fi adapter's SSID, channel, band, radio type, signal and rates (netsh, no scan, ~0.1 s)."""
+    itfs = parse_netsh_interfaces(_cmd(["netsh", "wlan", "show", "interfaces"], timeout=10))
+    keep = ("Name", "Description", "State", "SSID", "Radio type", "Band", "Channel", "Receive rate (Mbps)",
+            "Transmit rate (Mbps)", "Signal")
+    return {"wifi_interfaces": [{k: i[k] for k in keep if k in i} for i in itfs]} if itfs else {}
+
+
+def shared_24ghz(link: dict) -> list[str]:
+    """Names of the connected Windows adapters on 2.4 GHz (channel 1-14): two of them share the band."""
+    names = []
+    for i in link.get("wifi_interfaces", []):
+        ch = i.get("Channel", "")
+        if i.get("State", "").lower() == "connected" and ch.isdigit() and int(ch) <= 14:
+            names.append(f"{i.get('Name')} ({i.get('SSID')}, channel {ch})")
+    return names
+
+
 def link_snapshot() -> dict:
     """macOS: the Wi-Fi link to the drone (channel, PHY mode, rate, MCS, signal/noise), Bluetooth devices connected
-    (they share the 2.4 GHz radio) and AWDL state. Empty elsewhere. Slow (~20 s): system_profiler scans for
-    networks, which takes the radio off-channel, so it never runs while the video is being recorded."""
+    (they share the 2.4 GHz radio) and AWDL state. Windows: every Wi-Fi adapter (windows_link_snapshot). Empty
+    elsewhere. macOS is slow (~20 s): system_profiler scans for networks, which takes the radio off-channel, so it
+    never runs while the video is being recorded."""
+    if sys.platform == "win32":
+        return windows_link_snapshot()
     if sys.platform != "darwin":
         return {}
     snap: dict = {}
@@ -201,7 +243,7 @@ def decode_with_raw_reader(path: Path) -> dict:
         time.sleep(0.02)
     s.stop()
     st = s.stats()
-    return {k: st[k] for k in ("frames", "corrupt_frames", "decode_errors", "skipped_bytes", "resyncs", "size",
+    return {k: st[k] for k in ("frames", "frames_decoded", "corrupt_frames", "decode_errors", "skipped_bytes", "resyncs", "size",
                                "last_error")}
 
 
@@ -258,6 +300,10 @@ def verdict(summary: dict) -> list[str]:
                        "radio with the Tello's Wi-Fi: disconnect them (or turn Bluetooth off) for the flight.")
         if link.get("awdl") == "active":
             out.append("AWDL (AirDrop/Handoff) is active: sudo ifconfig awdl0 down.")
+    shared = shared_24ghz(link)
+    if len(shared) > 1:
+        out.append(f"Two Wi-Fi adapters are on 2.4 GHz at once: {'; '.join(shared)}. They share the band with the "
+                   "Tello's video: put the phone hotspot (and the adapter on it) on 5 GHz.")
     if not a.get("packets"):
         return ["NO VIDEO PACKETS arrived: the drone never streamed to this laptop (streamon replies: "
                 f"{summary.get('streamon_replies')}). Power-cycle the drone and rejoin its Wi-Fi."]
@@ -275,6 +321,21 @@ def verdict(summary: dict) -> list[str]:
     return out
 
 
+def link_line(summary: dict) -> tuple[str, str]:
+    """kite.sources.tello_raw.link_verdict on the capture: packet rate and gaps as received, loss estimated from
+    how many frames the raw reader had to conceal when decoding the capture offline."""
+    try:
+        from .sources.tello_raw import link_verdict
+    except ImportError as e:
+        return "?", f"link ?: raw reader unavailable ({e})"
+    a, r = summary.get("stream", {}), summary.get("decode", {}).get("raw_reader", {})
+    return link_verdict({"datagrams": a.get("packets", 0), "bytes": a.get("bytes", 0),
+                         "receiving_s": a.get("seconds", 0.0), "max_gap_s": a.get("max_gap_s", 0.0),
+                         "gaps_over_0.2s": a.get("gaps_over_0.2s", 0),
+                         "frames_decoded": r.get("frames_decoded", r.get("frames")),
+                         "corrupt_frames": r.get("corrupt_frames")})
+
+
 def run(args) -> int:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out = Path(args.out or f"recordings/video_doctor_{stamp}")
@@ -287,7 +348,8 @@ def run(args) -> int:
         video = _Receiver(args.video_port, rcvbuf=args.rcvbuf)
     except OSError as e:
         print(f"cannot bind the Tello ports ({e}): close every other Tello program "
-              f"(lsof -nP -iUDP:{args.local_cmd_port} -iUDP:{args.video_port})")
+              f"(macOS/Linux: lsof -nP -iUDP:{args.local_cmd_port} -iUDP:{args.video_port}; "
+              f"Windows: netstat -ano -p udp | findstr \":{args.local_cmd_port} :{args.video_port}\")")
         return 2
 
     def send(text: str, wait: bool = True) -> str | None:
@@ -296,7 +358,7 @@ def run(args) -> int:
             return None
         try:
             data = cmd.recv(2048)
-        except socket.timeout:
+        except (socket.timeout, ConnectionResetError):  # Windows reports an ICMP "unreachable" as a reset
             return None
         try:
             return data.decode("utf-8").strip()
@@ -315,6 +377,10 @@ def run(args) -> int:
             return 1
         summary["battery"] = send("battery?")
         print(f"battery -> {summary['battery']}%")
+        from .drone.tello import apply_video_link
+
+        summary["video_link"] = apply_video_link(send, args.video_bitrate, args.video_resolution, args.video_fps,
+                                                 say=print)
         replies = []
         for _ in range(args.streamon_tries):
             replies.append(send("streamon"))
@@ -329,6 +395,7 @@ def run(args) -> int:
         summary["streamoff_reply"] = send("streamoff")
         if sys.platform == "darwin":
             print("reading the Wi-Fi link (about 20 s) ...")
+        if sys.platform in ("darwin", "win32"):
             summary["link_after"] = link_snapshot()
     finally:
         video.close()
@@ -350,10 +417,12 @@ def run(args) -> int:
                              "pyav_demuxer": decode_with_demuxer(raw),
                              "opencv_file": decode_with_opencv(raw)}
     summary["verdict"] = verdict(summary)
+    summary["link_grade"], summary["link"] = link_line(summary)
     (out / "summary.json").write_text(json.dumps(summary, indent=1, default=str) + "\n")
     print(json.dumps({k: summary[k] for k in ("link_before", "link_after", "stream", "decode") if k in summary},
                      indent=1, default=str))
     print("\n".join(["", "VERDICT:"] + [f"- {v}" for v in summary["verdict"]]))
+    print(f"\n{summary['link']}")
     print(f"\nsaved -> {out}  (send this folder to whoever debugs the video)")
     return 0
 
@@ -368,6 +437,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--video-port", type=int, default=11111)
     p.add_argument("--rcvbuf", type=int, default=8 * 1024 * 1024, help="UDP receive buffer to ask for (bytes)")
     p.add_argument("--streamon-tries", type=int, default=4)
+    add_video_link_args(p)
     return run(p.parse_args(argv))
 
 

@@ -39,6 +39,41 @@ NO_VIDEO = ("the Tello answers commands but sends no video to UDP {port}. Close 
             "(System Settings > Privacy & Security).")
 
 
+def video_link_commands(bitrate: str | None = None, resolution: str | None = None, fps: str | None = None) -> list[str]:
+    """The Tello SDK commands for the requested video link settings, in sending order (None: not sent)."""
+    out = []
+    if bitrate is not None:
+        out.append(f"setbitrate {0 if str(bitrate) == 'auto' else int(bitrate)}")
+    if resolution is not None:
+        out.append(f"setresolution {resolution}")
+    if fps is not None:
+        out.append(f"setfps {fps}")
+    return out
+
+
+def apply_video_link(send, bitrate: str | None = None, resolution: str | None = None, fps: str | None = None,
+                     say=log.info) -> dict[str, str]:
+    """Send the video link settings (call after `command`, before `streamon`). send(cmd) returns the drone's reply
+    text (None or a timeout message if none came). Never raises: a firmware without the command (SDK < 2.0 answers
+    "error" or "unknown command") gets one line from say() and keeps its default. Returns {command: reply}."""
+    replies = {}
+    for cmd in video_link_commands(bitrate, resolution, fps):
+        try:
+            reply = send(cmd)
+        except Exception as e:  # Wi-Fi send failure: the stream still works at the drone's defaults
+            reply = f"not sent ({e})"
+        text = (reply.decode("utf-8", "ignore") if isinstance(reply, (bytes, bytearray)) else str(reply or "")).strip()
+        replies[cmd] = text
+        word = cmd.split()[0]
+        if text.lower().startswith("ok"):
+            say(f"{cmd} -> ok")
+        elif text.lower().startswith(("error", "unknown")):
+            say(f"this Tello's firmware doesn't support {word}; keeping its default (it answered {text!r})")
+        else:
+            say(f"{cmd}: no usable reply ({text or 'none'}); keeping the drone's default")
+    return replies
+
+
 def video_packets_arrive(port: int, timeout_s: float) -> bool:
     """True once a UDP datagram reaches `port`. OSError if another program already holds the port."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -63,9 +98,12 @@ class TelloDrone(Drone):
     name = "tello"
 
     def __init__(self, tello=None, video: bool = True, dry_run: bool = False, move_speed_cm_s: int = 50,
-                 yaw_sign: int = 1, velocity_scale: float = 0.1, video_fps: int = 60, video_backend: str | None = None, host: str = "192.168.10.1"):
+                 yaw_sign: int = 1, velocity_scale: float = 0.1, video_fps: int = 60, video_backend: str | None = None, host: str = "192.168.10.1",
+                 video_bitrate: str | None = None, video_resolution: str | None = None,
+                 video_stream_fps: str | None = None):
         """tello: an existing djitellopy.Tello (or a test double); created on connect() if None.
-        velocity_scale: state vgx/vgy/vgz -> m/s (the Tello reports dm/s; check with the latency test)."""
+        velocity_scale: state vgx/vgy/vgz -> m/s (the Tello reports dm/s; check with the latency test).
+        video_bitrate / video_resolution / video_stream_fps: sent before streamon (None: not sent), see DroneCfg."""
         self._tello = tello
         self._host = host
         self.video_enabled = video
@@ -75,6 +113,7 @@ class TelloDrone(Drone):
         self.velocity_scale = velocity_scale
         self.video_fps = video_fps
         self.video_backend = resolve_video_backend(video_backend)  # None -> the default, "auto" -> this platform's reader
+        self.video_link = {"bitrate": video_bitrate, "resolution": video_resolution, "fps": video_stream_fps}
         self._pending: _Pending | None = None
         self._result: str | None = "ok"
         self._flying = False
@@ -102,6 +141,7 @@ class TelloDrone(Drone):
         if not self.dry_run:
             self._tello.send_control_command(f"speed {int(self.move_speed_cm_s)}")
         if self.video_enabled:
+            apply_video_link(lambda c: self._tello.send_command_with_return(c, timeout=3), **self.video_link)
             self._start_video()
 
     def _start_video(self) -> None:

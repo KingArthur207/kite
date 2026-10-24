@@ -53,7 +53,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
-from .config import VIDEO_BACKENDS, Config, resolve_video_backend
+from .config import VIDEO_BACKENDS, Config, add_video_link_args, resolve_video_backend, video_link_args
 from .sources.base import FrameSource
 from .sources.opencv_sources import SteppedVideoSource
 from .types import Frame
@@ -619,6 +619,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds (default: Ctrl+C)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="Tello H.264 reader (default pyav; opt-in: raw, socket, auto = raw on macOS)")
+    add_video_link_args(p)
     p.add_argument("--follow", action="store_true", help="with --fly: g toggles follow mode (needs the 'follow' extra "
                    "and data/models/yolo11n.pt, see kite/follow.py)")
     p.add_argument("--follow-behind", type=float, default=None, help="follow distance behind the head, m (1.2)")
@@ -684,9 +685,12 @@ def main(argv: list[str] | None = None) -> int:
     cfg = Config()
     if args.video_backend:
         cfg.drone.video_backend = args.video_backend
+    video_link_args(cfg.drone, args)
     rcfg = RecordCfg(out_dir=args.out, fly=args.fly, speed=args.speed, pulse_s=args.pulse, max_s=args.max_s)
     meta = {"source": args.source, "args": vars(args), "argv": sys.argv,
-            "drone_cfg": {"yaw_sign": cfg.drone.yaw_sign, "video_backend": resolve_video_backend(cfg.drone.video_backend)}}
+            "drone_cfg": {"yaw_sign": cfg.drone.yaw_sign, "video_backend": resolve_video_backend(cfg.drone.video_backend),
+                          "video_bitrate": cfg.drone.video_bitrate, "video_resolution": cfg.drone.video_resolution,
+                          "video_stream_fps": cfg.drone.video_stream_fps}}
 
     if not tello:
         frames = FileReplay(args.source)

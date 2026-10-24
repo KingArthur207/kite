@@ -32,3 +32,24 @@ Macs can't hold a reliable connection to the Tello (Sat Oct 24), so the drone is
 ## Body cam
 
 The chest webcam records on the Arduino Q, not on this laptop (for example `ffmpeg -f v4l2 -i /dev/video0 body.mp4`). Clap once in view of both cameras at the start, so the two recordings can be lined up later, then run both through `scripts/pov.sh`.
+
+## If the drone video is corrupted
+
+Commands work but the picture smears or breaks into blocks: the video is losing packets on the radio link. Measure before and after each change below, so you know which one helped:
+
+```powershell
+python -m kite.video_doctor --seconds 20
+```
+
+It ends with one line, `link GOOD / FAIR / POOR`, giving packets per second, KB/s, the longest pause between packets and the share of frames damaged by loss. On Windows it also lists both Wi-Fi adapters and warns when both are on 2.4 GHz. `python -m kite.preflight --video-backend raw` prints the same line as its `video link` check.
+
+Try these in order:
+
+1. Keep the Tello alone on 2.4 GHz. The Tello only has 2.4 GHz, so move the phone hotspot to 5 GHz (iPhone: Settings > Personal Hotspot, Maximize Compatibility OFF; Android: hotspot band 5 GHz) and have the USB Netgear adapter and the Arduino join it there. The two radios then stop sharing one band.
+2. If that isn't enough, swap the adapters: the Netgear (better antenna) on the Tello, the built-in Wi-Fi on the hotspot.
+3. Turn power saving off on both adapters: Device Manager > Network adapters > each adapter > Power Management, untick "Allow the computer to turn off this device to save power"; and Control Panel > Power Options > Change plan settings > Change advanced power settings > Wireless Adapter Settings > Power Saving Mode: Maximum Performance (on battery and plugged in).
+4. Use kite's own reader, which recovers from lost packets better than PyAV's `udp://` reader: add `--video-backend raw` to `kite.record`, `kite.preflight`, `kite.calibrate` or `tests\drone_test.py`. It works on Windows as is; the log line `video socket UDP 11111: SO_RCVBUF ... granted` shows the receive buffer it got.
+5. Send a lighter stream: `--video-bitrate 2 --video-resolution low` (or `--video-bitrate 1`). The same flags work on `kite.record`, `kite.preflight`, `kite.calibrate`, `tests\drone_test.py` and `kite.video_doctor`, plus `--video-fps high|middle|low`. Nothing is sent unless you pass them. Older Tello firmware doesn't know these commands; you'll see "this Tello's firmware doesn't support setbitrate; keeping its default" and the run carries on.
+6. Keep the laptop within about 5 m of the drone with a clear line of sight, and close the Tello app on every phone.
+
+`tests\drone_test.py` used to take `--video-fps N` as its decode cap; that is now `--decode-fps N`, and `--video-fps` sets the drone's stream rate like everywhere else.

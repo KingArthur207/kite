@@ -7,7 +7,9 @@ packets but never delivered a frame (h264 "non-existing PPS", "Stream timeout tr
 
     receiver thread   recv() datagrams into a bounded queue, nothing else (never waits on decoding). The socket asks
                       for an 8 MB SO_RCVBUF; macOS grants up to kern.ipc.maxsockbuf (8 MB by default, ~7.4 MB
-                      usable), Linux up to net.core.rmem_max (stats()["rcvbuf"] says what was granted).
+                      usable), Linux up to net.core.rmem_max, Windows normally all of it (stats()["rcvbuf"] and the
+                      kite.tello_raw log line say what was granted). Works the same on Windows: plain UDP, and a
+                      stray ICMP "port unreachable" (WSAECONNRESET) is skipped instead of ending the receiver.
     decoder thread    raw Annex B bytes -> av.CodecContext("h264").parse() -> decode(). Bytes before the first SPS
                       (joining mid-stream) are skipped, so the decoder only ever starts on SPS/PPS + IDR. Every frame
                       is decoded (P-frames need their predecessors), at most `fps` per second are converted to BGR,
@@ -26,6 +28,7 @@ If the 8 MB buffer is not granted and stats() shows queue drops, raise the limit
 
 from __future__ import annotations
 
+import logging
 import queue
 import re
 import socket
@@ -35,12 +38,17 @@ from collections.abc import Iterable
 
 import av
 
+log = logging.getLogger("kite.tello_raw")
 RCVBUF_BYTES = 8 * 1024 * 1024  # ~20 s of Tello video; macOS's default kern.ipc.maxsockbuf is 8 MB
 QUEUE_DATAGRAMS = 8192  # ~12 MB of 1460-byte datagrams between the receiver and the decoder
 GAP_RESYNC_S = 2.0  # no data this long: the decoder's references are stale, wait for a fresh SPS + IDR
 MAX_ERRORS_IN_A_ROW = 50  # decode errors without a single frame ...
 NO_FRAME_RESYNC_S = 3.0  # ... AND no frame for this long: only then rebuild the decoder and wait for an SPS
 _EOF, _RESYNC = object(), object()  # queue markers
+LINK_GAP_S = 0.2  # a pause between datagrams longer than this is a link stall (the Tello sends ~200+ per second)
+LINK_STARVED_KB_S = 60  # under this the stream is starving (a healthy Tello sends well over 100 KB/s even at 1 Mbps)
+LINK_POOR_LOSS, LINK_FAIR_LOSS = 0.2, 0.05  # fraction of decoded frames FFmpeg flags as concealed after loss
+LINK_HELP = "docs/internal/windows-drone.md, 'If the drone video is corrupted'"
 
 
 def parse_port(url_or_port) -> tuple[str, int]:
@@ -95,7 +103,9 @@ class RawTelloStream:
         self._st = {"datagrams": 0, "bytes": 0, "frames_decoded": 0, "frames": 0, "corrupt_frames": 0,
                     "decode_errors": 0, "queue_drops": 0, "skipped_bytes": 0, "resyncs": 0, "keyframe_seen": False,
                     "time_to_first_datagram_s": None, "time_to_first_frame_s": None, "size": None,
-                    "rcvbuf_requested": rcvbuf, "rcvbuf": None, "port": None, "last_error": None}
+                    "rcvbuf_requested": rcvbuf, "rcvbuf": None, "port": None, "last_error": None,
+                    "max_gap_s": 0.0, "gaps_over_0.2s": 0}
+        self._first_rx = 0.0
         self._last_rx = 0.0
         if feed is None:
             host, port = parse_port(url_or_port)
@@ -115,11 +125,14 @@ class RawTelloStream:
             except OSError as e:
                 sock.close()
                 raise RuntimeError(f"cannot bind UDP {host}:{port} for the Tello video ({e}): another program holds "
-                                   f"it (lsof -nP -iUDP:{port})") from None
+                                   f"it (macOS/Linux: lsof -nP -iUDP:{port}; Windows: netstat -ano -p udp | "
+                                   f"findstr :{port})") from None
             sock.settimeout(0.1)  # the receiver checks the stop flag this often
             self._sock = sock
             self._st["rcvbuf"] = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
             self._st["port"] = sock.getsockname()[1]
+            log.info("video socket UDP %d: SO_RCVBUF %d bytes granted (asked %d)", self._st["port"],
+                     self._st["rcvbuf"], rcvbuf)
         self._rx = threading.Thread(target=self._receive if feed is None else self._feed_run, name="tello-raw-rx",
                                     daemon=True)
         self._dec = threading.Thread(target=self._decode_run, name="tello-raw-decode", daemon=True)
@@ -148,6 +161,7 @@ class RawTelloStream:
             out = dict(self._st)
         out["last_datagram_age_s"] = round(time.monotonic() - self._last_rx, 3) if self._last_rx else None
         out["queued"] = self._q.qsize()
+        out["receiving_s"] = round(self._last_rx - self._first_rx, 3) if self._first_rx else 0.0
         return out
 
     def stop(self) -> None:
@@ -179,6 +193,8 @@ class RawTelloStream:
                 n = sock.recv_into(buf)
             except socket.timeout:
                 continue
+            except ConnectionResetError:  # Windows: an ICMP "port unreachable" for this port; not fatal
+                continue
             except OSError:
                 return  # socket closed under us
             if not n:
@@ -189,7 +205,7 @@ class RawTelloStream:
                 st["time_to_first_datagram_s"] = round(now - self._t_start, 3)
             st["datagrams"] += 1
             st["bytes"] += n
-            self._last_rx = now
+            self._gap(now)
             try:
                 q.put_nowait(data)
             except queue.Full:  # the decoder is far behind: drop the backlog, it restarts at the next SPS
@@ -203,6 +219,18 @@ class RawTelloStream:
                 st["queue_drops"] += dropped + 1
                 q.put_nowait(_RESYNC)
 
+    def _gap(self, now: float) -> None:
+        """Note a datagram's arrival: the longest pause between two and how many exceeded LINK_GAP_S."""
+        st = self._st
+        if self._last_rx:
+            gap = now - self._last_rx
+            st["max_gap_s"] = round(max(st["max_gap_s"], gap), 3)
+            if gap > LINK_GAP_S:
+                st["gaps_over_0.2s"] += 1
+        else:
+            self._first_rx = now
+        self._last_rx = now
+
     def _feed_run(self) -> None:
         st = self._st
         try:
@@ -215,7 +243,7 @@ class RawTelloStream:
                     st["time_to_first_datagram_s"] = round(time.monotonic() - self._t_start, 3)
                 st["datagrams"] += 1
                 st["bytes"] += len(chunk)
-                self._last_rx = time.monotonic()
+                self._gap(time.monotonic())
                 while not self._stopped.is_set():  # tests: never drop, wait for the decoder
                     try:
                         self._q.put(bytes(chunk), timeout=0.1)
@@ -374,3 +402,29 @@ def format_rates(r: dict) -> str:
     if not r.get("keyframe_seen"):
         line += " | no full keyframe yet"
     return line
+
+
+def link_verdict(st: dict) -> tuple[str, str]:
+    """(grade, one line) on the radio link from a stats()-shaped dict: GOOD / FAIR / POOR / NONE. Packet rate and
+    gaps come from the socket; loss is estimated from the H.264 stream itself (the Tello's datagrams carry no
+    sequence numbers): the share of decoded frames FFmpeg had to conceal because slices were missing."""
+    n = st.get("datagrams") or 0
+    if not n:
+        return "NONE", "link NONE: no video packet arrived"
+    sec = max(st.get("receiving_s") or 0.0, 1e-3)
+    kb_s = (st.get("bytes") or 0) / sec / 1024
+    decoded, corrupt = st.get("frames_decoded") or 0, st.get("corrupt_frames") or 0
+    loss = corrupt / decoded if decoded else None
+    gaps = st.get("gaps_over_0.2s") or 0
+    if kb_s < LINK_STARVED_KB_S or loss is None or loss > LINK_POOR_LOSS or gaps > 2:
+        grade = "POOR"
+    elif loss > LINK_FAIR_LOSS or gaps:
+        grade = "FAIR"
+    else:
+        grade = "GOOD"
+    line = (f"link {grade}: {n / sec:.0f} pkt/s, {kb_s:.0f} KB/s, max gap {st.get('max_gap_s') or 0:.2f} s "
+            f"({gaps} over {LINK_GAP_S:g} s), "
+            + (f"~{loss:.0%} of frames damaged by packet loss ({corrupt}/{decoded})" if decoded else "no frame decoded"))
+    if grade != "GOOD":
+        line += f"; see {LINK_HELP}"
+    return grade, line

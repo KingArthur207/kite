@@ -43,6 +43,10 @@ class FakeTello:
     def streamon(self):
         self.sent.append("streamon")
 
+    def send_command_with_return(self, cmd, timeout=7):
+        self.sent.append(cmd)
+        return next((e for p, e in self.error_for.items() if cmd.startswith(p)), "ok")
+
     def get_udp_video_address(self):
         return "udp://@0.0.0.0:11111"
 
@@ -161,6 +165,67 @@ def test_video_port_held_by_another_program_is_named(fast_video_check):
         with pytest.raises(RuntimeError, match=f"lsof -nP -iUDP:{port}"):
             d.connect()
         d.close()
+
+
+# ------------------------------------------------------------------ video link settings (setbitrate & co)
+def test_video_link_settings_go_after_command_and_before_streamon(fast_video_check):
+    fake = StreamingFakeTello(free_udp_port())
+    d = TelloDrone(tello=fake, dry_run=True, video_bitrate="2", video_resolution="low", video_stream_fps="middle")
+    d.connect()
+    assert fake.sent == ["command", "setbitrate 2", "setresolution low", "setfps middle", "streamon"]
+    d.close()
+
+
+def test_no_video_link_settings_by_default(fast_video_check):
+    fake = StreamingFakeTello(free_udp_port())
+    d = TelloDrone(tello=fake, dry_run=True)
+    d.connect()
+    assert fake.sent == ["command", "streamon"]
+    d.close()
+
+
+def test_old_firmware_error_is_logged_once_and_the_stream_still_starts(fast_video_check, caplog):
+    fake = StreamingFakeTello(free_udp_port())
+    fake.error_for = {"setbitrate": "error", "setfps": "unknown command: setfps"}
+    d = TelloDrone(tello=fake, dry_run=True, video_bitrate="auto", video_resolution="high", video_stream_fps="low")
+    with caplog.at_level("INFO", logger="kite.tello"):
+        d.connect()
+    assert fake.sent == ["command", "setbitrate 0", "setresolution high", "setfps low", "streamon"]
+    msgs = [r.getMessage() for r in caplog.records]
+    assert sum("doesn't support setbitrate" in m and "keeping its default" in m for m in msgs) == 1
+    assert sum("doesn't support setfps" in m for m in msgs) == 1
+    assert "setresolution high -> ok" in msgs
+    d.close()
+
+
+def test_apply_video_link_never_raises():
+    said = []
+
+    def send(cmd):
+        if cmd.startswith("setbitrate"):
+            raise OSError("network unreachable")
+        return None  # no reply at all
+
+    replies = tello_mod.apply_video_link(send, bitrate="5", fps="high", say=said.append)
+    assert list(replies) == ["setbitrate 5", "setfps high"]
+    assert "not sent" in replies["setbitrate 5"] and len(said) == 2
+    assert all("keeping the drone's default" in s for s in said)
+    assert tello_mod.video_link_commands() == []
+
+
+def test_make_tello_passes_the_video_link_flags():
+    import argparse
+
+    from kite.config import add_video_link_args, video_link_args
+
+    p = argparse.ArgumentParser()
+    add_video_link_args(p)
+    cfg = Config()
+    video_link_args(cfg.drone, p.parse_args(["--video-bitrate", "1", "--video-resolution", "low", "--video-fps", "low"]))
+    d = make_tello(cfg, dry_run=True)
+    assert d.video_link == {"bitrate": "1", "resolution": "low", "fps": "low"}
+    with pytest.raises(SystemExit):
+        p.parse_args(["--video-bitrate", "9"])
 
 
 # ------------------------------------------------------------------ Tello adapter
