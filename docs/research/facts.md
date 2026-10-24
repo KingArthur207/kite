@@ -1,12 +1,11 @@
-# Kite: sourced facts and prior art
+# Kite: sourced facts
 
-Checked Sat Oct 24 2026, early morning, for Rex to review. Each entry gives the number, where it comes from, the date of the source and how much to trust it. Links were opened unless the entry says otherwise. Rex owns the final call on anything that goes on a slide.
+Checked Sat Oct 24 2026, early morning. Each entry gives the number, where it comes from, the date of the source and how much to trust it. Links were opened unless the entry says otherwise.
 
 ## Short version
 
 - The "$50,000 guide dog" holds up only as one school's figure. Guiding Eyes for the Blind says $50,000 to raise and train a dog. Other US schools say $25,000 (Freedom Guide Dogs) to $75,000 (The Seeing Eye). The blind person pays nothing or close to it; donors pay. Say "Guiding Eyes puts the cost of one guide dog at $50,000", never "a guide dog costs a blind person $50,000".
 - The "2%" is a 30-year-old number. The only traceable source is a 1995 note in the Journal of Visual Impairment & Blindness, using data from around 1990. Guide Dogs for the Blind and the American Foundation for the Blind said in 2022 that they could not find a current prevalence estimate. Drop it. A sourced replacement: fewer than 10,000 working guide dogs in the US, against about 1 million Americans who are blind.
-- Our prior-art line is wrong as written. The Flying Guide Dog user study did not find drone guidance faster than anything. It had six sighted, blindfolded people, no comparison condition, and a 1 to 10 questionnaire. The "faster" result is from an earlier paper, DroneNavigator (ASSETS 2017), which Flying Guide Dog cites. The spec (sections 1 and 4) and the pitch line need fixing; suggested wording is in the prior art section below.
 
 Safest numbers for the slide:
 
@@ -99,52 +98,9 @@ Confidence: medium. It's an online survey of independent travelers from 2010, no
 
 Say "a guide dog works for roughly six to ten years", which means a handler goes through several dogs and several waits over a lifetime. The GDB/AFB report notes that 45% of the guide dog users it surveyed had used guide dogs for 20 years or more.
 
-## Prior art
-
-### Flying Guide Dog (Tan et al., KIT)
-
-Haobin Tan, Chang Chen, Xinyu Luo, Jiaming Zhang, Constantin Seibold, Kailun Yang, Rainer Stiefelhagen. "Flying Guide Dog: Walkable Path Discovery for the Visually Impaired Utilizing Drones and Transformer-based Semantic Segmentation." IEEE ROBIO 2021, Sanya, pp. 1123 to 1128, DOI 10.1109/ROBIO54168.2021.9739520 ([arXiv 2108.07007](https://arxiv.org/abs/2108.07007), [KIT record](https://publikationen.bibliothek.kit.edu/1000154564)). Read from the arXiv PDF.
-
-What they built: a DJI Tello controlled from a laptop in a backpack through DJITelloPy. SegFormer-B0 segments the street view and finds walkable ground (sidewalks and crosswalks), and a controller steers the drone along the centroid of the sidewalk. A classifier reads pedestrian lights, and they released a new traffic light dataset, PVTL. The user holds a string tied to the drone and feels where it pulls, with voice prompts in bone conduction headphones. The pipeline runs at about 11.7 fps on a GTX 1050 Ti, using 320×240 frames, 85 ms per frame.
-
-User study: six sighted participants aged 24 to 35, blindfolded, five men and one woman. Two open-space scenarios: a 20 m sidewalk with bicycles and pedestrians placed as obstacles, and an intersection with traffic lights. Afterwards they rated six statements from 1 to 10 (orientation, position, traffic light, learnability, mentally easy, physically easy). They found it reliable for direction and staying centered, and easy to learn. Traffic light guidance needed work: with a series of lights the drone could lead people into the median. "Mentally easy" scored lowest because the pull on the string was sometimes too weak to feel, and they added voice feedback to fix it. No timing, no comparison with a cane or any other aid, and no blind participants.
-
-Limitations they state: about 13 minutes of flight on a battery, and the drone is too light to hold steady in wind.
-
-What this means for us:
-- The spec's line "its user study found drone guidance faster than the alternatives it tested" is wrong. The paper's introduction says "According to the user study conducted in [4], drone navigation is more accurate and faster", and [4] is DroneNavigator, below.
-- Suggested pitch line: "In 2021, researchers at KIT flew a Tello in front of blindfolded walkers on a leash, and it kept them on the sidewalk. Kite drops the leash: the drone flies behind you, and everything reaches you as sound."
-- Their participants were sighted people under blindfolds. Ours at the table are too, so we shouldn't criticise them for it.
-
-### DroneNavigator (Avila Soto et al., ASSETS 2017)
-
-Mauro Avila Soto, Markus Funk, Matthias Hoppe, Robin Boldt, Katrin Wolf, Niels Henze. "DroneNavigator: Using Leashed and Free-Floating Quadcopters to Navigate Visually Impaired Travelers." ASSETS 2017, pp. 300 to 304, DOI 10.1145/3132525.3132556. A small quadcopter guided users either by its rotor sound alone (free-floating) or through a leash. Fourteen visually impaired participants, 13 of them fully blind, compared leashed, free-floating and ordinary audio navigation indoors, with the drone flown Wizard-of-Oz. Per the abstract as quoted in search results (I couldn't open the ACM page), participants were significantly faster with the free-floating drone and made fewer errors with either drone than with audio navigation. Medium confidence.
-
-This is the "faster" result, and it is the closest thing to Kite's no-leash idea: free-floating guidance by sound. Kite is still different. DroneNavigator used the drone's own noise as the cue, flew it Wizard-of-Oz indoors, and had no perception at all.
-
-### GuideCopter (Huppert, Hoelzl, Kranz, CHI 2021)
-
-A tethered drone that pulls a blind person's hand toward an object for fine grasping tasks, built with blind and visually impaired community groups. In a comparison study, it was more accurate than an audio-based hand guidance system ([abstract via Semantic Scholar](https://api.semanticscholar.org/graph/v1/paper/DOI:10.1145/3411764.3445676?fields=title,abstract), DOI 10.1145/3411764.3445676). It's about reaching for things, not walking.
-
-### Robotic guide dogs
-
-Xiao, Tong, Yang, Zeng, Li, Sreenath (UC Berkeley Hybrid Robotics), "Robotic Guide Dog: Leading a Human with Leash-Guided Hybrid Physical Interaction", ICRA 2021 ([arXiv 2103.14300](https://arxiv.org/abs/2103.14300)). A Mini Cheetah quadruped on a leash that plans around slack and taut leash states to fit through narrow gaps, tested with a blindfolded person. It's from Berkeley, and a Cal judge may know it. Several follow-up quadruped papers (2023 to 2025) look at quiet gaits and what blind users want a robot dog to look like.
-
-### Glide (Glidance)
-
-A wheeled guide with a handle. The user pushes, and Glide steers around obstacles, including overhead branches and signs, and helps at crossings ([glidance.io](https://glidance.io/)). Announced price $1,499 plus a subscription of about $40 a month, with shipping first estimated for 2025 ([Double Tap, May 2024](https://doubletaponair.com/glidance-offers-a-self-guided-mobility-aid-for-blind-people/)). The site now says orders are closed with a waitlist, and lists no price. This is the closest commercial "guide dog without a dog". A judge who follows the field will ask how Kite compares. The honest answer: Glide is a real product with hands-on guidance, and Kite is a hackathon prototype that tries to see farther ahead and leaves the walker's hands free for a cane.
-
-### Also worth knowing
-
-- Microsoft Soundscape: spatial audio beacons on OpenStreetMap for blind walkers. Retired in 2023 and released as open source; community forks such as VoiceVista continue it ([Perkins](https://www.perkins.org/resource/microsoft-soundscape-app-being-discontinued/)). Kite's ticking waypoint beacon is the same idea, so we shouldn't call it new.
-- Biped NOA: a shoulder harness with wide-angle cameras that gives obstacle warnings in spatial audio through bone conduction ([AppleVis post](https://www.applevis.com/comment/171381); I couldn't open biped.ai). It's close to Kite's chest camera half. Low confidence on details.
-
-How to place Kite honestly: drone guidance (FGD, DroneNavigator, GuideCopter), wheeled and legged robot guides (Glide, Berkeley's robot dog) and wearable cameras with spatial audio (NOA, Soundscape for beacons) all exist. As far as we found, nobody has put a drone behind and above the walker, a chest camera for the ground near their feet and spatial audio together, with stop rules taken from guide dog work.
-
 ## Not verified
 
 - A GDB per-dog cost and GDB working life (site blocks automated reads; ask GDB).
 - The 1995 JVIB note behind the 2%: cited, not read.
-- The DroneNavigator abstract wording, which we saw only through search summaries.
 - Cane forward reach in meters.
 - Any US count of blind pedestrians injured in traffic.

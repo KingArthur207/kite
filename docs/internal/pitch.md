@@ -2,19 +2,19 @@
 
 Cal Hacks 13, Sun Oct 25, live table judging 10:30 AM to 12:30 PM at the Palace of Fine Arts. Each judge gives us 2 minutes of pitch and 2 of questions. Tables are shared by 2 or 3 teams, so the walk has 3 to 4 m of aisle in a crowded hall. The whole team stays at the table for the full window, or we are not judged.
 
-This follows section 4 of the spec (`docs/superpowers/specs/2026-10-23-kite-design.md`). The table kit and the failure fixes are in `docs/demo-runbook.md`. Every number here traces to the repo; sources and caveats are in `docs/research/facts.md`. Anything in [TODO] or marked FLAG is not true yet or not confirmed. Do not fill a TODO with a number or a quote we do not have.
+This follows section 4 of the spec (`docs/internal/spec.md`). The table kit and the failure fixes are in `docs/internal/demo-runbook.md`. Every number here traces to the repo; sources and caveats are in `docs/research/facts.md`. Anything in [TODO] or marked FLAG is not true yet or not confirmed. Do not fill a TODO with a number or a quote we do not have.
 
 ## 0. Fill these in before 10:30
 
 1. Presenter: whoever won Saturday night's timed tryout. [TODO: name]
 2. There is no interview. We did not talk to a blind traveler this weekend, so the script has no quote and nobody claims user research. Do not add one.
 3. Kite-mode collision number from `scripts/sim_metrics.py` (20 walks, seed 1). The blind baseline is 3.05 collisions per walk. The oracle's 0 is not Kite and is never quoted as Kite. [TODO]
-4. How the Moss St footage was flown: piloted, follow mode, or handheld (`docs/shoot-day.md`, appendix D). Arthur. [TODO]
+4. How the Moss St footage was flown: piloted, follow mode, or handheld (`docs/internal/shoot-day.md`, appendix D). Arthur. [TODO]
 5. Whether the footage shows a car turning in from Howard. If it does not, say what it does show. Beat 4 changes.
 6. Whether the judge's "Kite, what's in front of me?" works at the table, and how the judge triggers it. The AirPods mic puts the AirPods in mono, so the earpiece uses the laptop mic. The demo driver may have to press talk. Settle this at the 6 PM rehearsal.
 7. The key that opens the reveal window and the dashboard's presentation mode (P). The runbook says V for the sim; the live reveal may differ. Check on the day.
 8. A written yes from the directors before anyone powers on the Tello at the table. Without it the Tello stays off and nobody says it is on.
-9. Kit cost for Q8, from the Target receipts. [TODO]
+9. Kit cost for Q7, from the Target receipts. [TODO]
 
 ## 1. Roles at the table
 
@@ -79,7 +79,7 @@ Presenter: "Mask off. This is what Kite saw, with faces blurred and nothing save
 
 Presenter: "A chest camera sees a few meters. The drone sees the street. Drones are banned in this hall, so this is Tello footage from Moss Street, recorded Saturday at 7 AM, [TODO: flown by hand / follow mode / handheld]. A car turns in from Howard, and Kite says stop. Same detector. The audio is rendered afterward from the detector's events; the walker heard a spotter that day."
 
-[FLAG: that last sentence is required, because on the day the walker did not hear Kite (`docs/shoot-day.md`, appendix C). If the overlay video carries an on-screen caption saying the same, cut the sentence to keep the time. If the clip has no turning car, replace the car sentence with what it does show.]
+[FLAG: that last sentence is required, because on the day the walker did not hear Kite (`docs/internal/shoot-day.md`, appendix C). If the overlay video carries an on-screen caption saying the same, cut the sentence to keep the time. If the clip has no turning car, replace the car sentence with what it does show.]
 
 ### Beat 5. 1:35 to 1:50. The number
 
@@ -87,9 +87,9 @@ Presenter: "We measured one thing. In our sim of that corner, a scripted walker 
 
 If the Kite number is not measured by 9:00 AM, cut beat 5 and give the time to beat 4's clip. Do not read the baseline without the Kite number, and never read the oracle's 0.
 
-### Beat 6. 1:50 to 2:00. Prior art and what is real
+### Beat 6. 1:50 to 2:00. What is real
 
-Presenter: "In 2021, researchers at KIT flew a Tello in front of blindfolded walkers on a leash, and it kept them on the sidewalk. Kite drops the leash: the drone flies behind you, and everything reaches you as sound. Live on this laptop: the voice, Claude and the detector. Recorded: the drone footage. Simulated: the street. Questions?"
+Presenter: "The drone flies behind you, and everything reaches you as sound. Live on this laptop: the voice, Claude and the detector. Recorded: the drone footage. Simulated: the street. Questions?"
 
 [Stop talking after "Questions?". Hand the judge the card with the repo URL and the Devpost link. [TODO: card]]
 
@@ -134,9 +134,9 @@ For a judge who says they are short on time, or who arrives as another team is f
 | 0:08 to 0:30 | Stepper, spotter | Judge walks. Stepper steps in almost at once. The judge hears the beeps and "Stop. Person ahead." Stepper steps out. "Path is clear. You can continue." Presenter says only: "That stop came from code, not a model." |
 | 0:30 to 0:40 | Presenter, driver | Mask off. "That's what Kite saw, faces blurred, nothing saved." Driver shows the reveal. |
 | 0:40 to 0:55 | Presenter, driver | Driver plays the last 10 seconds of the Moss St clip, from the car turning in. "A chest camera sees a few meters. The drone sees the street. This is recorded footage, since drones are banned here, and the audio is rendered from the detector afterward." |
-| 0:55 to 1:00 | Presenter | "KIT flew a Tello in front of blindfolded walkers on a leash in 2021. We drop the leash. Questions?" |
+| 0:55 to 1:00 | Presenter | "The drone flies behind you, and everything reaches you as sound. Questions?" |
 
-If the judge asks whether this has been tested with a blind person, use the answer to Q13. Do not skip it.
+If the judge asks whether this has been tested with a blind person, use the answer to Q12. Do not skip it.
 
 ## 5. Sponsor inserts
 
@@ -186,7 +186,7 @@ Guide criteria for "Built for the Real World" and the Customer Impact Award: cus
 
 Where it goes: replaces beat 5 and the second sentence of beat 6.
 
-Insert: "Customer: we built from guide dog school figures and the KIT user study, and we have not yet tested with a blind walker. Usefulness: [TODO: Kite-mode collision number against the 3.05 baseline]. Production: every piece sits behind a seam, so a phone replaces the laptop by changing a setting; that is our plan, not something built. Responsible: no stored video, faces blurred, and the safety path stays on this laptop. End to end: you just walked it."
+Insert: "Customer: we built from guide dog school figures and published surveys of blind travelers, and we have not yet tested with a blind walker. Usefulness: [TODO: Kite-mode collision number against the 3.05 baseline]. Production: every piece sits behind a seam, so a phone replaces the laptop by changing a setting; that is our plan, not something built. Responsible: no stored video, faces blurred, and the safety path stays on this laptop. End to end: you just walked it."
 
 Backing: README "Microsoft: built for the real world", `scripts/sim_metrics.py`, `earpiece/tests/test_app_stress.py`, `SECURITY.md`.
 
@@ -202,77 +202,73 @@ Real and live on this laptop: the earpiece, the voice, Claude, the detector on t
 
 FLAG: the detector on the phone is the stand-in (YOLO11n plus depth) unless Rex's `streetseg` landed. Name the one that is running. "Confirmed on the phone camera" is a TODO in the README until the rehearsal.
 
-### Q2. Isn't this Flying Guide Dog?
-
-It is the closest prior work and we cite it. In 2021 a KIT team flew a Tello in front of blindfolded walkers, found the sidewalk with segmentation, and the walker followed a string tied to it. Their study had six sighted, blindfolded people and a questionnaire, and it kept them centered and was easy to learn; traffic lights still needed work. Kite drops the leash and flies behind the walker, adds a chest camera for the ground at their feet, and delivers everything as sound, with stop rules taken from how guide dogs behave. As far as we found, nobody has put those together. We do not claim to beat their results, because we have not run a comparison.
-
-### Q3. What if it misses a car?
+### Q2. What if it misses a car?
 
 It can, and we have not measured how often. The stand-in detector only knows common object classes, cannot tell a parked car from a moving one, and in the sim a car turning in from Howard behind and to the right of a walker facing the zebra only enters the camera's view about 3 m away. That is why Kite never says a street is safe to cross, and why the cane stays. Silence from Kite is never permission. Kite is an extra source of warnings, not a replacement for judgment.
 
 FLAG: the README reports that detector recall drops a lot on sim frames with Google 3D Tiles (people about 9 to 10% against about 60% on the OpenStreetMap world). Quote it only if asked, from `sim/README.md`, and say the live walk does not use the tiles.
 
-### Q4. Why behind the walker and not ahead?
+### Q3. Why behind the walker and not ahead?
 
-A drone ahead of a walker is between them and the street, and it has to hold a leash to be useful. Behind and above, it sees the route over the walker's head and stays out of their way. The cost is real: from 30 cm above and 1 m behind, the fixed camera cannot see the ground for the first few meters, which is the job of the chest camera, and a car coming in from the side shows up late. We chose it as a design call and have not tested it against a drone in front.
+A drone ahead of a walker is between them and the street. Behind and above, it sees the route over the walker's head and stays out of their way. The cost is real: from 30 cm above and 1 m behind, the fixed camera cannot see the ground for the first few meters, which is the job of the chest camera, and a car coming in from the side shows up late. We chose it as a design call and have not tested it against a drone in front.
 
-### Q5. What are the Tello's speed and battery limits?
+### Q4. What are the Tello's speed and battery limits?
 
-The standard Tello tops out near 0.96 m/s at full stick (extrapolated from a stick-30 test), and people walk at 1.2 to 1.3 m/s. We capped it at about 0.5 m/s, so the walker in our footage walks slowly. One battery gives about 6 to 8 minutes with video on. It has no GPS, it lands itself 15 seconds after it stops hearing us, and the KIT team reported it is too light to hold steady in wind. So the drone is a prototype of the view, not a product. The live walk here uses the chest camera for exactly that reason.
+The standard Tello tops out near 0.96 m/s at full stick (extrapolated from a stick-30 test), and people walk at 1.2 to 1.3 m/s. We capped it at about 0.5 m/s, so the walker in our footage walks slowly. One battery gives about 6 to 8 minutes with video on. It has no GPS, and it lands itself 15 seconds after it stops hearing us. So the drone is a prototype of the view, not a product. The live walk here uses the chest camera for exactly that reason.
 
-### Q6. Why not just a cane or a guide dog?
+### Q5. Why not just a cane or a guide dog?
 
 Use both if you can. A guide dog is the standard. Guiding Eyes puts the cost of raising and training one at $50,000, paid by donors, not by the blind person, and at Guide Dogs for the Blind the wait after applying was 7 to 10 months in 2022. Fewer than 10,000 guide dogs work in the US against about 1 million Americans who are blind. In a 2022 survey of 236 non-users, 31% did not want the responsibility of a dog and 22% could not afford one. A cane finds what is a step or so ahead, and the federal access rules treat anything between 27 and 80 inches high as a hazard to a cane user. Kite is meant to sit beside the cane, with the walker's hands free for it.
 
 FLAG: say "Guiding Eyes puts the cost at $50,000", not "a guide dog costs $50,000", and never say a blind person pays it. Rex signs off on these figures; sources and caveats are in `docs/research/facts.md`. We have not shown that Kite does any of this better than a cane.
 
-### Q7. What about the privacy of the cameras?
+### Q6. What about the privacy of the cameras?
 
 The caregiver dashboard shows positions and events, never video. Frames we send to Claude to answer "what's in front of me" are not mirrored anywhere. The reveal window pixelates faces and writes nothing to disk, and we store no frames during the live demo. The detector runs on the laptop, and the safety cues stay on localhost.
 
 FLAG: the honest gaps. A frame does go to Claude's API when the walker asks a question. The raw Tello takes from Moss St were recorded on a public street and sit on team laptops; only the overlay video has heads blurred. Bystanders near a walker have not agreed to be seen by a chest camera, and we have no answer for that beyond not storing frames. Say so.
 
-### Q8. What would it cost?
+### Q7. What would it cost?
 
 We do not have a production price. The prototype is consumer parts: a Tello, a phone as the chest camera, headphones and a laptop, and the Cartesia and Claude calls cost money per use. [TODO: kit cost from the receipts and the API cost per walk, if Eddy measured it.] Comparing with a $50,000 guide dog is not fair, since that figure is what a school spends to raise and train one dog over a working life of about six to ten years, and Kite is not a trained animal. We would rather compare the cost per walker once it works on a phone.
 
 FLAG: no cost number exists in the repo. Do not make one up. If asked "so is it cheaper", the honest answer is "that is the goal, and we have not shown it."
 
-### Q9. Who did you talk to?
+### Q8. Who did you talk to?
 
-"We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and the KIT Flying Guide Dog user study of blindfolded walkers. Testing with orientation and mobility instructors is our next step."
+"We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and published surveys of blind travelers. Testing with orientation and mobility instructors is our next step."
 
 FLAG: the Anthropic criterion (someone you talked to) and the Microsoft criterion (customer understanding) both lean on this answer, and we have nothing to offer. Say it plainly and do not hedge.
 
-### Q10. How does Claude not tell someone to cross?
+### Q9. How does Claude not tell someone to cross?
 
 It is not given the chance to. Stops, sonar beeps and "Don't walk" are decided in deterministic code before Claude sees anything. Claude answers through one strict tool that returns at most one short sentence and an optional upgrade of a hazard already on the list. Code drops any sentence that sounds like permission ("safe to cross", "go ahead", "keep walking", "detour"), anything over 120 characters, any move to critical, any downgrade, and any answer slower than 2.5 seconds. Only the deterministic code can end a stop, and nothing in Kite says a street is safe.
 
 FLAG: the permission filter is a phrase list with tests (`test_judgment.py`). A paraphrase we did not think of could get past it. The stronger protection is that Claude cannot clear a stop. Claude's answer to "what's in front of me?" can also be wrong, because it describes a frame. Say both if pressed. Karthik built the judgment layer and the camera descriptions; hand this one to him.
 
-### Q11. What happens offline?
+### Q10. What happens offline?
 
 The safety path never needed the internet. Sonar beeps, stops, "Don't walk" and the cached safety phrases run on this laptop. Local voice commands (stop, repeat, pause, louder) still work. With Claude down, open questions get a short offline answer. With Cartesia down, new sentences fall back to macOS `say` and voice questions stop working. With SpacetimeDB down, we start a local server on the same laptop (`KITE_OFFLINE=1 scripts/demo.sh sim`) and the dashboard keeps working.
 
 FLAG: the spec says these fallbacks are tested by Saturday's freeze. Karthik owns the cached safety phrases and the stop and wait logic; Eddy owns the offline script. Confirm at the rehearsal that you have actually run `scripts/offline.sh` and the demo in airplane mode.
 
-### Q12. Are you allowed to use Google imagery?
+### Q11. Are you allowed to use Google imagery?
 
 For this one street, yes. Google's Maps Platform policy lists object detection as a prohibited use, so we asked. Google's representatives at Cal Hacks told Eddy on Saturday at about 3 AM that we could use Photorealistic 3D Tiles and Street View for this hackathon, including running our detector on rendered frames, only for Moss St between Folsom and Howard. The sim masks and counts tile requests outside that block, we store no Google imagery, and their attribution stays on screen. If the permission did not apply, the sim uses the OpenStreetMap world instead.
 
 FLAG: `docs/google-permission.md` still has TODOs for the representative's name and a written confirmation. As it stands the permission is verbal. Say "verbal" if asked. Fill it in, or say we hold it verbally and fall back to OpenStreetMap if the judge wants us to.
 
-### Q13. Would a blind person wear this?
+### Q12. Would a blind person wear this?
 
 We do not know. No blind walker has tried it. What worries us, and what we would test first: earphones that cover the ears take away the street sound a blind walker relies on, a drone's noise behind the head could mask the very sounds that matter, and a laptop on the back is not something to wear daily. The design choices we can defend are that Kite stops and waits instead of steering, the walker stays in charge, and critical warnings cannot be muted by any remote command.
 
 FLAG: nothing in the repo tests ear coverage or drone noise. This is the answer with the most risk of sounding naive if we pretend otherwise. If a blind judge or an O&M instructor asks, listen first and write down what they say.
 
-### Q14. What is next?
+### Q13. What is next?
 
 In order: test with orientation and mobility instructors and blind walkers outdoors, with a spotter. Then fly follow mode outdoors behind and above the walker under the safety governor already in the drone layer; it has only run in a closed-loop simulation and has never flown. Then read pedestrian signals from closer range or from the chest camera, since a signal 20 m away is about 14 pixels tall in the Tello stream. After that, put perception on a phone so the laptop goes away.
 
-### Q15. Why a drone at all?
+### Q14. Why a drone at all?
 
 Honestly, at this table the drone is off, and the live part is the chest camera. The drone view is shown in recorded footage and in the sim. What it adds is a camera that is not on the walker's body and looks along the route, so it can see crowds, a crossing and a car turning in before the walker reaches the curb. But it only sits about 30 cm above head height, so it does not see much farther than a camera on a hat would. We have not shown that a flying camera beats a worn one. If a judge presses, say so and describe what we would measure: warning distance on the same route from each camera.
 
@@ -301,11 +297,11 @@ Spotter at arm's length, always. Nobody leaves the table.
 
 1:35  Sim: 3.05 collisions a walk with no cues, [__] with Kite. No Kite number: cut the beat.
 
-1:50  "KIT flew a Tello in front of blindfolded walkers on a leash in 2021. Kite drops the leash: the drone flies behind, everything reaches you as sound. Live: voice, Claude, detector. Recorded: drone footage. Simulated: the street. Questions?"
+1:50  "The drone flies behind, everything reaches you as sound. Live: voice, Claude, detector. Recorded: drone footage. Simulated: the street. Questions?"
 
 ## 60 SECONDS
 
-Mask on, walk, stop, clear (30 s). Mask off, reveal (10 s). Last 10 s of the clip (15 s). KIT line, questions (5 s).
+Mask on, walk, stop, clear (30 s). Mask off, reveal (10 s). Last 10 s of the clip (15 s). Closing line, questions (5 s).
 
 ## SPONSOR (20 s)
 
@@ -316,7 +312,7 @@ Microsoft: customer, usefulness, production, responsible, end to end. Say which 
 
 ## NEVER SAY
 
-"Safe to cross." The oracle's 0 as Kite's. A guide dog "costs a blind person $50,000". The drone flew here. That we talked to or tested with a blind person. "Faster" about Flying Guide Dog.
+"Safe to cross." The oracle's 0 as Kite's. A guide dog "costs a blind person $50,000". The drone flew here. That we talked to or tested with a blind person.
 
 ## FAILS
 

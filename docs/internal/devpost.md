@@ -10,11 +10,7 @@ Guiding Eyes for the Blind puts the cost of raising and training one guide dog a
 
 We wanted to give a blind pedestrian some of what a guide dog gives them: something that looks farther ahead than they can, stops them at curbs and crossings, watches for overhead obstacles, and refuses to go forward when going forward isn't safe.
 
-We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and the KIT Flying Guide Dog user study of blindfolded walkers. Testing with orientation and mobility instructors is our next step.
-
-## Prior art
-
-In 2021, researchers at KIT built Flying Guide Dog: a DJI Tello flies in front of the walker, segments the street to find the sidewalk, and the walker holds a string tied to it and follows the pull, with voice prompts in bone conduction headphones. Their user study had six sighted participants under blindfolds, who rated it on a questionnaire; it kept them centered on the sidewalk and was easy to learn, and traffic lights still needed work. Kite drops the leash. Our drone flies behind and above the walker, a chest camera covers the ground at their feet, and everything reaches them as sound. Our judges at the table are sighted and blindfolded too.
+We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and published surveys of blind travelers. Testing with orientation and mobility instructors is our next step.
 
 ## What it does
 
@@ -95,7 +91,7 @@ Python, Rust (cpal, rtrb, PyO3), TypeScript, React, Vite, three.js, 3d-tiles-ren
 | Track | What we show | Where in the repo |
 |---|---|---|
 | Best Hardware Hack | A DJI Tello and a phone chest camera feeding the same detector. Drone layer with its own command handling, a safety governor, a recorder, calibration, preflight, GPS alignment and follow mode. AirPods with stem-press controls. A real-time Rust audio engine. Table kit: laptop, headphones, phone chest clip, Tello. | `kite/`, `tests/`, `sim/standin_detect.py`, `sim/live_walk.py`, `earpiece/native/`, `earpiece/earpiece/controls.py`, `earpiece/earpiece/devices.py`. Footage: [TODO: shoot video link] |
-| Best People-First Hack | Built around how guide dogs work: stop and wait, then continue; never "safe to cross"; warnings that work offline. Caregiver dashboard without camera video. Faces pixelated in the reveal, and no frames stored during the live walk. | `earpiece/earpiece/app.py`, `sonar.py`, `speech.py` (priorities, preemption, TTL), `judgment.py`, `dashboard/`. Research: guide dog schools' figures and the KIT study (`docs/research/facts.md`) |
+| Best People-First Hack | Built around how guide dogs work: stop and wait, then continue; never "safe to cross"; warnings that work offline. Caregiver dashboard without camera video. Faces pixelated in the reveal, and no frames stored during the live walk. | `earpiece/earpiece/app.py`, `sonar.py`, `speech.py` (priorities, preemption, TTL), `judgment.py`, `dashboard/`. Research: guide dog schools' figures and published surveys of blind travelers (`docs/research/facts.md`) |
 | Cartesia | Voice is the whole interface. Streaming Sonic TTS on one persistent WebSocket with per-utterance contexts and cancellation, on-disk phrase cache for safety phrases, long-form reading, `ink-whisper` streaming STT, offline fallback. The README lists features and limitations. | `earpiece/earpiece/speech.py`, `listen.py`, `config.py`; README "Cartesia: the voice, both ways" |
 | Spacetime | Every event the earpiece receives goes into one live world state that the dashboard reads. Caregiver messages come back through it to the walker's headphones. Walk timeline and presentation mode built only from the shared tables. Local server fallback with the same module. | `dashboard/spacetimedb/src/index.ts`, `earpiece/earpiece/spacetime.py`, `dashboard/src/App.tsx`, `scripts/replay.py --spacetime`, `scripts/offline.sh` |
 | Microsoft | Customer understanding from published research (no interviews this weekend), a measured number from the sim, cost against a $50,000 guide dog, deterministic safety and no stored video, and the live walk end to end on one laptop. | README "Microsoft" section, `scripts/sim_metrics.py`, `earpiece/tests/test_app_stress.py`. Research: `docs/research/facts.md` |
