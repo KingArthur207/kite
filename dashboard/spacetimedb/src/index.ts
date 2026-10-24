@@ -28,7 +28,16 @@ const latest = table(
   }
 );
 
-const spacetimedb = schema({ event, latest });
+// Private bookkeeping, not visible to clients: when `clear` last ran.
+const meta = table(
+  { name: 'meta' },
+  {
+    key: t.string().primaryKey(),
+    t: t.timestamp(),
+  }
+);
+
+const spacetimedb = schema({ event, latest, meta });
 export default spacetimedb;
 
 const KEEP_EVENTS = 500n;
@@ -38,6 +47,9 @@ const SWEEP_SLACK = 50n;
 // Distinct (type, source) pairs kept in `latest`. Sources are caller-chosen, so without a cap any
 // caller could grow the table (and every dashboard's copy of it) without bound.
 const MAX_LATEST = 200n;
+// `push` and `clear` are open to any identity (the dashboard connects anonymously), so this is
+// what stops a stranger from keeping the caregiver's view permanently empty.
+const CLEAR_COOLDOWN_US = 60_000_000n;
 const MAX_PAYLOAD = 16 * 1024;
 const TYPES = new Set([
   'obstacles', 'hazard', 'guidance', 'beacon', 'position', 'status', 'scene', 'say',
@@ -90,8 +102,15 @@ export const push = spacetimedb.reducer(
   }
 );
 
-// Start a fresh demo run: drop the log and the latest state.
+// Start a fresh demo run: drop the log and the latest state. At most once a minute.
 export const clear = spacetimedb.reducer(ctx => {
+  const last = ctx.db.meta.key.find('clear');
+  if (last && ctx.timestamp.microsSinceUnixEpoch - last.t.microsSinceUnixEpoch < CLEAR_COOLDOWN_US) {
+    throw new SenderError('cleared less than a minute ago; try again shortly');
+  }
   for (const r of [...ctx.db.event.iter()]) ctx.db.event.id.delete(r.id);
   for (const r of [...ctx.db.latest.iter()]) ctx.db.latest.key.delete(r.key);
+  const stamp = { key: 'clear', t: ctx.timestamp };
+  if (last) ctx.db.meta.key.update(stamp);
+  else ctx.db.meta.insert(stamp);
 });
