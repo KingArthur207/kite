@@ -296,11 +296,15 @@ def main() -> None:
     ap.add_argument("--person-height", type=float, help="height of the person who steps in (default 1.7 m)")
     ap.add_argument("--stop-m", type=float, default=live_walk.STOP_M, help="chest: critical inside this range")
     ap.add_argument("--depth", action="store_true", help="chest: Depth Anything fallback for close non-YOLO things")
+    ap.add_argument("--depth-3d", action="store_true", help="--depth: the 3D ground-removal test even without sim "
+                                                            "frames (it trusts --pitch and --cam-height)")
     ap.add_argument("--world", action="store_true", help="chest: also YOLO-World for bins, signs, poles, bollards ... "
                                                          "(--download --world fetches it; needs CLIP for that step: "
                                                          "--with 'clip @ git+https://github.com/ultralytics/CLIP.git')")
     ap.add_argument("--world-every", type=int, default=1, help="--world: every Nth chest frame (~11 ms on mps)")
     ap.add_argument("--no-memory", action="store_true", help="chest: forget obstacles as soon as they leave the view")
+    ap.add_argument("--dead-reckon", action="store_true", help="chest memory without a pose (live camera, video): "
+                                                               "assume walking straight on at 1.2 m/s")
     ap.add_argument("--crossing", help="x,y of the crossing ahead in the pose's metres, for the corner car watch "
                                        "(default 0,0 on sim frames: the Moss/Howard zebra)")
     ap.add_argument("--show", action="store_true", help="reveal window: live chest view, r = replay last 20 s")
@@ -394,9 +398,12 @@ def main() -> None:
     gate, lateral, last_scene, writer = HazardGate(), live_walk.RangeFilter(), -SCENE_EVERY, None
     still = StillVehicles()
     memory = None if a.no_memory else world_frame.ObstacleMemory()
+    reckon = world_frame.DeadReckoner() if a.dead_reckon else None
     corner, chest_n, corner_on = world_frame.CornerWatch(crossing), 0, False
     n, infer_s, warm = 0, 0.0, None
-    rf, depth = live_walk.RangeFilter(), live_walk.DepthFallback(device) if a.depth else None
+    ground_3d = a.depth_3d or srcs is not None or sv is not None      # sim and Street View frames carry their pose
+    rf, depth = live_walk.RangeFilter(), live_walk.DepthFallback(device, ground_3d) if a.depth else None
+    depth_stop_m = live_walk.DEPTH_STOP_M if ground_3d else None
     reveal = live_walk.Reveal() if a.show else None
     fps, fps_t, fps_n, was_stop = 0.0, time.monotonic(), 0, False
     print(f"[standin] cams={cams} device={device} -> {ear.addr} source={a.source or a.relay}", flush=True)
@@ -481,8 +488,9 @@ def main() -> None:
                     extra = depth(img, cfx, cam_h, cpitch, objs) if depth else None
                     raw = objs + ([extra] if extra else [])
                     if memory is not None:
-                        raw = memory.step(raw, pc, t)
-                    objs = sent = live_walk.chest_step(raw, rf, t, a.stop_m)
+                        mpose = pc if "x" in pc or reckon is None else reckon.pose(t, pc.get("heading", 0.0))
+                        raw = memory.step(raw, mpose, t)
+                    objs = sent = live_walk.chest_step(raw, rf, t, a.stop_m, depth_stop_m)
                     emit({"type": "obstacles", "source": "standin-chest", "seq": n,
                           "objects": live_walk.to_event_objects(sent)}, t)
                     if not sent:

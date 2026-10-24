@@ -17,13 +17,13 @@ H, W, F = 252, 336, 350.0       # depth map size and fx at 336 wide (fx 1000 at 
 CAM = 1.2
 
 
-def scene(pitch=0.0, boxes=(), walls=(), curb=None, scale=1.0, flat_walls=None):
+def scene(pitch=0.0, boxes=(), walls=(), curb=None, scale=1.0, flat_walls=None, fy=F):
     """Ray-cast z-depth for a camera CAM m up, pitched down `pitch` deg. Ground at height 0 (or 0.15 from `curb`
     m ahead). boxes: (lat0, lat1, fwd0, fwd1, h0, h1) in metres, + lat = right. walls: lateral offset of an
     endless wall parallel to the path. `scale` mimics a depth model that misjudges metric scale, `flat_walls` one
     that flattens a wall seen edge-on (Depth Anything on Moss read the wall 0.5 m to the side as ~1 m ahead)."""
     p = math.radians(pitch)
-    yc = ((np.arange(H) - H / 2) / F)[:, None] * np.ones((1, W))
+    yc = ((np.arange(H) - H / 2) / fy)[:, None] * np.ones((1, W))
     xc = ((np.arange(W) - W / 2) / F)[None, :] * np.ones((H, 1))
     down, fwd, lat = yc * math.cos(p) + math.sin(p), math.cos(p) - yc * math.sin(p), xc
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -75,6 +75,24 @@ def test_wall_beside_the_path_is_not_ahead_but_a_bin_by_it_is():
             assert center_obstacle(scene(0, walls=[x], flat_walls=flat), F, CAM, 0) is None, (x, flat)
     o = center_obstacle(scene(0, [(-0.25, 0.25, 1.2, 1.7, 0, 1.0)], walls=[0.5]), F, CAM, 0)
     assert o and abs(o["distance"] - 1.2) < 0.2, o
+
+
+def test_live_camera_16_9_frames_squeezed_into_the_depth_map():
+    # live walk: 960x540 at fx 700, 15 deg down, resized to 336x252 -> fx 245, fy 327 in depth pixels
+    fx, fy = 700 * 336 / 960, 700 * 252 / 540
+    floor = scene(15, fy=fy)
+    assert center_obstacle(floor, fx, CAM, 15, fy=fy) is None
+    o = center_obstacle(scene(15, [(-0.25, 0.25, 1.5, 2.0, 0, 1.0)], fy=fy), fx, CAM, 15, fy=fy)
+    assert o and abs(o["distance"] - 1.5) < 0.2, o
+
+
+def test_camera_tilted_other_than_configured():
+    # configured 15 deg down (the live walk), really level or 25 deg down: the floor is fitted, not assumed
+    bin_ = (-0.25, 0.25, 1.5, 2.0, 0, 1.0)
+    for real in (0, 8, 25):
+        assert center_obstacle(scene(real), F, CAM, 15) is None, real
+        o = center_obstacle(scene(real, [bin_]), F, CAM, 15)
+        assert o and abs(o["distance"] - 1.5) < 0.25, (real, o)
 
 
 def test_something_off_the_corridor_is_ignored():
@@ -177,10 +195,11 @@ def test_memory_ignores_movers_and_keeps_two_depth_sightings_apart():
 
 
 def test_depth_only_obstacles_stop_from_further_out_than_known_things():
-    from live_walk import RangeFilter, chest_step
+    from live_walk import DEPTH_STOP_M, RangeFilter, chest_step
     for kind, stops in (("obstacle", True), ("person", False), ("bin", False)):
         o = {"id": "a", "kind": kind, "bearing": 0.0, "distance": 2.0, "confidence": 0.6, "cut_off": False}
-        assert chest_step([o], RangeFilter(), 0.0)[0]["stop"] is stops, kind
+        assert chest_step([o], RangeFilter(), 0.0, depth_stop_m=DEPTH_STOP_M)[0]["stop"] is stops, kind
+        assert chest_step([o], RangeFilter(), 0.0)[0]["stop"] is False, kind      # live: 1.6 m for everything
 
 
 # ------------------------------------------------------------------ corner watch

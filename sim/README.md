@@ -232,7 +232,25 @@ uv run --with playwright python scripts/sim_metrics.py --mode kite --port 6099 \
 
 ### Results on Moss (seed 1, 20 walks, textured OSM world)
 
-Measured on Oct 24 on an M5 MacBook, on the city-data geometry (#86, #99) with the harness above. Kite is the full pipeline: sim frames, relay, the stand-in detector with `--depth --world` (YOLO11n on both cameras, YOLO-World and Depth Anything on the chest, obstacle memory, the drone's corner watch) on `mps`, the earpiece (`--null --no-stem --no-judgment`, no Cartesia key, as of `1fff94f`), and a walker that reacts only to what the earpiece says or does. Blind and Kite face the same seeded obstacles. The detector handled a median 5.0 chest frames/s (10th percentile 2) of the 8 the sim sends.
+Measured on Oct 24 on an M5 MacBook. Kite is the full pipeline: sim frames, relay, the stand-in detector with `--depth --world` (YOLO11n on both cameras; YOLO-World and the 3D depth test on the chest; obstacle memory; the drone's corner watch) on `mps`, the earpiece (`--null --no-stem --no-judgment`, no Cartesia key), and a walker that reacts only to what the earpiece says or does. Blind, Kite and oracle face the same seeded obstacles.
+
+Current course (#119: Moss roadway 5.9 m, NE sidewalk 2.0 m at its narrowest, new colliders), earpiece from current main:
+
+| | blind | Kite (detector at 2 fps) | oracle (not Kite) |
+|---|---|---|---|
+| scripted-obstacle hits per walk | 2.65 | 2.30 | 0.75 |
+| walks completed | 20/20 | 20/20 | 20/20 |
+| mean time | 87.6 s | 121.7 s | 137.7 s |
+| wall and prop contacts per walk | 7.65 | 7.1 | 12.35 |
+| pedestrian crossing Moss (hit / near) | 0 / 2 | 0 / 2 | 0 / 0 |
+| bin (hit / near) | 20 / 0 | 13 / 7 | 0 / 20 |
+| head-height sign (hit / near) | 20 / 0 | 20 / 0 | 5 / 0 |
+| car turning in from Howard (hit / near) | 12 / 3 | 6 / 4 | 1 / 0 |
+| pedestrian on Howard (hit / near) | 1 / 11 | 7 / 10 | 9 / 11 |
+
+This Kite run is not a fair measurement. Other detectors were running on the same GPU, and ours handled a median 2.0 chest frames/s (10th percentile 1) of the 8 the sim sends. The corner watch fired 122 times, against 1076 in the run below. Re-run it on a quiet machine before quoting anything.
+
+Previous course (#86 and #99, NE sidewalk 1.45 m), earpiece as of `1fff94f`, detector at a median 5.0 chest frames/s (10th percentile 2):
 
 | | blind | Kite | oracle (not Kite) |
 |---|---|---|---|
@@ -240,25 +258,24 @@ Measured on Oct 24 on an M5 MacBook, on the city-data geometry (#86, #99) with t
 | walks completed | 20/20 | 20/20 | 20/20 |
 | mean time | 88.6 s | 149.9 s | 133.0 s |
 | wall and prop contacts per walk | 11.1 | 9.0 | 10.75 |
-| all collisions per walk (`collisions_per_walk`) | 13.8 | 10.25 | 11.5 |
 | pedestrian crossing Moss (hit / near) | 0 / 2 | 0 / 2 | 0 / 0 |
 | bin (hit / near) | 20 / 0 | 5 / 15 | 0 / 20 |
 | head-height sign (hit / near) | 20 / 0 | 10 / 5 | 5 / 0 |
 | car turning in from Howard (hit / near) | 13 / 2 | 0 / 2 | 1 / 0 |
 | pedestrian on Howard (hit / near) | 1 / 11 | 10 / 8 | 9 / 11 |
 
-What each fix did:
+What each fix did in that run:
 
 - Car turning in: 13 hits blind, none with Kite. The scouting drone saw it up Howard from about 33 m, and the corner watch held the walker on the sidewalk ("Car approaching the corner.", state `wait`) until it had passed.
-- Bin: 20 hits down to 5. Depth with ground removal sees it from about 3 m, memory keeps it after it drops out of the chest camera's view, and the walker stops and feels around it. Depth's distance on this untextured box is poor (it read about 2.0 m from a true 2.3 m in to 1.2 m), which is why depth-only obstacles stop from 2.2 m. In the other 5 walks the walker still reached it.
+- Bin: 20 hits down to 5. Depth with ground removal sees it from about 3 m, memory keeps it after it drops out of the chest camera's view, and the walker stops and feels around it. Depth's distance on this untextured box is poor (it read about 2.0 m from a true 2.3 m in to 1.2 m), which is why depth-only obstacles stop from 2.2 m in the 3D test. In the other 5 walks the walker still reached it.
 - Head-height sign: 20 down to 10. Depth only picks it up from about 1.7 m.
 - YOLO-World didn't matter for these two: it finds the street's real trash cans (0.7 confidence) but the bin and sign are plain boxes, which it scores at 0.23 or less.
 - Pedestrian on Howard: 1 hit blind, 10 with Kite. She steps out of a doorway 1.6 m to the left, timed on the walker's progress, and walks into a walker that Kite has stopped (often for the street's trash can a few metres before). The oracle, which also stops, gets hit 9 times. This is a real cost of stopping in a pedestrian's path, not a detection miss.
-- Kite walks take longer (150 s against 89 s) because each static obstacle costs a stop and an 8 s wait before the walker feels around it.
+- Kite walks take longer because each static obstacle costs a stop and an 8 s wait before the walker feels around it.
 
 The oracle reacts to ground truth 5 m ahead. It is not Kite and is only here as a reference; with this harness it still clips the sign and gets walked into on Howard.
 
-These numbers depend on the course: re-run all three modes if sidewalk widths, the obstacle or prop colliders, the route, or the scripted obstacles change. An earlier run on the pre-#86 geometry (PR #96) gave 3.05 collisions per walk for both blind and Kite; the course has changed since, so it doesn't compare with this table.
+These numbers depend on the course and on the detector keeping up: re-run all three modes if sidewalk widths, the obstacle or prop colliders, the route or the scripted obstacles change, and check the detector's frame rate in the run. An earlier run on the pre-#86 geometry (PR #96) gave 3.05 collisions per walk for both blind and Kite; that course no longer exists.
 
 ## Cars and people
 
@@ -416,7 +433,7 @@ The live path is the stand-in detector with a camera index as `--source`. `sim/l
 - Anything inside 1.6 m (`--stop-m`) and within 0.7 m of the walker's path is a stop. So is anything under 1 s from contact. A stop goes out with a closing speed that puts the earpiece's time to contact at 0.8 s. Its sonar then goes critical and says "Stop. Person ahead." at about 1.5 m instead of its own 0.75 m.
 - When a box is cut off by the bottom or the top edge (within 16 px; a person close to a chest camera), the distance comes from the top of the head, assumed 1.7 m (`--person-height`). When both the head and the feet are out of frame, no row can say how close they are, so the box width does, taking a person as 0.45 m wide. At the live settings (960x540, 15 degrees down) that happens inside about 1.65 m; before this, every distance in there read 1.65 m and "Stop" never fired.
 - `--pitch` is the camera's downward tilt in degrees. It goes into the ground-plane distance, and a phone clipped to a shirt usually points 10 to 20 degrees down.
-- `--depth` adds Depth Anything V2 Small (metric, indoor) at 336x252 as a fallback for things YOLO has no class for, such as boxes, bins, doors and overhanging signs. Every depth pixel goes to 3D with the camera's height and pitch. The depth scale is corrected from the ground (on sim frames the model's scale was off by 0.76x to 1.48x). Points under 0.2 m (ground and curb steps) and over 2.0 m (above the walker's head) drop out. So do walls beside the path: each column's foot on flat ground gives the wall's true sideways offset, which the model gets wrong on a wall seen edge-on. What is left within 0.4 m of the path and 2.5 m ahead must fill 0.5 % of the map on two frames running. A depth-only `obstacle` stops the walker from 2.2 m (other things from 1.6 m), because its distance is the least certain. It takes about 18 ms a frame on `mps`.
+- `--depth` adds Depth Anything V2 Small (metric, indoor) at 336x252 as a fallback for things YOLO has no class for, such as boxes, bins, doors and overhanging signs. It takes about 18 ms a frame on `mps`. It has two tests. On a live camera or a video file it uses the band test: something closer than 2.5 m that fills the centre of the frame and isn't floor. That is loose on purpose, because a phone on a shirt never sits at exactly its `--pitch`. On sim and Street View frames, which carry their pose (or with `--depth-3d`), it uses the 3D test. Every depth pixel goes to 3D, and the ground plane is fitted to the lower image by RANSAC (the configured height and pitch are the fallback), which also fixes the depth scale (on sim frames the model was off by 0.76x to 1.48x). Points under 0.2 m (ground and curb steps) and over 2.0 m (above the walker's head) drop out, and so do walls beside the path: where each column's lowest non-ground ray meets the ground gives the wall's true sideways offset, which the model gets wrong on a wall seen edge-on. What is left within 0.4 m of the path and 2.5 m ahead must fill 0.5 % of the map on two frames running, and a depth-only `obstacle` stops the walker from 2.2 m (other things from 1.6 m), because its distance is the least certain. On the live walk bench the 3D test stopped for walls and floor in 25 of 40 runs (the bench's stock corridors were filmed level, not at the configured 15 degrees), so live cameras keep the band test.
 - `--world` adds YOLO-World (yolov8s-worldv2) for street things COCO has no class for: trash cans, signs, poles, bollards, hydrants, benches, scooters, strollers. `--download --world` bakes that vocabulary into `weights/yolov8s-worldv2-street.pt` once; that step needs CLIP (`--with 'clip @ git+https://github.com/ultralytics/CLIP.git'`), and nothing is fetched at runtime. It takes about 11 ms a frame on `mps`, so it runs on every chest frame by default (`--world-every N` to thin it). On the sim it finds the street's trash cans at 0.7 confidence, but the metric's bin (a plain green box) scored 0.23 at best and its sign (a plain brown box) nothing, so in metrics mode those two come from depth.
 - Obstacle memory (on by default, `--no-memory` turns it off): static things the chest camera saw are kept in world metres from the pose and keep going to the earpiece as `obstacles` with their bearing and distance updated after they leave the view. A level chest camera loses a bin inside about 1 m. They are forgotten after 5 s of walking, once they are behind the walker, or past 8 m. Standing still doesn't age them, so a stop in front of a bin holds. People and cars are never remembered, and neither is anything depth sees within 1 m of where a person or car was in the last 2 s. Of two readings for the same thing, the nearer one is kept. It needs a pose: the sim sends one, while a live camera or video file has none, so there memory does nothing unless `--dead-reckon` is given. That flag assumes the wearer walks straight on at 1.2 m/s; it is off by default because it cannot tell when they stop (a step detector would fix that).
 - `--show` opens the reveal window: live view, labels (kind, bearing, distance, closing speed), and a red banner such as `STOP - person 1.4 m` that stays up 1.5 s. Press `r` to replay the last 20 s, `l` for live, `q` to quit. Heads are pixelated (`--no-blur` turns that off). The 20 s buffer is JPEG bytes in RAM and is never written to disk, and `--overlay` is refused for a live camera (spec 5.3).
@@ -499,6 +516,19 @@ What it found:
 3. Known limit: legs hidden behind something low (`syn_table`) make the box bottom look like feet farther away, so the person reads too far and Kite never stops. `--depth` should see the table itself; nothing in the YOLO path can.
 
 Bench fixes on the way: video files are now paced like a camera (skip ahead when behind, so a slow laptop can't fall further and further behind the clip), the detector warms YOLO up before frame 0 so the first frame doesn't stall 4 s, and it prints `[standin] t0_wall=` so the bench can line frames up with speech.
+
+Re-run on Oct 24 for the obstacle memory, YOLO-World and depth changes (#116), same seed, one after another on an M5 MacBook. `--ear-port` now defaults to `KITE_EARPIECE_PORT` again: from #96 on it ignored it, the detector sent to 5010, and the bench heard nothing (0 stops in 40 runs).
+
+| | main, YOLO only | #116, YOLO only | main, `--depth` | #116, `--depth` |
+|---|---|---|---|---|
+| passed | 37 / 40 | 36 / 40 | 37 / 40 | 38 / 40 |
+| missed or late stops | 3 (all `syn_table`) | 4 (3 `syn_table`, 1 `approach` late) | 3 | 2 |
+| false-stop runs | 0 | 0 | 1 | 2 |
+| stop latency p50 / p95 | +0.10 / +0.39 s | +0.03 / +0.39 s | +0.09 / +1.01 s | +0.18 / +0.80 s |
+| early continues | 0 | 0 | 0 | 0 |
+| detector p50 | 14.5 fps | 13.1 fps | 10.6 fps | 9.0 fps |
+
+On a live camera #116 runs the same chest code as main (the band depth test; memory has no pose), so the differences are run-to-run noise. Before depth was scoped to posed frames, #116 with `--depth` passed 15 of 40 with false stops in 25: the 3D test, trusting the configured 15 degrees, read the level stock corridor's floor and wall as mass in the path.
 
 ## Files and placeholders
 
