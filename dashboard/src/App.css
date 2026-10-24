@@ -58,3 +58,11 @@ td { padding: .3rem .4rem; border-bottom: 1px solid var(--line); vertical-align:
 .feed { font-size: .85rem; font-variant-numeric: tabular-nums; }
 .feed tr.p-critical td { color: #fca5a5; }
 .feed tr.p-hazard td { color: #fcd34d; }
+
+.message { display: flex; gap: .5rem; }
+.message input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid #39414f; border-radius: 8px; padding: .5rem .7rem; font: inherit; }
+.message button, .quick button { background: #1d232d; color: var(--text); border: 1px solid #39414f; padding: .45rem .9rem; border-radius: 8px; cursor: pointer; font-size: .95rem; }
+.message button:hover:not(:disabled), .quick button:hover:not(:disabled) { background: #262e3a; }
+.message button:disabled, .quick button:disabled { opacity: .4; cursor: default; }
+.quick { display: flex; flex-wrap: wrap; gap: .4rem; margin: .5rem 0; }
+.feed tr.caregiver td { color: var(--accent); }

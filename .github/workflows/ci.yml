@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  earpiece:
+    name: earpiece (${{ matrix.os }}, ${{ matrix.engine }} engine)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        engine: [rust, python]
+    defaults:
+      run:
+        working-directory: earpiece
+    env:
+      KITE_AUDIO_ENGINE: ${{ matrix.engine }}
+      KITE_NO_DEVICE_TESTS: "1"          # CI runners have no real speakers
+    steps:
+      - uses: actions/checkout@v7
+      - name: System audio libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libportaudio2 libasound2-dev
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: earpiece/pyproject.toml
+      - uses: dtolnay/rust-toolchain@stable
+        if: matrix.engine == 'rust'
+      - uses: Swatinem/rust-cache@v2
+        if: matrix.engine == 'rust'
+        with:
+          workspaces: earpiece/native
+      - name: Install
+        run: |
+          uv venv --python 3.12 .venv
+          EXTRAS="brain,dev"
+          if [ "$RUNNER_OS" = "macOS" ]; then EXTRAS="mac,$EXTRAS"; fi
+          uv pip install --python .venv/bin/python -e ".[$EXTRAS]"
+      - name: Build the Rust audio engine
+        if: matrix.engine == 'rust'
+        run: |
+          uv pip install --python .venv/bin/python maturin
+          VIRTUAL_ENV=$PWD/.venv .venv/bin/maturin develop --release -m native/Cargo.toml
+      - name: Test
+        run: .venv/bin/python -m pytest -q
+
+  native:
+    name: rust (fmt, clippy, unit tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: earpiece/native
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: earpiece/native
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: cargo fmt --check
+      - run: cargo clippy --release --all-targets -- -D warnings
+      - run: PYO3_PYTHON=$(which python) cargo test --release --lib
+
+  dashboard:
+    name: dashboard (build + module typecheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            dashboard/package-lock.json
+            dashboard/spacetimedb/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci && npx tsc --noEmit -p .
+        working-directory: dashboard/spacetimedb

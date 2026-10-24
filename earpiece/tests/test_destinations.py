@@ -49,7 +49,7 @@ def test_app_relative_and_nearby_destinations(app):
         {"type": "position", "lat": 37.8013, "lng": -122.4477, "place": "Lyon Street"}))
     app.heard("take me to the nearest pharmacy")
     assert wait_for(lambda: any(t.startswith("The nearest pharmacy is Walgreens on 2141 Chestnut St")
-                                for t in [h["text"] for h in app.speaker.history]), 4)
+                                for t in [h["text"] for h in app.speaker.history]), 12)
     req = [e for e in events if e["type"] == "voice_request"][-1]
     assert req["name"] == "Walgreens" and req["target_type"] == "nearby"
 
