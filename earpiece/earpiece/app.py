@@ -91,6 +91,8 @@ class Earpiece:
                                                  describe_front=lambda: self.describe_front(),
                                                  read_text=lambda: self.read_text()),
                            self.say, self.cfg.anthropic_key, log=log)
+        self.listener.turns = self.speaker.turns          # end-of-speech -> reply latency, by stage
+        self.listener.on_partial = self.brain.prefetch    # Moss recall starts while the wearer talks
         self.judgment = Judgment(self.context, self.say, self.upgrade_hazard, self._event,
                                  api_key=self.cfg.anthropic_key if self.cfg.judgment else None, log=log)
         self._noted_places: set[str] = set()
@@ -104,6 +106,7 @@ class Earpiece:
         self._chest_frame: tuple[bytes, float] | None = None   # newest chest-camera JPEG
         self.camera = BodyCamera(log=log)
         self.gestures = Gestures(self.gesture, log=log)
+        self.gestures.on_press = self.barge_in            # cut at the press, not after classifying it
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
                                    self.cfg.net.ws_port, log=log) if network else None
         if self.transport is not None:
@@ -536,7 +539,14 @@ class Earpiece:
         self.brain.handle(text)
 
     def _on_listening(self, on: bool) -> None:
+        if on:
+            self.brain.interrupt()
         self.speaker.set_listening(on)
+
+    def barge_in(self) -> None:
+        """The wearer pressed: stop non-safety speech and the answer still being written."""
+        self.brain.interrupt()
+        self.speaker.barge_in()
 
     # ================================================================== actions
     def repeat(self) -> None:
@@ -752,6 +762,8 @@ class Earpiece:
             out = "Route cancelled."
         elif action == "stop_speaking":
             self.stop_speaking()
+        elif action in ("speak_faster", "speak_slower", "speak_normal"):
+            out = self.speaker.adjust_speed({"speak_faster": 1, "speak_slower": -1}.get(action, 0))
         self._event("control", {"action": action})
         if speak and out:
             self.say(out, "system", ttl=5)

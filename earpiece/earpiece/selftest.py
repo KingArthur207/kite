@@ -6,7 +6,8 @@ Checks, in order, and prints PASS / WARN / FAIL with the measured numbers:
   3. spatial audio (plays a knock on the left then the right and checks the rendering)
   4. neural voice (Cartesia WebSocket: time to first audio)
   5. offline voice (macOS `say`)
-  6. speech recognition (Cartesia STT on a synthesised phrase: word accuracy + latency)
+  6. speech recognition (Cartesia STT on a synthesised phrase: word accuracy + latency),
+     then the voice loop estimate: end of speech -> first audio of the reply, by stage
   7. Claude (one short answer, if ANTHROPIC_API_KEY is set)
   8. microphone (opens it for 1 s and checks it is not silent / blocked by permissions)
   9. AirPods stem presses (posts a simulated media key and checks it is received)
@@ -85,6 +86,7 @@ def run(play: bool = True, log=print) -> int:
 
     # 4. neural voice
     from .speech import CartesiaStream, offline_tts
+    warm_tts = None
     if cfg.cartesia_key:
         async def tts_probe():
             cs = CartesiaStream(cfg.speech, cfg.cartesia_key, engine.rate)
@@ -95,12 +97,16 @@ def run(play: bool = True, log=print) -> int:
                 first = first or time.monotonic() - t0
                 n += c.size
                 chunks.append(c)
+            t1, warm = time.monotonic(), None      # a reply on the already-open socket, as in a walk
+            async for _ in cs.stream("Louder.", "selftest-warm"):
+                warm = warm or time.monotonic() - t1
             await cs.close()
-            return first, n, np.concatenate(chunks)
+            return first, n, np.concatenate(chunks), warm
         try:
-            first, n, pcm = asyncio.run(tts_probe())
+            first, n, pcm, warm_tts = asyncio.run(tts_probe())
             rep("voice", "PASS" if first < 1.0 else "WARN",
-                f"Cartesia first audio {first * 1000:.0f} ms (incl. connect), {n / engine.rate:.1f}s of speech")
+                f"Cartesia first audio {first * 1000:.0f} ms (incl. connect), {warm_tts * 1000:.0f} ms on the "
+                f"open socket, {n / engine.rate:.1f}s of speech")
             if play and out is not None:
                 engine.speech_begin("st")
                 engine.speech_feed("st", pcm)
@@ -150,6 +156,19 @@ def run(play: bool = True, log=print) -> int:
             got = set(text.lower().replace(",", "").replace(".", "").split())
             acc = len(want & got) / len(want)
             rep("stt", "PASS" if acc >= 0.8 else "WARN", f"{text!r} ({acc:.0%} words, {lat * 1000:.0f} ms after end)")
+            # 6b. the voice loop, end of speech -> first audio of the reply, from the measured parts
+            from .brain import classify
+            t0 = time.perf_counter()
+            classify("louder", "louder")
+            brain_ms = (time.perf_counter() - t0) * 1000
+            tts_ms = (warm_tts or 0.1) * 1000
+            from .listen import FLUSH_AT_SILENCE_S
+            full = cfg.listen.end_silence_s * 1000 + lat * 1000 + brain_ms + tts_ms
+            quick = (FLUSH_AT_SILENCE_S + 0.2) * 1000 + brain_ms + tts_ms
+            rep("loop", "PASS" if full < 1500 else "WARN",
+                f"end of speech -> reply audio ~{full:.0f} ms for a question (silence "
+                f"{cfg.listen.end_silence_s * 1000:.0f} + STT {lat * 1000:.0f} + brain {brain_ms:.0f} + TTS "
+                f"{tts_ms:.0f}), ~{quick:.0f} ms for a short command (early end); cached replies skip the TTS part")
         except Exception as e:
             rep("stt", "FAIL", f"{type(e).__name__}: {e}")
 
