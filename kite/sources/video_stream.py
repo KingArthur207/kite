@@ -19,17 +19,35 @@ import os
 import re
 import threading
 import time
+from contextlib import contextmanager
 
 import cv2
 
-# Must be set before the first VideoCapture is opened. Tells ffmpeg's
-# demuxer not to build up its own internal buffer and to drop frames it
-# can't keep up with, rather than queueing them -- this is what actually
-# stops latency from growing the longer the stream runs.
-os.environ.setdefault(
-    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
-    "fflags;nobuffer|flags;low_delay|framedrop;1|probesize;10000000|analyzeduration;12000000",
-)
+# Tells ffmpeg's demuxer not to build up its own internal buffer and to drop frames it can't keep up
+# with, rather than queueing them -- this is what actually stops latency from growing the longer the
+# stream runs. CHANGED: applied only while this reader opens its capture (OpenCV reads the variable at
+# open time), never process-wide: set globally, "nobuffer" made every later cv2 read of a video FILE
+# silently lose its first frame. A value the user exported themselves still wins.
+STREAM_OPTIONS = "fflags;nobuffer|flags;low_delay|framedrop;1|probesize;10000000|analyzeduration;12000000"
+_ENV = "OPENCV_FFMPEG_CAPTURE_OPTIONS"
+_env_lock = threading.Lock()
+
+
+def stream_options() -> str:
+    return os.environ.get(_ENV, STREAM_OPTIONS)
+
+
+@contextmanager
+def _stream_capture_options():
+    with _env_lock:
+        user = _ENV in os.environ
+        if not user:
+            os.environ[_ENV] = STREAM_OPTIONS
+        try:
+            yield
+        finally:
+            if not user:
+                os.environ.pop(_ENV, None)
 
 
 PROBE_MARGIN_MS = 3000  # after analyzeduration, time to open the decoder and hand back the first frame
@@ -37,7 +55,7 @@ PROBE_MARGIN_MS = 3000  # after analyzeduration, time to open the decoder and ha
 
 def min_open_timeout_ms() -> int:
     """Open timeout that lets FFmpeg's probe finish: the analyzeduration actually in effect + PROBE_MARGIN_MS."""
-    m = re.search(r"analyzeduration;(\d+)", os.environ.get("OPENCV_FFMPEG_CAPTURE_OPTIONS", ""))
+    m = re.search(r"analyzeduration;(\d+)", stream_options())
     analyze_us = int(m.group(1)) if m else 5_000_000  # FFmpeg's default analyzeduration is 5 s
     return analyze_us // 1000 + PROBE_MARGIN_MS
 
@@ -57,8 +75,9 @@ class VideoStream:
         # CHANGED: bounded open/read so a stalled stream cannot block grab() forever, and an open timeout that never
         # cuts FFmpeg's probe short (it reads up to the first keyframe, up to analyzeduration)
         open_timeout_ms = max(open_timeout_ms, min_open_timeout_ms())
-        self.cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, open_timeout_ms,
-                                                          cv2.CAP_PROP_READ_TIMEOUT_MSEC, read_timeout_ms])
+        with _stream_capture_options():
+            self.cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, open_timeout_ms,
+                                                              cv2.CAP_PROP_READ_TIMEOUT_MSEC, read_timeout_ms])
         if not self.cap.isOpened():
             raise RuntimeError(f"Could not open video stream at {url}")
 
