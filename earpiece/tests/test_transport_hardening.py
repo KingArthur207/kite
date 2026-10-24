@@ -189,18 +189,48 @@ def test_websocket_reconnect_storm_leaves_nothing_behind(net):
     assert not [k for k in net._buckets if k.startswith("ws:")]        # per-connection buckets are freed
 
 
-def test_publish_to_a_stalled_client_does_not_block_others(net):
-    with connect(ws_url(net), open_timeout=3) as slow, connect(ws_url(net), open_timeout=3) as fast:
-        slow.recv(timeout=2)
-        fast.recv(timeout=2)
-        for i in range(200):
-            net.publish({"type": "spoken", "i": i})
-        seen = set()
-        while len(seen) < 200:
-            m = json.loads(fast.recv(timeout=3))
-            if m["type"] == "spoken":
-                seen.add(m["i"])
-        assert seen == set(range(200))
+def stalled_client(t: Transport) -> socket.socket:
+    """A WebSocket client that completes the handshake and then never reads a byte."""
+    import base64
+    import os
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+    s.connect(("127.0.0.1", t.ws_port))
+    key = base64.b64encode(os.urandom(16)).decode()
+    s.sendall((f"GET / HTTP/1.1\r\nHost: 127.0.0.1:{t.ws_port}\r\nUpgrade: websocket\r\n"
+               f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+    assert b" 101 " in s.recv(1024)
+    return s
+
+
+def test_a_stalled_client_is_closed_and_others_keep_receiving(net):
+    """A client that stops reading (a frozen tab, a dead Wi-Fi link) fills its socket; the
+    broadcast gives it 0.5 s, then closes it so it reconnects, instead of silently skipping it
+    forever while it keeps sending. Everyone else gets every event."""
+    slow = stalled_client(net)
+    assert wait_for(lambda: net.stats["clients"] == 1, 3)
+    try:
+        with connect(ws_url(net), open_timeout=3) as fast:
+            fast.recv(timeout=2)
+            assert wait_for(lambda: net.stats["clients"] == 2, 3)
+            blob = "x" * 20_000
+            seen = set()
+
+            def read_fast():
+                while len(seen) < 200:
+                    m = json.loads(fast.recv(timeout=5))
+                    if m["type"] == "spoken":
+                        seen.add(m["i"])
+            reader = threading.Thread(target=read_fast)
+            reader.start()
+            for i in range(200):                     # ~4 MB: far more than the stalled socket takes
+                net.publish({"type": "spoken", "i": i, "pad": blob})
+            reader.join(20)
+            assert seen == set(range(200))
+            assert wait_for(lambda: net.stats.get("slow_dropped", 0) == 1, 5)
+            assert wait_for(lambda: net.stats["clients"] == 1, 5)
+    finally:
+        slow.close()
 
 
 # ------------------------------------------------------------------ lifecycle

@@ -221,7 +221,25 @@ class Transport:
             except Exception:
                 dead.append(ws)
         for ws in dead:
+            # A client that can't take a message in 0.5 s is closed, not just skipped: left open it
+            # would keep sending (and think it is listening) while never hearing another event.
+            # Kite's clients (the sim, scripts) reconnect and get a fresh state straight away.
+            if ws not in self._clients:            # another broadcast already dropped it
+                continue
             self._clients.discard(ws)
+            self.stats["clients"] = len(self._clients)
+            self.stats["slow_dropped"] = self.stats.get("slow_dropped", 0) + 1
+            asyncio.get_running_loop().create_task(self._drop(ws))
+
+    @staticmethod
+    async def _drop(ws) -> None:
+        try:
+            await asyncio.wait_for(ws.close(1011, "too slow"), timeout=1.0)
+        except Exception:
+            pass
+        transport = getattr(ws, "transport", None)
+        if transport is not None and not transport.is_closing():
+            transport.abort()                  # its buffer is full: don't wait on the close handshake
 
     def publish(self, obj: dict) -> None:
         """Thread-safe broadcast to every connected WebSocket client."""
