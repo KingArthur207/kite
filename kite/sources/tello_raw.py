@@ -47,6 +47,14 @@ NO_FRAME_RESYNC_S = 3.0  # ... AND no frame for this long: only then rebuild the
 _EOF, _RESYNC = object(), object()  # queue markers
 LINK_GAP_S = 0.2  # a pause between datagrams longer than this is a link stall (the Tello sends ~200+ per second)
 LINK_STARVED_KB_S = 60  # under this the stream is starving (a healthy Tello sends well over 100 KB/s even at 1 Mbps)
+def _flag(enum, name: str) -> int:
+    """A codec flag by name across PyAV versions: lower case (low_delay) in some, upper case (LOW_DELAY) in others."""
+    for n in (name, name.upper()):
+        if hasattr(enum, n):
+            return int(getattr(enum, n))
+    raise AttributeError(f"PyAV {av.__version__}: {enum.__name__} has no {name} or {name.upper()}")
+
+
 LINK_POOR_LOSS, LINK_FAIR_LOSS = 0.2, 0.05  # fraction of decoded frames FFmpeg flags as concealed after loss
 LINK_HELP = "docs/internal/windows-drone.md, 'If the drone video is corrupted'"
 
@@ -261,11 +269,11 @@ class RawTelloStream:
     # ------------------------------------------------------------------ decoder
     def _new_codec(self):
         ctx = av.CodecContext.create("h264", "r")
-        ctx.flags |= int(av.codec.context.Flags.low_delay) | int(av.codec.context.Flags.output_corrupt)
+        ctx.flags |= _flag(av.codec.context.Flags, "low_delay") | _flag(av.codec.context.Flags, "output_corrupt")
         # show_all: output frames from the first SPS/PPS on, before a full IDR has arrived (they fill in as intra
         # data comes). If the drone sends IDRs seconds apart, this gives a picture in ~0.6 s instead of one IDR
         # interval later (docs/mac-video-root-cause.md); stats()["keyframe_seen"] says when it is fully refreshed.
-        ctx.flags2 |= int(av.codec.context.Flags2.show_all)
+        ctx.flags2 |= _flag(av.codec.context.Flags2, "show_all")
         ctx.thread_type = "SLICE"  # frame threading would hold frames back (latency); slices do not
         return ctx
 
