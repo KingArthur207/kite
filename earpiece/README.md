@@ -8,13 +8,13 @@ The AirPods layer of Kite: spatial obstacle sonar, a waypoint beacon, and a voic
 cd earpiece
 uv venv --python 3.12 .venv && source .venv/bin/activate
 uv pip install -e ".[mac,brain,memory,dev]"
-maturin develop --release -m native/Cargo.toml   # optional: Rust audio engine + binaural renderer
+maturin develop --release -m native/Cargo.toml   # optional: Rust audio engine, binaural renderer, sonar decisions
 python -m earpiece selftest                      # check audio, voices, STT, controls, network
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
 python -m earpiece render --jsonl events.jsonl out/heard.wav   # same, from a JSONL timeline (docs/internal/video-runbook.md)
-python -m pytest                                 # 330+ tests (also with KITE_AUDIO_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
+python -m pytest                                 # 400+ tests (also with KITE_AUDIO_ENGINE=python / KITE_SONAR_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
 ```
 
 Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `GOOGLE_MAPS_API_KEY`, and `XAI_API_KEY` for the caregiver line). Everything degrades gracefully without them.
@@ -64,6 +64,10 @@ With no perception stream, the earpiece grabs one frame from the local camera on
 
 Claude's judgment layer (`judgment.py`) may only add caution: a filter discards any reply that would clear a stop, move the walker or reroute. After a "Stop.", only deterministic code says "Path is clear. You can continue.", and only once the way has stayed clear for 1.5 s with perception alive.
 
+## Sonar decisions in Rust
+
+When `kite_audio` is built, the sonar's per-tick decisions run in Rust (`native/src/sonar.rs`, used through `rust_sonar.py`). That covers the object tracks, the closing-speed estimate, time-to-contact, corridor weighting, urgency, the two-source cap, when the next beep is due and from which bearing at which pitch, and whether to say "Stop.". The point is that warning timing should not depend on Python bytecode competing for the GIL with network, JSON and Claude work. One frame plus one tick with 20 tracked objects takes about 5 µs in Rust and about 110 µs in Python. Python still plays what Rust decided (a cached, pre-rendered cue goes to the audio engine) and still drives the 50 Hz control loop, so a long stall of that loop still delays the tick. Moving the tick onto its own native thread would also need cue synthesis in Rust, and that is not done yet. Choose the engine with `KITE_SONAR_ENGINE=rust` or `python`; the default is Rust when the extension is built, otherwise Python. It works with either audio engine. `tests/test_rust_sonar.py` feeds both implementations identical input: scripted sequences (an approaching person, a crossing cyclist, out-of-order and restarted frames, stale perception with the watchdog, the two-source cap, critical stops, mute and labels, control-loop stalls), 24 seeded random multi-source streams, and every recorded and simulated timeline in `data/` and `sim.py`. After every tick it checks that both produce the same beeps, speech, chosen tracks and track state. Over about 22,000 ticks the two are bit-identical, and rendered audio is sample-identical.
+
 ## Credits and limits
 
 Characters sent to Cartesia are counted across runs in `earpiece/.cache/cartesia_usage.json`; past `KITE_CARTESIA_CHAR_BUDGET` (default 150,000) only urgent speech uses the neural voice. Phrase warm-up runs one request at a time (our plan allows two in flight).
@@ -98,7 +102,7 @@ While the line is open, a new walker alert is announced right away without being
 |---|---|
 | `mixer.py` / `native/` (Rust) | real-time mixing, ducking, limiter, device output; native binaural placement |
 | `spatial.py`, `sounds.py` | binaural rendering (Brown-Duda head model; runs in Rust when built, sample-identical) and synthesised cues |
-| `sonar.py`, `beacon.py` | obstacle warnings by time-to-contact; Soundscape-style waypoint beacon |
+| `sonar.py`, `rust_sonar.py`, `beacon.py` | obstacle warnings by time-to-contact (decisions in Rust when built, identical cue stream); Soundscape-style waypoint beacon |
 | `speech.py`, `listen.py` | Cartesia TTS/STT, priorities, preemption, time-to-live, offline fallback |
 | `brain.py`, `memory.py` | local voice commands, Claude with tools, Moss memory of places and hazards |
 | `route.py`, `geo.py` | Google Routes v2 walking directions turned into spoken turns and the beacon; lat/lng and sim meters |
