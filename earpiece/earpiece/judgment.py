@@ -58,6 +58,12 @@ width and surface, people and crowds, vehicles, crossings and signals, obstacles
 height. Give directions as left, right or ahead, and rough distances in meters. Only describe what you \
 can see; if unsure, say so. Never say anything is safe."""
 
+READ_PROMPT = """Read the text in this photo aloud for a blind person who is pointing a camera at it \
+(a menu, sign, label, book page, screen or document). Transcribe the readable text exactly, in natural \
+reading order, as plain sentences ready to be spoken: no markdown, no bullet symbols, no commentary. \
+For a menu, read each item with its price. Skip text that is too small or blurry to read reliably \
+rather than guessing. If there is no readable text, reply exactly: NO_TEXT"""
+
 DECISION_SCHEMA = {
     "type": "object",
     "properties": {
@@ -249,6 +255,35 @@ class Judgment:
         except Exception as e:
             self.log(f"[judgment] scene description failed ({type(e).__name__})")
             return None
+
+    def read_text(self, jpeg: bytes, timeout: float = 20.0) -> str | None:
+        """Claude vision OCR: the readable text in the photo, ready to speak. "" if none."""
+        if self._client is None or self._loop is None:
+            return None
+        fut = asyncio.run_coroutine_threadsafe(self._read(jpeg), self._loop)
+        try:
+            return fut.result(timeout)
+        except Exception as e:
+            self.log(f"[judgment] reading text failed ({type(e).__name__})")
+            return None
+
+    async def _read(self, jpeg: bytes) -> str | None:
+        resp = await asyncio.wait_for(self._client.beta.messages.create(
+            model=self.model, max_tokens=4096,
+            messages=[{"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
+                                             "data": base64.standard_b64encode(jpeg).decode()}},
+                {"type": "text", "text": READ_PROMPT}]}],
+            output_config={"effort": "low"},
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+        ), timeout=18)
+        if getattr(resp, "stop_reason", None) == "refusal":
+            return None
+        text = " ".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+        self.stats["reads"] = self.stats.get("reads", 0) + 1
+        if not text or text.strip().upper().startswith("NO_TEXT"):
+            return ""
+        return re.sub(r"[*#_`>|]+", " ", " ".join(text.split()))[:2000]
 
     async def _describe(self, jpeg: bytes, where: str) -> str | None:
         resp = await asyncio.wait_for(self._client.beta.messages.create(

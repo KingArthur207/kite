@@ -93,10 +93,8 @@ def test_judgment_cannot_clear_a_stop(app):
     app.judgment.min_interval_s = 0
     app.handle(parse({"type": "hazard", "kind": "vehicle", "key": "car", "state": "wait", "bearing": 0}))
     assert wait_for(lambda: app.judgment.stats["blocked"] == 1, 8)
-    time.sleep(0.5)
-    texts = [h["text"] for h in app.speaker.history]
-    assert "The path is clear, you can continue." not in texts
-    assert "Car, ahead. Wait." in texts
+    assert wait_for(lambda: "Car, ahead. Wait." in [h["text"] for h in app.speaker.history], 6)
+    assert "The path is clear, you can continue." not in [h["text"] for h in app.speaker.history]
 
 
 def test_judgment_failure_changes_nothing(app):
@@ -170,3 +168,66 @@ def test_scene_image_becomes_scene_context(app):
     assert app.scene[0] == "Narrow sidewalk, two people ahead on the left."   # the instruction is stripped
     req = fake.requests[0]
     assert req["messages"][0]["content"][0]["type"] == "image"
+
+
+# ---------------------------------------------------------------- "what's in front of me?"
+def test_front_question_uses_the_chest_camera(app):
+    fake = FakeClaude(["A wooden bench about one meter ahead, slightly right."])
+    app.judgment._client = fake
+    app.handle(parse({"type": "scene_image", "camera": "chest",
+                      "jpeg": base64.b64encode(b"\xff\xd8chest").decode()}))
+    assert app._chest_frame is not None and fake.requests == []      # chest frames are not auto-described
+    app.heard("what's in front of me")
+    assert wait_for(lambda: "A wooden bench about one meter ahead, slightly right." in
+                    [h["text"] for h in app.speaker.history], 10)
+    assert "worn on the walker's chest" in fake.requests[0]["messages"][0]["content"][1]["text"]
+
+
+def test_front_question_without_a_fresh_frame_answers_locally(app):
+    app.heard("what's in front of me")
+    assert wait_for(lambda: any("Nothing close" in h["text"] or "not running" in h["text"]
+                                for h in app.speaker.history), 6)
+
+
+def test_judgment_events_are_not_bridged(app):
+    sent = []
+    app.bridges.append(types.SimpleNamespace(publish=lambda o: sent.append(o["type"])))
+    app._event("judgment", {"say": "x"})
+    app._event("continue", {})
+    app._event("spoken", {"text": "x"})
+    assert sent == ["spoken"]
+
+
+# ---------------------------------------------------------------- reading text aloud (OCR)
+def test_read_this_reads_the_text_sentence_by_sentence(app):
+    fake = FakeClaude(["**Lunch menu.** Margherita pizza, 14 dollars. Caesar salad, 11 dollars."])
+    app.judgment._client = fake
+    app.handle(parse({"type": "scene_image", "camera": "chest", "jpeg": base64.b64encode(b"\xff\xd8menu").decode()}))
+    app.heard("read this to me")
+    said = lambda: [h["text"] for h in app.speaker.history]
+    assert wait_for(lambda: "Caesar salad, 11 dollars." in said(), 15)
+    assert said()[:4] == ["Hold it steady. Reading.", "Lunch menu.", "Margherita pizza, 14 dollars.",
+                          "Caesar salad, 11 dollars."]                       # markdown stripped, in order
+    assert "Transcribe the readable text exactly" in fake.requests[0]["messages"][0]["content"][1]["text"]
+
+
+def test_read_with_no_text_or_no_camera(app):
+    fake = FakeClaude(["NO_TEXT"])
+    app.judgment._client = fake
+    app.heard("what does this say")                     # no frame and the camera is off in tests
+    assert wait_for(lambda: any("can't see through the camera" in h["text"] for h in app.speaker.history), 8)
+    app.handle(parse({"type": "scene_image", "camera": "chest", "jpeg": base64.b64encode(b"\xff\xd8blank").decode()}))
+    app.heard("read this")
+    assert wait_for(lambda: any("can't see any text" in h["text"] for h in app.speaker.history), 10)
+
+
+def test_warnings_cut_into_a_long_reading(app):
+    long = " ".join(f"Item {i} costs {i} dollars." for i in range(1, 12))
+    app.judgment._client = FakeClaude([long])
+    app.handle(parse({"type": "scene_image", "camera": "chest", "jpeg": base64.b64encode(b"\xff\xd8m").decode()}))
+    app.heard("read the menu")
+    assert wait_for(lambda: any(h["text"].startswith("Item 1") for h in app.speaker.history), 10)
+    app.say("Stop.", "critical")
+    assert wait_for(lambda: "Stop." in [h["text"] for h in app.speaker.history], 5)
+    order = [h["text"] for h in app.speaker.history]
+    assert order.index("Stop.") < len(order) - 1 or app.speaker.busy    # the stop did not wait for the menu

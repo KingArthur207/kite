@@ -25,6 +25,7 @@ def offline_speech(monkeypatch, tmp_path):
 
     monkeypatch.setattr(speech, "offline_tts", fake)
     monkeypatch.setenv("CARTESIA_API_KEY", "")
+    monkeypatch.setenv("KITE_CAMERA", "off")          # never open the real webcam in tests
     return tmp_path
 
 

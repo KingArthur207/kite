@@ -13,6 +13,7 @@ Safety policy in one place:
 from __future__ import annotations
 
 import dataclasses
+import re
 import threading
 import time
 from collections import deque
@@ -26,6 +27,7 @@ from .brain import Actions, Brain
 from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
 from .events import Msg, clock_phrase, distance_phrase
+from .camera import BodyCamera
 from .judgment import Decision, Judgment
 from .listen import Listener
 from .memory import MemoryStore
@@ -37,6 +39,9 @@ from .transport import Transport
 
 # Inbound types handle() mirrors itself; _event() skips them to avoid double rows.
 _MIRRORED_INBOUND = {"guidance", "hazard"}
+# Internal bookkeeping events: shown to WebSocket clients, not mirrored (what was SAID about
+# them is already mirrored as `spoken`, and the Spacetime module does not accept these types).
+_LOCAL_ONLY = {"judgment", "continue", "read_text"}
 
 
 def _stereo(mono: np.ndarray) -> np.ndarray:
@@ -77,7 +82,9 @@ class Earpiece:
         self.memory = memory if memory is not None else MemoryStore(log=log)
         self.brain = Brain(self.context, Actions(self.navigate, self.control, self.alert_caregiver,
                                                  self.stop_speaking, self.ear_check,
-                                                 remember=self.remember, recall=self.recall),
+                                                 remember=self.remember, recall=self.recall,
+                                                 describe_front=lambda: self.describe_front(),
+                                                 read_text=lambda: self.read_text()),
                            self.say, self.cfg.anthropic_key, log=log)
         self._noted_places: set[str] = set()
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
@@ -86,6 +93,8 @@ class Earpiece:
         self._stop_since: float | None = None      # a "Stop."/wait is in force since this time
         self._clear_since: float | None = None     # the way has looked clear since this time
         self._last_scene_image = 0.0
+        self._chest_frame: tuple[bytes, float] | None = None   # newest chest-camera JPEG
+        self.camera = BodyCamera(log=log)
         self.gestures = Gestures(self.gesture, log=log)
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
                                    self.cfg.net.ws_port, log=log) if network else None
@@ -124,7 +133,7 @@ class Earpiece:
             self.engine.play(_stereo(sounds.ready()), bus="cue", gain=1.0)
             self.say("Kite is ready.", "system", ttl=20)
             if isinstance(self.output, (DeviceOutput, RustDeviceOutput)) and not self.output.is_airpods:
-                self.say("AirPods are not connected. Using the laptop speaker.", "system", ttl=20)
+                self.say("Headphones are not connected. Using the laptop speaker.", "system", ttl=20)
 
     def run_forever(self) -> None:
         """Blocks the main thread (it pumps the macOS run loop for AirPods stem presses)."""
@@ -203,7 +212,7 @@ class Earpiece:
         self.events.append(obj)
         if self.transport is not None:
             self.transport.publish(obj)
-        if kind not in _MIRRORED_INBOUND:          # those already went out in _mirror()
+        if kind not in _MIRRORED_INBOUND and kind not in _LOCAL_ONLY:   # inbound went out in _mirror()
             self._bridge(obj)
 
     def _bridge(self, obj: dict) -> None:
@@ -342,8 +351,12 @@ class Earpiece:
     SCENE_IMAGE_EVERY_S = 3.0
 
     def _scene_image(self, msg: Msg, now: float) -> None:
-        """A camera frame: Claude describes it (off the hot path, rate-limited) and the text
-        becomes the shared `scene` context for answers and judgment."""
+        """A camera frame. Drone/sim frames: Claude describes them (off the hot path,
+        rate-limited) into the shared `scene` context. Chest frames are only kept, to answer
+        "what's in front of me?" on demand (the chest camera sees what the drone can't)."""
+        if msg.kind == "chest":
+            self._chest_frame = (msg.data["jpeg"], now)
+            return
         if not self.judgment.online or now - self._last_scene_image < self.SCENE_IMAGE_EVERY_S:
             return
         self._last_scene_image = now
@@ -358,6 +371,47 @@ class Earpiece:
                 self._event("scene", {"text": text, "source": f"claude:{msg.kind}"})
                 self.judgment.poke("scene")
         threading.Thread(target=work, name="scene-image", daemon=True).start()
+
+    CHEST_FRAME_MAX_AGE_S = 3.0
+
+    def _body_frame(self) -> bytes | None:
+        """Newest body-camera frame: one streamed by perception in the last few seconds, else a
+        single frame grabbed from the local camera (indoor mode, no drone, no perception)."""
+        f = self._chest_frame
+        if f is not None and time.monotonic() - f[1] <= self.CHEST_FRAME_MAX_AGE_S:
+            return f[0]
+        return self.camera.capture_jpeg()
+
+    def describe_front(self) -> str | None:
+        """Claude looks at the body camera. None if there is no frame or Claude is unreachable
+        (the caller then answers from the obstacle tracks)."""
+        if not self.judgment.online:
+            return None
+        jpeg = self._body_frame()
+        if jpeg is None:
+            return None
+        return self.judgment.describe_image(jpeg, "worn on the walker's chest, pointing forward", timeout=7.0)
+
+    def read_text(self) -> str:
+        """Read printed or on-screen text aloud: a menu, a sign, a label, a monitor. The body
+        camera frames it, Claude transcribes it, Cartesia reads it sentence by sentence (so
+        "stop" or any warning cuts in between sentences)."""
+        if not self.judgment.online:
+            return "Reading text needs the internet right now."
+        self.say("Hold it steady. Reading.", "answer", key="reading", ttl=10)
+        jpeg = self._body_frame()
+        if jpeg is None:
+            return "I can't see through the camera. Check that it's connected and allowed."
+        text = self.judgment.read_text(jpeg)
+        if text is None:
+            return "Sorry, I couldn't read that."
+        if not text:
+            return "I can't see any text. Try holding it closer and a little steadier."
+        sentences = [x.strip() for x in re.split(r"(?<=[.!?:;])\s+", text) if x.strip()]
+        for sentence in sentences[:-1]:
+            self.say(sentence, "answer", ttl=120)
+        self._event("read_text", {"chars": len(text)})
+        return sentences[-1] if sentences else text
 
     def _judgment_snapshot(self) -> dict:
         ctx = self.context()
@@ -620,10 +674,12 @@ class Earpiece:
         self._event("output", {"device": name, "airpods": is_airpods})
         if prev is None:
             return
+        ap = "airpods" in name.lower() or "airpods" in (prev or "").lower()
         if is_airpods:
-            self.say("AirPods connected.", "system", key="output", ttl=10)
+            self.say("AirPods connected." if ap else "Headphones connected.", "system", key="output", ttl=10)
         else:
-            self.say("AirPods disconnected. Using the laptop speaker.", "hazard", key="output", ttl=10)
+            self.say("AirPods disconnected. Using the laptop speaker." if ap else
+                     "Headphones disconnected. Using the laptop speaker.", "hazard", key="output", ttl=10)
 
     # ================================================================== state
     def context(self) -> dict:
