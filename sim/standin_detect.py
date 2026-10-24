@@ -6,6 +6,7 @@ works before Rex's streetseg exists. Swap this file out; nothing downstream chan
     python sim/standin_detect.py --download                  # once, fetches weights/yolo11n.pt
     python sim/standin_detect.py                             # sim chest + drone via sim/relay.py
     python sim/standin_detect.py --source clip.mp4 --camera drone --jsonl out.jsonl --overlay out.mp4
+    python sim/standin_detect.py --source webcam:iPhone --show   # live chest camera, by name or index (kite.sources)
 
 chest camera -> `obstacles` (every frame, ~8-10 Hz) + `heartbeat` when empty
 drone camera -> `hazard` crowd / vehicle (3-frame onset, silent ttl expiry) + `scene` every 10 s
@@ -26,6 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "earpiece"))
+sys.path.insert(0, str(ROOT))                        # kite.sources: one way to open a camera
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from earpiece.events import clock_phrase, distance_phrase  # noqa: E402  (needs numpy, scipy)
@@ -47,7 +49,9 @@ TYPICAL_H = {"person": 1.7, "bike": 1.1, "vehicle": 1.5, "bus": 3.0, "truck": 3.
 
 # drone hazard rules
 CROWD_N, CROWD_NEAR, CROWD_FAR, CROWD_HALF_ANGLE = 3, 1.0, 15.0, 35.0
-VEHICLE_RANGE, VEHICLE_LANE = 12.0, 3.0           # m ahead, m either side of the walker's path
+VEHICLE_RANGE, VEHICLE_LANE = 12.0, 1.5           # m ahead, m either side of the walker's path (Moss is a 6 m alley:
+                                                  # 3 m flagged oncoming cars while the walker was on the sidewalk)
+CROSS_HORIZON, CROSS_MIN_V = 3.0, 0.5             # a car further out counts if it reaches the path within 3 s
 ONSET_FRAMES, HAZARD_TTL, SCENE_EVERY = 3, 4.0, 10.0
 
 
@@ -106,9 +110,12 @@ def objects_from_boxes(boxes, fx: float, cam_height: float, width: int, height: 
     return out
 
 
-def drone_hazards(objs: list[dict]) -> dict[str, dict]:
+def drone_hazards(objs: list[dict], lateral: live_walk.RangeFilter | None = None, t: float = 0.0) -> dict[str, dict]:
     """Drone objects -> candidate hazards {kind: {bearing, distance}} in the walker frame.
-    A person cut off by the bottom edge is the walker and never counts."""
+    A person cut off by the bottom edge is the walker and never counts. A vehicle counts when it is
+    within VEHICLE_LANE of the walker's path, or (with `lateral`, a RangeFilter fed each car's
+    sideways offset per track) when it is closing on the path fast enough to cross it within CROSS_HORIZON.
+    A car driving along the street beside the walker keeps its offset and never counts."""
     people, cars = [], []
     for o in objs:
         if o["kind"] == "person" and o["cut_off"]:
@@ -116,9 +123,12 @@ def drone_hazards(objs: list[dict]) -> dict[str, dict]:
         b, d = drone_to_walker(o["bearing"], o["distance"])
         if o["kind"] == "person" and CROWD_NEAR <= d <= CROWD_FAR and abs(b) <= CROWD_HALF_ANGLE:
             people.append((b, d))
-        elif o["kind"] == "vehicle" and abs(b) < 90 and d <= VEHICLE_RANGE \
-                and abs(d * math.sin(math.radians(b))) <= VEHICLE_LANE:
-            cars.append((b, d))
+        elif o["kind"] == "vehicle" and abs(b) < 90 and d <= VEHICLE_RANGE:
+            lat, v = abs(d * math.sin(math.radians(b))), None
+            if lateral is not None:
+                lat, v = lateral.update(o["id"], t, lat)
+            if lat <= VEHICLE_LANE or (v is not None and v >= CROSS_MIN_V and lat / v <= CROSS_HORIZON):
+                cars.append((b, d))
     out = {}
     if len(people) >= CROWD_N:
         out["crowd"] = {"bearing": sum(b for b, _ in people) / len(people), "distance": min(d for _, d in people)}
@@ -202,8 +212,9 @@ def draw(frame, objs, boxes, label):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--download", action="store_true", help="fetch weights/yolo11n.pt and exit")
-    ap.add_argument("--source", help="video file, or a camera index for a live chest camera (default: sim frames)")
-    ap.add_argument("--list-cameras", action="store_true", help="print the camera indices that open, and exit")
+    ap.add_argument("--source", help="video file, or a live chest camera: an index or webcam:<index or name>, "
+                                     "e.g. webcam:iPhone (default: sim frames)")
+    ap.add_argument("--list-cameras", action="store_true", help="print the cameras (index, name, size) and exit")
     ap.add_argument("--camera", choices=("chest", "drone", "both"), default="both")
     ap.add_argument("--relay", default="ws://127.0.0.1:5020/sub")
     ap.add_argument("--fx", type=float, help=f"focal length in px at 960 wide (default {DEFAULT_FX:.0f}, "
@@ -226,8 +237,18 @@ def main() -> None:
         download()
         return live_walk.download_depth() if a.depth else None
     if a.list_cameras:
-        return live_walk.list_cameras()
-    live = bool(a.source and a.source.isdigit())
+        from kite.sources.open import list_cameras
+        return list_cameras(probe=True)
+    live = False
+    if a.source:
+        from kite.sources import parse_spec
+        try:
+            kind = parse_spec(a.source)[0]
+        except ValueError as e:
+            sys.exit(str(e))
+        if kind not in ("webcam", "file"):
+            sys.exit(f"--source {a.source}: use a video file or a camera (sim frames are the default)")
+        live = kind == "webcam"
     if live and a.overlay:
         sys.exit("--overlay is off for live cameras: we don't store frames during the live demo (spec 5.3)")
     fx = a.fx or (LIVE_FX if live else DEFAULT_FX)
@@ -254,9 +275,11 @@ def main() -> None:
     t0 = time.monotonic()
 
     if live:
-        cap = live_walk.open_camera(int(a.source))
-        if cap is None:
-            sys.exit(f"cannot open camera {a.source}; try --list-cameras (macOS: allow Camera for the terminal)")
+        from kite.sources import open_source
+        try:
+            cap = open_source(a.source, timeout=2.0)          # newest frame only, so no growing lag
+        except (LookupError, RuntimeError, OSError) as e:
+            sys.exit(f"cannot open camera {a.source}: {e}\ntry --list-cameras (macOS: allow Camera for the terminal)")
         srcs = None
     elif a.source:
         cap = cv2.VideoCapture(a.source)
@@ -275,7 +298,7 @@ def main() -> None:
         if jsonl:
             jsonl.write(json.dumps({"t": round(t, 3), **ev}, separators=(",", ":")) + "\n")
 
-    gate, last_scene, writer = HazardGate(), -SCENE_EVERY, None
+    gate, lateral, last_scene, writer = HazardGate(), live_walk.RangeFilter(), -SCENE_EVERY, None
     n, infer_s, warm = 0, 0.0, None
     rf, depth = live_walk.RangeFilter(), live_walk.DepthFallback(device) if a.depth else None
     reveal = live_walk.Reveal() if a.show else None
@@ -356,7 +379,7 @@ def main() -> None:
                         if not reveal.frame(view, sent, t, fps):
                             return
                 else:
-                    for ev in gate.step(drone_hazards(objs), t):
+                    for ev in gate.step(drone_hazards(objs, lateral, t), t):
                         emit({**ev, "source": "standin-drone"}, t)
                         print(f"[standin] t={t:.1f} hazard {ev['kind']}: {ev['text']}", flush=True)
                     if t - last_scene >= SCENE_EVERY:
@@ -390,6 +413,8 @@ def main() -> None:
             jsonl.close()
         if reveal:
             cv2.destroyAllWindows()
+        if live:
+            cap.release()
         if n:
             print(f"[standin] {n} inferences, {infer_s / n * 1000:.1f} ms each ({n / infer_s:.1f} fps) "
                   f"on {device}; first call {warm * 1000:.0f} ms", flush=True)

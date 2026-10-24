@@ -42,6 +42,30 @@ side = objects_from_boxes([(900, 450, 960, 560, "car", 0.9, 5)], 1000, 2.0, 960,
 assert "vehicle" not in drone_hazards(side)
 assert objects_from_boxes([(0, 0, 10, 10, "tv", 0.9, None)], 1000, 1.2, 960, 720) == []
 
+# vehicles over time (Moss St): `lateral` tracks each car's sideways offset from the walker's path
+from live_walk import RangeFilter  # noqa: E402
+
+
+def drone_car(fwd: float, lat: float, tid: str = "c") -> dict:
+    """A car `fwd` m ahead of the walker and `lat` m to the side, as the drone (1 m behind) sees it."""
+    return {"id": tid, "kind": "vehicle", "bearing": math.degrees(math.atan2(lat, fwd + 1.0)),
+            "distance": math.hypot(fwd + 1.0, lat), "confidence": 0.9, "cut_off": False}
+
+
+def vehicle_frames(path, dt=0.1):
+    rf = RangeFilter()
+    return ["vehicle" in drone_hazards([drone_car(f, l)], rf, i * dt) for i, (f, l) in enumerate(path)]
+
+
+# (a) walker on the sidewalk, oncoming car in the lane 2.5 m to the side: never a hazard
+assert not any(vehicle_frames([(11.0 - 0.6 * i, 2.5 + (0.1 if i % 2 else -0.1)) for i in range(15)]))
+assert not any(vehicle_frames([(8.0, -2.5)] * 10))                 # parked / waiting car on the other side
+assert not any(vehicle_frames([(6.0, 2.0 + 0.3 * i) for i in range(10)]))   # driving away from the path
+# (b) a car crossing ahead: flagged once its approach is measured, well before it is in the path
+cross = vehicle_frames([(6.0, 7.0 - 0.4 * i) for i in range(10)])  # 4 m/s toward the path from 7 m out
+assert not cross[0] and cross[-1] and cross.index(True) <= 5       # flagged while still > 4 m to the side
+assert all(vehicle_frames([(5.0, 0.8)] * 3))                       # in the path: flagged from the first frame
+
 # gate: 3-frame onset, refresh keeps the same text, clearing sends nothing
 g, cand = HazardGate(), {"crowd": {"bearing": 0.0, "distance": 6.0}}
 assert g.step(cand, 0.0) == [] and g.step(cand, 0.1) == []
@@ -74,7 +98,7 @@ cut = objects_from_boxes([(300, y_top, 660, 720, "person", 0.9, 3)], fx, 1.2, 96
 assert cut[0]["cut_off"] and math.isclose(cut[0]["distance"], 1.5, abs_tol=0.01)
 
 # live walk: median smoothing, closing speed, stop zone
-from live_walk import RangeFilter, center_obstacle, chest_step, is_stop, to_event_objects  # noqa: E402
+from live_walk import center_obstacle, chest_step, is_stop, to_event_objects  # noqa: E402
 
 rf = RangeFilter()
 for i in range(10):
