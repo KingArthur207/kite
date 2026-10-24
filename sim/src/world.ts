@@ -1,11 +1,9 @@
 // Placeholder world. The Gaussian splat replaces this file; keep the same exports:
 // a scene, update(dt) for moving things, and solids() for collision boxes.
 import * as THREE from "three";
+import { spawnActors } from "./actors";
 
 const mat = (color: number) => new THREE.MeshLambertMaterial({ color });
-
-interface Car { mesh: THREE.Mesh; axis: "x" | "z"; speed: number; min: number; max: number }
-interface Ped { mesh: THREE.Mesh; z0: number; amp: number; phase: number }
 
 export function buildWorld() {
   const scene = new THREE.Scene();
@@ -46,44 +44,12 @@ export function buildWorld() {
   box(10, 11, 12, 16, -55, 0xcfc39b);
   box(0.6, 1.0, 0.6, -1.2, -12, 0x2e5e3a);           // bin on the sidewalk
 
-  const cars: Car[] = [];
-  const car = (color: number, axis: "x" | "z", lane: number, start: number, speed: number, min: number, max: number) => {
-    const along = axis === "z";
-    const m = box(along ? 1.8 : 4.4, 1.5, along ? 4.4 : 1.8, along ? lane : start, along ? start : lane, color);
-    cars.push({ mesh: m, axis, speed, min, max });
-  };
-  car(0xb22222, "z", 4, 10, -8, -90, 30);            // northbound lane
-  car(0x2255aa, "z", 4, -40, -8, -90, 30);
-  car(0xeeeeee, "z", 7.5, -60, 7, -90, 30);           // southbound lane
-  car(0x222222, "x", -35, -40, 6, -60, 60);           // cross street, eastbound
-  car(0xd4a017, "x", -38.5, 30, -6, -60, 60);         // westbound
+  const actors = spawnActors(scene); // glTF cars and people (actors.ts)
 
-  const peds: Ped[] = [];
-  const ped = (x: number, z0: number, amp: number, phase: number, color: number) => {
-    const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 1.2, 4, 8), mat(color));
-    m.position.set(x, 0.85, z0);
-    scene.add(m);
-    solidMeshes.push(m);
-    peds.push({ mesh: m, z0, amp, phase });
-  };
-  ped(1.0, -20, 4, 0, 0x7a3e9d);
-  ped(-1.0, -31, 1, 1, 0x3e7a5d);
-  ped(0.6, -42, 2, 2, 0x9d6a3e);
-  ped(-0.8, -43, 0, 0, 0x555555);
-
-  let t = 0;
   function update(dt: number) {
-    t += dt;
-    for (const c of cars) {
-      const p = c.mesh.position;
-      let v = p[c.axis] + c.speed * dt;
-      if (v < c.min) v = c.max;
-      if (v > c.max) v = c.min;
-      p[c.axis] = v;
-    }
-    for (const p of peds) p.mesh.position.z = p.z0 + p.amp * Math.sin(t * 0.3 + p.phase);
+    actors.update(dt);
   }
 
-  const solids = () => solidMeshes.map((m) => new THREE.Box3().setFromObject(m));
+  const solids = () => [...solidMeshes.map((m) => new THREE.Box3().setFromObject(m)), ...actors.solids()];
   return { scene, update, solids };
 }
