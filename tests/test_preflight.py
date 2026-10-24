@@ -357,6 +357,7 @@ def all_go(monkeypatch, on_tello=True):
         "tello wi-fi", pf.GO if on_tello else (pf.WARN if quick else pf.NO_GO), "ok", {"on_tello": on_tello}))
     monkeypatch.setattr(pf, "check_camera_json", lambda: pf.Check("camera calibration", pf.WARN, "missing"))
     monkeypatch.setattr(pf, "check_tty", lambda: pf.Check("terminal", pf.GO, "ok"))
+    monkeypatch.setattr(pf, "check_awdl", lambda: pf.Check("wi-fi radio", pf.GO, "ok"))
     monkeypatch.setattr(pf, "MEASURE_S", 0.3)
     monkeypatch.setattr(pf, "FIRST_FRAME_S", 0.3)
 
@@ -416,3 +417,17 @@ def test_quick_and_drone_conflict():
     with pytest.raises(SystemExit) as e:
         pf.main(["--quick", "--drone"])
     assert e.value.code == 2
+
+
+@pytest.mark.parametrize("ifconfig, status", [
+    ("awdl0: flags=8863<UP,BROADCAST,SMART,RUNNING>\n\tstatus: active\n", "WARN"),
+    ("awdl0: flags=8822<BROADCAST,SMART,SIMPLEX>\n\tstatus: inactive\n", "GO"),
+    ("", "GO"),
+])
+def test_awdl_active_warns_with_the_fix(monkeypatch, ifconfig, status):
+    monkeypatch.setattr(pf.sys, "platform", "darwin")
+    monkeypatch.setattr(pf, "_run", lambda cmd, *a, **k: ifconfig)
+    c = pf.check_awdl()
+    assert c.status == status
+    if status == "WARN":
+        assert "ifconfig awdl0 down" in c.detail

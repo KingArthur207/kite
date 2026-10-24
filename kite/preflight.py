@@ -254,6 +254,26 @@ def check_wifi(quick: bool = False) -> Check:
                  f"{TELLO_SSID_PREFIX}xxxxxx Wi-Fi (macOS hides the SSID, so this is judged by the address)", data)
 
 
+AWDL_FIX = ("sudo ifconfig awdl0 down (back on reboot), and keep AirDrop at 'No One' and Handoff off "
+            "(System Settings > General > AirDrop & Handoff) so it stays down")
+
+
+def check_awdl() -> Check:
+    """macOS AWDL (AirDrop, Handoff, Continuity, AirPlay) hops the Wi-Fi radio off the Tello's channel about once a
+    second. The first real capture stalled 0.15-0.46 s about every second and got ~2 usable frames/s (31 KB/s)."""
+    if sys.platform != "darwin":
+        return Check("wi-fi radio", SKIP, "macOS only")
+    out = _run(["ifconfig", "awdl0"])
+    if not out:
+        return Check("wi-fi radio", GO, "no awdl0 interface")
+    active = "status: active" in out
+    if "<UP" in out and active:
+        return Check("wi-fi radio", WARN, f"AWDL (AirDrop/Handoff) is active: it pulls the radio off the Tello's channel "
+                     f"about once a second and the video drops to a few broken frames. Fix: {AWDL_FIX}",
+                     {"awdl0": "active"})
+    return Check("wi-fi radio", GO, "AWDL (AirDrop/Handoff) is down", {"awdl0": "up" if "<UP" in out else "down"})
+
+
 def check_camera_json(path: Path = CAMERA_JSON) -> Check:
     if not path.is_file():
         return Check("camera calibration", WARN, f"{path.name} missing: perception uses the published fx estimate "
@@ -511,6 +531,7 @@ def run(out: str = "recordings", quick: bool = False, drone: bool = False, make_
     ports = check_ports()
     add(ports)
     add(check_laptop_battery())
+    add(check_awdl())
     wifi = check_wifi(quick=quick)
     add(wifi)
     add(check_camera_json())
