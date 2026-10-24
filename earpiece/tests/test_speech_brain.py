@@ -214,7 +214,7 @@ def test_line_that_finishes_as_it_is_preempted_is_not_repeated(spk):
     so it must not be re-queued and said a second time."""
     spk.say("short nav line", "nav", ttl=10)
     assert wait_for(lambda: spk._current is not None, 2)
-    time.sleep(0.13)                      # the fake TTS line is 0.15 s long: preempt at its very end
+    time.sleep(0.03 * len("short nav line") - 0.02)   # preempt in the line's last instant
     spk.say("Careful.", "hazard")
     assert wait_for(lambda: not spk.busy and len(spk.history) >= 2, 5)
     time.sleep(0.4)

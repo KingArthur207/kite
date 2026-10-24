@@ -18,7 +18,8 @@ def offline_speech(monkeypatch, tmp_path):
     from earpiece import speech
 
     def fake(text, rate, voice="", wpm=210):
-        n = int(0.15 * rate)
+        # length tracks the text (like real speech) so "long" lines really are long
+        n = int(max(0.15, 0.03 * len(text)) * rate)
         t = np.arange(n) / rate
         return (0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
 
