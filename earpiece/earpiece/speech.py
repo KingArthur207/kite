@@ -254,7 +254,8 @@ class CartesiaStream:
 
 
 # ---------------------------------------------------------------------- manager
-SAFETY_KINDS = ("Person", "Car", "Bike", "Obstacle", "Step down", "Curb")
+SAFETY_KINDS = ("Person", "Car", "Bike", "Obstacle", "Step down", "Curb", "Crowd", "Overhead obstacle",
+                "Construction")
 FIXED_PHRASES = (
     "Stop.", "Stop. Person ahead.", "Stop. Obstacle ahead.", "Stop. Car.", "Careful.",
     "Obstacle detection paused.", "Obstacle detection is back.",
@@ -265,6 +266,9 @@ FIXED_PHRASES = (
     "Kite is ready.", "Left ear.", "Right ear.", "Louder.", "Quieter.",
     "No internet. Using the backup voice.", "Internet is back.",
     "Turn around.", "On course.",
+    # the spec's fixed phrases (section 5.6): cached once, never streamed
+    "Wait.", "Curb ahead.", "Bear left.", "Bear right.", "Path is clear. You can continue.",
+    "Crowd ahead. Wait.", "Car ahead. Wait.", "Overhead obstacle ahead.",
 )
 
 

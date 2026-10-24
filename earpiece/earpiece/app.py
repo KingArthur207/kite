@@ -26,6 +26,7 @@ from .brain import Actions, Brain
 from .config import Cfg
 from .controls import PAUSE, REPEAT, TALK, Gestures
 from .events import Msg, clock_phrase, distance_phrase
+from .judgment import Decision, Judgment
 from .listen import Listener
 from .memory import MemoryStore
 from .mixer import Engine
@@ -80,6 +81,11 @@ class Earpiece:
                            self.say, self.cfg.anthropic_key, log=log)
         self._noted_places: set[str] = set()
         self._walk_pending: dict[str, tuple[float, Msg]] = {}
+        self.judgment = Judgment(self.cfg.anthropic_key, snapshot=self._judgment_snapshot,
+                                 act=self._apply_judgment, log=log)
+        self._stop_since: float | None = None      # a "Stop."/wait is in force since this time
+        self._clear_since: float | None = None     # the way has looked clear since this time
+        self._last_scene_image = 0.0
         self.gestures = Gestures(self.gesture, log=log)
         self.transport = Transport(self.handle, self.cfg.net.bind_host, self.cfg.net.udp_port,
                                    self.cfg.net.ws_port, log=log) if network else None
@@ -146,7 +152,43 @@ class Earpiece:
     # ================================================================== speaking
     def say(self, text: str, priority: str = "info", key: str | None = None, ttl: float | None = None,
             pre_sound: np.ndarray | None = None) -> str | None:
+        if priority == "critical" and text.startswith("Stop"):
+            self._begin_wait()
         return self.speaker.say(text, priority, key=key, ttl=ttl, pre_sound=pre_sound)
+
+    # ================================================================== stop and wait
+    CLEAR_HOLD_S = 1.5      # the way must look clear this long before "you can continue"
+    WAIT_GIVE_UP_S = 60.0   # after this, stop tracking the episode (no late "continue")
+
+    def _begin_wait(self) -> None:
+        self._stop_since = time.monotonic()
+        self._clear_since = None
+
+    def _way_blocked(self) -> bool:
+        with self._lock:
+            tracks = list(self.sonar.tracks.values())
+        if any(t.critical or t.urgency > 0.45 for t in tracks):
+            return True
+        return any(h.get("state") in ("wait", "blocked", "stop") and h.get("kind") != "crosswalk"
+                   for h in self.hazards.values())
+
+    def _check_continue(self, now: float) -> None:
+        """Guide-dog behaviour from the spec: stop, wait until the way is clear, then say so.
+        Deterministic code is the only thing allowed to clear a stop."""
+        if self._stop_since is None:
+            return
+        if now - self._stop_since > self.WAIT_GIVE_UP_S or self.perception_ok is False:
+            self._stop_since = self._clear_since = None     # never announce "clear" on stale data
+            return
+        if now - self._stop_since < 1.0 or self._way_blocked():
+            self._clear_since = None
+            return
+        if self._clear_since is None:
+            self._clear_since = now
+        elif now - self._clear_since >= self.CLEAR_HOLD_S:
+            self._stop_since = self._clear_since = None
+            self.speaker.say("Path is clear. You can continue.", "hazard", key="continue", ttl=3)
+            self._event("continue", {})
 
     def cue(self, name: str) -> None:
         snd = {"listening": sounds.listening, "heard": sounds.heard, "error": sounds.error}.get(name)
@@ -179,8 +221,8 @@ class Earpiece:
 
     # ================================================================== inbound events
     def handle(self, msg: Msg) -> None:
-        if self.bridges:
-            self._mirror(msg)
+        if self.bridges and msg.type != "scene_image":     # raw JPEG stays local; its description
+            self._mirror(msg)                                # is mirrored as a `scene` event instead
         now = time.monotonic()
         t = msg.type
         if t in ("obstacles", "obstacle"):
@@ -212,6 +254,9 @@ class Earpiece:
             self.say(msg.text, msg.priority, key=msg.key, ttl=msg.ttl)
         elif t == "scene":
             self.scene = (msg.text, now)
+            self.judgment.poke("scene")
+        elif t == "scene_image":
+            self._scene_image(msg, now)
         elif t == "position":
             self.position = {k: v for k, v in msg.data.items() if v is not None}
             place = self.position.get("place")
@@ -228,6 +273,10 @@ class Earpiece:
             out = self.control(msg.action)
             if out and msg.action not in ("repeat",):
                 self.say(out, "system", ttl=5)
+
+    _HAZARD_NAMES = {"crowd": "Crowd", "vehicle": "Car", "overhead": "Overhead obstacle",
+                     "overhead_obstacle": "Overhead obstacle", "curb": "Curb", "construction": "Construction",
+                     "stairs_down": "Step down", "person": "Person", "bike": "Bike"}
 
     WALK_CONFIRM_S = 0.6   # "walk" must hold this long before it is announced; "don't walk" is instant
 
@@ -272,14 +321,64 @@ class Earpiece:
             if changed and snd is not None:
                 self.engine.play(spatial.render(snd, msg.bearing or 0.0, self.engine.rate), bus="cue", gain=0.9)
         elif not text:
-            where = f" {clock_phrase(msg.bearing)}" if msg.bearing is not None else ""
-            dist = f", {distance_phrase(msg.distance)}" if msg.distance is not None else ""
-            text = f"{(msg.kind or 'hazard').replace('_', ' ').capitalize()}{where}{dist}."
+            name = self._HAZARD_NAMES.get(msg.kind or "", (msg.kind or "hazard").replace("_", " ").capitalize())
+            where = clock_phrase(msg.bearing) if msg.bearing is not None else "ahead"
+            text = f"{name}, {where}."                        # same form as the cached sonar labels
+            if msg.state in ("wait", "blocked", "stop"):
+                text += " Wait."
         self.hazards[key] = {"kind": msg.kind, "state": msg.state, "text": text, "bearing": msg.bearing,
-                             "distance": msg.distance, "until": now + ttl, "t": now}
+                             "distance": msg.distance, "until": now + ttl, "t": now, "priority": msg.priority}
+        if changed and msg.state in ("wait", "blocked", "stop") and msg.kind != "crosswalk":
+            self._begin_wait()
         if changed and text:
             self.say(text, msg.priority, key=f"hazard:{key}:{msg.state}", ttl=min(ttl, 8.0))
+        if changed:
+            self.judgment.poke("hazard")
         self._event("hazard", {"key": key, "state": msg.state, "text": text})
+
+    # ================================================================== judgment (Claude)
+    SCENE_IMAGE_EVERY_S = 3.0
+
+    def _scene_image(self, msg: Msg, now: float) -> None:
+        """A camera frame: Claude describes it (off the hot path, rate-limited) and the text
+        becomes the shared `scene` context for answers and judgment."""
+        if not self.judgment.online or now - self._last_scene_image < self.SCENE_IMAGE_EVERY_S:
+            return
+        self._last_scene_image = now
+        where = {"drone": "flying just above and behind the walker's head",
+                 "chest": "worn on the walker's chest, pointing forward",
+                 "sim": "flying just above and behind the walker's head (a simulation)"}.get(msg.kind, "near the walker")
+
+        def work():
+            text = self.judgment.describe_image(msg.data["jpeg"], where)
+            if text:
+                self.scene = (text, time.monotonic())
+                self._event("scene", {"text": text, "source": f"claude:{msg.kind}"})
+                self.judgment.poke("scene")
+        threading.Thread(target=work, name="scene-image", daemon=True).start()
+
+    def _judgment_snapshot(self) -> dict:
+        ctx = self.context()
+        ctx["hazards"] = [{"key": k, **{f: h.get(f) for f in ("kind", "state", "text", "bearing", "distance",
+                                                             "priority")}}
+                          for k, h in self.hazards.items()]
+        ctx["stop_in_force"] = self._stop_since is not None
+        return ctx
+
+    def _apply_judgment(self, d: Decision) -> None:
+        for key, pr in d.upgrade:
+            h = self.hazards.get(key)
+            if h is None:
+                continue
+            h["priority"] = pr
+            if pr == "critical" and h.get("text"):
+                self.say(h["text"], "critical", key=f"upgrade:{key}", ttl=4)
+        if d.wait:
+            self._begin_wait()
+        if d.say:
+            self.say(d.say, "hazard" if d.wait else "info", key="judgment", ttl=6)
+        self._event("judgment", {"say": d.say, "wait": d.wait, "upgrade": [list(u) for u in d.upgrade],
+                                 "blocked": d.blocked})
 
     def _status(self, msg: Msg) -> None:
         prev_state = self.drone.get("state")
@@ -306,6 +405,7 @@ class Earpiece:
                     chosen = self.sonar.tick(now)
                 self._watchdog(now)
                 self._confirm_walks(now)
+                self._check_continue(now)
                 warn = any(t.urgency > 0.3 for t in chosen)
                 self.beacon.duck = 0.35 if warn else 1.0
                 self.beacon.tick(now, speech_playing=self.engine.speaking or self.listener.active)
@@ -563,6 +663,8 @@ class Earpiece:
                            if self.speaker.stats["first_audio_ms"] else None)},
             "listen": {"active": self.listener.active, "available": self.listener.available,
                        "mic": self.listener.device_name, **self.listener.stats},
+            "judgment": {"online": self.judgment.online, **self.judgment.stats},
+            "stop_in_force": self._stop_since is not None,
             "brain": {"online": self.brain.online, **{k: v for k, v in self.brain.stats.items()
                                                       if k != "first_sentence_ms"}},
             "net": dict(self.transport.stats) if self.transport else None,
