@@ -13,7 +13,7 @@ python -m earpiece selftest                      # check audio, voices, STT, con
 python -m earpiece run                           # the real thing (AirPods + stem presses)
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
-python -m pytest                                 # 166 tests
+python -m pytest                                 # 200+ tests
 ```
 
 Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`). Everything degrades gracefully without them.
