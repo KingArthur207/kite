@@ -43,7 +43,7 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Protocol
 
 import numpy as np
 
@@ -268,16 +268,60 @@ def scaled_camera(cam: Camera, width: int, height: int) -> Camera:
     return Camera(width, height, cam.fx * sx, cam.fy * sy, cam.cx * sx, cam.cy * sy, cam.source)
 
 
-class FollowController:
-    """Track + telemetry -> rc. Call update() at the control rate (kite.record: 10 Hz); it is rate independent."""
+class YawSource(Protocol):
+    """Replaces the yaw law while following (kite.fly.steer.FlySteer). Called every control step with a fresh track:
+    the walker's bearing (deg, + right) and range (m) measured on the frame that arrived at frame_t. Returns the yaw
+    stick before the clamps and slew limit; `fallback` is the law's own value (returned if the source fails)."""
 
-    def __init__(self, cfg: FollowCfg | None = None, camera: Camera | None = None, max_rc: int = 100):
+    def reset(self) -> None: ...
+
+    def yaw(self, t: float, frame_t: float, bearing_deg: float, range_m: float, fallback: float) -> float: ...
+
+
+class FollowController:
+    """Track + telemetry -> rc. Call update() at the control rate (kite.record: 10 Hz); it is rate independent.
+    yaw_source (optional) decides the yaw stick while following; coasting and lost handling stay the same. If it
+    raises or returns a non-finite value, the yaw law takes over for good (yaw_source_error says why)."""
+
+    def __init__(self, cfg: FollowCfg | None = None, camera: Camera | None = None, max_rc: int = 100,
+                 yaw_source: YawSource | None = None):
         self.cfg = cfg or FollowCfg()
         self.camera = camera or load_camera()
         self.max_rc = max_rc
+        for name in ("behind_m", "video_lag_s"):  # a source built for another geometry would steer on wrong numbers
+            v = getattr(yaw_source, name, None)
+            if v is not None and abs(float(v) - getattr(self.cfg, name)) > 1e-9:
+                raise ValueError(f"yaw source {name} {v} != follow cfg {name} {getattr(self.cfg, name)}: "
+                                 f"build it from the controller's FollowCfg")
+        self.yaw_source = yaw_source
+        self.yaw_source_error: str | None = None
         self.reset()
 
+    def _drop_yaw_source(self, e: Exception) -> None:
+        self.yaw_source_error = f"{type(e).__name__}: {e}"
+        self.yaw_source = None
+
+    def _reset_yaw_source(self) -> None:
+        if self.yaw_source is not None:
+            try:
+                self.yaw_source.reset()
+            except Exception as e:  # a broken source must never stop following: the law takes over
+                self._drop_yaw_source(e)
+
+    def _yaw(self, t: float, track: Track, bearing: float, rng: float, law: float) -> float:
+        if self.yaw_source is None:
+            return law
+        try:
+            y = float(self.yaw_source.yaw(t, track.t, bearing, rng, law))
+            if not math.isfinite(y):
+                raise ValueError(f"yaw source returned {y}")
+            return y
+        except Exception as e:
+            self._drop_yaw_source(e)
+            return law
+
     def reset(self, height_target_m: float | None = None) -> None:
+        self._reset_yaw_source()
         self.height_target = self.cfg.height_m if self.cfg.height_m is not None else height_target_m
         self.state = "following"
         self._t: float | None = None
@@ -322,6 +366,7 @@ class FollowController:
             if c.auto_resume and track is not None and track.confirmed and track.touches_bottom and age <= c.fresh_s:
                 self.state = "following"
                 self._last_meas = None
+                self._reset_yaw_source()  # its memory of the walker is from before the loss
         elif age > c.lost_s:
             self.state = "lost"
         else:
@@ -348,8 +393,8 @@ class FollowController:
             fb = c.k_fb * _db(rng - c.behind_m, c.db_range_m)
             if rng >= c.min_range_m:
                 fb += c.ff * v_walker / c.stick_m_s
-            out = np.array([c.k_lr * _db(lateral, c.db_lat_m), fb, self._ud(tel, cmd),
-                            c.k_yaw * _db(bearing, c.db_yaw_deg)])
+            yaw = self._yaw(t, track, bearing, rng, c.k_yaw * _db(bearing, c.db_yaw_deg))
+            out = np.array([c.k_lr * _db(lateral, c.db_lat_m), fb, self._ud(tel, cmd), yaw])
             out = self._limit(out, dt)
         self._out = out
         # modelled drone speed, for the feed-forward (first-order response to the fb actually sent)
