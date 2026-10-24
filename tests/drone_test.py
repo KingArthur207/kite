@@ -24,8 +24,9 @@ Video goes through one of kite's newest-frame readers (--video-backend, default 
 profile): raw = kite.sources.tello_raw.RawTelloStream (its own UDP socket + PyAV's bare H.264 decoder, no FFmpeg
 network code; the macOS default), pyav = PyAVStream (FFmpeg udp:// + h264 demuxer; the default elsewhere), opencv =
 the team's VideoStream (OpenCV/FFmpeg, nobuffer + low_delay). Each decodes every frame but converts at most
---video-fps per second, so latency does not grow over the flight. The recorder and the preview window share
-that one reader.
+--decode-fps per second, so latency does not grow over the flight. The recorder and the preview window share
+that one reader. --video-bitrate / --video-resolution / --video-fps set the drone's stream (Tello SDK setbitrate /
+setresolution / setfps) before streamon; nothing is sent unless given.
 Safety:   3 x 3 m clear space, prop guards, battery >= 30 %. Ctrl+C lands.
 
 The state stream is ~10 Hz, so one measurement is quantised to ~100 ms; the mean over repeats is better
@@ -500,6 +501,7 @@ def fly(args, ui):
     import cv2  # noqa: F401  - fail here, not silently inside the video thread
     from djitellopy import Tello
 
+    from kite.drone.tello import apply_video_link
     from kite.sources.opencv_sources import stream_class  # likewise: a missing install must not quietly drop the video
 
     stream_class(args.video_backend)
@@ -513,6 +515,8 @@ def fly(args, ui):
     tello.connect()
     rec["meta"]["battery"] = tello.get_battery()
     print(f"connected, battery {rec['meta']['battery']}%")
+    apply_video_link(lambda c: tello.send_command_with_return(c, timeout=3), args.video_bitrate,
+                     args.video_resolution, args.video_fps, say=print)
     if not args.ground and rec["meta"]["battery"] < args.min_battery:
         print(f"battery below {args.min_battery}% -> not flying")
         return
@@ -524,7 +528,7 @@ def fly(args, ui):
     # delay over a long flight.
     stream = None
     try:
-        stream = open_video(tello, args.video_fps, args.video_backend)
+        stream = open_video(tello, args.decode_fps, args.video_backend)
     except Exception as e:  # a video problem must never stop the flight or the telemetry run
         print(f"video unavailable ({e})")
     if stream is None:
@@ -608,8 +612,8 @@ def check_args(p, args):
         p.error("--settle must be 0-10 s")
     if not 0.2 <= args.preview_scale <= 2.0:
         p.error("--preview-scale must be 0.2-2.0")
-    if not 5 <= args.video_fps <= 60:
-        p.error("--video-fps must be 5-60")
+    if not 5 <= args.decode_fps <= 60:
+        p.error("--decode-fps must be 5-60")
     if not 1 <= args.trials <= 10:
         p.error("--trials must be 1-10")
     if args.forward != 0 and not 20 <= args.forward <= 500:
@@ -620,7 +624,7 @@ def check_args(p, args):
 
 
 def build_parser():
-    from kite.config import VIDEO_BACKENDS
+    from kite.config import VIDEO_BACKENDS, add_video_link_args
 
     p = argparse.ArgumentParser(description="Measure Tello command, motion and video lag in one flight.")
     p.add_argument("--mag", type=int, default=30, help="rc stick value for the steps, 10-100 (default 30)")
@@ -632,10 +636,11 @@ def build_parser():
     p.add_argument("--min-battery", type=int, default=30)
     p.add_argument("--preview", action="store_true", help="show the live camera feed in a window during the run")
     p.add_argument("--preview-scale", type=float, default=1.0, help="scale the preview window, e.g. 0.5 (default 1.0)")
-    p.add_argument("--video-fps", type=int, default=30, help="decode cap in fps; frames arriving faster are dropped, not queued (default 30)")
+    p.add_argument("--decode-fps", type=int, default=30, help="decode cap in fps; frames arriving faster are dropped, not queued (default 30)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="video reader: pyav (default), opencv, or kite's own UDP readers raw (bare H.264 decoder), "
                         "socket (big receive buffer) and auto = raw on macOS, pyav elsewhere")
+    add_video_link_args(p)
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
     p.add_argument("--analyze", metavar="JSON", help="re-analyse a saved run without flying")
     p.add_argument("--out", default="results")

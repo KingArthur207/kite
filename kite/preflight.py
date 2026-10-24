@@ -37,7 +37,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from .camera import DEFAULT_PATH as CAMERA_JSON
-from .config import VIDEO_BACKENDS
+from .config import VIDEO_BACKENDS, add_video_link_args, video_link_argv
 
 GO, WARN, NO_GO, SKIP = "GO", "WARN", "NO-GO", "SKIP"
 NEXT_COMMAND = "python -m kite.record --source tello --out {out} --fly --speed 50"
@@ -431,6 +431,8 @@ def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[
                          "other 2.4 GHz Wi-Fi)" + _reader_counters(stats, since_start), data))
     else:
         out.append(Check("video", GO, detail, data))
+    if "datagrams" in stats:  # kite's raw reader counts packets; the others don't
+        out.append(_link_check(stats))
     size = (first.width, first.height)
     if size == FRAME_SIZE:
         out.append(Check("frame size", GO, f"{size[0]}x{size[1]}"))
@@ -447,6 +449,15 @@ def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[
     else:
         out.append(Check("telemetry", GO, f"{hz:.1f} Hz", {"hz": round(hz, 1)}))
     return out
+
+
+def _link_check(stats: dict) -> Check:
+    """One line on the radio link (packet rate, gaps, loss estimated from the H.264 stream), from the raw reader's
+    counters (plain socket counters: the same on Windows, macOS and Linux)."""
+    from .sources.tello_raw import link_verdict
+
+    grade, line = link_verdict(stats)
+    return Check("video link", GO if grade == "GOOD" else WARN, line, {"grade": grade})
 
 
 def _latency_check(tello) -> Check:
@@ -468,18 +479,20 @@ def _latency_check(tello) -> Check:
 
 
 def drone_checks(make_drone=None, first_frame_s: float | None = None, measure_s: float | None = None,
-                 video_backend: str | None = None) -> list[Check]:
+                 video_backend: str | None = None, link_args=None) -> list[Check]:
     """Connect (dry run: no motion), read and measure, close. make_drone: a factory for tests. video_backend: the
-    Tello video reader to check (None: DroneCfg's, the one kite.record uses; "auto" = raw on macOS, pyav elsewhere)."""
+    Tello video reader to check (None: DroneCfg's, the one kite.record uses; "auto" = raw on macOS, pyav elsewhere).
+    link_args: parsed --video-bitrate / --video-resolution / --video-fps (kite.config.add_video_link_args)."""
     first_frame_s = FIRST_FRAME_S if first_frame_s is None else first_frame_s
     measure_s = MEASURE_S if measure_s is None else measure_s
     if make_drone is None:
-        from .config import Config
+        from .config import Config, video_link_args
         from .drone import make_tello
 
         cfg = Config()
         if video_backend:
             cfg.drone.video_backend = video_backend
+        video_link_args(cfg.drone, link_args)
 
         def make_drone():
             return make_tello(cfg, dry_run=True)  # dry run: takeoff / rc / moves are never sent
@@ -516,7 +529,7 @@ def drone_checks(make_drone=None, first_frame_s: float | None = None, measure_s:
 
 # ------------------------------------------------------------------ run
 def run(out: str = "recordings", quick: bool = False, drone: bool = False, make_drone=None,
-        on_check=None, video_backend: str | None = None) -> list[Check]:
+        on_check=None, video_backend: str | None = None, link_args=None) -> list[Check]:
     """All checks in order. The drone checks run when the laptop is on the Tello Wi-Fi or drone=True, never with
     quick."""
     checks: list[Check] = []
@@ -548,7 +561,7 @@ def run(out: str = "recordings", quick: bool = False, drone: bool = False, make_
     else:
         if on_check is not None:
             on_check(None)  # "connecting" notice
-        add(drone_checks(make_drone, video_backend=video_backend))
+        add(drone_checks(make_drone, video_backend=video_backend, link_args=link_args))
     return checks
 
 
@@ -568,6 +581,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--json", action="store_true", help="print machine-readable results")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="Tello H.264 reader to check (default pyav; opt-in: raw, socket, auto = raw on macOS)")
+    add_video_link_args(p)
     args = p.parse_args(argv)
     if args.quick and args.drone:
         p.error("--quick and --drone contradict each other")
@@ -581,9 +595,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.json:
         print(f"kite preflight {time.strftime('%Y-%m-%d %H:%M:%S')}")
     checks = run(out=args.out, quick=args.quick, drone=args.drone,
-                 on_check=None if args.json else show, video_backend=args.video_backend)
+                 on_check=None if args.json else show, video_backend=args.video_backend, link_args=args)
     v = verdict(checks)
     nxt = NEXT_COMMAND.format(out=args.out) + (f" --video-backend {args.video_backend}" if args.video_backend else "")
+    nxt += video_link_argv(args)
     if args.json:
         print(json.dumps({"verdict": v, "checks": [asdict(c) for c in checks],
                           "next_command": nxt if v == GO else None}, indent=2))
