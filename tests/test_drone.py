@@ -562,3 +562,33 @@ def test_nan_or_future_frame_and_telemetry_stamps_mean_hover():
     assert gov.check(now, now) == "hover"
     fake.tel.t = now
     assert gov.check(nan, now) == "hover"  # a broken clock is no evidence of live video either
+
+
+def test_land_resend_is_not_held_back_by_a_wall_clock_step(monkeypatch):
+    """The re-send interval was timed on time.time(): after the wall clock stepped back (NTP, a Wi-Fi switch) a
+    lost land was not re-sent until the clock caught up again. It is timed on a monotonic clock now."""
+    import kite.drone.safety as safety_mod
+
+    gov, fake = governed()
+    gov.land()
+    assert fake.lands == 1
+    fake._busy = False  # the land reply was lost, it still flies
+    gov._land_sent -= 3.0  # the 2 s re-send interval has passed
+    wall = time.time()
+    monkeypatch.setattr(safety_mod.time, "time", lambda: wall - 3600.0)  # the wall clock steps back an hour
+    fake.tel.t = wall
+    assert gov.check(wall, wall) == "land" and fake.lands == 2
+
+
+def test_land_resend_interval_runs_on_the_injected_clock():
+    mono = [100.0]
+    fake = FakeDrone()
+    gov = SafetyGovernor(fake, SafetyCfg(), clock=lambda: mono[0])
+    gov.land()
+    fake._busy = False
+    now = time.time()
+    fake.tel.t = now
+    mono[0] += 1.9
+    assert gov.check(now, now) == "land" and fake.lands == 1  # within 2 s: not yet
+    mono[0] += 0.2
+    assert gov.check(now, now) == "land" and fake.lands == 2

@@ -9,6 +9,7 @@ Rules (config.SafetyCfg):
     min_altitude_m; discrete up/down moves that would cross a limit are refused
   * battery below min_battery_pct, or flight time above max_flight_s -> land
   * a land that was asked for (any reason) but failed / was never sent while it still flies is re-sent every 2 s
+    (timed on `clock`, time.monotonic by default, so a wall-clock step cannot hold the re-send back)
   * no new video frame for frame_timeout_s, or stale telemetry -> hover (rc 0) until they come back; a NaN stamp
     or one more than the timeout in the future (the wall clock stepped back) counts as stale too
 The mission code keeps working through the wrapper; refused commands report 'error: safety ...'.
@@ -17,6 +18,7 @@ The mission code keeps working through the wrapper; refused commands report 'err
 from __future__ import annotations
 
 import time
+from typing import Callable
 
 from ..config import SafetyCfg
 from .base import Drone, check_move, clamp_rc
@@ -27,9 +29,10 @@ SOFT_BAND_M = 0.4  # vertical speed is tapered to zero over this distance before
 class SafetyGovernor(Drone):
     name = "safety"
 
-    def __init__(self, inner: Drone, cfg: SafetyCfg):
+    def __init__(self, inner: Drone, cfg: SafetyCfg, clock: Callable[[], float] = time.monotonic):
         self.inner = inner
         self.cfg = cfg
+        self._clock = clock  # land re-send interval only; check()'s `now` is the caller's clock
         self.events: list[tuple[float, str]] = []
         self._takeoff_t: float | None = None
         self._refused: str | None = None
@@ -71,7 +74,7 @@ class SafetyGovernor(Drone):
 
     def _land(self, why: str) -> str:
         self._event(f"LAND: {why}")
-        now = time.time()
+        now = self._clock()
         # (re)send land if we have not asked yet, or a previous land failed / was lost and it still flies
         if not self.land_requested or (not self.inner.busy() and self.inner.flying and now - self._land_sent > 2.0):
             self.land_requested = True
@@ -96,7 +99,7 @@ class SafetyGovernor(Drone):
 
     def land(self) -> None:
         self.land_requested = True
-        self._land_sent = time.time()
+        self._land_sent = self._clock()
         self.inner.land()
 
     def emergency(self) -> bool | None:
