@@ -183,6 +183,8 @@ class Earpiece:
         self.speaker.cancel_all(keep_critical=False)
         time.sleep(0.1)
         self.speaker.stop()
+        if self.transport is not None:
+            self.transport.stop()
         self.output.stop()
         if hasattr(self.engine, "shutdown"):
             self.engine.shutdown()

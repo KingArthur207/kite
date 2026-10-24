@@ -241,6 +241,7 @@ def run(play: bool = True, log=print) -> int:
         with connect(f"ws://127.0.0.1:{tr.ws_port}") as ws:
             ws.send(json.dumps({"type": "scene", "text": "self test"}))
             time.sleep(0.3)
+        tr.stop()
         rep("network", "PASS" if got_msgs == ["heartbeat", "scene"] else "FAIL", f"received {got_msgs}")
     except Exception as e:
         rep("network", "FAIL", f"{type(e).__name__}: {e}")

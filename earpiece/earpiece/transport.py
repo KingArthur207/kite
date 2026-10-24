@@ -18,6 +18,7 @@ from typing import Callable
 
 from .events import BadMessage, Msg, parse
 
+MAX_BUCKETS = 4096          # per-peer rate limiters kept; idle ones are evicted beyond this
 
 class _Bucket:
     def __init__(self, rate: float, burst: float):
@@ -47,11 +48,14 @@ class Transport:
         self._clients: set = set()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ready = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._servers: list = []
         self.stats = {"udp": 0, "ws": 0, "bad": 0, "limited": 0, "clients": 0, "last_error": None}
         self.state_provider: Callable[[], dict] | None = None
 
     def start(self) -> None:
-        threading.Thread(target=self._run, name="transport", daemon=True).start()
+        self._thread = threading.Thread(target=self._run, name="transport", daemon=True)
+        self._thread.start()
         if not self._ready.wait(5):
             raise RuntimeError("transport failed to start")
         if self.stats["last_error"]:
@@ -68,30 +72,81 @@ class Transport:
             self._ready.set()
             return
         self._ready.set()
-        loop.run_forever()
+        try:
+            loop.run_forever()
+        finally:
+            loop.close()
+
+    def stop(self, timeout: float = 2.0) -> None:
+        """Close both sockets and every client, then end the transport thread."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+
+        async def _close() -> None:
+            for srv in self._servers:
+                srv.close()
+            for ws in list(self._clients):
+                try:
+                    await asyncio.wait_for(ws.close(), timeout=0.5)
+                except Exception:
+                    pass
+            for srv in self._servers:
+                if hasattr(srv, "wait_closed"):
+                    try:
+                        await asyncio.wait_for(srv.wait_closed(), timeout=0.5)
+                    except Exception:
+                        pass
+            tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+            for t in tasks:
+                t.cancel()
+            if tasks:
+                await asyncio.wait(tasks, timeout=0.5)
+            loop.stop()
+
+        try:
+            asyncio.run_coroutine_threadsafe(_close(), loop)
+        except RuntimeError:                 # loop already closed
+            return
+        if self._thread is not None:
+            self._thread.join(timeout)
 
     async def _serve(self) -> None:
         import websockets
         loop = asyncio.get_running_loop()
-        await loop.create_datagram_endpoint(lambda: _Udp(self), local_addr=(self.host, self.udp_port))
-        await websockets.serve(self._ws_handler, self.host, self.ws_port, max_size=256 * 1024,
-                               ping_interval=20, ping_timeout=20)
+        udp, _ = await loop.create_datagram_endpoint(lambda: _Udp(self), local_addr=(self.host, self.udp_port))
+        self._servers.append(udp)
+        self._servers.append(await websockets.serve(
+            self._ws_handler, self.host, self.ws_port, max_size=256 * 1024, ping_interval=20,
+            ping_timeout=20))
         loop.create_task(self._state_pump())
         self.log(f"[net] listening: udp://{self.host}:{self.udp_port}  ws://{self.host}:{self.ws_port}")
 
-    def ingest(self, data, peer: str, via: str) -> None:
+    def _bucket(self, peer: str) -> _Bucket:
         b = self._buckets.get(peer)
         if b is None:
+            if len(self._buckets) >= MAX_BUCKETS:
+                # every UDP source port is a peer: forget the ones that have been quiet long
+                # enough to be full again (they lose nothing), else start over
+                now = time.monotonic()
+                idle = [k for k, v in self._buckets.items() if now - v.t > v.burst / v.rate]
+                for k in idle or list(self._buckets):
+                    del self._buckets[k]
             b = self._buckets[peer] = _Bucket(self.rate, self.rate)
+        return b
+
+    def ingest(self, data, peer: str, via: str) -> None:
+        b = self._bucket(peer)
         if not b.take():
             self.stats["limited"] += 1
             return
         try:
             msg = parse(data)
-        except BadMessage as e:
+        except Exception as e:               # BadMessage, or a parser bug: never take the socket down
             self.stats["bad"] += 1
             if self.stats["bad"] <= 20 or self.stats["bad"] % 500 == 0:
-                self.log(f"[net] rejected message from {peer}: {e}")
+                why = e if isinstance(e, BadMessage) else f"{type(e).__name__}: {e}"
+                self.log(f"[net] rejected message from {peer}: {str(why)[:200]}")
             return
         self.stats[via] += 1
         try:
