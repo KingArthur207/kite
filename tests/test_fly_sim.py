@@ -4,15 +4,17 @@ Determinism and common random numbers, the camera geometry at the kite spec (1.0
 box, the detector's timing and per-frame luck, the drone's dead time, lag and position-held hover, the walker's speed
 cap, acceleration and step-back stop, the metrics on constructed sequences, the governor clamping a controller that
 asks for more, the yaw_source hook (a source returning `fallback` is KITE-LAW exactly, a source returning 0 is clearly
-worse), the collision rate of KITE-LAW on demo, and sane metrics on every profile. Seeds are from BASELINE_SEEDS."""
+worse), FollowCfg.predict steering on whole-degree telemetry without a route, the collision rate of KITE-LAW on demo,
+and sane metrics on every profile. Seeds are from BASELINE_SEEDS."""
 
 import math
+from dataclasses import replace
 
 import numpy as np
 import pytest
 
 from kite.camera import Camera
-from kite.fly.interfaces import BASELINE_SEEDS, METRICS
+from kite.fly.interfaces import BASELINE_SEEDS, METRICS, SIM_EXTRA_METRICS
 from kite.fly.sim import run_episode
 from kite.fly.sim.batch import parse_seeds, run_seeds, summarize
 from kite.fly.sim.camera import H, DetectorParams, FakeDetector, head_in_view, project, visible_box
@@ -311,6 +313,30 @@ def test_a_yaw_source_returning_zero_is_clearly_worse():
     assert zero["mean_abs_yaw"] == 0.0 and zero["in_view"] < law["in_view"]
 
 
+# ------------------------------------------------------------------ main's prediction planner (FollowCfg.predict)
+def test_predict_mode_steers_on_tello_telemetry_without_a_route(monkeypatch):
+    import kite.fly.sim.world as world
+
+    seen = []
+
+    class Spy(FollowController):
+        def update(self, track, tel, t, walker_xy=None):
+            seen.append((tel.yaw_deg, tel.pitch_deg, walker_xy, self.route))
+            return super().update(track, tel, t, walker_xy)
+
+    monkeypatch.setattr(world, "FollowController", Spy)
+    seed = SEEDS[1]
+    cfg = replace(default_follow_cfg(), predict=True)
+    r = run_episode(seed, "demo", follow_cfg=cfg, record=True, episode_s=20.0)
+    assert seen and all(w is None and route is None for _, _, w, route in seen)  # as kite.record: no route prior
+    assert all(y == int(y) and -180 <= y <= 180 and p == int(p) for y, p, _, _ in seen)  # whole degrees
+    planners = r.trace["planner"]
+    assert "predict" in planners and 0.0 < r.metrics["planned"] <= 1.0
+    law = run_episode(seed, "demo", episode_s=20.0)
+    assert law.metrics["planned"] == 0.0 and law.metrics["fb_change"] > 0.0
+    assert r.metrics != law.metrics  # the plan's sticks were flown, not just drawn
+
+
 # ------------------------------------------------------------------ safety and sanity
 def test_kite_law_collision_rate_on_demo():
     res = run_seeds(SEEDS, "demo", workers=4)
@@ -322,7 +348,7 @@ def test_kite_law_collision_rate_on_demo():
 def test_metrics_are_finite_and_in_range(profile):
     for s in SEEDS[:3]:
         r = run_episode(s, profile, episode_s=30.0)
-        assert set(METRICS) | {"min_dist3d_m", "start_failed"} == set(r.metrics)
+        assert set(METRICS) | set(SIM_EXTRA_METRICS) | {"min_dist3d_m", "start_failed"} == set(r.metrics)
         assert r.profile == profile and r.arm == "KITE-LAW"
         m = r.metrics
         assert all(math.isfinite(v) for v in m.values()) and math.isfinite(r.ret)

@@ -9,6 +9,9 @@
         --best results/fly/runs/PRED-PD_s1_kite1/best.json \\
         --seeds test --profiles train,demo,stress,fast --n 200 --backend modal --name g3
     python -m kite.fly.train.report --from results/fly/report/g3.json     # recompute tables and verdicts only
+    # FollowCfg variants (ARM+field=value...): main's opt-in prediction planner and pitch compensation vs the law
+    python -m kite.fly.train.report --arms KITE-LAW,KITE-LAW+predict,KITE-LAW+pitch_comp=-1 \
+        --seeds test --profiles train,demo,stress,fast --n 200 --name predict
 
 Side sets (--side-sets, not gated): G3 also reports every arm on `demo` at behind_m 1.2 and 1.5 (FollowCfg override, the
 yaw sources built from that same config; DESIGN R9.5) and on `demo` with head-only detection p_head 0.3 (R10.3, a sim
@@ -17,6 +20,9 @@ failed, and say how many (R11.1); collisions are compared seed by seed (R11.2).
 
 Arms: interfaces.ARMS. FLY-YAW, KITE-LAW-CMA and PRED-PD come from a --best file (several of one arm: labels
 <arm>#s<cma seed>). A fly arm takes @blind or @size for its size mode (default: its best.json's, else --size-blind).
+Any arm takes +<FollowCfg field>[=<value>] suffixes (a bare field is True): a variant, labelled with its suffixes,
+whose config differs only there (arms.check_follow; +predict on the law arms only). G3 checks a variant against
+KITE-LAW alone, like PRED-PD, and never counts it as a fly comparator.
 Every arm runs on the same seeds (common random numbers), so differences are PAIRED per seed: mean and 95 % percentile
 bootstrap CI of (arm - KITE-LAW) and of (arm - each --vs arm), per metric and profile. Fitness is the training one
 (DESIGN R1). G2 is computed on --seeds baseline only, G3 on --seeds test only. Writes <out>/<name>.json (every
@@ -42,7 +48,7 @@ from pathlib import Path
 
 import numpy as np
 
-from kite.fly.interfaces import ARMS, BASELINE_SEEDS, METRICS, SELECTION_SEEDS, TEST_SEEDS
+from kite.fly.interfaces import ARMS, BASELINE_SEEDS, METRICS, SELECTION_SEEDS, SIM_EXTRA_METRICS, TEST_SEEDS
 from kite.fly.train import arms
 from kite.fly.train import cma_train as ct
 from kite.fly.train import evaluate as ev
@@ -50,10 +56,10 @@ from kite.fly.train import evaluate as ev
 N_BOOT = 10_000
 LAW = "KITE-LAW"
 TUNED = ("FLY-YAW", "KITE-LAW-CMA", "PRED-PD")  # arms that come from a best.json
-REPORT_METRICS = METRICS + tuple(m for m in ("min_dist3d_m",) if m not in METRICS)  # + the sim's R10 extra
+REPORT_METRICS = METRICS + tuple(m for m in ("min_dist3d_m",) + SIM_EXTRA_METRICS if m not in METRICS)  # sim extras
 TABLE_METRICS = ("rms_bearing_deg", "p95_bearing_deg", "in_view", "following", "losses", "time_lost_s",
                  "rms_range_err_m", "in_band", "too_close_s", "pitch_exits", "corner_losses", "stick_change",
-                 "min_dist3d_m")
+                 "min_dist3d_m") + SIM_EXTRA_METRICS
 SEED_SETS = {"baseline": BASELINE_SEEDS, "test": TEST_SEEDS, "selection": SELECTION_SEEDS}
 # DESIGN R6 G3 (criteria numbered as there)
 G3_MAIN, G3_EDGE = ("train", "demo"), ("stress", "fast")
@@ -242,10 +248,14 @@ def g3(recs: dict, entries: list[dict], n_boot: int = N_BOOT) -> dict:
     labels = {e["label"]: e for e in entries}
     if LAW not in labels:
         return {"verdict": f"NO VERDICT: {LAW} was not evaluated", "candidates": {}}
-    of = {a: [e["label"] for e in entries if e["arm"] == a] for a in ("KITE-LAW-CMA", "PRED-PD", "FLY-YAW-PREV")}
+    of = {a: [e["label"] for e in entries if e["arm"] == a and not e.get("follow")]
+          for a in ("KITE-LAW-CMA", "PRED-PD", "FLY-YAW-PREV")}
+    variants = [e["label"] for e in entries if e.get("follow")]
     out: dict = {"candidates": {}}
     for e in entries:
-        if e["arm"] == "FLY-YAW":
+        if e.get("follow"):
+            out["candidates"][e["label"]] = _result(gate_checks(recs, e["label"], [LAW], n_boot))
+        elif e["arm"] == "FLY-YAW":
             checks = gate_checks(recs, e["label"], [LAW] + of["KITE-LAW-CMA"] + of["PRED-PD"] + of["FLY-YAW-PREV"],
                                  n_boot)
             checks += [_check(1, f"comparator {a}", False, f"{a} was not evaluated") for a, v in of.items() if not v]
@@ -253,7 +263,7 @@ def g3(recs: dict, entries: list[dict], n_boot: int = N_BOOT) -> dict:
         elif e["arm"] in ("KITE-LAW-CMA", "PRED-PD"):
             out["candidates"][e["label"]] = _result(gate_checks(recs, e["label"], [LAW], n_boot))
     res = out["candidates"]
-    fly = [lab for lab in res if labels[lab]["arm"] == "FLY-YAW"]
+    fly = [lab for lab in res if labels[lab]["arm"] == "FLY-YAW" and lab not in variants]
     fly_ok = [lab for lab in fly if res[lab]["pass"]]
     pred_ok = [lab for lab in of["PRED-PD"] if res[lab]["pass"]]
     cma_ok = [lab for lab in of["KITE-LAW-CMA"] if res[lab]["pass"]]
@@ -274,7 +284,11 @@ def g3(recs: dict, entries: list[dict], n_boot: int = N_BOOT) -> dict:
         p = labels[cma_ok[0]].get("params") or {}
         parts.append(f"{cma_ok[0]} beats {LAW} (k_yaw {p.get('k_yaw', math.nan):.3f}, db_yaw_deg "
                      f"{p.get('db_yaw_deg', math.nan):.3f})")
-    if not pred_ok and not cma_ok:
+    var_ok = [lab for lab in variants if res[lab]["pass"]]
+    for lab in variants:
+        parts.append(f"{lab} beats {LAW}" if res[lab]["pass"] else
+                     f"{lab} fails G3 against {LAW} on criteria {res[lab]['failed_criteria']}")
+    if not pred_ok and not cma_ok and not var_ok:
         parts.append(f"nothing beats {LAW}: no change")
     out["verdict"] = "; ".join(parts)
     return out
@@ -323,7 +337,10 @@ def parse_entries(arms_csv: str, best: list[str], size_blind_default: bool = Tru
         bests.setdefault(b["arm"], []).append(b)
     out = []
     for spec in [s.strip() for s in arms_csv.split(",") if s.strip()]:
-        arm, _, mode = spec.partition("@")
+        base, *mods = spec.split("+")
+        arm, _, mode = base.partition("@")
+        follow = parse_follow(arm, mods)
+        suffix = "".join(f"+{m}" for m in mods)
         if arm not in ARMS:
             raise SystemExit(f"unknown arm {arm!r}; one of {ARMS}")
         if mode not in ("", "blind", "size"):
@@ -338,11 +355,12 @@ def parse_entries(arms_csv: str, best: list[str], size_blind_default: bool = Tru
                     sb = (mode == "blind") if mode else b.get("size_blind")
                     sb = size_blind_default if sb is None else bool(sb)
                     lab += f"@{mode}" if mode else ""
-                out.append({"label": lab, "arm": arm, "params": b.get("params"), "norm": b.get("norm"),
+                out.append({"label": lab + suffix, "arm": arm, "params": b.get("params"), "norm": b.get("norm"),
                             "x": b.get("x"), "size_blind": sb, "source": b["_path"], "gen": b.get("gen"),
-                            "sel_fitness": b.get("sel_fitness")})
+                            "sel_fitness": b.get("sel_fitness"), "follow": follow})
             continue
-        e = {"label": spec, "arm": arm, "params": None, "norm": None, "x": None, "size_blind": None, "source": arm}
+        e = {"label": spec, "arm": arm, "params": None, "norm": None, "x": None, "size_blind": None, "source": arm,
+             "follow": follow}
         if arm in arms.FLY_ARMS:
             e["size_blind"] = (mode == "blind") if mode else size_blind_default
         out.append(e)
@@ -350,6 +368,21 @@ def parse_entries(arms_csv: str, best: list[str], size_blind_default: bool = Tru
     if len(set(labels)) != len(labels):
         raise SystemExit(f"duplicate entries {labels}")
     return out
+
+
+def parse_follow(arm: str, mods: list[str]) -> dict | None:
+    """["predict", "pitch_comp=-1"] -> {"predict": True, "pitch_comp": -1.0}: an arm's FollowCfg overrides."""
+    raw: dict = {}
+    for m in mods:
+        k, sep, v = (t.strip() for t in m.partition("="))
+        try:
+            raw[k] = float(v) if sep else True
+        except ValueError:
+            raise SystemExit(f"FollowCfg override {m!r}: {v!r} is not a number") from None
+    try:
+        return arms.check_follow(arm, raw) or None
+    except ValueError as e:
+        raise SystemExit(f"FollowCfg override {'+'.join(mods)!r} on {arm}: {e}") from None
 
 
 def parse_side_set(name: str) -> tuple[str, float | None, dict | None]:
@@ -379,8 +412,8 @@ def entry_items(e: dict, seeds: list[int], profile: str, episode_s: float, stub_
     if set_name is not None:
         profile, behind_m, overrides = parse_side_set(set_name)
     return [ev.make_item(e["arm"], s, profile, size_blind=e["size_blind"], episode_s=episode_s, behind_m=behind_m,
-                         overrides=overrides, stub_s=stub_s, tag={"label": e["label"], "set": set_name or profile},
-                         **kw) for s in seeds]
+                         overrides=overrides, follow=e.get("follow"), stub_s=stub_s,
+                         tag={"label": e["label"], "set": set_name or profile}, **kw) for s in seeds]
 
 
 def compact(r: dict) -> dict:
@@ -406,19 +439,21 @@ def run_eval(entries: list[dict], seeds: list[int], profiles: list[str], backend
 def analyse(recs: dict, entries: list[dict], vs: list[str], seeds: str, n_boot: int = N_BOOT) -> dict:
     order = ("train", "demo", "stress", "fast")
     profiles = sorted({p for lab in recs for p in recs[lab]}, key=lambda p: (order.index(p) if p in order else 9, p))
-    summary, diffs = {}, {}
+    summary, diffs, coll = {}, {}, {}
     for e in entries:
         lab = e["label"]
         for p in profiles:
             if p not in recs.get(lab, {}):
                 continue
             summary.setdefault(lab, {})[p] = summarize(recs[lab][p], recs.get(LAW, {}).get(p))
+            if lab != LAW and p in recs.get(LAW, {}):
+                coll.setdefault(lab, {})[p] = collision_pairs(recs[lab][p], recs[LAW][p])
             for ref in [LAW] + [v for v in vs if v != LAW]:
                 if ref == lab or p not in recs.get(ref, {}):
                     continue
                 diffs.setdefault(lab, {}).setdefault(ref, {})[p] = {
                     m: paired(recs[lab][p], recs[ref][p], m, n_boot) for m in REPORT_METRICS}
-    out = {"profiles": profiles, "seeds": seeds, "summary": summary, "paired": diffs}
+    out = {"profiles": profiles, "seeds": seeds, "summary": summary, "paired": diffs, "collisions": coll}
     if seeds == "baseline":
         out["g2"] = g2(recs, entries)
     if seeds == "test":
@@ -458,6 +493,11 @@ def markdown(res: dict) -> str:
                          f"{q['collisions']} | "
                          + " | ".join(_f(q["metrics"].get(m)) for m in TABLE_METRICS) + f" | {dtxt} |")
         lines.append("")
+        for lab, per in a.get("collisions", {}).items():
+            if p in per:
+                q = per[p]
+                lines.append(f"- {lab} collisions seed by seed: alone on {q['a_only']} seeds, {LAW} alone on "
+                             f"{q['b_only']}, both {q['both']} (n {q['n']})")
         for lab, refs in a["paired"].items():
             for ref, per in refs.items():
                 if p in per and ref != LAW:

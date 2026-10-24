@@ -83,6 +83,20 @@ def test_follow_cfg_per_arm():
         arms.make_follow_cfg("KITE-LAW-CMA")
 
 
+def test_follow_overrides_are_typed_and_checked():
+    assert arms.check_follow("KITE-LAW", {"predict": 1.0, "pitch_comp": -1, "max_yaw": 40.4}) == {
+        "predict": True, "pitch_comp": -1.0, "max_yaw": 40}
+    c = arms.make_follow_cfg("KITE-LAW", behind_m=1.5, follow={"predict": True, "pitch_comp": -1.0})
+    assert (c.predict, c.pitch_comp, c.behind_m, c.max_yaw) == (True, -1.0, 1.5, 70)
+    c = arms.make_follow_cfg("KITE-LAW-CMA", params={"k_yaw": 2.2, "db_yaw_deg": 1.0}, follow={"predict": True})
+    assert (c.predict, c.k_yaw) == (True, 2.2)
+    assert arms.check_follow("FLY-YAW", {"pitch_comp": -1}) == {"pitch_comp": -1.0}
+    for arm, follow in (("PRED-PD", {"predict": True}), ("FLY-YAW-PREV", {"predict": 1.0}),
+                        ("KITE-LAW", {"behind_m": 1.2}), ("KITE-LAW", {"no_such_field": 1.0})):
+        with pytest.raises(ValueError):
+            arms.check_follow(arm, follow)
+
+
 @pytest.fixture
 def sim_calls(monkeypatch):
     """arms with the simulator replaced by a recorder (the yaw sources are the real FlySteer / PredPD)."""
@@ -126,6 +140,14 @@ def test_run_item_wires_each_arm_to_the_real_yaw_sources(sim_calls):
     assert ys.params == pytest.approx({"kp": 4.0, "kd": 0.5, "deadband_deg": 1.0})
     arms.run_item(ev.make_item("PRED-PD", 9))
     assert sim_calls[-1]["yaw_source"].params == pytest.approx({"kp": 1.5, "kd": 0.1, "deadband_deg": 2.0})
+    arms.run_item(ev.make_item("KITE-LAW", 9, behind_m=1.2, follow={"predict": True, "pitch_comp": -1.0}))
+    kw = sim_calls[-1]
+    assert kw["yaw_source"] is None and (kw["follow_cfg"].predict, kw["follow_cfg"].pitch_comp) == (True, -1.0)
+    assert kw["follow_cfg"].behind_m == 1.2
+    arms.run_item(ev.make_item("PRED-PD", 9, follow={"pitch_comp": -1.0}))
+    assert sim_calls[-1]["yaw_source"].cfg.pitch_comp == -1.0  # the source sees the controller's own cfg
+    with pytest.raises(ValueError):
+        arms.run_item(ev.make_item("PRED-PD", 9, follow={"predict": True}))
 
 
 class FakeSteer:
@@ -479,6 +501,41 @@ def test_side_sets_parse_and_reach_the_items():
     assert (it["behind_m"], it["overrides"]) == (1.5, None)
 
 
+def test_follow_variants_parse_into_labelled_entries_and_items():
+    es = rp.parse_entries("KITE-LAW,KITE-LAW+predict,KITE-LAW+predict+pitch_comp=-1,FLY-YAW-PREV@blind+pitch_comp=-1",
+                          [])
+    assert [(e["label"], e["arm"], e["follow"]) for e in es] == [
+        ("KITE-LAW", "KITE-LAW", None), ("KITE-LAW+predict", "KITE-LAW", {"predict": True}),
+        ("KITE-LAW+predict+pitch_comp=-1", "KITE-LAW", {"predict": True, "pitch_comp": -1.0}),
+        ("FLY-YAW-PREV@blind+pitch_comp=-1", "FLY-YAW-PREV", {"pitch_comp": -1.0})]
+    assert es[3]["size_blind"] is True
+    it = rp.entry_items(es[2], [2000], "demo", 60.0, None, "demo@1.5")[0]
+    assert (it["arm"], it["behind_m"], it["follow"], it["tag"]["label"]) == (
+        "KITE-LAW", 1.5, {"predict": True, "pitch_comp": -1.0}, "KITE-LAW+predict+pitch_comp=-1")
+    assert rp.entry_items(es[0], [2000], "demo", 60.0, None)[0]["follow"] is None
+    for bad in ("FLY-YAW-PREV+predict", "KITE-LAW+pitch_comp=minus", "KITE-LAW+nope=1", "KITE-LAW+behind_m=1.2"):
+        with pytest.raises(SystemExit):
+            rp.parse_entries(bad, [])
+
+
+def test_g3_checks_a_follow_variant_against_the_law_alone():
+    recs, entries = world(fly={"rms_bearing_deg": 5.6})
+    recs["KITE-LAW+predict"] = recs.pop("PRED-PD")  # the PRED-PD numbers under a variant's label
+    entries = [e for e in entries if e["arm"] != "PRED-PD"] + [
+        {"label": "KITE-LAW+predict", "arm": "KITE-LAW", "size_blind": None, "follow": {"predict": True}}]
+    out = rp.g3(recs, entries, n_boot=500)
+    assert out["candidates"]["KITE-LAW+predict"]["pass"] is False  # rms_bearing equals the law's: criterion 1
+    assert not any("KITE-LAW+predict" in name for _, name in failed(out))  # never a fly comparator
+    assert "KITE-LAW+predict fails G3 against KITE-LAW on criteria [1]" in out["verdict"]
+    assert "nothing beats KITE-LAW" in out["verdict"]
+    for p in recs["KITE-LAW+predict"]:
+        for r in recs["KITE-LAW+predict"][p]:
+            r["metrics"]["rms_bearing_deg"] *= 0.7
+    out = rp.g3(recs, entries, n_boot=500)
+    assert out["candidates"]["KITE-LAW+predict"]["pass"], failed(out, "KITE-LAW+predict")
+    assert "KITE-LAW+predict beats KITE-LAW" in out["verdict"] and "nothing beats" not in out["verdict"]
+
+
 def test_bootstrap_ci():
     v = np.random.default_rng(1).normal(1.0, 1.0, 400)
     m, lo, hi = rp.bootstrap_ci(v, n_boot=4000)
@@ -658,6 +715,13 @@ def test_report_end_to_end_on_stub_episodes(tmp_path):
     assert "demo@1.5" in res["analysis"]["summary"]["KITE-LAW"]
     assert "## G3" in (tmp_path / "g3.md").read_text()
     assert rp.main(["--from", str(tmp_path / "g3.json"), "--out", str(tmp_path), "--n-boot", "100"]) == 0
+    assert rp.main(["--arms", "KITE-LAW,KITE-LAW+predict", "--seeds", "test", "--side-sets", "none", "--name", "v",
+                    *common]) == 0
+    res = json.loads((tmp_path / "v.json").read_text())
+    assert set(res["records"]) == {"KITE-LAW", "KITE-LAW+predict"} and "KITE-LAW+predict" in res["analysis"]["g3"][
+        "candidates"]
+    assert res["analysis"]["collisions"]["KITE-LAW+predict"]["demo"]["n"] == 6
+    assert "KITE-LAW+predict collisions seed by seed" in (tmp_path / "v.md").read_text()
     with pytest.raises(SystemExit):
         rp.main(["--arms", "KITE-LAW,PRED-PD", "--stub-s", "0", "--out", str(tmp_path)])  # PRED-PD needs --best
 

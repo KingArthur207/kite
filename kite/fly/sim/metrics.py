@@ -1,8 +1,8 @@
-"""Episode metrics from simulator truth: interfaces.METRICS plus min_dist3d_m and start_failed (DESIGN 8, 10).
+"""Episode metrics from simulator truth: interfaces.METRICS, SIM_EXTRA_METRICS, min_dist3d_m, start_failed (DESIGN 8).
 
     m = EpisodeMetrics(behind_m=1.0, min_range_m=0.7, t_metric=t0 + METRIC_START_S, corners=[(t_a, t_b), ...])
     m.phys(t, range_m, bearing_deg, in_view, below, alt_err_m, dist3d_m)   # every physics sub-step
-    m.control(t, dt, state, d_yaw, yaw, gap, last_true)                    # every control step
+    m.control(t, dt, state, d_yaw, yaw, gap, last_true, d_fb, d_lr, planned)   # every control step
     m.collided(range_m, dist3d_m, ticks_left, window_s_left)               # once, if a collision ends the episode
     m.result(n_phys_full, n_ctrl_full)                                     # the metrics dict
 
@@ -14,7 +14,10 @@ Definitions:
 - losses: separate > 1 s gaps without a true detection (the caller passes `gap` per control step); corner_losses:
   those whose last true detection was inside one of the corner windows (a turn, up to 3 s after it).
 - pitch_exits: the head leaving through the bottom edge (`below`) with the walker within 1.5 m.
-- stick_change: mean |change of the sent yaw stick| over control steps in state "following" only.
+- stick_change: mean |change of the sent yaw stick| over control steps in state "following" only; fb_change and
+  lr_change the same for the forward and lateral sticks (the prediction planner steers those too).
+- planned: fraction of the "following" control steps whose command came from the prediction planner
+  (FollowCmd.planner == "predict"; 0 unless FollowCfg.predict).
 """
 
 from __future__ import annotations
@@ -40,7 +43,8 @@ class EpisodeMetrics:
         self.min_range = self.min_d3 = math.inf
         self.too_close_s = 0.0
         self.n_cm = self.n_follow = self.losses = self.corner_losses = 0
-        self.time_lost = self.s_dyaw = self.s_ayaw = 0.0
+        self.time_lost = self.s_dyaw = self.s_ayaw = self.s_dfb = self.s_dlr = 0.0
+        self.n_planned = 0
         self.collision = False
         self._was_in_view = True
         self._prev_gap = False
@@ -67,13 +71,17 @@ class EpisodeMetrics:
                 self.too_close_s += dt
         self._was_in_view = in_view
 
-    def control(self, t: float, dt: float, state: str, d_yaw: float, yaw: float, gap: bool, last_true: float) -> None:
+    def control(self, t: float, dt: float, state: str, d_yaw: float, yaw: float, gap: bool, last_true: float,
+                d_fb: float = 0.0, d_lr: float = 0.0, planned: bool = False) -> None:
         if t >= self.t_metric - _EPS:
             first = self.n_cm == 0
             self.n_cm += 1
             if state == "following":
                 self.n_follow += 1
                 self.s_dyaw += abs(d_yaw)
+                self.s_dfb += abs(d_fb)
+                self.s_dlr += abs(d_lr)
+                self.n_planned += planned
             self.s_ayaw += abs(yaw)
             if gap:
                 self.time_lost += dt
@@ -117,4 +125,7 @@ class EpisodeMetrics:
             "pitch_exits": float(self.pitch_exits),
             "corner_losses": float(self.corner_losses),
             "min_dist3d_m": self.min_d3 if self.min_d3 < math.inf else float("nan"),
+            "fb_change": self.s_dfb / max(1, self.n_follow),
+            "lr_change": self.s_dlr / max(1, self.n_follow),
+            "planned": self.n_planned / max(1, self.n_follow),
         }

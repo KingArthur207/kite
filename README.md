@@ -550,6 +550,7 @@ python -m kite.record --source tello --out recordings --fly --follow --follow-ya
 
 - `fly` has 6 to 10 % less steering error (RMS bearing to the walker) than the current law on the `train` and `demo` profiles (about 4 % on `stress` and `fast`; on `stress` the confidence interval reaches 0), with the same safety numbers on the `demo` profile. A tuned version of the law itself does far better: the fly has 24 to 37 % more error than it.
 - `pd` has 35 to 38 % less steering error on `train` and `demo` (17 to 23 % on `stress` and `fast`), but it fails the safety margins. In the `stress` and `fast` simulations it collides on 9 and 8 walks where the law doesn't (2 and 1 the other way round), and on every profile it has more separate losses and more time too close to the walker.
+- Follow mode's own prediction mode (`--follow-predict`, which plans the forward, lateral and yaw sticks) ran in the same simulator ([`docs/follow-predict-results.md`](docs/follow-predict-results.md)). At 1.0, 1.2 and 1.5 m behind it collides on 43 to 48 walks where the law doesn't (9 to 13 the other way round) and spends more time too close, so it stays opt-in. Pitch compensation (`pitch_comp = -1`) doesn't help the law either.
 
 To evaluate or retrain (`pip install -e ".[train]"`; Modal is optional):
 
