@@ -192,13 +192,13 @@ The HUD counts collisions with buildings, cars, pedestrians and the bin.
 
 ## Metrics mode
 
-`?metrics=1&mode=blind|kite|oracle&trials=20&seed=1` runs an autopilot with no keyboard input, always in the Moss world. A walker at 1.2 m/s follows the demo `route`: up Moss's NE sidewalk, left across the zebra, then along Howard's south sidewalk. On the way it meets a pedestrian crossing Moss into a doorway, a bin, a head-height sign, a car turning in from Howard's left lane through the zebra without yielding, and a pedestrian stepping out of a doorway on Howard. Their timing is seeded, so each trial is different and every run with the same seed is identical. The street's own traffic and people are not spawned in this mode. Building faces and curbs still block the walker, and touching one counts as a collision.
+`?metrics=1&mode=blind|kite|oracle&trials=20&seed=1` runs an autopilot with no keyboard input, always in the Moss world. A walker at 1.2 m/s follows the demo `route`: up Moss's NE sidewalk, left across the zebra, then along Howard's south sidewalk. On the way it meets a pedestrian crossing Moss into a doorway, a bin, a head-height sign, a car turning in from Howard's left lane through the zebra without yielding, and a pedestrian stepping out of a doorway on Howard. Their timing is seeded, so each trial is different and every run with the same seed is identical. The street's own traffic and people are not spawned in this mode. Building faces and street props (trees, poles, trash cans) still block the walker, and touching one counts as a wall contact. Curbs, a 15 cm step, don't block: the route steps off them at the zebra, and a walker whose sidewalk is blocked steps into the gutter to get by.
 
 - `blind`: the walker never reacts. Runs time-accelerated (`speed`, default 300).
 - `kite`: the walker reacts only to the earpiece on `ws://127.0.0.1:5011` (or `?ear=`). It stops 0.7 s after a `spoken` event with priority `critical` or `hazard`, a `state` with a critical sonar track, or a hazard in `dont_walk`/`wait`/`red`/`stop`. Status lines that share the hazard priority ("Obstacle detection paused.", "... is back.", "Path is clear. You can continue.") don't count; the earpiece tags them by `key` in each `spoken` event. It walks on after 1.5 s with no cue and never detours. Runs in real time, since the pipeline is real time. Each walk's result lists `stops_at_m`, the route metres where a cue stopped it.
 - `oracle`: an upper bound that reacts to the true obstacles in a 5 m corridor ahead, looking up to 3 s into the future. It is not Kite and must never be presented as Kite.
 
-In every mode, a walker that stays blocked for 1 s or waits 8 s feels around the obstacle with a sidestep, the way a cane user would: 1 m toward the buildings on Moss's narrow sidewalk, 1.5 m elsewhere. A sidestep that runs into a wall or curb stops there. Each obstacle counts as one collision per walk at most; walls count every new contact. Results show in the HUD and in `window.kiteMetrics`, get logged as one `KITE_METRICS {...}` console line, and can be downloaded as JSON. Blind and oracle open no sockets, so they never feed a shared earpiece or relay.
+In every mode, a walker that stays blocked for 1 s or waits 8 s feels around the obstacle, the way a cane user would. It takes the nearest sideways offset from 0.5 to 1.5 m (this leg's side first: toward the curb on Moss, where the route now runs 0.5 m from the buildings) that has no wall in between and is clear where it would stand and up to 2.4 m on. If it makes no headway for 5 s it squeezes past for 1 m, and whatever it brushes counts. A walk ends after 240 s. Each scripted obstacle counts as one collision per walk at most; walls and props count every new contact. The summary gives `obstacle_hits_per_walk` (the five scripted obstacles, the number to compare) and `wall_contacts_per_walk` separately, because the route clips walls at the corner and at its end in every mode. Results show in the HUD and in `window.kiteMetrics`, get logged as one `KITE_METRICS {...}` console line, and can be downloaded as JSON. Blind and oracle open no sockets, so they never feed a shared earpiece or relay.
 
 Headless (starts its own vite on port 5287; pass `--url` to reuse one):
 
@@ -208,13 +208,14 @@ uv run --with playwright python scripts/sim_metrics.py --mode blind
 uv run --with playwright python scripts/sim_metrics.py --mode oracle
 ```
 
-Kite mode: start the relay, the detector on sim frames and the earpiece, then run `--mode kite` (or open `?metrics=1&mode=kite`). It takes about 90 s a walk, so 20 walks is half an hour. Use ports nobody else is on; the earpiece runs headless and without a Cartesia key, so it never uses the team's two concurrent Cartesia requests:
+Kite mode: start the relay, the detector on sim frames and the earpiece, then run `--mode kite` (or open `?metrics=1&mode=kite`). It takes 2 to 3 minutes a walk, so 20 walks is about an hour. Use ports nobody else is on; the earpiece runs headless and without a Cartesia key, so it never uses the team's two concurrent Cartesia requests:
 
 ```
 python sim/relay.py --port 6121
 cd earpiece && env -u CARTESIA_API_KEY .venv/bin/python -m earpiece run --null --no-stem --no-judgment --udp-port 6110 --ws-port 6111
 uv run --no-project --with ultralytics --with opencv-python-headless --with lap --with websockets --with python-dotenv \
-  --with numpy --with scipy python sim/standin_detect.py --relay ws://127.0.0.1:6121/sub --ear-port 6110
+  --with numpy --with scipy --with transformers --with torch python sim/standin_detect.py --relay ws://127.0.0.1:6121/sub \
+  --ear-port 6110 --depth --world
 uv run --with playwright python scripts/sim_metrics.py --mode kite --port 6099 \
   --relay ws://127.0.0.1:6121/pub --ear ws://127.0.0.1:6111
 ```
@@ -223,32 +224,33 @@ uv run --with playwright python scripts/sim_metrics.py --mode kite --port 6099 \
 
 ### Results on Moss (seed 1, 20 walks, textured OSM world)
 
-Measured on Oct 24 on an M5 MacBook. Kite is the full pipeline: sim frames, relay, the YOLO11n stand-in detector on `mps`, the earpiece (`--null --no-stem --no-judgment`, no Cartesia key), and a walker that reacts only to what the earpiece says or does. The detector ran at a median 8.0 frames/s per camera (10th percentile 4.5). That is the sim's frame rate (8 per camera), so the detector kept up, while other detectors on the same GPU pushed YOLO to 40 to 80 ms a frame.
+Measured on Oct 24 on an M5 MacBook, on the city-data geometry (#86, #99) with the harness above. Kite is the full pipeline: sim frames, relay, the stand-in detector with `--depth --world` (YOLO11n on both cameras, YOLO-World and Depth Anything on the chest, obstacle memory, the drone's corner watch) on `mps`, the earpiece (`--null --no-stem --no-judgment`, no Cartesia key, as of `1fff94f`), and a walker that reacts only to what the earpiece says or does. Blind and Kite face the same seeded obstacles. The detector handled a median 5.0 chest frames/s (10th percentile 2) of the 8 the sim sends.
 
-| | blind | Kite | Kite + `--depth` | oracle (not Kite) |
-|---|---|---|---|---|
-| collisions per walk | 3.05 | 3.05 | 3.00, not comparable | 0 |
-| walks with any collision | 20/20 | 20/20 | 20/20 | 0/20 |
-| near misses (under 0.5 m) | 13 | 13 | 0 | 40 |
-| walks completed | 20/20 | 20/20 | 0/20 (150 s cap) | 20/20 |
-| mean time | 87.0 s | 87.6 s | 150 s | 128.6 s |
-| pedestrian crossing Moss (hit / near) | 0 / 2 | 0 / 2 | 0 / 0 | 0 / 0 |
-| bin (hits) | 20 | 20 | 20 | 0 (20 near) |
-| head-height sign (hits) | 20 | 20 | 20 | 0 (20 near) |
-| car turning in from Howard (hits) | 20 | 20 | not reached | 0 |
-| pedestrian on Howard (hit / near) | 1 / 11 | 1 / 11 | not reached | 0 / 0 |
+| | blind | Kite | oracle (not Kite) |
+|---|---|---|---|
+| scripted-obstacle hits per walk | 2.70 | 1.25 | 0.75 |
+| walks completed | 20/20 | 20/20 | 20/20 |
+| mean time | 88.6 s | 149.9 s | 133.0 s |
+| wall and prop contacts per walk | 11.1 | 9.0 | 10.75 |
+| all collisions per walk (`collisions_per_walk`) | 13.8 | 10.25 | 11.5 |
+| pedestrian crossing Moss (hit / near) | 0 / 2 | 0 / 2 | 0 / 0 |
+| bin (hit / near) | 20 / 0 | 5 / 15 | 0 / 20 |
+| head-height sign (hit / near) | 20 / 0 | 10 / 5 | 5 / 0 |
+| car turning in from Howard (hit / near) | 13 / 2 | 0 / 2 | 1 / 0 |
+| pedestrian on Howard (hit / near) | 1 / 11 | 10 / 8 | 9 / 11 |
 
-With the stand-in detector, Kite did not reduce collisions in this scenario. Why it missed each one:
+What each fix did:
 
-- Bin and head-height sign: COCO, and so YOLO, has no class for either, and the detector never reported them. Nothing in the earpiece warned about them.
-- Car turning in: the corner building hides it on Howard while the walker comes up Moss. The walker then turns left onto the zebra, and the car comes in from behind and to the right, outside the 51° field of view of both cameras until contact. The drone raised no `vehicle` hazard in any walk.
-- Pedestrians: Kite stopped the walker for the one crossing Moss in 4 of the 20 walks (cue stops 15 to 20 m along the route), but the blind walker misses that pedestrian anyway because of the timing, so the count can't improve. The Howard pedestrian steps out of a doorway 1.6 m to the walker's left and was hit once in both modes.
+- Car turning in: 13 hits blind, none with Kite. The scouting drone saw it up Howard from about 33 m, and the corner watch held the walker on the sidewalk ("Car approaching the corner.", state `wait`) until it had passed.
+- Bin: 20 hits down to 5. Depth with ground removal sees it from about 3 m, memory keeps it after it drops out of the chest camera's view, and the walker stops and feels around it. Depth's distance on this untextured box is poor (it read about 2.0 m from a true 2.3 m in to 1.2 m), which is why depth-only obstacles stop from 2.2 m. In the other 5 walks the walker still reached it.
+- Head-height sign: 20 down to 10. Depth only picks it up from about 1.7 m.
+- YOLO-World didn't matter for these two: it finds the street's real trash cans (0.7 confidence) but the bin and sign are plain boxes, which it scores at 0.23 or less.
+- Pedestrian on Howard: 1 hit blind, 10 with Kite. She steps out of a doorway 1.6 m to the left, timed on the walker's progress, and walks into a walker that Kite has stopped (often for the street's trash can a few metres before). The oracle, which also stops, gets hit 9 times. This is a real cost of stopping in a pedestrian's path, not a detection miss.
+- Kite walks take longer (150 s against 89 s) because each static obstacle costs a stop and an 8 s wait before the walker feels around it.
 
-Kite + `--depth` adds the Depth Anything fallback from `live_walk.py`. It did see the bin, at about 1.7 m, and stopped the walker in front of it ("Stop. Obstacle ahead." 122 times in 20 walks). Two things broke it. As the walker closed in, the reported distance stayed at about 1.7 m and then the bin dropped out of the chest camera's view (pitch 0, so nothing under about 0.8 m is visible within 1.2 m). The cue went quiet, the walker walked on after 1.5 s and hit it. Then, at the Moss and Howard corner, depth reported something 1.2 to 1.4 m dead ahead on every frame, the walker stopped and sidestepped into the corner walls, and no walk got past the zebra within the 150 s cap. So the depth run never met the car or the Howard pedestrian, and its 3.00 is not comparable with the others.
+The oracle reacts to ground truth 5 m ahead. It is not Kite and is only here as a reference; with this harness it still clips the sign and gets walked into on Howard.
 
-An earlier Kite run, before status lines were ignored, gave 2.95. Two cars were missed there only because "Obstacle detection paused." stopped the walker when the GPU starved the detector (down to 2 to 3 frames/s). That is timing luck, not detection, and is not a Kite result.
-
-To make Kite count here, the detector needs classes for bins and overhanging signs, a stop that holds once something static is close and then out of view, and coverage to the side for the turning car. The oracle row is what perfect warnings with this walker would give.
+These numbers depend on the course: re-run all three modes if sidewalk widths, the obstacle or prop colliders, the route, or the scripted obstacles change. An earlier run on the pre-#86 geometry (PR #96) gave 3.05 collisions per walk for both blind and Kite; the course has changed since, so it doesn't compare with this table.
 
 ## Cars and people
 

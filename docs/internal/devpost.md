@@ -70,7 +70,7 @@ Checks. `scripts/check.sh` runs the earpiece tests on both audio engines, Rust f
 - The safety cues are deterministic and work with no internet: cached Cartesia phrases, local voice commands, sonar and stops that don't wait on any model.
 - Claude can only make Kite more careful. Every judgment is checked in code before it is spoken, and only deterministic code can end a stop.
 - One detector reads the phone camera, recorded clips, Street View stills of Moss St and the sim's frames through the same code. It has run on clips, stills and sim frames. [TODO: confirm on the phone camera at the rehearsal.]
-- [TODO: collision numbers from the sim with Kite. Measured Oct 24 (Moss, seed 1, 20 walks, full pipeline with the YOLO stand-in): Kite 3.05 collisions per walk, the same as blind. YOLO has no class for the bin or the sign, and the turning car comes from outside the cameras' view; details in `sim/README.md`. There is no reduction to quote, so leave this line out unless a later run (streetseg, or a detector that sees bins and signs) shows one. The oracle's 0 sees ground truth and must not be quoted as Kite.]
+- In our sim of Moss Street (seed 1, 20 scripted walks per mode, the same obstacles each time), Kite cut collisions with the scripted obstacles from 2.70 per walk with no guidance to 1.25. At the corner the drone flew out, spotted the car turning in from Howard about 33 m away, and kept the walker on the sidewalk until it passed: that car hit 13 of the 20 unguided walkers and none of the Kite ones. Bin hits fell from 20 to 5 and head-height sign hits from 20 to 10. One hazard got worse: a pedestrian stepping out of a doorway walked into the stopped walker in 10 walks, against 1 without Kite. The detector is our YOLO stand-in, not streetseg. [Numbers and caveats in `sim/README.md`; re-run before quoting if the sim's sidewalks, colliders or route change. The oracle row is ground truth and must not be quoted as Kite.]
 
 ## What we learned
 
@@ -84,7 +84,7 @@ Checks. `scripts/check.sh` runs the earpiece tests on both audio engines, Rust f
 
 ## Built with
 
-Python, Rust (cpal, rtrb, PyO3), TypeScript, React, Vite, three.js, 3d-tiles-renderer, Leaflet, OpenStreetMap, Google Photorealistic 3D Tiles, SpacetimeDB, Cartesia (Sonic TTS, ink-whisper STT), Claude (Anthropic API), Google Routes API, Google Places API, Google Street View Static API, DJI Tello, djitellopy, Ultralytics YOLO11n, Depth Anything V2, OpenCV, PyAV, NumPy, SciPy, sounddevice, websockets, httpx, Moss, Playwright, FFmpeg, Cloudflare Pages. [TODO: perception models and libraries from Rex, if `streetseg` lands.]
+Python, Rust (cpal, rtrb, PyO3), TypeScript, React, Vite, three.js, 3d-tiles-renderer, Leaflet, OpenStreetMap, Google Photorealistic 3D Tiles, SpacetimeDB, Cartesia (Sonic TTS, ink-whisper STT), Claude (Anthropic API), Google Routes API, Google Places API, Google Street View Static API, DJI Tello, djitellopy, Ultralytics YOLO11n, YOLO-World, Depth Anything V2, OpenCV, PyAV, NumPy, SciPy, sounddevice, websockets, httpx, Moss, Playwright, FFmpeg, Cloudflare Pages. [TODO: perception models and libraries from Rex, if `streetseg` lands.]
 
 ## Tracks and evidence
 
