@@ -284,7 +284,8 @@ def main() -> None:
     ap.add_argument("--list-cameras", action="store_true", help="print the cameras (index, name, size) and exit")
     ap.add_argument("--camera", choices=("chest", "drone", "both"), default="both")
     ap.add_argument("--relay", default="ws://127.0.0.1:5020/sub")
-    ap.add_argument("--ear-port", type=int, default=5010, help="earpiece UDP port")
+    ap.add_argument("--ear-port", type=int, default=int(os.environ.get("KITE_EARPIECE_PORT", 5010)),
+                    help="earpiece UDP port (default $KITE_EARPIECE_PORT or 5010; the live walk bench sets it)")
     ap.add_argument("--fx", type=float, help=f"focal length in px at 960 wide (default {DEFAULT_FX:.0f}, "
                                               f"{LIVE_FX:.0f} for a live camera)")
     ap.add_argument("--cam-height", type=float, help="override camera height (m); sim uses its pose")
