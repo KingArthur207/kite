@@ -1,6 +1,6 @@
 # Kite: team spec
 
-Cal Hacks 13.0, written Fri Oct 23 2026, 11:40 PM PT. Team: Arthur, Eddy, Karthik, Rex.
+Cal Hacks 13.0, written Fri Oct 23 2026, 11:40 PM PT; updated Sat Oct 24, 12:30 AM. Team: Arthur, Eddy, Karthik, Rex.
 Submission deadline Sun Oct 25 9:00 AM PT. Live table judging 10:30 AM to 12:30 PM at the Palace of Fine Arts.
 
 This is the shared contract for all four of us and our Claude sessions. If your work disagrees with it, change the spec in a commit first, then the code.
@@ -82,7 +82,7 @@ Crossing signals: a signal head 20 m away is about 14 px tall in the Tello strea
 
 ### 5.1 The contract: Karthik's earpiece events
 
-We use the event types already defined on `feat/airpods-audio` in `earpiece/` (summarised in `kite-notes-02.md` section 7). Nobody invents a parallel format.
+We use the event types already defined in `earpiece/earpiece/events.py` (validated by `events.parse()`; summary in `earpiece/README.md` and `kite-notes-02.md` section 7). Producers send them with `earpiece.client.EarpieceClient` (`.obstacles()`, `.hazard()`, `.guidance()`, `.beacon()`, ...). Nobody invents a parallel format.
 
 - Frame: bearings in degrees in the walker's frame, 0 straight ahead, +90 right, −90 left, ±180 behind. Distances in meters.
 - Types: `obstacles`, `hazard`, `guidance`, `beacon`, `position`, `status`, `scene`, `say`, `heartbeat`, `control`.
@@ -91,40 +91,41 @@ We use the event types already defined on `feat/airpods-audio` in `earpiece/` (s
 
   | Producer | Owner | Emits |
   |---|---|---|
-  | Webcam detector | Arthur | `obstacles` (full frame of current objects, about 10 Hz), `heartbeat` |
-  | Drone or sim detector | Arthur | `hazard` (crowd, crosswalk, vehicle ahead, overhead obstacle), `scene` |
-  | Sim | sim owner | `position` (walker pose), `status` (source `sim`) |
+  | Chest camera perception | Rex | `obstacles` (full frame of current objects, about 10 Hz), `heartbeat` |
+  | Drone or sim perception | Rex | `hazard` (crowd, crosswalk, vehicle ahead, overhead obstacle), `scene` |
+  | Sim | Eddy | `position` (walker pose), `status` (source `sim`) |
   | Route | Karthik | `guidance`, `beacon` |
   | Judgment layer | Karthik | `say`, and may upgrade a `hazard` priority; never downgrades one |
 
 - Converting a drone or sim bearing to the walker's frame needs the walker's heading. The sim knows it exactly. On real footage, use the walking direction over the last second or so.
 
-### 5.2 SpacetimeDB is the transport between machines
+### 5.2 Transport: UDP to the earpiece, SpacetimeDB for shared state
 
-The earpiece binds to 127.0.0.1, so events from another process or machine arrive through SpacetimeDB. That also makes Spacetime the real backbone, which is what its track rewards.
+What exists on `main`: the earpiece takes events on UDP 5010 and WebSocket 5011, on localhost by default and on the LAN with `--bind 0.0.0.0`. It can mirror outbound events to SpacetimeDB, but it does not read events from SpacetimeDB.
 
-Default design, Karthik's to change: one `event` table (`id`, `type`, `source`, `priority`, `payload` as the event JSON, `t`) that every producer writes through a reducer, plus a `latest` table keyed by `(type, source)` for state the dashboard shows (walker position, drone or sim status). The earpiece subscribes and passes each payload through its existing validator. Python producers call reducers over HTTP (`POST /v1/database/kite-sync-pl6rp/call/<reducer>` with a bearer token; see `dashboard/README.md`). Old events get pruned so the table stays small.
+So the live path is direct: every producer uses `EarpieceClient`, pointed at `127.0.0.1` on one laptop or at the wearable laptop's Thunderbolt bridge address from the drone laptop (earpiece run with `--bind 0.0.0.0`). The address comes from `.env` (`KITE_EARPIECE_HOST`). This keeps the safety path off the internet and means nobody waits on Eddy's tables to test.
 
-Exception for the safety path: the webcam detector and the earpiece run on the same laptop, so webcam `obstacles` and `heartbeat` go straight to the earpiece over localhost UDP 5010. They are mirrored to Spacetime at about 1 Hz for the dashboard only. The sonar never waits on the internet. (Spec author's call.)
+SpacetimeDB holds the shared state everyone else watches: the earpiece mirrors every event it receives and speaks, and the sim, drone laptop and dashboard subscribe to it. Default design, Eddy's to change: one `event` table (`id`, `type`, `source`, `priority`, `payload` as JSON, `t`) plus a `latest` table keyed by `(type, source)`. Python writes over HTTP (`POST /v1/database/kite-sync-pl6rp/call/<reducer>`, see `dashboard/README.md`). The dashboard shows the walker on a map, the route, active hazards and status, read only from Spacetime. For the Spacetime track, the pitch line is: "every device on the walk, and the caregiver, shares one live world state."
 
 Networks: we build at Aneesh's apartment on its Wi-Fi. Maincloud, Claude and Cartesia need internet, not just a shared network; with Maincloud, two machines don't even need to be on the same network, only online. At judging the whole demo (sim, detector, earpiece, dashboard) runs on one laptop, so the only network question there is internet for those three cloud services, from the venue Wi-Fi ("Cal Hacks 13.0", per the hacker guide). Fallbacks, tested by Saturday freeze: cached Cartesia phrases plus macOS `say` for speech, a local `spacetime start --listen-addr 127.0.0.1:3000` instance with the same module, and the deterministic cues (sonar, `critical`, `dont_walk`) working with Claude unreachable. (Spec author's call.)
 
 The dashboard shows the walker on a map, the current route, active hazards and drone or sim status. It shows no camera video (privacy).
 
-### 5.3 Detector
+### 5.3 Perception (Rex's `streetseg`)
 
-One function, three frame sources:
+One pipeline, three frame sources: `process(frame, camera, pose) -> events`, where `frame` is BGR 960×720, `camera` holds fx and fy, and `pose` is the camera's height and pitch.
 
-`detect(frame, camera, pose) -> list of hazards/obstacles` where `frame` is BGR 960×720, `camera` holds fx, fy and mount pose, and `pose` is the camera's height and pitch.
-
-- Frame sources: the recorded Tello video file, sim frames, the webcam. Arthur's `kite/sources/` readers already cover file and webcam.
-- Sim frames reach the detector over a local WebSocket as JPEG at about 5 to 10 fps. The detector process then writes events to Spacetime.
-- Street classes: person, bicycle, car, bus, truck, traffic light, stop sign, bench, plus anything at head height. Weights are downloaded ahead of time and never at runtime.
+- The drone or sim view gets street segmentation, Waymo-demo style: walkable ground, people, vehicles, signals. Rex's first version (`rexheng/videotesting` PR #2) uses YOLO26n-sem (Cityscapes) for segmentation, YOLO26n for boxes, an optional crossing-sign checkpoint, and Depth Anything V2 Small for the chest camera's close obstacles. Model choice is Rex's, including Roboflow RF-DETR if it does better.
+- Output is earpiece events (section 5.1): `hazard` and `scene` from the drone or sim view, `obstacles` from the chest camera. Not the VIGIL glasses' `turn` of -1, 0 or +1: Kite has no glasses. A suggested direction ("bear left") goes out as a `say` with priority `nav`, or as a hint the judgment layer can use.
+- Stops are immediate (blocked ground, red light, something large and close). A new direction has to hold for a few frames. A person cut off by the bottom edge is the walker, not a crowd.
+- Frame sources: a video file, sim frames, the webcam, the live Tello. Arthur's `kite/sources/` readers cover file, webcam and Tello behind one `FrameSource.read()`.
+- Sim frames reach perception over a local WebSocket as JPEG at about 5 to 10 fps.
+- Weights are downloaded ahead of time and never at runtime.
 - Faces in any frame we store get blurred. We don't store frames during the live demo.
 
 ### 5.4 Sim
 
-- The sim owner's call on the stack (Rex, if he takes it). Default is three.js with a Gaussian splat renderer in the browser, because judges can open it anywhere and SpacetimeDB has a TypeScript client.
+- Eddy's call on the stack. Default is three.js with a Gaussian splat renderer in the browser, because judges can open it anywhere and SpacetimeDB has a TypeScript client.
 - The walker is driven with the arrow keys. A black-screen mode hides the view; a key reveals it.
 - The virtual drone camera matches the Tello: 960×720, fx from Arthur's calibration (start at 1000), mounted 0.3 m above the walker's head and about 1 m behind, pointing forward, no tilt.
 - Sim hazards come from the real detector, not from the sim's own object list (team decision). So moving cars and pedestrians are realistic glTF models (find free ones early and check YOLO detects them in a test render), composited into the splat, with collision boxes.
@@ -136,7 +137,7 @@ One function, three frame sources:
 
 - Real world: Google Routes API v2 and Places API (New); both are enabled on our key, the legacy APIs are not.
 - Karthik turns the route into `guidance` events (spoken turn instructions with a `ttl`) and `beacon` events (bearing and distance to the next waypoint).
-- In the sim, the route runs over the same corner. Karthik and the sim owner agree on one mapping between latitude/longitude and sim meters, anchored on the same landmarks used to line up the splat.
+- In the sim, the route runs over the same corner. Karthik and Eddy agree on one mapping between latitude/longitude and sim meters, anchored on the same landmarks used to line up the splat.
 
 ### 5.6 Judgment layer (Claude)
 
@@ -145,38 +146,73 @@ One function, three frame sources:
 - Use Claude for the scene description too (it reads images), instead of adding Gemini, so Claude is load-bearing for the Anthropic track.
 - Fixed phrases ("stop", "curb ahead", "bear left") are generated once with Cartesia and played from a cache. Only changing sentences, like street names and Claude's decisions, are streamed. Navigation speech older than its `ttl` is dropped.
 
-## 6. Owners
+## 6. Build everything without hardware first
+
+Every task below can be done by one person driving Claude (or Cursor) agents on a laptop with no drone, no webcam rig and no AirPods. Hardware plugs in afterward by changing one setting, not code. These seams make that possible:
+
+| Seam | Stand-in while building | Real hardware | How it switches |
+|---|---|---|---|
+| Frames | Video files: daytime stock street clips (below), then sim frames and the 7am footage | Tello stream, body webcam | `FrameSource`: `VideoFileSource` vs `TelloVideoSource` / `WebcamSource` (already in `kite/sources/`) |
+| Drone commands | `make_tello(cfg, dry_run=True)`: connects, streams, logs motion instead of sending it | Tello | `dry_run=False` |
+| Events | The earpiece's scripted scenarios (`python -m earpiece run --sim walk`) or a JSONL file replayed through `EarpieceClient` | Live producers | Same `EarpieceClient` calls; `replay` is a 20-line script |
+| Network | Everything on one laptop, `127.0.0.1` and Maincloud | Two laptops over the Thunderbolt bridge | Host addresses in `.env` (`KITE_EARPIECE_HOST`, `SPACETIME_HOST`), never hardcoded |
+| Audio | Laptop speakers or any headphones | AirPods | Earpiece output device setting (it already matches "AirPods" by name) |
+| Position | Sim pose, or a GPS track replayed from a file | Walker's phone GPS | Same `position` event either way |
+
+Test data, since it's night and our own footage waits for the 7am shoot:
+- Daytime street video from a free stock site (Pexels or Pixabay, search "walking sidewalk POV" or "crosswalk pedestrians"). Their licenses allow free use; credit them in the README. Pick one clip filmed from above head height and one from chest height. Don't rip YouTube walking tours (against its terms).
+- The sim's own frames once Eddy's placeholder world runs.
+- The earpiece's scripted scenarios for anything audio-side (no video needed).
+- For the splat pipeline: a public sample scene (the Mip-NeRF 360 "garden" or "bicycle" images) to prove the tool and settings tonight.
+- A quick night clip of the block is still fine for plumbing checks (does the pipeline run end to end), just not for judging quality.
+The real corner footage and splat capture come from the 7am shoot and replace all of this.
+
+Each owner's done check below runs without hardware.
+
+## 7. Owners
 
 Each person owns a deliverable, not a layer. One owner per job.
 
-| Owner | Owns | By Sat 3:45 AM (skeleton) | Saturday |
+| Owner | Owns | Build with Claude, no hardware (done check) | Plug in hardware afterward |
 |---|---|---|---|
-| Arthur | The eyes: drone, splat, detection | Push the drone layer (`kite/`, `pyproject.toml`, tests) to `main`. Run `tests/drone_test.py --ground`, then `--mag 60` and `--mag 100` for real top speed. A recorder that saves Tello video and telemetry to disk. `detect()` running on any video file. | Flies the 7am shoot. Trains the splat (his call on the tool without an NVIDIA GPU). Detector on sim frames, Tello footage and webcam. Crowds and overhead obstacles. Signal reading only if time allows. |
-| Eddy | Infrastructure, then the video and submission | Thunderbolt bridge between the drone laptop and the wearable laptop (Internet Sharing; Thunderbolt Bridge above Wi-Fi in the drone laptop's service order). Replace the starter `person` table with the event tables. Route events from any producer to the earpiece. A hardcoded `hazard` written from the drone laptop plays a beep in the AirPods. | Demo laptop setup and the offline fallbacks (local Spacetime, cached speech). Then the demo video and the submission audit. |
-| Karthik | The voice: AirPods, Google Maps directions, Cartesia, Claude | Earpiece and destinations are merged (PRs #2 and #3). Earpiece consumes events from Spacetime. Routes API to `guidance` and `beacon`. | Judgment layer with the safety rule. Cached phrases and streaming. One Devpost paragraph per sponsor rubric (Cartesia, Spacetime, Anthropic). |
-| Rex | Not settled yet (he is building something now). Recommended: the sim, plus running the 7am shoot and the interview | If he takes the sim: sim page with an arrow-key walker, the virtual drone camera, a placeholder world, frames to the detector, `position` to Spacetime; glTF car and person models confirmed visible to the detector. | Splat into the sim, moving cars and people, chest-height webcam camera, black-screen mode, collision metrics. The interview and the guide dog figures. Marble fallback if splat training stalls. |
+| Arthur | The drone and the 3D world: flight, recording, splat | Push the drone layer (`kite/`, `pyproject.toml`, tests) to `main`. A `record` command that saves video and telemetry to disk, tested in dry run against a video file. Splat pipeline run on a public sample scene, so the tool and settings are proven before the 7am capture. | The 7am shoot on the one battery (section 8). Then the splat from the real capture. Camera fx calibration if time allows (the sim starts at 1000). |
+| Rex | Perception: `streetseg` | Move `streetseg` from `rexheng/videotesting` into this repo (rewritten or re-committed by Rex, per the rules), emitting earpiece events instead of the glasses' `turn`. Done check: `python -m streetseg --source <stock clip>` writes `hazard`, `scene` and `obstacles` events to a JSONL file and an overlay video that looks like a Waymo demo. | Point the source at Tello footage, the live webcam, and sim frames. Same command, different `--source`. |
+| Karthik | The voice: earpiece, Google Maps directions, Cartesia, Claude | Earpiece and destinations are merged (PRs #2 and #3). Done check: `python -m earpiece run --sim walk` and a replayed JSONL from Rex both play the right beeps and speech on laptop speakers, with the Claude judgment layer and cached phrases in, and every event mirrored to Spacetime. | AirPods as the output device. Walker's phone GPS as the `position` source. |
+| Eddy | Infrastructure, then the sim, the video and the submission | Replace the starter `person` table with the event tables; dashboard reads them. The `replay` script. `KITE_EARPIECE_HOST` in `.env`. Done check: a JSONL replayed from a second process plays in the earpiece and shows on the dashboard, on one laptop. Then the sim (section 5.4) with an arrow-key walker, the virtual drone and chest cameras, a placeholder world, frames to `streetseg`. | The Thunderbolt bridge: earpiece with `--bind 0.0.0.0`, `KITE_EARPIECE_HOST` set to the bridge address on the drone laptop, rerun the same check across two laptops. Splat into the sim once Arthur has it. |
 
-Everyone works in this repo, on short branches merged to `main` often. Python for perception and drone; TypeScript for the sim, the Spacetime module and the dashboard.
+Everyone works in this repo, on short branches merged to `main` often. Nothing lives in personal repos. Python for perception and the drone; TypeScript for the sim, the Spacetime module and the dashboard.
 
-## 7. The 7am shoot (Sat Oct 24, corner outside Aneesh's apartment)
+Also owned: Rex runs the interview and verifies the guide dog figures. Eddy owns the clock, the demo video and the submission audit. The presenter comes from a timed tryout.
 
-About 90 minutes, all four of us. Nothing runs live; everything is recorded and processed afterward.
+### 7.1 Kickoff prompts
 
-- Rex runs it: timing, props, the walker's safety, and the shot list. The blindfolded walker always has a spotter at arm's length and never walks near moving cars.
-- Arthur flies, from the laptop on the Tello's Wi-Fi, recording video and telemetry to disk. Manual or simple follow; we say which in the pitch.
-- Eddy films the splat capture: a slow loop of the corner with the phone held overhead at about 2 m, since splats look worst from angles nobody filmed. Then the side-angle video of each walk.
-- The walker logs GPS on their phone and has their height measured with shoes, to within 2 cm (distance-from-head estimates depend on it).
-- The walker moves slowly, about 0.5 to 0.7 m/s, so the drone can keep up.
-- Every battery is charged tonight. Each pack gets one scripted run of about 5 minutes, landing at 20 to 30%.
-- Props for the shoot: something at head height the cane would miss, a bag or bin on the sidewalk, and a teammate as a "crowd" near the crossing.
-- Before flying: phone Tello app closed, `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` empty, `drone_test.py --ground --preview` passes. Install everything while you still have internet.
+Each owner pulls `main` and starts their agent with one of these. They assume the agent can read the repo.
 
-## 8. Gates (from `hackclock.py`)
+- Arthur: "Read docs/superpowers/specs/2026-10-23-kite-design.md sections 6 to 8 and kite-notes-02.md. Commit the drone layer in kite/ with pyproject.toml and its tests. Add `python -m kite.record --source <file|tello> --out <dir>` that saves BGR video and timestamped telemetry, working in dry run against a video file. Then set up a splat pipeline that runs on Apple Silicon and test it on a public sample scene (Mip-NeRF 360 garden or bicycle)."
+- Rex: "Read the spec sections 5.1, 5.3, 6 and 7, and earpiece/earpiece/events.py. Bring streetseg into this repo as a top-level package. Replace its glasses `turn` output with earpiece events sent through earpiece.client.EarpieceClient, plus a `--jsonl` option that writes the same events to a file. Done when `python -m streetseg --source <stock clip> --jsonl out.jsonl --overlay out.mp4` works."
+- Karthik: "Read the spec sections 5.1, 5.2, 5.6 and 7. Add the Claude judgment layer to the earpiece under the safety rule in 5.6, cache the fixed Cartesia phrases, and mirror every received and spoken event to SpacetimeDB through the existing bridge hook. Done when `python -m earpiece run --sim walk` and a replayed JSONL both sound right on laptop speakers."
+- Eddy: "Read the spec sections 5.2, 5.4, 6 and 7. Replace the SpacetimeDB starter module in dashboard/ with the event and latest tables, make the dashboard show them, and add a replay script that sends a JSONL through EarpieceClient to KITE_EARPIECE_HOST. Then start the sim in sim/."
+
+## 8. The shoot (Sat Oct 24, corner outside Aneesh's apartment)
+
+We have one charged Tello battery and no charger until someone buys a USB-C to Micro-USB cable in the morning (the Tello charges its battery in the drone over Micro-USB). Aneesh won't be at the apartment in the morning, so confirm tonight that we can still reach the corner and our gear.
+
+- Don't fly before the shoot. Ground checks only, kept short, because streaming video drains the battery too. Skip the stick 60 and 100 speed test; the walker just walks slowly.
+- 7:00 AM: one scripted take on the one battery, about 5 minutes, landing at 20 to 30%. It has to count: rehearse the route on foot first, with the drone still off.
+- Rex runs it: timing, props, the walker's safety and the shot list. The blindfolded walker always has a spotter at arm's length and never walks near moving cars.
+- Arthur flies, recording video and telemetry to disk. Manual or simple follow; we say which in the pitch.
+- Eddy films the splat capture (a slow loop of the corner with the phone overhead at about 2 m) and the side-angle video of the take.
+- The walker logs GPS on their phone, walks at about 0.5 to 0.7 m/s, and has their height measured with shoes to within 2 cm.
+- Props: something at head height a cane would miss, a bag or bin on the sidewalk, a teammate as a "crowd" near the crossing.
+- After the shoot: buy the cable, charge (expect about 90 minutes per battery), and do a second take later in the morning only if the first one failed.
+- Before flying: phone Tello app closed, `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` empty, a short `drone_test.py --ground --preview` passes.
+
+## 9. Gates (from `hackclock.py`)
 
 | When (PT) | Phase | Rule |
 |---|---|---|
 | Now to Sat 3:45 AM | Skeleton | A hardcoded path end to end: sim walker moves, a fake hazard goes into Spacetime, a beep plays in the AirPods. Nothing else starts first. |
-| Sat 7:00 to 8:30 AM | Shoot | Section 7. |
+| Sat 7:00 AM | Shoot | Section 8. One battery, one take. |
 | Sat 3:45 AM to 8:00 PM | Build | Every feature must make the demo better; timebox 2 hours. Ask "can we demo right now?" every 2 hours. |
 | Sat 3:00 PM | Cut point | If the full path (real detector on sim frames to beep in AirPods) isn't working, cut "walk me to my friend" and signal reading. |
 | Sat 8:00 PM | Freeze | No new features. Repo public. README with setup, Cartesia features used, known limitations. Devpost draft in. |
@@ -184,7 +220,7 @@ About 90 minutes, all four of us. Nothing runs live; everything is recorded and 
 | Sun 8:00 AM | Submit | Disqualifier audit (repo public, teammates listed, tracks ticked, no keys in the repo), then submit and confirm. |
 | Sun 10:30 AM | Judging | Whole team at the table for the full window. |
 
-## 9. Tracks
+## 10. Tracks
 
 Enter: Best Hardware Hack, Best People-First Hack, Cartesia, Spacetime, Anthropic. Overall, Most Technically Complex and Hacker's Choice come automatically.
 
@@ -199,9 +235,9 @@ What each entered track needs from us:
 | Cartesia | Voice core to the flow; responsive (cached phrases, streaming); README lists Cartesia features and limitations; 2-minute demo-first pitch | Karthik |
 | Spacetime | Spacetime is the real transport between machines and the dashboard's source | Karthik |
 | Anthropic | Named community (blind pedestrians in SF), the interview, Claude making the judgment calls, and a clear answer on where it could go wrong | Rex, Karthik |
-| Hardware, People-First | The table kit works; the drone footage is real | Arthur, Eddy |
+| Hardware, People-First | The table kit works; the drone footage is real | Arthur, Eddy, Rex |
 
-## 10. Calls already made
+## 11. Calls already made
 
 Made by the team: the drone flies behind and above, not ahead (fix the README, which says "ahead"). The drone is for the demo only. The 7am shoot plus a splat sim of the same corner. Beeps with direction and pitch plus verbal directions. Cartesia and Spacetime are in.
 
@@ -209,19 +245,18 @@ Also made by the team (Oct 23, 11:50 PM): sim hazards come from the real detecto
 
 Made in this spec, change them by editing it: webcam `obstacles` go to the earpiece over localhost, not through the cloud. Venue Wi-Fi is the primary link, with offline fallbacks. Karthik's earpiece events are the contract. Spacetime as the cross-machine transport with an `event` table. Claude instead of Gemini for scene description. Signal reading demoted. The owner split in section 6. Recording at the shoot instead of running live.
 
-## 11. Left to each owner
+## 12. Left to each owner
 
-- Arthur: detector model and thresholds, splat tool, whether the shoot uses manual or follow flight, how to estimate walker heading on real footage.
-- Eddy: network layout and bridge setup, the video edit.
-- Sim owner: sim stack and renderer, how collision geometry is built.
-- Eddy and Karthik: exact Spacetime schema and pruning (Eddy builds it, Karthik consumes it). Karthik: Claude prompt and call rate.
-- Karthik: route-to-cue wording.
-- Rex: interview format, Devpost structure.
+- Arthur: splat tool and settings, manual or follow flight at the shoot, the recorder's file format.
+- Rex: segmentation and detection models (YOLO26, RF-DETR or others), thresholds, how walker heading is estimated on real footage.
+- Eddy: exact Spacetime schema and pruning (Karthik consumes it), network layout, sim stack and renderer, collision geometry, the video edit.
+- Karthik: route-to-cue wording, Claude prompt and call rate, how the earpiece consumes Spacetime.
 
-## 12. Open items
+## 13. Open items
 
-- Real Tello top speed at stick 60 and 100 (Arthur, tonight). If it can't reach 0.6 m/s, the walker goes slower still, or the drone flies a pre-planned path along the route rather than chasing.
-- fx for our Tello: an object of known height at taped distances (Arthur). Until then the sim uses 1000.
-- Who walks at the shoot.
+- Rex moves `streetseg` into this repo and switches its output to earpiece events.
+- Arthur pushes the drone layer, which is still only on his laptop.
+- Who walks at the shoot, and whether we can reach the corner and gear at 7 AM without Aneesh.
+- Where to buy a USB-C to Micro-USB cable early Saturday.
+- fx for our Tello (Arthur, if battery allows). The sim uses 1000 until then.
 - Whether Microsoft's track requires Azure (Rex checks the live site).
-- How many Tello batteries we have.
