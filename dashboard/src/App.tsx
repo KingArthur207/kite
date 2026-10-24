@@ -4,7 +4,8 @@ import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
 import { WalkMap, PRIORITY_COLOR, type LatLng, type Pose, type Relative } from './WalkMap';
 import './App.css';
 
-// Caregiver dashboard: read-only view of the shared Kite world state. No camera video (privacy).
+// Caregiver dashboard: live view of the shared Kite world state, plus short messages to the walker
+// (a `say` from source `caregiver`; the earpiece polls for them and speaks them). No camera video (privacy).
 
 type Payload = Record<string, unknown>;
 type Row = { type: string; source: string; priority: string; payload: string; t: { toMillis(): bigint } };
@@ -15,6 +16,9 @@ const DEFAULT_HAZARD_TTL_S = 20;
 const BEACON_TTL_S = 30;
 const FRESH_S = 5;   // device freshness: green under this, amber until STALE_S, red after
 const STALE_S = 15;
+const MAX_MESSAGE = 200;
+const QUICK_MESSAGES = ["I'm on my way.", 'Call me when you can.', 'Take your time, no rush.'];
+const SHOWN_MESSAGES = 3;
 
 function parse(json: string): Payload {
   try {
@@ -66,6 +70,9 @@ function App() {
   const [events] = useTable(tables.event);
   const [latest] = useTable(tables.latest);
   const clear = useReducer(reducers.clear);
+  const push = useReducer(reducers.push);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -118,6 +125,19 @@ function App() {
 
   const lastSpoken = latestSorted.find(r => ['guidance', 'spoken', 'say'].includes(r.type));
 
+  const sent = sorted.filter(e => e.type === 'say' && e.source === 'caregiver').slice(0, SHOWN_MESSAGES);
+
+  const send = (raw: string) => {
+    const text = raw.trim().slice(0, MAX_MESSAGE);
+    if (!text || sending) return;
+    const msg = { type: 'say', source: 'caregiver', priority: 'info', text, key: `caregiver-${Date.now()}` };
+    setSending(true);
+    push({ type: 'say', source: 'caregiver', priority: 'info', payload: JSON.stringify(msg) })
+      .then(() => setDraft(''))
+      .catch(err => alert(`Message not sent: ${err}`))
+      .finally(() => setSending(false));
+  };
+
   const onClear = () => {
     if (confirm('Clear the event log and latest state for a fresh run?')) clear().catch(err => alert(`Clear failed: ${err}`));
   };
@@ -167,6 +187,23 @@ function App() {
           </section>
 
           <section>
+            <h2>Message the walker</h2>
+            <form className="message" onSubmit={e => { e.preventDefault(); send(draft); }}>
+              <input value={draft} onChange={e => setDraft(e.target.value)} maxLength={MAX_MESSAGE}
+                placeholder="Kite reads it aloud" aria-label="Message to the walker" disabled={!conn.isActive} />
+              <button type="submit" disabled={!conn.isActive || sending || !draft.trim()}>Send</button>
+            </form>
+            <div className="quick">
+              {QUICK_MESSAGES.map(q => (
+                <button key={q} onClick={() => send(q)} disabled={!conn.isActive || sending}>{q}</button>
+              ))}
+            </div>
+            {sent.map(e => (
+              <div key={e.id.toString()} className="muted small">Sent “{str(parse(e.payload).text)}” · {ago(now, ms(e))}</div>
+            ))}
+          </section>
+
+          <section>
             <h2>Last spoken</h2>
             {lastSpoken ? (
               <p className="spoken">
@@ -202,7 +239,7 @@ function App() {
             <table className="feed">
               <tbody>
                 {sorted.slice(0, FEED_SIZE).map(e => (
-                  <tr key={e.id.toString()} className={`p-${e.priority}`}>
+                  <tr key={e.id.toString()} className={`p-${e.priority} ${e.source === 'caregiver' ? 'caregiver' : ''}`}>
                     <td className="muted">{new Date(ms(e)).toLocaleTimeString()}</td>
                     <td>{e.type}</td>
                     <td className="muted">{e.source}</td>

@@ -178,7 +178,7 @@ class Earpiece:
 
     # ================================================================== inbound events
     def handle(self, msg: Msg) -> None:
-        if self.bridges:
+        if self.bridges and msg.source != "caregiver":   # caregiver rows are already in Spacetime
             self._mirror(msg)
         now = time.monotonic()
         t = msg.type
