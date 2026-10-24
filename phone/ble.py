@@ -162,10 +162,11 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
             text = format_line(link.fix, link.fix_age(now), link.link_age(now), link.link_ok,
                                link.stats["forwarded"], ear)
             n = link.stats["messages"]
-            if args.each and n != seen:
-                printer.log(f"#{n} {text}")      # one line per message from the phone (heartbeat log)
-            else:
+            if not args.each:
                 printer.line(text, now)
+            elif n != seen:
+                printer.log(f"#{n} {text}")      # one line per message from the phone; no live line, which
+                                                 # wraps on narrow terminals and garbles the log
             seen = n
             if now - last_status >= STATUS_EVERY_S:
                 last_status = now
