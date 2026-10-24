@@ -33,7 +33,7 @@ from .vision import Vision
 from .listen import Listener
 from .memory import MemoryStore, name_of, pick
 from .mixer import Engine
-from .output import DeviceOutput, NullOutput, RustDeviceOutput
+from .output import DeviceOutput, NullOutput, RustDeviceOutput, RustNullOutput
 from .route import RouteGuide
 from . import sonar as sonar_mod
 from .speech import Speaker
@@ -72,13 +72,20 @@ class Earpiece:
         elif output == "device":
             self.output = DeviceOutput(self.engine, a.output_substr, a.block, a.device_poll_s,
                                        on_change=self._output_changed, log=log, device=output_device)
+        elif output == "null" and sonar_mod.use_thread(self.cfg.sonar, self.engine)[0]:
+            # the native sonar thread schedules beeps against the mixer clock: keep that clock
+            # native too, like a device callback, so a Python stall cannot stop it
+            self.output = RustNullOutput(self.engine, a.rust_block, record=record)
         else:
             self.output = NullOutput(self.engine, a.block, realtime=(output == "null"), record=record)
         self.speaker = Speaker(self.engine, self.cfg.speech, self.cfg.cartesia_key, log=log)
         self.speaker.on_spoken = self._spoken
         self._lock = threading.RLock()
-        self.sonar = sonar_mod.create(self.engine, self.cfg.sonar, speak=self.say, log=log)
+        self.sonar = sonar_mod.create(self.engine, self.cfg.sonar, speak=self.say, log=log,
+                                      perception_stale_s=self.cfg.watchdog.perception_stale_s)
         log(f"[sonar] engine: {'rust (kite_audio)' if getattr(self.sonar, 'native', False) else 'python'}")
+        if getattr(self.sonar, "thread", False):
+            log("[sonar] ticking on the native thread (beeps scheduled without Python)")
         self.beacon = Beacon(self.engine, self.cfg.beacon, speak=self.say, log=log)
         self.listener = Listener(self.cfg.listen, self.cfg.cartesia_key, on_text=self.heard,
                                  cue=self.cue, on_listening=self._on_listening, say=self.say, log=log)
@@ -160,6 +167,8 @@ class Earpiece:
         from . import beacon as beacon_mod, sonar as sonar_mod
         t0 = time.perf_counter()
         try:
+            # (the native sonar thread also pre-warms its own cache; this one serves the
+            # Python-ticked path and is cheap now that the cues are synthesised in Rust)
             n = sonar_mod.prewarm(self.cfg.sonar, self.engine.rate)
             n += beacon_mod.prewarm(self.cfg.beacon, self.engine.rate)
         except Exception as e:                 # a warm cache is an optimisation, never a failure
@@ -194,6 +203,8 @@ class Earpiece:
         self.speaker.stop()
         if self.transport is not None:
             self.transport.stop()
+        if hasattr(self.sonar, "close"):
+            self.sonar.close()                     # stop the native sonar thread first
         self.output.stop()
         if hasattr(self.engine, "shutdown"):
             self.engine.shutdown()
@@ -283,6 +294,7 @@ class Earpiece:
             if len(self.perception_sources) < self.MAX_SOURCES:
                 self.perception_sources.add(msg.source)
             self.last_perception = now
+            self.sonar.note_perception(now)
             with self._lock:
                 if t == "obstacles":
                     self.sonar.update_frame(msg.source, msg.objects, msg.seq, now)
@@ -292,6 +304,7 @@ class Earpiece:
         elif t == "heartbeat":
             if msg.source in self.perception_sources:
                 self.last_perception = now
+                self.sonar.note_perception(now)
         elif t == "guidance":
             self.last_guidance = (msg.text, now)
             self.say(msg.text, msg.priority, key=msg.key, ttl=msg.ttl,
@@ -537,17 +550,26 @@ class Earpiece:
                 nxt = time.monotonic()
 
     def _watchdog(self, now: float) -> None:
+        if self.sonar.native_watchdog:
+            # the native sonar thread already switched the beeps off (or on): announce it
+            for ok, first in self.sonar.take_perception_events():
+                self._perception_changed(ok, first, gate=False)
+            return
         if not self.perception_sources:
             return
         ok = now - self.last_perception <= self.cfg.watchdog.perception_stale_s
         if ok == self.perception_ok:
             return
-        first = self.perception_ok is None
+        self._perception_changed(ok, self.perception_ok is None)
+
+    def _perception_changed(self, ok: bool, first: bool, gate: bool = True) -> None:
         self.perception_ok = ok
-        self.sonar.enabled = ok
+        if gate:
+            self.sonar.enabled = ok
+            if not ok:
+                with self._lock:
+                    self.sonar.clear()
         if not ok:
-            with self._lock:
-                self.sonar.clear()
             self.engine.play(_stereo(sounds.sensor_lost()), bus="alert", gain=0.9)
             self.speaker.drop_where(lambda u: u.key == "perception-up")
             self.say("Obstacle detection paused.", "hazard", key="perception-down", ttl=5)

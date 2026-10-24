@@ -76,6 +76,47 @@ class NullOutput:
             self._thread.join(timeout=2)
 
 
+class RustNullOutput:
+    """NullOutput for the Rust engine: the mixer renders in real time on a native thread
+    (`kite_audio.Engine.open_null`), exactly as a device callback would, so the clock that
+    the native sonar thread schedules against never waits on Python. Records like
+    NullOutput (`recorded()`, `frames`); no sound device is opened."""
+
+    def __init__(self, engine, block: int = 512, record: bool = False, max_record_s: float = 600.0):
+        self.engine = engine
+        self.block = block
+        self.record = record
+        self.max_record_s = max_record_s
+        self._frames: list[np.ndarray] = []
+        self.device_name = "null"
+        self.is_airpods = False
+
+    @property
+    def underflows(self) -> int:
+        return int(self.engine.snapshot_stats().get("glitches", 0))
+
+    def start(self) -> None:
+        self.engine._e.open_null(self.block, self.max_record_s if self.record else 0.0)
+
+    def _pull(self) -> None:
+        raw = self.engine._e.take_recording()
+        if raw:
+            self._frames.append(np.frombuffer(raw, dtype="<f4").reshape(-1, 2).copy())
+
+    @property
+    def frames(self) -> list[np.ndarray]:
+        self._pull()
+        return self._frames
+
+    def recorded(self) -> np.ndarray:
+        self._pull()
+        return np.concatenate(self._frames) if self._frames else np.zeros((0, 2), np.float32)
+
+    def stop(self) -> None:
+        self._pull()
+        self.engine.close()
+
+
 def _list_outputs():
     import sounddevice as sd
     return [(i, d) for i, d in enumerate(sd.query_devices()) if d["max_output_channels"] >= 1]
