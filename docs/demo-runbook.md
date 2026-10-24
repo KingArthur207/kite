@@ -103,7 +103,7 @@ Demo first. The presenter is whoever won Saturday night's timed tryout: [TODO: n
 | 0:10 to 0:50 | The judge walks the corner with the screen black, guided by beeps and voice. A car or crowd appears; Kite stops them, waits until the way is clear, then says to continue. |
 | 0:50 to 1:05 | Reveal the view: the drone camera with detections drawn on it. |
 | 1:05 to 1:25 | The real Tello footage from the 7 AM shoot, same corner, same cues. "Same code." |
-| 1:25 to 1:45 | Hold an obstacle in front of the webcam; the judge hears the beeps speed up. Then the interview quote [TODO] and one measured number, collisions with and without Kite in the sim [TODO]. |
+| 1:25 to 1:45 | Hold an obstacle in front of the webcam; the judge hears the beeps speed up. Then say plainly that we did not get to interview a blind traveler this weekend and built from published research, and give one measured number, collisions with and without Kite in the sim [TODO]. |
 | 1:45 to 2:00 | What's real and what isn't, then questions. |
 
 What to say at 1:45 when asked what's real: the earpiece, voice, Claude assistant, SpacetimeDB and dashboard run live on this laptop. The corner is a simulation of Moss St at Howard, built from OpenStreetMap, not a 3D scan. The drone footage is real and was recorded before the event [TODO: piloted or follow]. The drone never flew here.

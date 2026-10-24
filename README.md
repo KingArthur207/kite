@@ -719,8 +719,8 @@ We think the right way to help a blind pedestrian is not a smarter cane or a tal
 |---|---|
 | Arthur | Drone layer, flight and recording |
 | Eddy | SpacetimeDB tables, dashboard and map, caregiver messages, the Claude judgment layer and scene descriptions, sim and metrics mode, video audio rendering, replay, network tools, submission |
-| Karthik | Earpiece: spatial sonar and beacon, Cartesia voice, Claude voice assistant, camera vision and reading text aloud, stop and wait, Moss memory, destinations and routing; the Rust real-time audio engine; SpacetimeDB setup and the earpiece bridge; CI, security and the landing site |
-| Rex | Perception (`streetseg`), the interview, the shoot |
+| Karthik | Earpiece: spatial sonar and beacon, Cartesia voice with the cached safety phrases, the Claude judgment layer and Claude voice assistant, camera descriptions ("what's in front of me?") and reading text aloud, stop and wait, Moss memory, destinations and walking routes, support for any stereo Bluetooth headphones; the Rust real-time audio engine; SpacetimeDB setup, the earpiece bridge and mirroring every event into it; CI, security and the landing site |
+| Rex | Perception (`streetseg`), the shoot |
 
 ## Credits
 

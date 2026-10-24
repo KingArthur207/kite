@@ -10,7 +10,7 @@ Guiding Eyes for the Blind puts the cost of raising and training one guide dog a
 
 We wanted to give a blind pedestrian some of what a guide dog gives them: something that looks farther ahead than they can, stops them at curbs and crossings, watches for overhead obstacles, and refuses to go forward when going forward isn't safe.
 
-[TODO: one or two sentences from the interview with a blind person or an O&M instructor, quoted exactly, with their permission and how they want to be named.]
+We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and the KIT Flying Guide Dog user study of blindfolded walkers. Testing with orientation and mobility instructors is our next step.
 
 ## Prior art
 
@@ -75,18 +75,16 @@ Checks. `scripts/check.sh` runs the earpiece tests on both audio engines, Rust f
 - Claude can only make Kite more careful. Every judgment is checked in code before it is spoken, and only deterministic code can end a stop.
 - One detector reads the phone camera, recorded clips, Street View stills of Moss St and the sim's frames through the same code. It has run on clips, stills and sim frames. [TODO: confirm on the phone camera at the rehearsal.]
 - [TODO: collision numbers from the sim with Kite, from metrics mode. On Moss St the blind baseline is 3.05 collisions per walk (seed 1, 20 walks); the oracle's 0 is an upper bound that sees ground truth, not Kite, and must not be quoted as Kite. Leave this out if we don't measure Kite.]
-- [TODO: the interview, and what changed in Kite because of it.]
 
 ## What we learned
 
-[TODO: write this as a team. Candidates: what the interview taught us, guide dog behavior (stop and wait, intelligent disobedience), Tello limits, latency budgets for speech.]
+[TODO: write this as a team. Candidates: what the published research taught us, guide dog behavior (stop and wait, intelligent disobedience), Tello limits, latency budgets for speech.]
 
 ## What's next for Kite
 
 - Flying follow mode outdoors, behind and above the walker, under the safety governor already in the drone layer.
 - Reading pedestrian signals from closer range or from the chest camera.
-- Testing with blind walkers and O&M instructors outdoors, with a spotter.
-- [TODO: anything the interview suggested.]
+- Testing with orientation and mobility instructors and blind walkers, outdoors, with a spotter. We did not interview anyone this weekend, so this is the first thing we would do.
 
 ## Built with
 
@@ -97,17 +95,17 @@ Python, Rust (cpal, rtrb, PyO3), TypeScript, React, Vite, three.js, 3d-tiles-ren
 | Track | What we show | Where in the repo |
 |---|---|---|
 | Best Hardware Hack | A DJI Tello and a phone chest camera feeding the same detector. Drone layer with its own command handling, a safety governor, a recorder, calibration, preflight, GPS alignment and follow mode. AirPods with stem-press controls. A real-time Rust audio engine. Table kit: laptop, headphones, phone chest clip, Tello. | `kite/`, `tests/`, `sim/standin_detect.py`, `sim/live_walk.py`, `earpiece/native/`, `earpiece/earpiece/controls.py`, `earpiece/earpiece/devices.py`. Footage: [TODO: shoot video link] |
-| Best People-First Hack | Built around how guide dogs work: stop and wait, then continue; never "safe to cross"; warnings that work offline. Caregiver dashboard without camera video. Faces pixelated in the reveal, and no frames stored during the live walk. | `earpiece/earpiece/app.py`, `sonar.py`, `speech.py` (priorities, preemption, TTL), `judgment.py`, `dashboard/`. Interview: [TODO: quote and who] |
+| Best People-First Hack | Built around how guide dogs work: stop and wait, then continue; never "safe to cross"; warnings that work offline. Caregiver dashboard without camera video. Faces pixelated in the reveal, and no frames stored during the live walk. | `earpiece/earpiece/app.py`, `sonar.py`, `speech.py` (priorities, preemption, TTL), `judgment.py`, `dashboard/`. Research: guide dog schools' figures and the KIT study (`docs/research/facts.md`) |
 | Cartesia | Voice is the whole interface. Streaming Sonic TTS on one persistent WebSocket with per-utterance contexts and cancellation, on-disk phrase cache for safety phrases, long-form reading, `ink-whisper` streaming STT, offline fallback. The README lists features and limitations. | `earpiece/earpiece/speech.py`, `listen.py`, `config.py`; README "Cartesia: the voice, both ways" |
 | Spacetime | Every event the earpiece receives goes into one live world state that the dashboard reads. Caregiver messages come back through it to the walker's headphones. Walk timeline and presentation mode built only from the shared tables. Local server fallback with the same module. | `dashboard/spacetimedb/src/index.ts`, `earpiece/earpiece/spacetime.py`, `dashboard/src/App.tsx`, `scripts/replay.py --spacetime`, `scripts/offline.sh` |
-| Microsoft | Customer understanding from the interview, a measured number from the sim, cost against a $50,000 guide dog, deterministic safety and no stored video, and the live walk end to end on one laptop. | README "Microsoft" section, `scripts/sim_metrics.py`, `earpiece/tests/test_app_stress.py`. Interview: [TODO] |
-| Anthropic | Community: blind pedestrians in San Francisco. Claude makes the judgment calls at hazards, describes what the cameras see, reads text aloud and answers questions with tools. Where it could go wrong: Claude could invent an obstacle or say it's safe to cross, so it only describes what is in its context, code filters every judgment, and stops are decided in deterministic code before Claude sees anything. | `earpiece/earpiece/judgment.py`, `vision.py`, `brain.py`, `earpiece/tests/test_judgment.py`, `sim/scene_describe.py`. Interview: [TODO] |
+| Microsoft | Customer understanding from published research (no interviews this weekend), a measured number from the sim, cost against a $50,000 guide dog, deterministic safety and no stored video, and the live walk end to end on one laptop. | README "Microsoft" section, `scripts/sim_metrics.py`, `earpiece/tests/test_app_stress.py`. Research: `docs/research/facts.md` |
+| Anthropic | Community: blind pedestrians in San Francisco, known through published research, not interviews, and we say so plainly. Claude makes the judgment calls at hazards, describes what the cameras see, reads text aloud and answers questions with tools. Where it could go wrong: Claude could invent an obstacle or say it's safe to cross, so it only describes what is in its context, code filters every judgment, and stops are decided in deterministic code before Claude sees anything. | `earpiece/earpiece/judgment.py`, `vision.py`, `brain.py`, `earpiece/tests/test_judgment.py`, `sim/scene_describe.py`. Research: `docs/research/facts.md` |
 
 ## Before submitting
 
 - [ ] Every [TODO] above filled or cut
 - [ ] Guide dog figures verified by Rex, with sources
-- [ ] Interview quote approved by the person quoted
+- [ ] The pitch and this page say plainly that we did not interview anyone
 - [ ] Demo video link: [TODO]
 - [ ] All four teammates added on Devpost: Arthur, Eddy, Karthik, Rex
 - [ ] Tracks ticked: Best Hardware Hack, Best People-First Hack, Cartesia, Spacetime, Microsoft, Anthropic (spec section 10)
