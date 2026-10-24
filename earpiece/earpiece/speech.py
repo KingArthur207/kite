@@ -400,7 +400,9 @@ class CartesiaStream:
                     m = json.loads(raw)
                 except (TypeError, ValueError):
                     continue
-                q = self._ctx.get(m.get("context_id", ""))
+                if not isinstance(m, dict):      # a list or a number would kill this reader (m.get)
+                    continue
+                q = self._ctx.get(str(m.get("context_id", "")))
                 if q is not None:
                     q.put_nowait(m)
         except Exception as e:                 # connection dropped
