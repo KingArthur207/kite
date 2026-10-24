@@ -62,6 +62,19 @@ Put the sim in full screen on the laptop. Keep the dashboard in a second window 
 5. Play the Tello footage clip.
 6. Hold an obstacle in front of the chest webcam so they hear the beeps speed up.
 
+## Live walk rehearsal checklist (Sat 6 PM, 40 walks in a row)
+
+Run `scripts/live_walk_bench.py run` first (sim/README.md, "Live walk bench"). It plays 40 walks through the same detector and earpiece without a camera, so a regression shows up before anyone puts on the mask. Then do the 40 real walks:
+
+- [ ] Lighting: the aisle and the teammate are lit from the front or above, not from behind. A bright window or doorway behind the teammate turns them into a silhouette, and the detector loses them.
+- [ ] Camera mount: phone flat on the sternum, about 1.2 m up, landscape, Center Stage off. Tilted 15 degrees down, matching `--pitch 15`. If the clip lets it tip up toward level, people read closer than they are (early stops). If it droops further down, they read farther than they are and the stop comes late, which is the dangerous direction, so recheck the 2 m mark whenever the clip moves.
+- [ ] Floor marks: tape at 1.5 m and 3 m from the judge's start line, and a third at 2 m for calibration. Stand someone on the 2 m mark and check the reveal window label reads about 2.0 m.
+- [ ] The teammate steps in at the 3 m mark and stands still. "Stop. Person ahead." should start by the time the judge's toes reach the 1.5 m tape.
+- [ ] The teammate steps fully out of the aisle, at least an arm's length to the side. "Path is clear. You can continue." comes about 2 to 3 s later. If they linger at the edge of the aisle, it waits, which is correct.
+- [ ] Watch the detector log for its fps line. Below about 10 fps, close other apps; the bench measured stops arriving later when the laptop was busy.
+- [ ] Nothing low between the judge and the teammate. A table or chair that hides the teammate's legs makes them read too far away (bench clip `syn_table`, a known limit).
+- [ ] Keep a tally: walk number, stopped (yes or no, and where against the tape), continued (yes or no), any stop with nobody there. Three misses in a row, stop and look at the reveal replay (`r`) before walking again.
+
 ## Reset between judges
 
 1. Dashboard: press "Clear run" and confirm. This wipes the event log and latest state.
