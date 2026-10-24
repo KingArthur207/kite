@@ -38,3 +38,27 @@ frames = drone.frame_source()
 - Only one program can hold the Tello ports: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` should print nothing.
 - macOS: allow incoming connections for Python, and Local Network access for your terminal app
   (System Settings > Privacy & Security) if sends fail with "No route to host".
+
+## Recording
+
+`python -m kite.record` saves the video and every Tello state packet, both stamped with one monotonic clock. Only one
+program can hold the Tello ports, so the recorder is also the flight controller: `--fly` adds keyboard control through
+`SafetyGovernor` in the same process. Without `--fly` the drone is opened in dry run and never gets a motion command.
+
+```bash
+python -m kite.record --source clip.mp4 --out recordings               # dry run on a file: no drone, no telemetry
+python -m kite.record --source tello --out recordings                  # record only, drone on the ground / in hand
+python -m kite.record --source tello --out recordings --fly --dry-run  # rehearse the keys: motion is logged, not sent
+python -m kite.record --source tello --out recordings --fly            # the shoot
+```
+
+- Keys (`--fly`, typed in the recorder's terminal, one at a time): `t` takeoff, `l` land, `space` hover, `w`/`s`
+  forward/back, `a`/`d` left/right, `r`/`f` up/down, `q`/`e` turn. A move key drives its stick at `--speed` (30)
+  for `--pulse` (1 s); hold it (key repeat) to keep going, let go and the drone stops. `!!` = emergency (motors off).
+- **Ctrl+C lands and stops** (it keeps recording until the drone is down). Takeoff is refused without live video or
+  at <= 20 % battery; the governor lands by itself at 20 % or after 7 min.
+- The terminal prints fps, battery and height every second.
+- Output: `<out>/<YYYYmmdd_HHMMSS>_<source>/` with `video.mkv` (MJPG, playable after a crash), `frames.csv`
+  (frame index -> `t_mono`), `telemetry.jsonl` (raw state + `t_mono`), `events.jsonl`, `meta.json`. Align video and
+  telemetry on `t_mono`. QuickTime can't open `.mkv`: VLC can, or `ffmpeg -i video.mkv -pix_fmt yuv420p video.mp4`.
+- About 0.7 GB per 5 minutes. Don't commit `recordings/`.
