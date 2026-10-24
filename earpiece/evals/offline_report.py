@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mutations import BENIGN, MUTATIONS, flat, load, variants  # noqa: E402
+from mutations import BENIGN, flat, load, variants  # noqa: E402
 
 from earpiece import vision as V  # noqa: E402
 from earpiece.judgment import forbidden, parse_reply, validate  # noqa: E402
@@ -97,7 +97,7 @@ def main(verbose: bool) -> int:
 
     total = sum(r[1] for r in rows)
     fails = sum(r[2] for r in rows)
-    print(f"| Check | Cases | Failures |\n|---|---:|---:|")
+    print("| Check | Cases | Failures |\n|---|---:|---:|")
     for name, n, f, _ in rows:
         print(f"| {name} | {n} | {f} |")
     print(f"| **total** | **{total}** | **{fails}** |")

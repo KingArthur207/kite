@@ -58,7 +58,8 @@ ALERT_POLL_S = 5.0
 # Rows worth remembering between polls. Obstacles and positions come at 1 Hz and live in
 # `latest`; reading their history would cost bandwidth for nothing the caregiver asks about.
 HISTORY_TYPES = ("hazard", "say", "spoken", "guidance", "heard", "caregiver_alert", "voice_request")
-HISTORY_SQL = "SELECT * FROM event WHERE (" + " OR ".join(f"type = '{t}'" for t in HISTORY_TYPES) + ")"
+# built only from the constant HISTORY_TYPES above, never from input
+HISTORY_SQL = "SELECT * FROM event WHERE (" + " OR ".join(f"type = '{t}'" for t in HISTORY_TYPES) + ")"  # nosec B608
 LATEST_SQL = "SELECT * FROM latest"
 HISTORY_KEEP = 400
 DEVICE_SOURCES = ("drone", "chest", "webcam", "earpiece", "camera")

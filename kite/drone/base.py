@@ -10,6 +10,7 @@ While busy(), rc() calls are ignored (the Tello would abort the move). stop() ho
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 
 from ..sources.base import FrameSource
@@ -93,4 +94,7 @@ def check_rotate(deg: float) -> int:
 
 
 def clamp_rc(v: float, limit: int = 100) -> int:
+    """Stick value rounded and clamped to +-limit. NaN / inf (a controller that divided by zero) -> 0: hover."""
+    if not math.isfinite(v):
+        return 0
     return int(max(-limit, min(limit, round(v))))

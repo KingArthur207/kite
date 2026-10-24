@@ -43,6 +43,10 @@ class FakeTello:
     def streamon(self):
         self.sent.append("streamon")
 
+    def send_command_with_return(self, cmd, timeout=7):
+        self.sent.append(cmd)
+        return next((e for p, e in self.error_for.items() if cmd.startswith(p)), "ok")
+
     def get_udp_video_address(self):
         return "udp://@0.0.0.0:11111"
 
@@ -161,6 +165,67 @@ def test_video_port_held_by_another_program_is_named(fast_video_check):
         with pytest.raises(RuntimeError, match=f"lsof -nP -iUDP:{port}"):
             d.connect()
         d.close()
+
+
+# ------------------------------------------------------------------ video link settings (setbitrate & co)
+def test_video_link_settings_go_after_command_and_before_streamon(fast_video_check):
+    fake = StreamingFakeTello(free_udp_port())
+    d = TelloDrone(tello=fake, dry_run=True, video_bitrate="2", video_resolution="low", video_stream_fps="middle")
+    d.connect()
+    assert fake.sent == ["command", "setbitrate 2", "setresolution low", "setfps middle", "streamon"]
+    d.close()
+
+
+def test_no_video_link_settings_by_default(fast_video_check):
+    fake = StreamingFakeTello(free_udp_port())
+    d = TelloDrone(tello=fake, dry_run=True)
+    d.connect()
+    assert fake.sent == ["command", "streamon"]
+    d.close()
+
+
+def test_old_firmware_error_is_logged_once_and_the_stream_still_starts(fast_video_check, caplog):
+    fake = StreamingFakeTello(free_udp_port())
+    fake.error_for = {"setbitrate": "error", "setfps": "unknown command: setfps"}
+    d = TelloDrone(tello=fake, dry_run=True, video_bitrate="auto", video_resolution="high", video_stream_fps="low")
+    with caplog.at_level("INFO", logger="kite.tello"):
+        d.connect()
+    assert fake.sent == ["command", "setbitrate 0", "setresolution high", "setfps low", "streamon"]
+    msgs = [r.getMessage() for r in caplog.records]
+    assert sum("doesn't support setbitrate" in m and "keeping its default" in m for m in msgs) == 1
+    assert sum("doesn't support setfps" in m for m in msgs) == 1
+    assert "setresolution high -> ok" in msgs
+    d.close()
+
+
+def test_apply_video_link_never_raises():
+    said = []
+
+    def send(cmd):
+        if cmd.startswith("setbitrate"):
+            raise OSError("network unreachable")
+        return None  # no reply at all
+
+    replies = tello_mod.apply_video_link(send, bitrate="5", fps="high", say=said.append)
+    assert list(replies) == ["setbitrate 5", "setfps high"]
+    assert "not sent" in replies["setbitrate 5"] and len(said) == 2
+    assert all("keeping the drone's default" in s for s in said)
+    assert tello_mod.video_link_commands() == []
+
+
+def test_make_tello_passes_the_video_link_flags():
+    import argparse
+
+    from kite.config import add_video_link_args, video_link_args
+
+    p = argparse.ArgumentParser()
+    add_video_link_args(p)
+    cfg = Config()
+    video_link_args(cfg.drone, p.parse_args(["--video-bitrate", "1", "--video-resolution", "low", "--video-fps", "low"]))
+    d = make_tello(cfg, dry_run=True)
+    assert d.video_link == {"bitrate": "1", "resolution": "low", "fps": "low"}
+    with pytest.raises(SystemExit):
+        p.parse_args(["--video-bitrate", "9"])
 
 
 # ------------------------------------------------------------------ Tello adapter
@@ -401,6 +466,17 @@ def test_governor_clamps_rc():
     assert fake.rcs[-1] == (30, -30, 0, 30)
 
 
+def test_non_finite_stick_values_hover_instead_of_raising():
+    """A NaN / inf stick (a controller dividing by zero) used to raise out of rc() and end the flight loop."""
+    nan, inf = float("nan"), float("inf")
+    gov, fake = governed(max_rc=30)
+    gov.rc(nan, inf, -inf, 10)
+    assert fake.rcs[-1] == (0, 0, 0, 10)
+    d, fake_tello = make()
+    d.rc(nan, inf, -inf, 10)
+    assert fake_tello.sent[-1] == ("rc", 0, 0, 0, 10)
+
+
 def test_governor_ceiling_and_floor():
     gov, fake = governed(height_m=2.5, max_altitude_m=2.3, min_altitude_m=0.5)
     gov.rc(0, 0, 50, 0)
@@ -414,6 +490,13 @@ def test_governor_ceiling_and_floor():
     fake.tel.height_m = 0.7
     gov.rc(0, 0, -50, 0)
     assert -50 < fake.rcs[-1][2] < 0
+
+
+def test_ceiling_push_down_stays_within_max_rc():
+    """Above the ceiling the governor pushed down with a fixed -20, beyond a max_rc below 20."""
+    gov, fake = governed(height_m=2.5, max_altitude_m=2.3, max_rc=10)
+    gov.rc(0, 0, 50, 0)
+    assert fake.rcs[-1][2] == -10
 
 
 def test_governor_refuses_moves_across_the_limits():
@@ -530,3 +613,60 @@ def test_an_rc_that_djitellopy_would_throttle_is_not_taken_as_news_about_the_lin
     fake.last_rc_control_timestamp = time.time()
     d.rc(0, 10, 0, 0)  # djitellopy would drop it unsent: still down, not "works again"
     assert d.link_error is not None
+
+
+def test_nan_or_future_frame_and_telemetry_stamps_mean_hover():
+    """NaN compared False with the timeout, so a NaN stamp (or one far in the future after the wall clock stepped
+    back) passed as fresh video / telemetry and the governor never hovered."""
+    nan = float("nan")
+    gov, fake = governed(frame_timeout_s=1.0, telemetry_timeout_s=1.0)
+    now = time.time()
+    fake.tel.t = now
+    assert gov.check(now, nan) == "hover"
+    assert gov.check(now, now + 3600.0) == "hover"
+    assert gov.check(now, now + 0.5) == "ok"  # within the timeout either way: a fresh frame
+    fake.tel.t = nan
+    assert gov.check(now, now) == "hover"
+    fake.tel.t = now + 3600.0
+    assert gov.check(now, now) == "hover"
+    fake.tel.t = now
+    assert gov.check(nan, now) == "hover"  # a broken clock is no evidence of live video either
+
+
+def test_land_resend_is_not_held_back_by_a_wall_clock_step(monkeypatch):
+    """The re-send interval was timed on time.time(): after the wall clock stepped back (NTP, a Wi-Fi switch) a
+    lost land was not re-sent until the clock caught up again. It is timed on a monotonic clock now."""
+    import kite.drone.safety as safety_mod
+
+    gov, fake = governed()
+    gov.land()
+    assert fake.lands == 1
+    fake._busy = False  # the land reply was lost, it still flies
+    gov._land_sent -= 3.0  # the 2 s re-send interval has passed
+    wall = time.time()
+    monkeypatch.setattr(safety_mod.time, "time", lambda: wall - 3600.0)  # the wall clock steps back an hour
+    fake.tel.t = wall
+    assert gov.check(wall, wall) == "land" and fake.lands == 2
+
+
+def test_land_resend_interval_runs_on_the_injected_clock():
+    mono = [100.0]
+    fake = FakeDrone()
+    gov = SafetyGovernor(fake, SafetyCfg(), clock=lambda: mono[0])
+    gov.land()
+    fake._busy = False
+    now = time.time()
+    fake.tel.t = now
+    mono[0] += 1.9
+    assert gov.check(now, now) == "land" and fake.lands == 1  # within 2 s: not yet
+    mono[0] += 0.2
+    assert gov.check(now, now) == "land" and fake.lands == 2
+
+
+def test_garbled_state_values_read_as_unknown():
+    """telemetry() did float(v) on any value: a string or a huge int raised out of the governor's check()."""
+    d, fake = make()
+    fake.state = {"yaw": "x", "pitch": [1], "h": 10**400, "tof": float("inf"), "bat": float("nan"), "vgx": 3}
+    tel = d.telemetry()
+    assert (tel.yaw_deg, tel.pitch_deg, tel.height_m, tel.tof_m, tel.battery_pct) == (None,) * 5
+    assert tel.vx == pytest.approx(0.3)

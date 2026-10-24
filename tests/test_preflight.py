@@ -273,6 +273,25 @@ def test_healthy_drone_is_go_and_link_closed():
     assert drone.tello.sent == ["battery?"] * pf.RTT_SAMPLES  # read-only queries, nothing else
 
 
+def test_video_rate_counts_frames_a_slow_poll_missed(monkeypatch):
+    """_measure counted one frame per poll that saw a new seq, so a busy laptop (the poll oversleeping 50 ms) read a
+    healthy 30 fps stream as ~20 fps, and test_healthy_drone_is_go_and_link_closed failed under load (23.1 fps).
+    The rate now comes from how far seq advanced, which no amount of oversleeping changes."""
+    real_sleep = time.sleep
+    monkeypatch.setattr(pf.time, "sleep", lambda s: real_sleep(0.05))
+    fps, _ = pf._measure(TimedSource(fps=30.0, first_after_s=0.0), None, None, 0.6)
+    assert 30.0 * 0.9 <= fps <= 30.0 * 1.1  # seq quantization: +-1 frame over ~0.6 s
+
+
+def test_video_that_stops_reads_as_a_low_rate():
+    class Stops(TimedSource):
+        def read(self):
+            return super().read() if time.monotonic() - self.t0 < 0.2 else None
+
+    fps, _ = pf._measure(Stops(fps=30.0, first_after_s=0.0), None, None, 0.6)
+    assert fps < 15.0
+
+
 @pytest.mark.parametrize("bat, want", [(40, pf.NO_GO), (55, pf.WARN), (85, pf.GO)])
 def test_drone_battery(bat, want):
     st, checks, _ = run_drone(bat=bat)

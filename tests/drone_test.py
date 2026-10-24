@@ -22,9 +22,10 @@ Run:      python tests/drone_test.py                        # full flight (~2 mi
 
 Video goes through one of kite's newest-frame readers (--video-backend): pyav = PyAVStream (FFmpeg udp:// + h264
 demuxer; the default), opencv = the team's VideoStream (OpenCV/FFmpeg, nobuffer + low_delay), raw =
-kite.sources.tello_raw.RawTelloStream (its own UDP socket + PyAV's bare H.264 decoder), auto = raw on macOS. Each decodes every frame but converts at most
---video-fps per second, so latency does not grow over the flight. The recorder and the preview window share
-that one reader.
+kite.sources.tello_raw.RawTelloStream (its own UDP socket + PyAV's bare H.264 decoder), auto = raw on macOS. Each
+decodes every frame but converts at most --decode-fps per second, so latency does not grow over the flight. The
+recorder and the preview window share that one reader. --video-bitrate / --video-resolution / --video-fps set the
+drone's stream (Tello SDK setbitrate / setresolution / setfps) before streamon; nothing is sent unless given.
 Safety:   3 x 3 m clear space, prop guards, battery >= 30 %. Ctrl+C lands.
 
 The state stream is ~10 Hz, so one measurement is quantised to ~100 ms; the mean over repeats is better
@@ -44,6 +45,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # the kite package next to this file
 
+DROP_CORRUPT = False  # --drop-corrupt (set in main)
 FIELDS = ["pitch", "roll", "yaw", "vgx", "vgy", "vgz", "tof", "h", "bat"]
 
 # axis: rc vector (left_right, forward_back, up_down, yaw), reaction channel, its minimum threshold,
@@ -136,7 +138,7 @@ def open_raw_video(tello, Stream, fps, tries=3, wait_s=5.0):
     """kite's own UDP reader: bind first (its constructor never waits), then streamon until a frame decodes.
     streamon is re-sent only while no packet arrives; once packets flow it waits for a keyframe (wait_s per try)."""
     try:
-        stream = Stream(tello.get_udp_video_address(), fps=fps).start()
+        stream = Stream(tello.get_udp_video_address(), fps=fps, drop_corrupt=DROP_CORRUPT).start()
     except RuntimeError as e:  # the port is held by another program
         print(f"video: {e}")
         return None
@@ -522,6 +524,7 @@ def fly(args, ui):
     import cv2  # noqa: F401  - fail here, not silently inside the video thread
     from djitellopy import Tello
 
+    from kite.drone.tello import apply_video_link
     from kite.sources.opencv_sources import stream_class  # likewise: a missing install must not quietly drop the video
 
     stream_class(args.video_backend)
@@ -536,6 +539,8 @@ def fly(args, ui):
     tello.connect()
     rec["meta"]["battery"] = tello.get_battery()
     print(f"connected, battery {rec['meta']['battery']}%")
+    apply_video_link(lambda c: tello.send_command_with_return(c, timeout=3), args.video_bitrate,
+                     args.video_resolution, args.video_fps, say=print)
     if not args.ground and rec["meta"]["battery"] < args.min_battery:
         print(f"battery below {args.min_battery}% -> not flying")
         return
@@ -547,7 +552,7 @@ def fly(args, ui):
     # delay over a long flight.
     stream = None
     try:
-        stream = open_video(tello, args.video_fps, args.video_backend)
+        stream = open_video(tello, args.decode_fps, args.video_backend)
     except Exception as e:  # a video problem must never stop the flight or the telemetry run
         print(f"video unavailable ({e})")
     if stream is None:
@@ -636,8 +641,8 @@ def check_args(p, args):
         p.error("--settle must be 0-10 s")
     if not 0.2 <= args.preview_scale <= 2.0:
         p.error("--preview-scale must be 0.2-2.0")
-    if not 5 <= args.video_fps <= 60:
-        p.error("--video-fps must be 5-60")
+    if not 5 <= args.decode_fps <= 60:
+        p.error("--decode-fps must be 5-60")
     if not 1 <= args.trials <= 10:
         p.error("--trials must be 1-10")
     if args.forward != 0 and not 20 <= args.forward <= 500:
@@ -648,7 +653,7 @@ def check_args(p, args):
 
 
 def build_parser():
-    from kite.config import VIDEO_BACKENDS
+    from kite.config import VIDEO_BACKENDS, add_video_link_args
 
     p = argparse.ArgumentParser(description="Measure Tello command, motion and video lag in one flight.")
     p.add_argument("--mag", type=int, default=30, help="rc stick value for the steps, 10-100 (default 30)")
@@ -660,11 +665,15 @@ def build_parser():
     p.add_argument("--min-battery", type=int, default=30)
     p.add_argument("--preview", action="store_true", help="show the live camera feed in a window during the run")
     p.add_argument("--preview-scale", type=float, default=1.0, help="scale the preview window, e.g. 0.5 (default 1.0)")
-    p.add_argument("--video-fps", type=int, default=60, help="decode cap in fps; frames arriving faster are dropped, not "
-                   "queued (default 60: it must sit above the ~30 fps stream, a cap of 30 drops ~40 %% of frames to jitter)")
+    p.add_argument("--decode-fps", type=int, default=60, help="decode cap in fps; frames arriving faster are dropped, "
+                   "not queued (default 60: it must sit above the ~30 fps stream, a cap of 30 drops ~40 %% of frames "
+                   "to arrival jitter)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="video reader: pyav (default), opencv, raw (kite's own UDP reader) or auto (raw on macOS, "
                         "pyav elsewhere)")
+    add_video_link_args(p)
+    p.add_argument("--drop-corrupt", action="store_true",
+                   help="raw reader: hold the last clean frame through packet loss instead of showing smears")
     p.add_argument("--ground", action="store_true", help="no takeoff: command delay and stream rates only")
     p.add_argument("--simple", action="store_true", help="short flight: one + and one - step per axis, no forward/back "
                    "moves (same as --trials 1 --forward 0, about 45 s in the air)")
@@ -690,6 +699,8 @@ def main(argv=None):
     p, args = parse_args(argv)
     if not args.ffmpeg_log:
         quiet_ffmpeg()
+    global DROP_CORRUPT
+    DROP_CORRUPT = args.drop_corrupt
     if not args.analyze:
         check_args(p, args)
     if args.analyze:

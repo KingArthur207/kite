@@ -17,7 +17,6 @@ catches geometry and UV faults; the cross-panorama score in streetview_facades.p
 from __future__ import annotations
 
 import json
-import math
 import subprocess
 import sys
 from pathlib import Path

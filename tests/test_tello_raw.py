@@ -632,3 +632,39 @@ def test_tello_drone_connect_streams_through_the_raw_reader(monkeypatch):
         drone.close()
         tx.stop()
     assert fake.ended and port_is_free(port) and not raw_threads()
+
+
+def test_codec_flags_resolve_in_either_case():
+    import enum
+    from kite.sources.tello_raw import _flag
+
+    class Upper(enum.IntFlag):
+        LOW_DELAY = 1
+
+    class Lower(enum.IntFlag):
+        low_delay = 2
+
+    assert _flag(Upper, "low_delay") == 1
+    assert _flag(Lower, "low_delay") == 2
+
+
+def test_drop_corrupt_holds_until_a_clean_keyframe():
+    import time as _t
+    from types import SimpleNamespace as F
+    from kite.sources import tello_raw
+
+    s = tello_raw.RawTelloStream.__new__(tello_raw.RawTelloStream)
+    s._drop_corrupt, s._held_since = True, None
+    frames = [F(key_frame=False, is_corrupt=True), F(key_frame=False, is_corrupt=False),
+              F(key_frame=True, is_corrupt=False), F(key_frame=False, is_corrupt=False)]
+    shown = []
+    for f in frames:  # the same rule as the decode loop
+        if f.is_corrupt and s._held_since is None:
+            s._held_since = _t.monotonic()
+        if s._held_since is not None:
+            if f.key_frame and not f.is_corrupt or _t.monotonic() - s._held_since > tello_raw.HOLD_MAX_S:
+                s._held_since = None
+            else:
+                continue
+        shown.append(f)
+    assert shown == frames[2:]

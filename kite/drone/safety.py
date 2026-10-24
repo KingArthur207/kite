@@ -9,13 +9,16 @@ Rules (config.SafetyCfg):
     min_altitude_m; discrete up/down moves that would cross a limit are refused
   * battery below min_battery_pct, or flight time above max_flight_s -> land
   * a land that was asked for (any reason) but failed / was never sent while it still flies is re-sent every 2 s
-  * no new video frame for frame_timeout_s, or stale telemetry -> hover (rc 0) until they come back
+    (timed on `clock`, time.monotonic by default, so a wall-clock step cannot hold the re-send back)
+  * no new video frame for frame_timeout_s, or stale telemetry -> hover (rc 0) until they come back; a NaN stamp
+    or one more than the timeout in the future (the wall clock stepped back) counts as stale too
 The mission code keeps working through the wrapper; refused commands report 'error: safety ...'.
 """
 
 from __future__ import annotations
 
 import time
+from typing import Callable
 
 from ..config import SafetyCfg
 from .base import Drone, check_move, clamp_rc
@@ -26,9 +29,10 @@ SOFT_BAND_M = 0.4  # vertical speed is tapered to zero over this distance before
 class SafetyGovernor(Drone):
     name = "safety"
 
-    def __init__(self, inner: Drone, cfg: SafetyCfg):
+    def __init__(self, inner: Drone, cfg: SafetyCfg, clock: Callable[[], float] = time.monotonic):
         self.inner = inner
         self.cfg = cfg
+        self._clock = clock  # land re-send interval only; check()'s `now` is the caller's clock
         self.events: list[tuple[float, str]] = []
         self._takeoff_t: float | None = None
         self._refused: str | None = None
@@ -54,8 +58,9 @@ class SafetyGovernor(Drone):
                 return self._land(f"flight time > {c.max_flight_s:.0f} s")
             if self.land_requested:  # e.g. the 'l' key during a Wi-Fi drop: keep asking until it is down
                 return self._land("requested")
-            frame_stale = last_frame_t is None or now - last_frame_t > c.frame_timeout_s
-            tel_stale = now - tel.t > c.telemetry_timeout_s
+            # written so a NaN stamp, or one far in the future (wall clock stepped back), also counts as stale
+            frame_stale = last_frame_t is None or not abs(now - last_frame_t) <= c.frame_timeout_s
+            tel_stale = not abs(now - tel.t) <= c.telemetry_timeout_s
             if frame_stale or tel_stale:
                 self._event("video stale -> hover" if frame_stale else "telemetry stale -> hover")
                 self.hovering_for_safety = True
@@ -69,7 +74,7 @@ class SafetyGovernor(Drone):
 
     def _land(self, why: str) -> str:
         self._event(f"LAND: {why}")
-        now = time.time()
+        now = self._clock()
         # (re)send land if we have not asked yet, or a previous land failed / was lost and it still flies
         if not self.land_requested or (not self.inner.busy() and self.inner.flying and now - self._land_sent > 2.0):
             self.land_requested = True
@@ -94,7 +99,7 @@ class SafetyGovernor(Drone):
 
     def land(self) -> None:
         self.land_requested = True
-        self._land_sent = time.time()
+        self._land_sent = self._clock()
         self.inner.land()
 
     def emergency(self) -> bool | None:
@@ -115,7 +120,7 @@ class SafetyGovernor(Drone):
             hi, lo, band = self.cfg.max_altitude_m, self.cfg.min_altitude_m, SOFT_BAND_M
             if high is not None:
                 if high > hi:
-                    ud = min(ud, -20)
+                    ud = min(ud, -min(20, m))  # pushed down, still within the stick clamp
                     self._event(f"ceiling {high:.2f} m > {hi} m -> descend")
                 elif ud > 0 and high > hi - band:  # taper the climb: the drone keeps rising ~0.2 m after rc 0
                     ud = int(ud * max(0.0, (hi - high) / band))

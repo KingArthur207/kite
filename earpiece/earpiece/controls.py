@@ -47,9 +47,14 @@ class Gestures:
         """kind: 'toggle'|'play'|'pause'|'next'|'previous'. Thread-safe."""
         self._raw.put((kind, time.monotonic()))
 
+    def stop(self) -> None:
+        self._raw.put((None, 0.0))
+
     def _classify(self) -> None:
         while True:
             kind, t_press = self._raw.get()
+            if kind is None:                       # stop()
+                return
             if self.on_press is not None:
                 try:
                     self.on_press()
@@ -64,9 +69,12 @@ class Gestures:
                 if left <= 0:
                     break
                 try:
-                    kinds.add(self._raw.get(timeout=left)[0])
+                    k = self._raw.get(timeout=left)[0]
                 except queue.Empty:
                     break
+                if k is None:
+                    return
+                kinds.add(k)
             if "previous" in kinds:
                 g = PAUSE
             elif "next" in kinds:

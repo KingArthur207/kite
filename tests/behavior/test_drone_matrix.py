@@ -318,7 +318,7 @@ def to_state(d, fake, clock, state):
 
 def governed(clock, cfg=None, **inner_kw) -> tuple[SafetyGovernor, FakeInner]:
     inner = FakeInner(clock, **inner_kw)
-    return SafetyGovernor(inner, cfg or SafetyCfg()), inner
+    return SafetyGovernor(inner, cfg or SafetyCfg(), clock=clock.monotonic), inner
 
 
 # ====================================================================== base.py: helpers and interface
@@ -367,12 +367,10 @@ def test_clamp_rc_rounds_half_to_even_then_clamps_to_plain_int(v, limit, expecte
     assert out == expected and type(out) is int
 
 
-@pytest.mark.parametrize("v, exc", [(float("nan"), ValueError), (float("inf"), OverflowError),
-                                    (float("-inf"), OverflowError)], ids=["nan", "inf", "-inf"])
-def test_clamp_rc_raises_on_non_finite_sticks(v, exc):
-    # current behaviour: a NaN/inf stick from a controller raises out of rc() (nothing is sent). See report.
-    with pytest.raises(exc):
-        clamp_rc(v)
+@pytest.mark.parametrize("v", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"])
+def test_clamp_rc_turns_a_non_finite_stick_into_hover(v):
+    # a controller that divided by zero must not raise out of the flight loop: that stick is 0 (hover)
+    assert clamp_rc(v) == 0
 
 
 def test_drone_base_optional_methods_are_no_ops_and_interface_is_abstract():
@@ -1197,12 +1195,10 @@ def test_rc_does_not_wait_for_or_count_toward_the_command_gap(clock):
 
 
 @pytest.mark.parametrize("v", [float("nan"), float("inf")], ids=["nan", "inf"])
-def test_rc_with_a_non_finite_stick_raises_and_sends_nothing(clock, v):
-    # current behaviour (see report): clamp_rc cannot round NaN/inf; nothing reaches the drone
+def test_rc_with_a_non_finite_stick_sends_hover_on_that_channel(clock, v):
     d, fake = make(clock)
-    with pytest.raises((ValueError, OverflowError)):
-        d.rc(0, v, 0, 0)
-    assert fake.rcs == []
+    d.rc(10, v, 0, 0)
+    assert fake.rcs[-1] == (10, 0, 0, 0)
 
 
 # ====================================================================== TelloDrone: link_error
@@ -1475,8 +1471,6 @@ def test_governor_clamps_before_the_altitude_taper(clock, max_rc, h, ud, out):
 
 
 @pytest.mark.parametrize("max_rc", [0, 5, 10, 19])
-@pytest.mark.xfail(strict=True, reason="BUG (left alone): above the ceiling ud = min(ud, -20) ignores max_rc, so with "
-                                       "SafetyCfg.max_rc < 20 the governor sends a -20 stick (default max_rc is 50)")
 def test_governor_ceiling_push_respects_a_max_rc_below_20(clock, max_rc):
     gov, inner = governed(clock, SafetyCfg(max_rc=max_rc, max_altitude_m=HI), h=3.0)
     gov.rc(0, 0, 0, 0)
@@ -1713,13 +1707,13 @@ def test_governor_land_resend_every_two_seconds_only_while_flying_and_idle(clock
     gov, inner = governed(clock, bat=10)
     t = clock.time
     assert gov.check(t(), t()) == "land" and inner.lands == 1
-    sent_at = t()
+    sent_at = gov._land_sent
     inner._busy = False  # the land got an error / timed out: still flying
     clock.advance(2.0)
     inner.tel.t = t()
     assert gov.check(t(), t()) == "land" and inner.lands == 1  # exactly 2 s: not yet (strict >)
     clock.advance(0.001)
-    assert gov.check(t(), t()) == "land" and inner.lands == 2 and gov._land_sent == t() != sent_at
+    assert gov.check(t(), t()) == "land" and inner.lands == 2 and gov._land_sent == clock.monotonic() != sent_at
     inner._busy = True  # landing now
     clock.advance(10)
     inner.tel.t = t()
@@ -1740,7 +1734,7 @@ def test_governor_land_resend_uses_the_wall_clock_of_the_governor_not_the_caller
 def test_explicit_land_latches_and_is_resent_while_it_still_flies(clock):
     gov, inner = governed(clock)
     gov.land()
-    assert gov.land_requested and inner.lands == 1 and gov._land_sent == clock.time()
+    assert gov.land_requested and inner.lands == 1 and gov._land_sent == clock.monotonic()
     inner._busy = False
     clock.advance(1.0)
     inner.tel.t = clock.time()
@@ -1936,7 +1930,7 @@ def test_governor_reads_flying_busy_telemetry_and_video_from_the_inner_drone(clo
 def test_governed_tello_low_battery_mid_move_stops_then_lands(clock):
     d, fake = make(clock)
     fly(d, fake, clock)
-    gov = SafetyGovernor(d, SafetyCfg())
+    gov = SafetyGovernor(d, SafetyCfg(), clock=clock.monotonic)
     d.move("forward", 200)
     fake.state = dict(fake.state, bat=12)
     now = clock.time()
@@ -1949,7 +1943,7 @@ def test_governed_tello_low_battery_mid_move_stops_then_lands(clock):
 def test_governed_tello_safety_hover_sends_rc_zero_on_the_wire(clock):
     d, fake = make(clock)
     fly(d, fake, clock)
-    gov = SafetyGovernor(d, SafetyCfg())
+    gov = SafetyGovernor(d, SafetyCfg(), clock=clock.monotonic)
     now = clock.time()
     assert gov.check(now, now - 5) == "hover" and fake.rcs[-1] == (0, 0, 0, 0)
 
@@ -1957,7 +1951,7 @@ def test_governed_tello_safety_hover_sends_rc_zero_on_the_wire(clock):
 def test_governed_dry_run_hovers_and_lands_without_sending_anything(clock):
     d, fake = make(clock, dry_run=True)
     fly(d, fake, clock)
-    gov = SafetyGovernor(d, SafetyCfg())
+    gov = SafetyGovernor(d, SafetyCfg(), clock=clock.monotonic)
     fake.state = dict(fake.state)
     now = clock.time()
     assert gov.check(now, now - 5) == "hover"
@@ -2033,7 +2027,7 @@ def _stack(patched_time, dry_run, seed, max_rc=50):
     fake = FakeDjiTello(clock)
     d = TelloDrone(tello=fake, video=False, dry_run=dry_run)
     d.connect()
-    gov = SafetyGovernor(d, SafetyCfg(max_rc=max_rc))
+    gov = SafetyGovernor(d, SafetyCfg(max_rc=max_rc), clock=clock.monotonic)
     return random.Random(seed), clock, fake, d, gov
 
 

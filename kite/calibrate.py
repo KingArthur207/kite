@@ -40,7 +40,7 @@ from pathlib import Path
 import numpy as np
 
 from .camera import DEFAULT_PATH, Camera, save_camera
-from .config import VIDEO_BACKENDS
+from .config import VIDEO_BACKENDS, add_video_link_args
 from .sources.base import FrameSource
 
 TELLO_SIZE = (960, 720)
@@ -485,12 +485,13 @@ def _save(cam: CalibratedCamera, rms: float | None, args) -> int:
 
 
 def _open_tello(args):
-    from .config import Config
+    from .config import Config, video_link_args
     from .drone import make_tello
 
     cfg = Config()
     if args.video_backend:
         cfg.drone.video_backend = args.video_backend
+    video_link_args(cfg.drone, args)
     drone = make_tello(cfg, dry_run=True)  # dry run: no motion command can ever be sent
     print("connecting to the Tello (DRY RUN: video only, no motion) ...", flush=True)
     try:
@@ -525,6 +526,7 @@ def main(argv: list[str] | None = None) -> int:
                    "(default recordings/calib_<stamp>)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="Tello H.264 reader (default pyav; opt-in: raw, socket, auto = raw on macOS)")
+    add_video_link_args(p)
     p.add_argument("--show-board", action="store_true", help="show the chessboard full screen and exit")
     p.add_argument("--board-png", default=None, help="write the chessboard to this PNG and exit")
     p.add_argument("--known-object", type=float, metavar="WIDTH_M", help="fallback: width of an object (m)")
@@ -588,7 +590,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _known_object(args, tello: bool) -> int:
-    import cv2
 
     if args.known_object <= 0 or args.distance_m <= 0:
         print("--known-object and --distance-m must be > 0")

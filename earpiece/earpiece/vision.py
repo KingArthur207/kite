@@ -195,6 +195,11 @@ class Vision:
         self._loop = loop
         loop.run_forever()
 
+    def stop(self) -> None:
+        """End the event-loop thread."""
+        if self._loop is not None and not self._loop.is_closed():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+
     def describe_image(self, jpeg: bytes, where: str = "flying just above and behind the walker's head",
                        timeout: float = 15.0) -> str | None:
         """Claude vision: JPEG -> one or two sentences for the `scene` context. Blocking;

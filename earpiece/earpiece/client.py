@@ -17,7 +17,18 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 import socket
+
+# macOS refuses UDP datagrams over net.inet.udp.maxdgram (9216 bytes by default) and Kite only
+# ever uses the 64 nearest objects, so a crowded frame is trimmed to fit instead of vanishing.
+MAX_DATAGRAM = 9000
+MAX_OBJECTS = 64
+
+
+def _distance(o) -> float:
+    d = o.get("distance", o.get("distance_m")) if isinstance(o, dict) else None
+    return float(d) if isinstance(d, (int, float)) and not isinstance(d, bool) and math.isfinite(d) else math.inf
 
 
 class EarpieceClient:
@@ -26,14 +37,28 @@ class EarpieceClient:
         self.source = source
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._seq = itertools.count(1)
+        self.trimmed = 0               # obstacle frames cut down to fit one datagram
+        self.dropped = 0               # datagrams the OS refused (earpiece not running, too big)
 
     def send(self, msg: dict) -> None:
         msg.setdefault("source", self.source)
         data = json.dumps(msg, separators=(",", ":")).encode()
+        if len(data) > MAX_DATAGRAM and isinstance(msg.get("objects"), list):
+            data = self._fit(msg)
         try:
             self._sock.sendto(data, self.addr)
         except OSError:
-            pass                       # earpiece not running: never crash the sender
+            self.dropped += 1          # earpiece not running: never crash the sender
+
+    def _fit(self, msg: dict) -> bytes:
+        """The nearest objects that fit in one datagram (the earpiece keeps the nearest 64 anyway)."""
+        self.trimmed += 1
+        objs = sorted(msg["objects"], key=_distance)[:MAX_OBJECTS]
+        while True:
+            data = json.dumps({**msg, "objects": objs}, separators=(",", ":")).encode()
+            if len(data) <= MAX_DATAGRAM or not objs:
+                return data
+            objs = objs[: len(objs) * 3 // 4]
 
     def obstacles(self, objects: list[dict], source: str | None = None) -> None:
         """The FULL set of objects in this frame (ids not listed are treated as gone)."""

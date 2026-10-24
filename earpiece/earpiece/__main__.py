@@ -61,6 +61,7 @@ def cmd_run(a) -> int:
     cfg = Cfg()
     cfg.net.bind_host = a.bind
     cfg.net.udp_port, cfg.net.ws_port = a.udp_port, a.ws_port
+    cfg.net.allow_origins = tuple(a.allow_origin)
     if a.mic:
         cfg.listen.input_substr = a.mic
     cfg.listen.hands_free = a.hands_free
@@ -214,6 +215,9 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--hands-free", action="store_true", help="always listen for 'Kite, ...'")
     r.add_argument("--no-stem", action="store_true", help="do not capture media keys / stem presses")
     r.add_argument("--bind", default="127.0.0.1", help="0.0.0.0 to accept events from the LAN")
+    r.add_argument("--allow-origin", action="append", default=[], metavar="ORIGIN",
+                   help="also accept WebSocket connections from this browser origin, e.g. "
+                        "http://192.168.1.5:5173 (pages on this machine are always allowed)")
     r.add_argument("--udp-port", type=int, default=5010)
     r.add_argument("--ws-port", type=int, default=5011)
     r.add_argument("--no-judgment", action="store_true", help="turn off the Claude judgment layer (also KITE_JUDGMENT=0)")
