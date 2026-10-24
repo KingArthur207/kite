@@ -34,3 +34,4 @@ include = ["earpiece*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["slow: benchmarks and long property runs (deselect with -m 'not slow')"]
