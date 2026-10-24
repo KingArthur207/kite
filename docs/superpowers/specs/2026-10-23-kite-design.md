@@ -168,7 +168,7 @@ One pipeline, three frame sources: `process(frame, camera, pose) -> events`, whe
 
 - Input: current hazards, the route, the latest `scene` text, walker pose. Output: one short spoken decision ("Wait, the crosswalk is crowded.") and an optional priority upgrade.
 - Claude can tell the walker to wait or warn them. It never reroutes (no detours, team decision), and it cannot clear a stop. Sonar, `critical` obstacles and `dont_walk` hazards are handled in deterministic code before Claude sees anything.
-- Use Claude for the scene description too (it reads images), instead of adding Gemini, so Claude is load-bearing for the Anthropic track.
+- Use Claude for the scene description too (it reads images), so Claude is load-bearing for the Anthropic track.
 - Fixed phrases ("stop", "curb ahead", "bear left") are generated once with Cartesia and played from a cache. Only changing sentences, like street names and Claude's decisions, are streamed. Navigation speech older than its `ttl` is dropped.
 
 ## 6. Build everything without hardware first
@@ -276,7 +276,7 @@ Also made by the team (Oct 23, 11:50 PM): sim hazards come from the real detecto
 
 Also made by the team (Oct 24, 12:55 AM meeting): no Gaussian splat; the real Tello footage of the corner is what makes the demo look real, and the sim uses the OpenStreetMap model of Moss and Howard with glTF cars and people. The judge's live demo is wearing Kite blindfolded at the table, then seeing what it saw. The drone flies behind the walker. Filming is on Moss St, ending with the left turn across the zebra crossing. Every code change goes through a PR.
 
-Made in this spec, change them by editing it: webcam `obstacles` go to the earpiece over localhost, not through the cloud. Venue Wi-Fi is the primary link, with offline fallbacks. Karthik's earpiece events are the contract. Spacetime as the cross-machine transport with an `event` table. Claude instead of Gemini for scene description (Gemini Vision came up in the meeting; one model vendor keeps the Anthropic story clean). Signal reading demoted. The owner split in section 7. Naming Flying Guide Dog in the pitch. Microsoft in, Anthropic ticked only. Caregiver messages as the one path from Spacetime into the earpiece. Recording at the shoot instead of running live.
+Made in this spec, change them by editing it: webcam `obstacles` go to the earpiece over localhost, not through the cloud. Venue Wi-Fi is the primary link, with offline fallbacks. Karthik's earpiece events are the contract. Spacetime as the cross-machine transport with an `event` table. Claude for scene description. Signal reading demoted. The owner split in section 7. Naming Flying Guide Dog in the pitch. Microsoft in, Anthropic ticked only. Caregiver messages as the one path from Spacetime into the earpiece. Recording at the shoot instead of running live.
 
 ## 12. Left to each owner
 
