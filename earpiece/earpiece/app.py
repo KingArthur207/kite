@@ -214,7 +214,7 @@ class Earpiece:
         if any(t.critical or t.urgency > 0.45 for t in tracks):
             return True
         return any(h.get("state") in ("wait", "blocked", "stop") and h.get("kind") != "crosswalk"
-                   for h in self.hazards.values())
+                   for h in list(self.hazards.values()))     # snapshot: the transport thread adds hazards
 
     def _check_continue(self, now: float) -> None:
         """Guide-dog behaviour from the spec: stop, wait until the way is clear, then say so.
@@ -494,8 +494,8 @@ class Earpiece:
                 warn = any(t.urgency > 0.3 for t in chosen)
                 self.beacon.duck = 0.35 if warn else 1.0
                 self.beacon.tick(now, speech_playing=self.engine.speaking or self.listener.active)
-                for k in [k for k, h in self.hazards.items() if h["until"] < now]:
-                    del self.hazards[k]
+                for k in [k for k, h in list(self.hazards.items()) if h["until"] < now]:
+                    self.hazards.pop(k, None)
             except Exception as e:
                 self.log(f"[control] {type(e).__name__}: {e}")
             nxt += period
