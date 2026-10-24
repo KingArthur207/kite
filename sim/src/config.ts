@@ -1,6 +1,6 @@
 // Sim constants. World frame: x = meters east, y = up, z = meters south (north is -z).
 
-export const FX = 1000;                 // Tello focal length in px; Arthur's calibration replaces this
+export const FX = 1000;                 // Tello focal length in px; the Tello calibration replaces this
 export const CAM_W = 960;
 export const CAM_H = 720;
 export const VFOV_DEG = (2 * Math.atan(CAM_H / 2 / FX) * 180) / Math.PI;
