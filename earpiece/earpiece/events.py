@@ -69,7 +69,10 @@ def _num(d: dict, *names: str, default: float | None = None, lo: float | None = 
             v = d[n]
             if isinstance(v, bool) or not isinstance(v, (int, float)):
                 raise BadMessage(f"{n} must be a number")
-            v = float(v)
+            try:
+                v = float(v)
+            except OverflowError as e:           # a 400-digit JSON integer
+                raise BadMessage(f"{n} is out of range") from e
             if not math.isfinite(v):
                 raise BadMessage(f"{n} must be finite")
             if lo is not None:
@@ -143,28 +146,34 @@ def _priority(d: dict, default: str) -> str:
     return p if p in PRIORITY_RANK else default
 
 
+MAX_MESSAGE = 256 * 1024
+
+
 def parse(raw: bytes | str | dict) -> Msg:
-    """Raw datagram / websocket frame / dict -> validated Msg. Raises BadMessage."""
+    """Raw datagram / websocket frame / dict -> validated Msg. Raises BadMessage, and only that."""
     if isinstance(raw, (bytes, bytearray)):
-        if len(raw) > 256 * 1024:
+        if len(raw) > MAX_MESSAGE:
             raise BadMessage("message too large")
         try:
             raw = raw.decode("utf-8")
         except UnicodeDecodeError as e:
             raise BadMessage("not utf-8") from e
     if isinstance(raw, str):
+        if len(raw) > MAX_MESSAGE:
+            raise BadMessage("message too large")
         try:
             d = json.loads(raw)
         except json.JSONDecodeError as e:
             raise BadMessage(f"bad json: {e.msg}") from e
+        except (ValueError, RecursionError) as e:   # a >4300-digit integer, or [[[[... nested too deep
+            raise BadMessage("bad json: number too long or nesting too deep") from e
     else:
         d = raw
     if not isinstance(d, dict):
         raise BadMessage("message must be a JSON object")
     t = str(d.get("type", "")).lower()
     src = _ident(d.get("source"), "unknown")
-    seq = d.get("seq")
-    seq = int(seq) if isinstance(seq, (int, float)) and not isinstance(seq, bool) and math.isfinite(seq) else None
+    seq = _seq(d.get("seq"))
 
     if t in ("obstacles", "obstacle"):
         items = d.get("objects") if t == "obstacles" else [d]
@@ -179,8 +188,15 @@ def parse(raw: bytes | str | dict) -> Msg:
                 bear = _num(o, "bearing", "bearing_deg", required=True)
             except BadMessage:
                 continue                      # one bad object never drops the whole frame
-            cs = _num(o, "closing_speed", "closing_speed_mps", lo=-30.0, hi=30.0)
-            conf = _num(o, "confidence", "conf", default=1.0, lo=0.0, hi=1.0)
+            # optional extras: a garbled one falls back to its default, it never loses the obstacle
+            try:
+                cs = _num(o, "closing_speed", "closing_speed_mps", lo=-30.0, hi=30.0)
+            except BadMessage:
+                cs = None
+            try:
+                conf = _num(o, "confidence", "conf", default=1.0, lo=0.0, hi=1.0)
+            except BadMessage:
+                conf = 1.0
             objs.append(Obstacle(_ident(o.get("id"), f"{src}-{i}"), _kind(o.get("kind", o.get("class"))),
                                  wrap_deg(bear), dist, cs, conf))
         objs.sort(key=lambda o: o.distance)
@@ -246,6 +262,18 @@ def parse(raw: bytes | str | dict) -> Msg:
             raise BadMessage(f"unknown control action {a!r}")
         return Msg("control", src, seq, action=a)
     raise BadMessage(f"unknown type {t!r}")
+
+
+def _seq(v: Any) -> int | None:
+    """A frame counter: any finite number that fits in 64 bits, else none (never an exception:
+    math.isfinite() of a 400-digit integer raises OverflowError)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    if isinstance(v, float):
+        if not math.isfinite(v):
+            return None
+        v = int(v)
+    return v if -(2 ** 63) <= v < 2 ** 63 else None
 
 
 def _opt_bearing(d: dict) -> float | None:
