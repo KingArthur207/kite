@@ -69,7 +69,11 @@ export function buildOsmWorld(opts: { actors?: boolean; walkers?: () => { x: num
   console.info(`[osmWorld] ${data.buildings.length} buildings, ${windows} windows and doors, ${garages.length} garages`);
 
   const walls: Wall[] = [...data.curbs];
-  for (const b of data.buildings) for (let k = 0; k + 1 < b.pts.length; k++) walls.push([...b.pts[k], ...b.pts[k + 1]] as Wall);
+  // Ground floors: footprints are roof outlines, and bays overhanging the sidewalk (from 3 m up) don't block.
+  for (const b of data.buildings) {
+    const g = (b as { ground?: number[][] }).ground ?? b.pts;
+    for (let k = 0; k + 1 < g.length; k++) walls.push([...g[k], ...g[k + 1]] as Wall);
+  }
 
   // Planned demo walk, drawn faintly on screen only (main.ts hides it for camera frames).
   const overlay = new THREE.Group();

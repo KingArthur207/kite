@@ -274,11 +274,11 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     put("paystation", place(box(0.34, 1.45, 0.24).translate(0, 0.725, 0), p, y, u));
     put("unlit", place(box(0.22, 0.16, 0.02).translate(0, 1.2, 0.13), p, y, u));
   };
-  const tree = (p: P, id: number) => {
-    const r = seeded(id), y = ys(p);
+  const tree = (p: P, id: number, height = 0) => {   // height: DataSF inventory estimate, 0 = typical
+    const r = seeded(id), y = ys(p), sc = height > 0 ? height / 5.4 : 1;
     put("soil", place(new THREE.PlaneGeometry(1.1, 1.1).rotateX(-Math.PI / 2).translate(0, 0.004, 0), p, y));
     const h = 2.8 + r() * 0.8;
-    put("bark", place(cyl(0.11, 0.07, h + 1.6, 8), p, y));
+    put("bark", place(cyl(0.11, 0.07, h + 1.6, 8).scale(sc, sc, sc), p, y));
     const col = new THREE.Color().setHSL(0.22 + r() * 0.07, 0.3, 0.2 + r() * 0.07);
     for (let k = 0; k < 9; k++) {
       const ico = new THREE.IcosahedronGeometry(0.55 + r() * 0.5, 3);
@@ -298,7 +298,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
       }
       g.setAttribute("color", new THREE.BufferAttribute(c, 3));
       const a = r() * Math.PI * 2, d = k === 0 ? 0 : 0.5 + r() * 0.7;
-      put("leaves", place(g.translate(Math.cos(a) * d, h + 0.6 + r() * 1.6, Math.sin(a) * d), p, y));
+      put("leaves", place(g.translate(Math.cos(a) * d, h + 0.6 + r() * 1.6, Math.sin(a) * d).scale(sc, sc, sc), p, y));
     }
   };
   const stopSign = (p: P, face: P) => {
@@ -325,7 +325,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     else if (f.kind === "vending_machine") payStation(p, near.u);
     else if (f.kind === "pole" || f.kind === "utility_pole") woodPole(p, toRoad, false);
     else if (f.kind === "street_lamp") streetLight(p, toRoad);
-    else if (f.kind === "tree") tree(p, f.id);
+    else if (f.kind === "tree") tree(p, f.id, Number(f.tags.height_m ?? 0));
     else if (f.kind === "kerb" && f.tags.tactile_paving === "yes") {
       const c = data.crossings.reduce((a, b) => (Math.hypot(b.x - p[0], b.y - p[1]) < Math.hypot(a.x - p[0], a.y - p[1]) ? b : a));
       const n: P = [-c.u[1], c.u[0]];
@@ -348,6 +348,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
     }
   }
   const howard = data.roads.filter((r) => r.name === "Howard Street");
+  const hasTreeInventory = data.furniture.some((f) => f.kind === "tree");
   for (const r of howard) {
     for (const side of [0, 1] as const) {
       const off = side ? r.curbs[1] + 0.5 : r.curbs[0] - 0.5;
@@ -355,6 +356,7 @@ function buildFurniture(scene: THREE.Object3D, data: StreetData, garages: Garage
       for (const { p, u } of along(offsetPts(r.pts, off), 10 + side * 18, HOWARD_LIGHT_EVERY)) if (free(p)) streetLight(p, toRoad(u));
       const offT = side ? r.curbs[1] + 0.75 : r.curbs[0] - 0.75;
       for (const { p, s } of along(offsetPts(r.pts, offT), 3 + side * 7, HOWARD_TREE_EVERY)) {
+        if (hasTreeInventory) break;   // DataSF's real trees are in furniture
         if (free(p, 2) && !data.furniture.some((f) => Math.hypot(f.x - p[0], f.y - p[1]) < 3)) tree(p, r.id + Math.round(s) * 7 + side);
       }
     }
