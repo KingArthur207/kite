@@ -105,7 +105,7 @@ The video follows the pitch order in spec section 4 and leads with the product. 
 | 1:00 to 1:15 | Caregiver dashboard with the walker on the map and the stop event appearing live | Screen capture | Name SpacetimeDB: every device and the caregiver share one live world state. |
 | 1:15 to 1:30 | Asking "Kite, what's in front of me?" and the answer | Table recording | Name Claude for the answer. Say the safety stops are deterministic code and Claude never decides them. |
 | 1:30 to 1:45 | The interview quote and the collision number from the sim, with and without Kite | Title card over sim footage | One quote and one number, nothing else on screen. |
-| 1:45 to 2:00 | Prior art and what's real | Title card | The prior art line from spec section 4, then the "what's real" line below. |
+| 1:45 to 2:00 | What's real | Title card | The "what's real" line below. |
 
 The "what's real" line, adjust to what actually happened: "Everything you heard is Kite's real output, rendered from the detector running on our footage. The drone was flown by hand [or: followed on its own] on Moss St at 7 AM on Saturday. The table walk is live."
 

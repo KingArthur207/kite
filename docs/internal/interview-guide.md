@@ -74,7 +74,7 @@ Public contact pages only. Check each page before writing; details change. Nothi
 | Center for Accessible Technology, Berkeley | Assistive technology specialists, at the Ed Roberts Campus. | [c4at.org](https://c4at.org/about_us.html) |
 | San Francisco State University O&M Program | One of the oldest O&M training programs in the US (founded 1966). Faculty and students are O&M specialists. | [mobility.sfsu.edu](https://mobility.sfsu.edu) |
 | Orientation Center for the Blind, Albany (California Department of Rehabilitation) | Residential training center with O&M instructors, ten minutes from Berkeley. A state agency, so a weekend reply is unlikely. | [dor.ca.gov](https://www.dor.ca.gov/), 400 Adams St, Albany |
-| Smith-Kettlewell Eye Research Institute, San Francisco | Researchers who build and study navigation aids for blind people. Good for a prior-art sanity check, less for a user quote. | [ski.org](https://www.ski.org/) |
+| Smith-Kettlewell Eye Research Institute, San Francisco | Researchers who build and study navigation aids for blind people. Good for a sanity check on the design, less for a user quote. | [ski.org](https://www.ski.org/) |
 
 Saturday is a hard day to reach anyone at an agency. The best odds are individuals: someone a teammate already knows, a Cal student through DSP, or an NFB member. Send the DM version where a personal contact exists.
 

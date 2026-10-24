@@ -50,7 +50,7 @@ The guide dog comparison shapes the features. A guide dog leads around obstacles
 
 Why it matters: Guiding Eyes for the Blind puts the cost of raising and training one guide dog at $50,000 (donors pay it, not the blind person), and fewer than 10,000 guide dogs work in the US against about 1 million Americans who are blind. Drop the old "2%" figure: its only traceable source is from about 1990. Sources and caveats are in `docs/research/facts.md`; Rex signs off before they go on a slide.
 
-What makes Kite's approach its own: no leash (everything reaches the walker as spatial sound and voice), the drone flies behind and above instead of in front, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
+What makes Kite's approach its own: everything reaches the walker as spatial sound and voice, the drone flies behind and above the walker, a chest camera covers the near field, stops follow guide-dog rules in deterministic code, Claude answers questions, and a caregiver shares the walk live.
 
 ## 2. Goals, non-goals, anti-goals
 
@@ -58,7 +58,7 @@ Goals
 - A judge wears Kite (sleep mask, headphones, a phone as the chest camera) and walks a few meters at our table. When a teammate steps into their path, Kite stops them, then tells them to go on. Then they see what Kite saw.
 - The same detection code runs on real Tello footage, on the sim's cameras, and on the live chest camera. That is our main honesty claim.
 - Real Tello footage of a walker on that corner, with Kite's cues overlaid, in the demo video.
-- Honest research framing in the pitch: "We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and the KIT Flying Guide Dog user study of blindfolded walkers. Testing with orientation and mobility instructors is our next step." No interviews will be conducted.
+- Honest research framing in the pitch: "We didn't get to talk to a blind traveler this weekend. We built from published research: guide dog schools' own figures and published surveys of blind travelers. Testing with orientation and mobility instructors is our next step." No interviews will be conducted.
 
 Non-goals
 - Flying at the venue. Drones are banned there.
@@ -107,9 +107,7 @@ The two-minute pitch, demo first (also the Cartesia track's format):
 3. 0:50 to 1:10. Mask off. The screen shows what Kite saw on their walk: the chest camera with its boxes, and the caregiver map with the stop on it.
 4. 1:10 to 1:35. "A chest camera sees a few meters. The drone sees the street." The real Tello footage from Moss St: the drone's view with segmentation, a car turning in from Howard, Kite saying stop. Same detector.
 5. 1:35 to 1:50. The research line above, said plainly, and one measured number (collisions with and without Kite in the sim).
-6. 1:50 to 2:00. The prior-art line and what's real, then questions.
-
-The prior-art line, roughly: "In 2021, researchers at KIT flew a Tello in front of blindfolded walkers on a leash, and it kept them on the sidewalk. Kite drops the leash: the drone flies behind you, and everything reaches you as sound."
+6. 1:50 to 2:00. What's real, then questions.
 
 The sim walk is the backup. If the chest camera path fails at the table, the judge walks the sim corner with the screen black, guided by the same earpiece.
 
@@ -308,7 +306,7 @@ What each entered track needs from us:
 
 ## 11. Calls already made
 
-Decision (Oct 24): no interviews this weekend. The pitch says so plainly and cites the research instead (guide dog schools' figures, the KIT study). Testing with O&M instructors is the next step after the hackathon.
+Decision (Oct 24): no interviews this weekend. The pitch says so plainly and cites the research instead (guide dog schools' figures and published surveys of blind travelers). Testing with O&M instructors is the next step after the hackathon.
 
 Made by the team: the drone flies behind and above, not ahead (fix the README, which says "ahead"). The drone is for the demo only. The 7am shoot plus a sim of the same corner. Beeps with direction and pitch plus verbal directions. Cartesia and Spacetime are in.
 

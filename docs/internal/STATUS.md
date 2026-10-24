@@ -37,7 +37,7 @@ scripts/demo.sh stop
 | Video | Real earpiece audio from an event log; captions, hazard banners and sonar over footage | #19 |
 | Tooling | `scripts/demo.sh`, replay, netcheck, offline fallback, disqualifier audit | #5, #11, #26, #31 |
 | Tooling | `scripts/check.sh` replaces GitHub Actions; `scripts/deploy-site.sh` for the landing site | #42 |
-| Docs | Spec, sourced facts and prior art, interview guide (a future plan; no interviews this weekend), Google permission, runbooks, Devpost draft | #6, #10, #24, #26, #40 |
+| Docs | Spec, sourced facts, interview guide (a future plan; no interviews this weekend), Google permission, runbooks, Devpost draft | #6, #10, #24, #26, #40 |
 
 Karthik built the Claude judgment layer integration, the camera descriptions ("what's in front of me?" and reading text aloud), the cached safety phrases, stop and wait, walking routes, SpacetimeDB mirroring, and support for any stereo Bluetooth headphones.
 
