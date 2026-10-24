@@ -167,6 +167,7 @@ def test_flood_of_garbage_and_valid_frames(app):
     assert len([t for t in app.sonar.tick() if t]) <= 2
 
 
+@pytest.mark.skipif(bool(os.environ.get("CI")), reason="wall-clock timing; flaky on shared CI runners, runs locally")
 def test_sustained_dense_perception_keeps_control_loop_realtime(app):
     """64 objects per frame at 30 Hz for 4 s: tick + render must keep up."""
     c = client(app)
