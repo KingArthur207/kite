@@ -335,7 +335,9 @@ h1 em { color: var(--indigo); font-weight: 400; }
 .bubble::after { content: ""; position: absolute; bottom: -12px; width: 18px; height: 14px; background: inherit; border: 2px solid var(--ink); border-top: 0; border-left: 0; }
 .bubble.you::after { left: 22px; transform: skewX(30deg) rotate(45deg); }
 .bubble.kite::after { right: 22px; transform: skewX(-30deg) rotate(45deg); }
-.cast { margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end; padding: 6px 4px 0; }
+.cast { margin-top: auto; padding: 6px 0 22px; }
+.scene-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.scene-svg .kbot { animation: bob 2.6s ease-in-out infinite; transform-box: fill-box; }
 .who-walker { width: 46px; height: auto; }
 .who-kite { width: 52px; height: auto; animation: bob 2.6s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translateY(-5px) rotate(3deg); } }
