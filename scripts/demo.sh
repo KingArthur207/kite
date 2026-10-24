@@ -163,7 +163,7 @@ begin() {  # common start checks; args are check_prereqs words, then -- then por
   shift; ports=("$@")
   any_running && die "Kite is already running from this script. Run scripts/demo.sh stop first (or status to see it)."
   # Every mode starts an earpiece, and the team's Cartesia plan allows one at a time, on any port.
-  local ep; ep=$(pgrep -f 'python.* -m earpiece run' | head -1)
+  local ep; ep=$(pgrep -fl 'python.* -m earpiece run' | grep -v -- '--udp-port' | awk '{print $1}' | head -1)   # test earpieces on other ports (agents, --null, no key) don't count
   [ -n "$ep" ] && die "an earpiece is already running (pid $ep). Cartesia allows one: use that one, or stop it first."
   local ok=0
   check_prereqs "${pre[@]}" || ok=1
