@@ -153,7 +153,12 @@ def encode_payload(obj: dict, limit: int = MAX_PAYLOAD) -> str:
         o["truncated"] = True
     if len(s) <= limit:
         return s
-    return _dumps({"type": obj.get("type"), "source": obj.get("source"), "truncated": True, "bytes": len(s)})
+    # the last resort must fit too: type and source are clipped to the module's 64-char IDENT,
+    # since an oversized source alone would otherwise push the summary over the cap
+    def ident(v):
+        return str(v)[:64] if v is not None else None
+    return _dumps({"type": ident(obj.get("type")), "source": ident(obj.get("source")), "truncated": True,
+                   "bytes": len(s)})
 
 
 def sql_rows(reply: list) -> list[dict]:

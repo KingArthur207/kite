@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 import pytest
+from hypothesis import HealthCheck, given, settings, strategies as st
 
 from conftest import wait_for
 from earpiece import spacetime
@@ -222,6 +223,71 @@ def test_defaults_are_frugal_and_env_tunes_them(monkeypatch):
 
 
 # ------------------------------------------------------------------ payload cap
+_json = st.recursive(st.none() | st.booleans() | st.integers() | st.floats() | st.text(max_size=3000),
+                     lambda kids: st.lists(kids, max_size=40) | st.dictionaries(st.text(max_size=8), kids, max_size=8),
+                     max_leaves=200)
+
+
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large])
+@given(st.dictionaries(st.text(max_size=12), _json, max_size=12), st.sampled_from([64, 512, 4096, MAX_PAYLOAD]))
+def test_any_payload_comes_out_as_finite_json_under_the_cap(obj, limit):
+    """Whatever an event holds (NaN, huge strings, deep lists, non-string keys after str()),
+    the payload is strict JSON the server's JSON.parse accepts, and never over the cap."""
+    s = encode_payload(obj, limit)
+    assert len(s) <= max(limit, 200)                # the last resort summary is tiny but fixed
+    json.loads(s, parse_constant=lambda c: pytest.fail(f"non-finite {c} in payload"))
+
+
+def test_a_payload_with_nothing_to_halve_falls_back_to_a_summary():
+    big = {"type": "scene", "source": "drone", **{f"k{i}": "x" * 1500 for i in range(30)}}
+    d = json.loads(encode_payload(big, limit=2048))
+    assert d == {"type": "scene", "source": "drone", "truncated": True, "bytes": d["bytes"]} and d["bytes"] > 2048
+    # a huge source used to be copied whole into that summary: 20,057 chars against the 16 KB cap
+    huge = {"type": "say", "source": "x" * 20000, **{f"k{i}": "y" * 1500 for i in range(30)}}
+    s = encode_payload(huge)
+    assert len(s) <= MAX_PAYLOAD and json.loads(s)["source"] == "x" * 64
+
+
+@pytest.mark.parametrize("v,want", [
+    ([[1_700_000_000_000_000]], 1_700_000_000.0), ({"__timestamp_micros_since_unix_epoch__": 2_000_000}, 2.0),
+    (3_000_000, 3.0), ("4000000", 4.0), (None, None), ([], None), ("soon", None), ({}, None), ([[None]], None),
+])
+def test_row_time_reads_every_timestamp_shape_and_rejects_junk(v, want):
+    assert spacetime.row_time(v) == want
+
+
+def test_sql_rows_maps_columns_and_keeps_rows_from_every_statement():
+    reply = [{"schema": {"elements": [{"name": {"some": "id"}}, {"name": {"some": "type"}}]},
+              "rows": [[1, "say"], [2, "hazard"]]},
+             {"schema": {"elements": [{"name": {"some": "id"}}]}, "rows": []}]
+    assert spacetime.sql_rows(reply) == [{"id": 1, "type": "say"}, {"id": 2, "type": "hazard"}]
+    assert spacetime.sql_rows([]) == []
+
+
+@pytest.mark.parametrize("v,want", [("drone", "drone"), ("chest cam", "chest_cam"), ("a/b\\c", "a_b_c"),
+                                    (None, "dflt"), ("", "dflt"), ("x" * 100, "x" * 64), (42, "42"),
+                                    ("café", "caf_")])
+def test_clean_source_always_fits_the_module_ident(v, want):
+    out = spacetime.clean_source(v, "dflt")
+    assert out == want and re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", out)
+
+
+@pytest.mark.parametrize("raw", ["", "abc", "nan", "inf", "-1", "0"])
+def test_bad_rate_settings_fall_back_to_the_default(monkeypatch, raw):
+    monkeypatch.setenv("KITE_TEST_RATE", raw)
+    assert spacetime._env_float("KITE_TEST_RATE", 5.0) == 5.0
+
+
+def test_a_full_queue_drops_new_events_instead_of_blocking(monkeypatch):
+    """The earpiece's hot path calls publish(); with SpacetimeDB unreachable the queue fills,
+    and publish must keep returning at once (counted as dropped), never wait."""
+    monkeypatch.setattr(spacetime, "QUEUE_MAX", 5)
+    b = SpacetimeBridge("http://127.0.0.1:9", DB, "earpiece", lambda *_: None, start=False)
+    for i in range(20):
+        b.publish({"type": "say", "text": f"line {i}"})
+    assert b.stats["dropped"] == 15 and b.stats["backlog"] == 5
+
+
 def test_huge_payloads_are_trimmed_to_fit_keeping_the_nearest_objects(fake, make):
     objs = [{"id": str(i), "kind": "person", "bearing": 0.0, "distance": 100.0 - i * 0.04, "note": "x" * 40}
             for i in range(2000)]
