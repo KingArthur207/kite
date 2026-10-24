@@ -143,7 +143,7 @@ class Transport:
         # port 0 = any free port (tests, parallel runs): report the ones the OS picked
         self.udp_port = udp.get_extra_info("sockname")[1]
         self.ws_port = srv.sockets[0].getsockname()[1]
-        loop.create_task(self._state_pump())
+        self._pump = loop.create_task(self._state_pump())    # held: the loop keeps only a weak reference
         self.log(f"[net] listening: udp://{self.host}:{self.udp_port}  ws://{self.host}:{self.ws_port}")
 
     def _check_origin(self, connection, request):
