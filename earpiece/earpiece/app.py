@@ -221,8 +221,10 @@ class Earpiece:
 
     # ================================================================== inbound events
     def handle(self, msg: Msg) -> None:
-        if self.bridges and msg.type != "scene_image":     # raw JPEG stays local; its description
-            self._mirror(msg)                                # is mirrored as a `scene` event instead
+        # caregiver rows are already in Spacetime; a raw JPEG stays local (its description is
+        # mirrored as a `scene` event instead)
+        if self.bridges and msg.source != "caregiver" and msg.type != "scene_image":
+            self._mirror(msg)
         now = time.monotonic()
         t = msg.type
         if t in ("obstacles", "obstacle"):

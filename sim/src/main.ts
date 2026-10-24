@@ -5,6 +5,7 @@ import {
 } from "./config";
 import { buildWorld } from "./world";
 import { reconnectingSocket } from "./net";
+import { startMetrics } from "./metrics";
 
 const world = buildWorld();
 const { scene } = world;
@@ -16,6 +17,7 @@ const body = new THREE.Mesh(
   new THREE.MeshLambertMaterial({ color: 0x4a6fa5 }),
 );
 scene.add(body);
+const metrics = startMetrics({ walker, scene, solids: world.solids }); // null unless ?metrics=1
 
 const aspect = CAM_W / CAM_H;
 const droneCam = new THREE.PerspectiveCamera(VFOV_DEG, aspect, 0.05, 500);
@@ -73,8 +75,9 @@ function drawScreen() {
 }
 
 // --- sockets
-const relay = reconnectingSocket(RELAY_URL, true);
-const ear = reconnectingSocket(EARPIECE_URL);
+// Blind/oracle metrics stay offline so they never feed a shared earpiece or detector.
+const relay = reconnectingSocket(metrics?.offline ? "" : RELAY_URL, true);
+const ear = reconnectingSocket(metrics?.offline ? "" : EARPIECE_URL);
 
 // Frames: alternate cameras so each gets FRAME_FPS. Wire format: 1 byte camera id + JPEG.
 let nextCam = 0;
@@ -176,12 +179,12 @@ let last = performance.now();
 function frame(now: number) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  world.update(dt);
-  step(dt);
+  if (metrics) metrics.step(dt);
+  else { world.update(dt); step(dt); }
   placeCameras();
   view.classList.toggle("hidden", black);
   if (!black) drawScreen();
-  drawHud();
+  if (metrics) hud.textContent = metrics.hud(); else drawHud();
   requestAnimationFrame(frame);
 }
 placeCameras();

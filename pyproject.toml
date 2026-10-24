@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kite"
+version = "0.1.0"
+description = "Tello scout drone that guides a visually impaired walker"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python>=4.9",  # Tello UDP video via FFmpeg, webcam, preview windows
+    "av>=12",              # PyAV: the default Tello H.264 decoder
+    "djitellopy>=2.5",     # Tello commands + state stream (pip 2.5.0 has no tello.stop(): we send "stop" ourselves)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["kite*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+python_files = ["test_*.py"]  # tests/drone_test.py is a flight script, not a test module
+addopts = "-q"
+markers = ["slow: needs ffmpeg, streams real H.264 over local UDP"]
+filterwarnings = ["ignore::DeprecationWarning"]
