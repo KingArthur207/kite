@@ -1,0 +1,14 @@
+{
+  "scene": "car_turning",
+  "frames_with_objects": 72,
+  "kinds": [
+    "vehicle"
+  ],
+  "first_seen_s": 0.0,
+  "closest_m": 12.29,
+  "would_stop": false,
+  "kite_said": [
+    "7.4s Obstacle detection paused."
+  ],
+  "kite_should": "a car warning from the right before it enters the walker's path"
+}

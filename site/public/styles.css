@@ -467,3 +467,12 @@ mark { background: none; color: inherit; padding: 0 2px;
 .prose a { color: var(--indigo); }
 .prose code { font: 400 14.5px var(--mono); background: var(--sky); padding: 1px 5px; border-radius: 4px; color: var(--ink); }
 .page-head + .section.prose { padding-top: 48px; }
+
+/* Grok Imagine stills on the SpaceXAI card */
+.imagined { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 6px; }
+.imagined figure { margin: 0; background: #fff; border: 1.5px solid var(--ink); border-radius: 6px; padding: 6px 6px 4px; }
+.imagined figure:nth-child(odd) { transform: rotate(-0.8deg); }
+.imagined figure:nth-child(even) { transform: rotate(0.7deg); }
+.imagined img { width: 100%; height: auto; display: block; border-radius: 3px; }
+.imagined figcaption { font: 600 18px var(--hand); color: var(--verm-ink, #C8287A); text-align: center; padding-top: 2px; }
+@media (max-width: 700px) { .imagined { grid-template-columns: 1fr; } .imagined figure { transform: none !important; } }

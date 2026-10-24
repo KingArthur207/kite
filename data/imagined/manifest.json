@@ -1,0 +1,47 @@
+{
+  "cyclist": {
+    "image_model": "grok-imagine-image",
+    "video_model": "grok-imagine-video-1.5-lite",
+    "duration_s": 6,
+    "still_prompt": "Photo from a phone worn on a pedestrian's chest at 1.2 m height, looking straight ahead, slight wide-angle lens, realistic, natural colors, San Francisco, overcast morning. The walker stands at the curb of a zebra crosswalk. A cyclist is about to ride across the crosswalk from the left, about 4 meters ahead.",
+    "motion_prompt": "The cyclist rides across the crosswalk from left to right in front of the camera. The camera moves slowly forward toward the curb.",
+    "kite_should": "beeps from the left that speed up; 'Stop.' if the bike crosses the walking corridor",
+    "generated": "2026-10-24T04:35:02-0700"
+  },
+  "car_turning": {
+    "image_model": "grok-imagine-image",
+    "video_model": "grok-imagine-video-1.5-lite",
+    "duration_s": 6,
+    "still_prompt": "Photo from a phone worn on a pedestrian's chest at 1.2 m height, looking straight ahead, slight wide-angle lens, realistic, natural colors, San Francisco, overcast morning. The walker is on the curb at a crosswalk. A silver sedan on the right is starting a right turn into the crosswalk, about 6 meters away.",
+    "motion_prompt": "The car turns right through the crosswalk, crossing in front of the camera. The camera stays still at the curb.",
+    "kite_should": "a car warning from the right before it enters the walker's path",
+    "generated": "2026-10-24T04:45:10-0700"
+  },
+  "doorway": {
+    "image_model": "grok-imagine-image",
+    "video_model": "grok-imagine-video-1.5-lite",
+    "duration_s": 6,
+    "still_prompt": "Photo from a phone worn on a pedestrian's chest at 1.2 m height, looking straight ahead, slight wide-angle lens, realistic, natural colors, San Francisco, overcast morning. A narrow sidewalk beside shop fronts. A man is stepping out of a shop doorway on the right, about 3 meters ahead, into the walker's path.",
+    "motion_prompt": "The man walks out of the doorway and steps into the middle of the sidewalk, toward the camera. The camera walks slowly forward.",
+    "kite_should": "person beeps from the right, then 'Stop.' when he is close and in the corridor",
+    "generated": "2026-10-24T04:45:36-0700"
+  },
+  "oncoming": {
+    "image_model": "grok-imagine-image",
+    "video_model": "grok-imagine-video-1.5-lite",
+    "duration_s": 6,
+    "still_prompt": "Photo from a phone worn on a pedestrian's chest at 1.2 m height, looking straight ahead, slight wide-angle lens, realistic, natural colors, San Francisco, overcast morning. A busy sidewalk. A woman looking at her phone is walking straight toward the camera, about 7 meters ahead.",
+    "motion_prompt": "The woman keeps walking straight at the camera while looking at her phone. The camera walks forward toward her.",
+    "kite_should": "beeps from ahead that speed up as she closes in, then 'Stop.'",
+    "generated": "2026-10-24T04:46:00-0700"
+  },
+  "scooter": {
+    "image_model": "grok-imagine-image",
+    "video_model": "grok-imagine-video-1.5-lite",
+    "duration_s": 6,
+    "still_prompt": "Photo from a phone worn on a pedestrian's chest at 1.2 m height, looking straight ahead, slight wide-angle lens, realistic, natural colors, San Francisco, overcast morning. A sidewalk with an electric rental scooter lying across it, about 3 meters ahead, partly blocking the path.",
+    "motion_prompt": "The camera walks slowly forward along the sidewalk toward the scooter lying on the ground.",
+    "kite_should": "a low obstacle ahead; the chest camera's job, the drone can't see it",
+    "generated": "2026-10-24T04:46:22-0700"
+  }
+}
