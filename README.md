@@ -31,7 +31,7 @@ What is real and what is simulated, as of this commit:
 | Sim street corner | Arrow-key walker, virtual drone and chest cameras matched to the Tello, collision counter. The world is a placeholder of boxes and capsules today; an OpenStreetMap model of the shoot corner (Moss St at Howard, SoMa) with realistic car and pedestrian models is in progress |
 | Hazards in the sim | Will come from the real detector running on sim frames. Until perception lands, the only sim hazard is a debug key (`H`) |
 | Perception (`streetseg`) | Coming; Rex is moving it into this repo |
-| Drone layer (`kite/`) | Written and tested, on the `feat/drone-layer` branch, not yet on `main` |
+| Drone layer (`kite/`) and recorder (`python -m kite.record`) | Real and tested without a drone (dry run against video files); the recorder's live Tello path is untried until the shoot |
 | Real Tello footage | From the Saturday 7 AM shoot on the corner [TODO: confirm the take worked, and whether it was piloted or simple follow]. The drone does not fly at the venue (drones are banned there) |
 | Collision numbers (sim metrics mode) | The harness runs. Scripted blind walks hit 4.6 obstacles per walk (seed 1, 20 walks). The number with Kite needs perception running and hasn't been measured |
 
@@ -51,7 +51,7 @@ What is real and what is simulated, as of this commit:
 | `data/sample_track.jsonl` | A moving walker track with hazards and a beacon, for testing the dashboard map |
 | `tests/drone_test.py` | Tello latency and ground-check script |
 | `docs/` | Team spec (`docs/superpowers/specs/`), Devpost draft, demo runbook |
-| `kite/` | Drone layer. Coming to `main` from `feat/drone-layer` |
+| `kite/` | Drone layer: Tello control, safety governor, frame sources, and the `kite.record` recorder. See "Drone and recording" below |
 | `streetseg/` | Street segmentation and obstacle detection. Coming |
 
 ## Quick start on one laptop
@@ -146,6 +146,68 @@ The module in `dashboard/spacetimedb/src/index.ts` has two tables. `event` keeps
 Python writes with plain HTTP calls to the `push` reducer (`earpiece/earpiece/spacetime.py`, no SDK), on a background queue that drops events instead of blocking the audio loop. High-rate `obstacles` and `heartbeat` events are throttled to two per second per source. The earpiece mirrors every event it receives when run with `--spacetime`, and `scripts/replay.py --spacetime` does the same. The dashboard subscribes over WebSocket and draws the walker on a live map (Leaflet over OpenStreetMap) with a heading arrow, trail, the active hazards placed around the walker by bearing and distance, and the next waypoint. Beside the map it lists hazards, the last spoken line, each device with how long since it last sent, and a live feed. It shows no camera video. Its "Clear run" button calls `clear` before a new run.
 
 Offline, the same module runs on a local server: `scripts/offline.sh` starts it, publishes the module and points the dashboard at it. See `docs/demo-runbook.md`.
+
+## Drone and recording
+
+Setup, once per laptop, on normal internet (the Tello's Wi-Fi has none), from the repo root:
+
+```bash
+uv venv --python 3.12 --seed .venv      # or: python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+python -m pytest -m "not slow"          # ~15 s, no drone needed
+python -m pytest                        # + the H.264-over-UDP reader tests (needs ffmpeg, ~75 s more)
+```
+
+### Drone layer (`kite/`)
+
+| Module | What it does |
+|---|---|
+| `drone/tello.py` | `TelloDrone`: djitellopy for commands + state. Discrete moves are non-blocking (`busy()` / `last_result()`), late replies after `stop` are discarded, `streamon` is re-sent until video arrives, `dry_run=True` never sends motion. |
+| `drone/safety.py` | `SafetyGovernor`: wraps any drone; clamps rc, altitude ceiling/floor, lands on low battery or flight time, hovers on stale video/telemetry. Call `check()` every loop. |
+| `sources/` | Newest-frame video readers: `TelloVideoSource` (PyAV or the team's OpenCV `VideoStream`, auto-reconnect), `WebcamSource`, file replay. |
+| `config.py` | `DroneCfg` / `SafetyCfg` defaults. |
+
+```python
+from kite.config import Config
+from kite.drone import SafetyGovernor, make_tello
+
+drone = SafetyGovernor(make_tello(cfg := Config(), dry_run=True), cfg.safety)
+drone.connect()                          # join the TELLO-xxxxxx Wi-Fi first
+frames = drone.frame_source()
+```
+
+### Before flying
+
+- Latency / stream check: `python tests/drone_test.py --ground --preview`, then the flight version (3 x 3 m clear,
+  prop guards, battery >= 30 %). Ctrl+C lands.
+- Only one program can hold the Tello ports: `lsof -nP -iUDP:8889 -iUDP:8890 -iUDP:11111` should print nothing.
+- macOS: allow incoming connections for Python, and Local Network access for your terminal app
+  (System Settings > Privacy & Security) if sends fail with "No route to host".
+
+### Recording
+
+`python -m kite.record` saves the video and every Tello state packet, both stamped with one monotonic clock. Only one
+program can hold the Tello ports, so the recorder is also the flight controller: `--fly` adds keyboard control through
+`SafetyGovernor` in the same process. Without `--fly` the drone is opened in dry run and never gets a motion command.
+
+```bash
+python -m kite.record --source clip.mp4 --out recordings               # dry run on a file: no drone, no telemetry
+python -m kite.record --source tello --out recordings                  # record only, drone on the ground / in hand
+python -m kite.record --source tello --out recordings --fly --dry-run  # rehearse the keys: motion is logged, not sent
+python -m kite.record --source tello --out recordings --fly            # the shoot
+```
+
+- Keys (`--fly`, typed in the recorder's terminal, one at a time): `t` takeoff, `l` land, `space` hover, `w`/`s`
+  forward/back, `a`/`d` left/right, `r`/`f` up/down, `q`/`e` turn. A move key drives its stick at `--speed` (30)
+  for `--pulse` (1 s); hold it (key repeat) to keep going, let go and the drone stops. `!!` = emergency (motors off).
+- **Ctrl+C lands and stops** (it keeps recording until the drone is down). Takeoff is refused without live video or
+  at <= 20 % battery; the governor lands by itself at 20 % or after 7 min.
+- The terminal prints fps, battery and height every second.
+- Output: `<out>/<YYYYmmdd_HHMMSS>_<source>/` with `video.mkv` (MJPG, playable after a crash), `frames.csv`
+  (frame index -> `t_mono`), `telemetry.jsonl` (raw state + `t_mono`), `events.jsonl`, `meta.json`. Align video and
+  telemetry on `t_mono`. QuickTime can't open `.mkv`: VLC can, or `ffmpeg -i video.mkv -pix_fmt yuv420p video.mp4`.
+- About 0.7 GB per 5 minutes. Don't commit `recordings/`.
 
 ## Known limitations
 

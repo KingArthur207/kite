@@ -13,13 +13,13 @@ Measures (each reported as mean ± std [min … max] over repeats):
       video delay  video - lag   (how much later the camera shows what the drone already did)
   forward/back N cm   discrete moves: time to 'ok', lag, speed-up, video
 
-Install:  pip install djitellopy opencv-python numpy
-Run:      python main.py                        # full flight (~2 min)
-          python main.py --preview              # same, with a live camera window
-          python main.py --ground --preview     # no takeoff: command delay, stream rates, camera check
-          python main.py --analyze results/tello_latency_<stamp>.json
+Install:  see README.md (the venv with `pip install -e ".[dev]"` provides djitellopy, OpenCV and kite)
+Run:      python tests/drone_test.py                        # full flight (~2 min)
+          python tests/drone_test.py --preview              # same, with a live camera window
+          python tests/drone_test.py --ground --preview     # no takeoff: command delay, stream rates, camera check
+          python tests/drone_test.py --analyze results/tello_latency_<stamp>.json
 
-Video goes through video_stream.VideoStream (OpenCV/FFmpeg, nobuffer + low_delay, grab-drain with
+Video goes through kite.sources.video_stream.VideoStream (OpenCV/FFmpeg, nobuffer + low_delay, grab-drain with
 decode capped at --video-fps) rather than djitellopy's PyAV reader, so latency does not grow over
 the flight. The recorder and the preview window share that one reader.
 Safety:   3 x 3 m clear space, prop guards, battery >= 30 %. Ctrl+C lands.
@@ -324,6 +324,8 @@ def run(args):
     import cv2  # noqa: F401  - fail here, not silently inside the video thread
     from djitellopy import Tello
 
+    from kite.sources.video_stream import VideoStream  # likewise: a missing install must not quietly drop the video
+
     Tello.LOGGER.setLevel(logging.WARNING)  # otherwise every rc packet is printed
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     rec = {"meta": {"stamp": stamp, "args": vars(args)}, "state": [], "video": [], "events": []}
@@ -345,7 +347,6 @@ def run(args):
     tello.streamon()
     stream = None
     try:
-        from video_stream import VideoStream
         stream = VideoStream(tello.get_udp_video_address(), fps=args.video_fps).start()
         threading.Thread(target=log_video, args=(stream, rec, stop), daemon=True).start()
         if args.preview:
