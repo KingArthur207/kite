@@ -80,6 +80,12 @@ def check_invariants(m: events.Msg) -> None:
         assert v is None or (math.isfinite(v) and v >= 0)
     if m.type == "control":
         assert m.action in events.CONTROL_ACTIONS
+    if m.type in ("position", "memory"):
+        lat, lng = m.data.get("lat"), m.data.get("lng")
+        assert lat is None or -90 <= lat <= 90
+        assert lng is None or -180 <= lng <= 180
+    if m.type == "position" and m.data.get("heading") is not None:
+        assert 0 <= m.data["heading"] < 360
     for v in m.data.values():
         if isinstance(v, float):
             assert math.isfinite(v)
@@ -181,6 +187,13 @@ def test_seq_is_a_bounded_int_or_none(seq, want):
 def test_oversized_text_frames_are_rejected_before_json():
     with pytest.raises(BadMessage, match="too large"):
         parse('{"type":"say","text":"' + "a" * (300 * 1024) + '"}')
+
+
+def test_out_of_range_coordinates_are_unknown_not_clamped():
+    m = parse({"type": "position", "lat": 123.0, "lng": -500, "heading": -90})
+    assert m.data["lat"] is None and m.data["lng"] is None and m.data["heading"] == 270.0
+    m = parse({"type": "memory", "kind": "place", "text": "x", "lat": 37.8, "lng": 181})
+    assert m.data["lat"] == 37.8 and m.data["lng"] is None
 
 
 @FUZZ

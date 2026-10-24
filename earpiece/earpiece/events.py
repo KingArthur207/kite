@@ -225,7 +225,10 @@ def parse(raw: bytes | str | dict) -> Msg:
     if t == "scene":
         return Msg("scene", src, seq, text=_text(d, required=True))
     if t == "position":
-        data = {k: _num(d, k) for k in ("lat", "lng", "heading", "accuracy")}
+        data = {"lat": _coord(d, "lat", 90.0), "lng": _coord(d, "lng", 180.0),
+                "heading": _num(d, "heading"), "accuracy": _num(d, "accuracy", lo=0.0, hi=1e5)}
+        if data["heading"] is not None:
+            data["heading"] = data["heading"] % 360.0
         data["place"] = _text(d, "place")
         return Msg("position", src, seq, data=data)
     if t == "status":
@@ -252,7 +255,7 @@ def parse(raw: bytes | str | dict) -> Msg:
         kind = str(d.get("kind", "note")).lower()
         if kind not in ("place", "hazard", "note"):
             raise BadMessage("memory kind must be place, hazard or note")
-        data = {k: _num(d, k) for k in ("lat", "lng")}
+        data = {"lat": _coord(d, "lat", 90.0), "lng": _coord(d, "lng", 180.0)}
         data["name"] = _text(d, "name")
         data["address"] = _text(d, "address")
         return Msg("memory", src, seq, kind=kind, text=_text(d, required=True), data=data)
@@ -262,6 +265,13 @@ def parse(raw: bytes | str | dict) -> Msg:
             raise BadMessage(f"unknown control action {a!r}")
         return Msg("control", src, seq, action=a)
     raise BadMessage(f"unknown type {t!r}")
+
+
+def _coord(d: dict, name: str, limit: float) -> float | None:
+    """A latitude (limit 90) or longitude (limit 180). Out of range means unknown, never
+    clamped: a fix pinned to the pole would route the walker somewhere wrong."""
+    v = _num(d, name)
+    return v if v is not None and -limit <= v <= limit else None
 
 
 def _seq(v: Any) -> int | None:
