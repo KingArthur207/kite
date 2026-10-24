@@ -294,7 +294,7 @@ h1 em { color: var(--indigo); font-weight: 400; }
 .btn.primary:hover { box-shadow: 5px 5px 0 var(--verm); }
 
 /* ------------------------------------------------------------ hero sketch */
-.hero.split-hero { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); }
+@media (min-width: 901px) { .hero.split-hero { grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr); } }
 .sketch { margin: 0; position: relative; }
 .sketch svg { width: 100%; height: auto; display: block; overflow: hidden; }
 .sketch .pen { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
@@ -395,3 +395,29 @@ mark { background: none; color: inherit; padding: 0 2px;
 .badge { text-decoration: none; color: var(--ink); font: 600 13.5px var(--sans); letter-spacing: 0; padding: 7px 12px; gap: 7px; }
 .badge::before { display: none; }
 .badge:hover { background: var(--ink); color: var(--paper); }
+
+/* ------------------------------------------------------------ phones and the home page */
+/* phones keep the page links: they wrap onto a second row under the brand */
+@media (max-width: 760px) {
+  .nav { flex-wrap: wrap; row-gap: 0; padding: 6px 14px 4px; }
+  .links { display: flex; order: 3; width: 100%; margin: 0 -8px; justify-content: space-between; }
+  .links a { padding: 8px 8px 10px; font-size: 13px; }
+}
+@media (max-width: 400px) { .links a::before { content: none; } }
+/* the hero lines up with the sections below, and the walk player starts right under it */
+.hero.split-hero { max-width: calc(var(--wrap) + 40px); }
+.split-hero h1 { font-size: clamp(44px, 4.9vw, 70px); }
+.split-hero .for { font-size: 16px; }
+@media (max-width: 900px) { .split-hero h1 { font-size: clamp(44px, 8vw, 72px); } }
+#hear { padding-top: 40px; }
+/* the walk player's speaker label, handwritten instead of caps */
+.caption .who { font: 600 20px/1.1 var(--hand); letter-spacing: 0; color: var(--indigo); margin-bottom: 4px; }
+@media (max-width: 600px) {
+  .player { padding: 22px 18px; }
+  .player h2 { font-size: 24px; line-height: 1.2; }
+  .play { width: 58px; height: 58px; }
+  .play svg { width: 24px; height: 24px; }
+  .caption { font-size: 19px; }
+  .kicker.center { font-size: 23px; }
+  .kicker.center .arrow { display: none; }
+}
