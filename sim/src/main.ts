@@ -10,10 +10,10 @@ import { startMetrics } from "./metrics";
 import { buildTilesWorld, TILES_KEY } from "./tilesWorld";
 import { clampToFence } from "./fence";
 
-// ?world=tiles (default when VITE_GOOGLE_MAPS_API_KEY is set): Google Photorealistic 3D Tiles over the
+// ?world=tiles (needs VITE_GOOGLE_MAPS_API_KEY): Google Photorealistic 3D Tiles over the
 // Moss colliders and traffic, geofenced to Moss St and the Howard corner (Google's permission, see
 // tilesWorld.ts and docs/google-permission.md). By default the capture cameras render OSM Moss (YOLO recall on tile
-// frames is far lower) and tiles show on screen only; ?detector=tiles puts tiles in capture too. ?world=moss: Moss St from OSM boxes
+// frames is far lower) and tiles show on screen only; ?detector=tiles puts tiles in capture too. ?world=moss (default): Moss St from OSM with textured facades
 // everywhere. ?world=placeholder: the old box world.
 // Metrics mode always runs on OSM Moss, with the street emptied of traffic (it scripts its own).
 // ?relay= and ?ear= override the socket URLs (empty = offline).
@@ -43,7 +43,7 @@ const capture = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer
 capture.setPixelRatio(1);
 capture.setSize(CAM_W, CAM_H, false);
 
-let worldName = metricsOn ? "moss" : query.get("world") ?? "tiles";
+let worldName = metricsOn ? "moss" : query.get("world") ?? "moss";   // textured OSM street by default; ?world=tiles for Google 3D (looks crumpled at street level)
 if (worldName === "tiles" && !TILES_KEY) {
   console.warn("[sim] no VITE_GOOGLE_MAPS_API_KEY (run sh sim/tiles_env.sh); using ?world=moss");
   worldName = "moss";
