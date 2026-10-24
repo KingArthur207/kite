@@ -144,7 +144,7 @@ Live cost is one Grok session with two short turns, plus at most one new Cartesi
 
 ## Memory (Moss)
 
-Kite remembers the wearer's places, hazards and notes in a Moss index (`kite-memory`), loaded into Moss's local runtime so a lookup runs in-process on every utterance. Measured on a loaded laptop: a live Moss query takes 5.4 ms at the median and 12.2 ms at the 95th percentile; the offline mirror answers in about 0.1 ms with 500 memories.
+Kite remembers the wearer's places, hazards and notes in a Moss index (`kite-memory`), loaded into Moss's local runtime so a lookup runs in-process on every utterance. Measured on a busy laptop over four runs of 100 queries: a live Moss query took 4 to 9 ms at the median and 12 to 15 ms at the 95th percentile, with one run under heavy CPU contention reaching 100 ms at the tail (the query embeds the text on the CPU). The offline mirror answers in under 0.2 ms at the median with 500 memories.
 
 - **Finding places.** "My usual coffee place", "the cafe", "the bench by the park" and "where I fell last week" all find the right memory: plurals and common synonyms are folded together, rare words count for more, and the main noun counts for more than the words after it. A destination always has to share a real word with what was said, so Kite never invents somewhere to walk to.
 - **Asking, not guessing.** When two saved places fit equally well, Kite asks ("Which one: the bus stop bench, or the park bench?") and understands short answers: "the second one", "the park one", "never mind".
