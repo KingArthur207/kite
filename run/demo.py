@@ -90,12 +90,15 @@ def _vendor_path() -> None:
 def load_perception(device: str = ""):
     """YOLO26n on its own. ``load_segmentation`` adds SegFormer-B0 when it is turned on."""
     _vendor_path()
+    from streetseg.fuse import FuseConfig
     from streetseg.models import YoloDetector
     from streetseg.pipeline import Perception, parallel_for_device
 
     detector = YoloDetector("yolo26n.pt", imgsz=640, device=device or None, track=True)
     detector.load()
-    return Perception(None, detector, parallel=parallel_for_device(device), segment=False, obstacles=True)
+    # The webcam is on the walker's chest and never sees them: every person is someone in the way.
+    cfg = FuseConfig(exclude_wearer=False)
+    return Perception(None, detector, cfg=cfg, parallel=parallel_for_device(device), segment=False, obstacles=True)
 
 
 def load_segmentation(device: str = ""):

@@ -8,6 +8,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "run"))
 
+import numpy as np  # noqa: E402
+
 import demo  # noqa: E402
 from demo import Demo, camera_order, choose_camera, console_lines, dshow_video_names, meter_for, switch_word  # noqa: E402
 
@@ -129,3 +131,30 @@ def test_raw_frames_come_back_when_guidance_is_off():
     assert demo_.last_frame.image == "raw"
     demo_._publish("late paint", True)
     assert demo_.last_frame.image == "raw"
+
+
+def test_the_chest_webcam_goes_around_a_person_close_in_front(monkeypatch):
+    demo._vendor_path()
+    import streetseg.models
+    from streetseg.types import Box
+
+    class FakeDetector:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def load(self):
+            return self
+
+        def predict(self, frame):  # someone right in front, cut off by the bottom edge
+            return [Box("person", 0.9, (300.0, 100.0, 580.0, 480.0))]
+
+    monkeypatch.setattr(streetseg.models, "YoloDetector", FakeDetector)
+    perception = demo.load_perception("")
+    from streetseg.camera import Pose
+
+    assert perception.cfg.exclude_wearer is False
+    frame = np.zeros((480, 640, 3), np.uint8)
+    events = perception.process(frame, demo.camera_for(frame.shape, 78.0), Pose(demo.WEBCAM_HEIGHT_M, demo.WEBCAM_PITCH_DEG))
+    assert perception.cue.reason == "obstacle"
+    assert perception.cue.speech in ("Bear left to go around the person.", "Bear right to go around the person.")
+    assert any(e.kind == "say" for e in events)
