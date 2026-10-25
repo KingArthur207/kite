@@ -10,7 +10,7 @@ Flow (FollowMission):
     FOLLOW     FollowBehind below. Person unseen for 20 s (and following for 20 s) -> REACQUIRE
     REACQUIRE  go to LOOK height (just below head height: from follow height a person closer than ~1.5 m is out of the
                bottom of the frame), then turn 30 deg at a time (0.8 s look after each, 13 turns at most) until the
-               person is seen -> FOLLOW (it climbs back up); not found -> HOLD
+               person is seen -> CLIMB (one discrete up back to altitude_m) -> FOLLOW; not found -> HOLD
     HOLD       hover until told "follow" (-> REACQUIRE)
 Every discrete command resets the tracks afterwards: boxes jump, the lock starts afresh.
 
@@ -72,21 +72,22 @@ RUNNING, SUCCESS, FAILURE = "running", "success", "failure"
 # ------------------------------------------------------------------ settings
 @dataclass
 class BehindCfg:
-    # Geometry note (the Tello camera is fixed, +-21 deg vertical view): at 2.0 m high and 1.0 m behind only the
-    # person's HEAD is in frame (shoulders are 29 deg below the camera), so facing / orbit-behind cannot work and
-    # detection relies on YOLO seeing a head from above. Shoulders come into view from ~1.6 m behind.
-    distance_m: float = 1.0  # horizontal distance behind the person
-    altitude_m: float = 2.0  # hover height above the floor: >= person height + 0.2 m
+    # The defaults are the settings the follow flew well with on the real Tello (on-site config, step 4).
+    # Geometry (the Tello camera is fixed, +-21 deg vertical view): at 1.8 m behind the head and shoulders are in
+    # frame (shoulders come into view from ~1.6 m behind); at 1.0 m only the head is.
+    distance_m: float = 1.8  # horizontal distance behind the person
+    altitude_m: float = 1.9  # hover height above the floor: >= person height + 0.2 m
     yaw_gain: float = 1.2  # rc yaw per degree of bearing error
     yaw_deadband_deg: float = 4.0
     dist_gain: float = 40.0  # rc forward per metre of distance error
     dist_deadband_m: float = 0.1
     alt_gain: float = 60.0  # rc up per metre of altitude error
     alt_deadband_m: float = 0.05
-    orbit_gain: float = 0.5  # rc lateral per degree of facing error (to get behind the person)
+    orbit_gain: float = 0.0  # rc lateral per degree of facing error (to get behind the person); 0 = off, as flown
+    # (it was switched off on site while diagnosing a drift to the right; 0.5 turns it on)
     orbit_deadband_deg: float = 25.0
     max_rc_yaw: int = 40
-    max_rc_forward: int = 50  # ~0.5 m/s (the governor's max_rc also applies)
+    max_rc_forward: int = 35  # ~0.35 m/s: keeps up with a slow walk
     max_rc_lateral: int = 30
     max_rc_up: int = 30
     max_rc_backoff: int = 50  # backing away from a person who comes closer (still clamped by safety.max_rc)
@@ -95,11 +96,13 @@ class BehindCfg:
     max_box_width_frac: float = 0.75  # person box wider than this fraction of the frame: back off
     search_yaw_rc: int = 20  # yaw speed when the person is lost
     # person
-    person_height_m: float = 1.75  # SET THIS to the wearer's real height (it sets the follow distance)
-    person_height_sd_m: float = 0.05  # 0.02 once person_height_m is measured
+    person_height_m: float = 1.70  # SET THIS to the wearer's real height WITH SHOES, to +-2 cm (it sets the distance)
+    person_height_sd_m: float = 0.02  # 0.02 once person_height_m is measured (0.05 for an unknown person)
     shoulder_width_m: float = 0.40
     body_width_m: float = 0.48  # bbox width of a person seen from behind
-    pitch_sign: int = 0  # telemetry pitch sign so that nose-up is positive; 0 = do not use pitch
+    pitch_sign: int = 1  # telemetry pitch sign so that nose-up is positive (the Tello reports forward tilt as
+    # NEGATIVE pitch: 1); 0 = do not use pitch
+    camera_fx: float = 1077.0  # px at 960x720, fx = fy: median of calibrate_camera at 1.5, 2 and 3 m on the Tello
     # tracking
     iou_match: float = 0.2
     center_match_frac: float = 0.15
@@ -1015,15 +1018,19 @@ class Shown:
 
 class FollowMission:
     """CLIMB -> FOLLOW -> (lost 20 s) REACQUIRE -> FOLLOW | HOLD. begin() right after takeoff; sense() then step()
-    every loop while flying; stop() before landing. log(text, kind) gets every state change and each change of what
-    the behaviour is doing."""
+    every loop while flying; stop() before landing. Operator commands: follow_me(), cancel(), hold(), resume().
+    log(text, kind) gets every state change and each change of what the behaviour is doing; announce(text) is what
+    the drone says to the walker (say(text) when given, e.g. speech)."""
 
     def __init__(self, drone, perception: Perception, cfg: BehindCfg, log: Callable[[str, str], None] | None = None,
-                 yaw_source=None):
+                 yaw_source=None, say: Callable[[str], None] | None = None):
         cfg.check()
         self.cfg = cfg
         self.ctx = Ctx(drone, perception)
         self.log = log or (lambda text, kind="info": None)
+        self.say = say
+        self.said: list[tuple[float, str]] = []
+        self._resume_state: str | None = None
         self.yaw_source = yaw_source
         self.state = "IDLE"
         self.state_t = 0.0
@@ -1058,15 +1065,51 @@ class FollowMission:
         """Airborne: climb to the follow altitude, then follow."""
         self._go("CLIMB", "airborne")
 
-    def reacquire(self, why: str = "asked to follow") -> bool:
-        """'follow': look for the person again, from HOLD, or from FOLLOW once the person has been unseen for 2 s.
-        False when it does not apply (climbing, already searching, or the person is in view)."""
+    def announce(self, text: str) -> None:
+        self.said.append((self.ctx.now, text))
+        self.log(f"says: {text}", "recv")
+        if self.say is not None:
+            try:
+                self.say(text)
+            except Exception:  # speech must never stop the flight
+                pass
+
+    def follow_me(self) -> bool:
+        """'follow me': look for the person again, from HOLD, or from FOLLOW once they have been unseen for 2 s.
+        False when it does not apply (climbing, searching, or the person is in view)."""
         res = self.ctx.res
         lost = res is None or res.person_unseen_s > 2.0
         if not (self.state == "HOLD" or (self.state == "FOLLOW" and lost)):
             return False
         self.ctx.drone.stop()
-        self._go("REACQUIRE", why)
+        self.announce("Coming back to you." if self.state != "FOLLOW" else "Looking for you.")
+        self._go("REACQUIRE", "asked to follow")
+        return True
+
+    def cancel(self) -> bool:
+        """'stop' / 'cancel': from HOLD, stop and look for the person again. Ignored in FOLLOW."""
+        if self.state != "HOLD":
+            return False
+        self.ctx.drone.stop()
+        self.announce("Okay, stopping. Coming back to you.")
+        self._go("REACQUIRE", "cancelled")
+        return True
+
+    def hold(self) -> bool:
+        """Operator pause: stop whatever runs and hover; resume() continues with a fresh search. Ignored while
+        climbing (a stop there would confuse the drone's state) and when already holding."""
+        if self.state not in ("FOLLOW", "REACQUIRE"):
+            return False
+        self._resume_state = self.state
+        self.ctx.drone.stop()
+        self._go("HOLD", "operator pause")
+        return True
+
+    def resume(self) -> bool:
+        """After hold(): turn until the person is seen (at the current height), then follow."""
+        if self.state != "HOLD":
+            return False
+        self._go("REACQUIRE", "resume", ReacquirePerson())
         return True
 
     def stop(self) -> None:
@@ -1143,9 +1186,17 @@ class FollowMission:
             return
         r = self.child.step(ctx)
         if r == SUCCESS:
-            self._follow("person found")
+            alt = ctx.altitude
+            if alt is not None and c.altitude_m - alt >= 0.2:
+                # back up to the follow height in one move, as after takeoff: holding it by rc from look height
+                # settles a few cm short (rc under 1 is 0), too close to head height for the head-angle range
+                self._go("CLIMB", "person found: climbing back to the follow height")
+            else:
+                self._follow("person found")
         elif r == FAILURE:
-            self._go("HOLD", "person not found: hovering. Type follow once you are in front of the drone, or land")
+            self.announce("I can't see you. Say 'follow me' when you're in front of me, or 'land'.")
+            self._go("HOLD", "person not found")
+            self._resume_state = "FOLLOW"
 
     # -- the camera overlay
     def snapshot(self) -> Shown | None:

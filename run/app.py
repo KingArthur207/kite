@@ -7,14 +7,16 @@
 Console commands (type in the window, Enter):
     takeoff   take off, climb to --height, then follow the person in front of the drone
     land      stop following and land
-    follow    look for the person again (after "person not found")
+    follow    look for the person again (while holding, or once they have been out of view for 2 s)
+    hold      pause: stop and hover          resume   turn until the person is seen, then follow
+    stop      while holding: look for the person again
     e         EMERGENCY: motors off at once (the drone drops if it is in the air), then the app quits
     status    battery, height, video and follow state
     quit      land, then close (closing the window does the same)
 
-Stand 1-2 m in front of the drone facing away from it before takeoff. It climbs to --height above the floor (default
---walker-height + 0.3), locks onto the largest person in view (you) and holds --behind behind you, reading the distance
-from the angle down to the top of your head (and your shoulders, from the pose model): give your real
+Stand about 2 m in front of the drone facing away from it before takeoff. It climbs to --height above the floor
+(default --walker-height + 0.2), locks onto the largest person in view (you) and holds --behind (default 1.8 m) behind
+you, reading the distance from the angle down to the top of your head, your height and your shoulders: give your real
 --walker-height. Lost for 20 s: it drops to just below head height and turns 30 deg at a time to find you. Safety: an open space, prop guards, a
 spotter. Everything flies through kite's SafetyGovernor (stick cap, 0.5-2.3 m altitude band, lands on low battery,
 hovers when video or telemetry stall).
@@ -58,11 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yaw", choices=("law", "fly", "pd"), default="law",
                    help="what steers yaw while following: law (turn toward the person, default), fly (the retrained "
                         "kite.fly brain, simulation-tested only) or pd")
-    p.add_argument("--walker-height", type=float, default=1.7, help="the walker's real height in m (default 1.7): "
-                   "the follow distance is read from it, 5 cm off is 10-20 %% distance error")
-    p.add_argument("--height", type=float, default=None, help="follow altitude above the takeoff point, m "
-                   "(default: walker height + 0.3, within the 2.3 m safety ceiling)")
-    p.add_argument("--behind", type=float, default=1.0, help="follow distance behind the person, m (default 1.0)")
+    p.add_argument("--walker-height", type=float, default=1.7, help="the walker's real height WITH SHOES in m, to "
+                   "+-2 cm (default 1.7): the follow distance is read from it, 5 cm off is 10-20 %% distance error")
+    p.add_argument("--height", type=float, default=None, help="follow altitude above the floor, m (default: walker "
+                   "height + 0.2, i.e. 1.9 m for 1.7 m)")
+    p.add_argument("--behind", type=float, default=1.8, help="follow distance behind the person, m (default 1.8)")
+    p.add_argument("--orbit", action="store_true", help="slide around behind the person when they turn (from the "
+                   "pose model's shoulders); off by default, as flown")
+    p.add_argument("--speak", action="store_true", help="also say the drone's announcements out loud (macOS say, "
+                   "Windows speech)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="video reader: pyav (default), opencv, raw, auto (raw on macOS)")
     p.add_argument("--weights", default=None, help="YOLO pose weights (default data/models/yolo11n-pose.pt)")
@@ -75,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
     if args.height is None:
-        args.height = min(round(args.walker_height + 0.3, 2), 2.2)
+        args.height = min(round(args.walker_height + 0.2, 2), 2.2)
     if not 0.8 <= args.height <= 2.2:
         print("--height must be 0.8-2.2 m (the safety governor holds 0.5-2.3 m)")
         return 2

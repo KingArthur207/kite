@@ -6,13 +6,15 @@ one mission step (kite.follow_behind.FollowMission), which sends the sticks or a
 
     idle --takeoff--> taking off --ok--> climbing --at follow height--> following
                                          searching (person lost 20 s: down to look height, turn 30 deg at a time)
-                                           --found--> following   --not found--> holding --follow--> searching
+                                           --found--> following   --not found--> holding --follow / stop--> searching
+    following / searching --hold--> holding --resume--> searching (turning at the current height)
     any --land--> landing --> landed
     e (emergency()) cuts the motors at once from the caller's thread; the app then quits.
 
 Following (kite/follow_behind.py): the largest person in view is locked; the drone holds --height above the floor,
-turns toward them, holds --behind behind them (moving toward them only when every range cue says it is safe), slides
-around behind them when they turn, and backs off when they come closer. Lost: hold, turn toward where they were.
+turns toward them, holds --behind behind them (moving toward them only when every range cue says it is safe) and backs
+off when they come closer (--orbit: also slides around behind them when they turn). Lost: hold, turn toward where they
+were. Operator: follow, hold, resume, stop (the console), and what the drone says goes to the console (--speak: aloud).
 """
 
 from __future__ import annotations
@@ -24,6 +26,24 @@ import time
 from dataclasses import dataclass
 
 TICK_S = 0.05  # 20 Hz control loop
+
+
+def speaker():
+    """say(text) without blocking the control loop: macOS `say`, else Windows SAPI via PowerShell, else nothing."""
+    import shutil
+    import subprocess
+    import sys
+
+    if sys.platform == "darwin" and shutil.which("say"):
+        return lambda text: subprocess.Popen(["say", text])
+    if sys.platform == "win32":
+        def win(text: str) -> None:
+            t = text.replace("'", "''")
+            subprocess.Popen(["powershell", "-NoProfile", "-Command",
+                              f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis."
+                              f"SpeechSynthesizer).Speak('{t}')"], creationflags=0x08000000)
+        return win
+    return None
 STATES = {"CLIMB": "climbing", "FOLLOW": "following", "REACQUIRE": "searching", "HOLD": "holding"}
 
 
@@ -95,11 +115,15 @@ class Pilot:
             return
         if cmd in ("e", "emergency"):
             self.emergency()
-        elif cmd in ("takeoff", "land", "follow", "status", "help", "quit"):
+        elif cmd in ("follow me", "come back"):
+            self._cmds.put("follow")
+        elif cmd == "cancel":
+            self._cmds.put("stop")
+        elif cmd in ("takeoff", "land", "follow", "stop", "hold", "resume", "status", "help", "quit"):
             self._cmds.put(cmd)
         else:
-            self.log(f"unknown command {text.strip()!r}: takeoff | land | follow | e (emergency) | status | quit",
-                     "warn")
+            self.log(f"unknown command {text.strip()!r}: takeoff | land | follow | stop | hold | resume | "
+                     "e (emergency) | status | quit", "warn")
 
     def emergency(self) -> None:
         """Motors off immediately, from the caller's thread: the drone falls if it is in the air."""
@@ -136,6 +160,7 @@ class Pilot:
         self.snap.state = state
 
     def _connect(self) -> bool:
+        from kite.camera import DEFAULT_PATH as CAMERA_FILE
         from kite.camera import load_camera
         from kite.config import Config, resolve_video_backend
         from kite.drone import SafetyGovernor, make_tello
@@ -151,7 +176,8 @@ class Pilot:
         if a.video_backend:
             cfg.drone.video_backend = resolve_video_backend(a.video_backend)
         bcfg = BehindCfg(distance_m=a.behind, altitude_m=a.height, person_height_m=a.walker_height,
-                         min_altitude_m=cfg.safety.min_altitude_m, max_altitude_m=cfg.safety.max_altitude_m)
+                         min_altitude_m=cfg.safety.min_altitude_m, max_altitude_m=cfg.safety.max_altitude_m,
+                         orbit_gain=0.5 if a.orbit else 0.0)
         try:
             bcfg.check()
         except ValueError as e:
@@ -186,11 +212,15 @@ class Pilot:
         except Exception as e:
             self.log(f"person detector failed to load: {e}", "error")
             return False
-        perception = Perception(bcfg, self.seen, CameraModel.from_camera(load_camera()))
-        self.follow = FollowMission(self.drone, perception, bcfg, log=self.log, yaw_source=yaw_source)
+        # a calibration saved by kite.camera wins; else the focal length measured on the Tello (BehindCfg.camera_fx)
+        cam = (CameraModel.from_camera(load_camera()) if CAMERA_FILE.is_file() else
+               CameraModel(960, 720, bcfg.camera_fx, bcfg.camera_fx, 480.0, 360.0))
+        perception = Perception(bcfg, self.seen, cam)
+        self.follow = FollowMission(self.drone, perception, bcfg, log=self.log, yaw_source=yaw_source,
+                                    say=speaker() if a.speak else None)
         self._ready_line = (f"ready: video ({cfg.drone.video_backend} reader), person detector on "
-                            f"{self.seen._detect.device}. Stand 1-2 m in front of the drone facing away, then type "
-                            "takeoff")
+                            f"{self.seen._detect.device}, camera fx {cam.fx:.0f}. Stand about 2 m in front of the "
+                            "drone facing away, then type takeoff")
         self.log("waiting for the first video frame ...", "info")
         return True
 
@@ -228,6 +258,7 @@ class Pilot:
         if f is not None and (self.last_frame is None or f.seq != self.last_frame.seq):
             if self.last_frame is None and self._ready_line:
                 self.log(self._ready_line, "info")  # only now: a takeoff before the first frame is refused
+                self.follow.announce("Ready. Say or type 'takeoff' to start.")
             self.last_frame = f
             self._fps_n += 1
         now = time.time()
@@ -240,8 +271,10 @@ class Pilot:
     def _command(self, cmd: str) -> None:
         d, m = self.drone, self.follow
         if cmd == "help":
-            self.log("takeoff: take off, climb, follow the person in front | land: stop and land | follow: look for "
-                     "the person again | e: EMERGENCY motors off, quits | status | quit: land and close", "info")
+            self.log("takeoff: take off, climb, follow the person in front | land | follow (or follow me): look for "
+                     "the person again | hold: pause and hover | resume: look for the person, then follow | stop: "
+                     "from hold, look for the person | e: EMERGENCY motors off, quits | status | quit: land, close",
+                     "info")
         elif cmd == "status":
             s = self.snap
             bat = f"{s.battery:.0f}%" if s.battery is not None else "?"
@@ -250,15 +283,22 @@ class Pilot:
                      f"detector {s.det_fps:.0f}/s, {s.follow}", "info")
         elif cmd == "takeoff":
             self._takeoff()
-        elif cmd == "follow":
-            if not (m is not None and m.reacquire("asked to follow")):
-                self.log("follow: only while hovering after 'person not found', or once the person has been out of "
-                         "view for 2 s", "warn")
+        elif cmd in ("follow", "stop", "hold", "resume"):
+            if m.state == "IDLE":
+                m.announce("I'm still on the ground. Say 'takeoff' first." if not d.flying else "Give me a second, I'm still taking off.")
+            elif cmd == "follow" and not m.follow_me():
+                self.log("follow: only while holding, or once the person has been out of view for 2 s", "warn")
+            elif cmd == "stop" and not m.cancel():
+                self.log("stop: only while holding (it then looks for the person again)", "warn")
+            elif cmd == "hold" and not m.hold():
+                self.log("hold: only while following or searching", "warn")
+            elif cmd == "resume" and not m.resume():
+                self.log("resume: only while holding", "warn")
         elif cmd in ("land", "quit"):
-            if m is not None:
-                m.stop()
+            m.stop()
             if d is not None and (d.flying or d.busy()):
                 d.land()
+                m.announce("Landing.")
                 self._pending = "land"
                 self._set("landing")
             elif cmd == "land":
@@ -275,8 +315,8 @@ class Pilot:
             why = "it already landed in this run: restart the app to fly again"
         else:
             bat = d.telemetry().battery_pct
-            if bat is not None and bat <= d.cfg.min_battery_pct:
-                why = f"battery {bat:.0f}%"
+            if bat is not None and bat < d.cfg.min_battery_pct + 10:  # room for a whole follow before the 20 % land
+                why = f"battery {bat:.0f}% (needs {d.cfg.min_battery_pct + 10:.0f}% to start)"
         if why:
             self.log(f"takeoff refused: {why}", "warn")
             return
@@ -306,6 +346,7 @@ class Pilot:
                 if d.flying:
                     m.begin()  # climb to the follow height, then follow
                 else:
+                    m.announce("Takeoff failed.")
                     self._set("idle")
             elif self._pending == "land" and not d.flying:
                 self._set("landed")
@@ -318,7 +359,9 @@ class Pilot:
             m.stop()
             self._set("landing")
             self._pending = "land"
-            self.log("safety governor is landing (battery, flight time, stale data or a land request)", "warn")
+            ev = getattr(d, "events", None)
+            self.log("safety governor is landing" + (f": {ev[-1][1]}" if ev else ""), "warn")
+            m.announce("Landing.")
             return
         if m.state in STATES and d.flying and not self._stop.is_set():
             m.step()  # the sticks every tick (also the keep-alive), or one discrete command it waits on
