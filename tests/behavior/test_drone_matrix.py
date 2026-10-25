@@ -958,7 +958,7 @@ def test_a_takeoff_whose_ok_is_lost_counts_as_flying_once_it_is_up(clock):
 
 # ====================================================================== TelloDrone: land()
 LAND_FROM = [
-    # id, state, new commands sent by land(), flying right after the call, settle wait (live)
+    # id, state, new commands sent by land(), flying right after the call, after a stop (cancelled command)
     ("idle_on_ground", "ground", ["land"], False, False),
     ("hovering", "flying", ["land"], True, False),
     ("during_takeoff", "taking_off", ["land"], True, False),
@@ -979,10 +979,11 @@ def test_land_from_every_state(clock, _id, state, sent, flying, settles):
     d.land()
     assert fake.cmds[n:] == sent and d.flying is flying
     assert d.busy() and d._pending.cmd == "land"
-    # settles: the cancelled move and the stop may still answer, so land waits the window out (their 'ok' must not
-    # be credited to the land). Right after the takeoff packet, only the 0.1 s command gap applies.
-    expected = STOP_SETTLE_S if settles else (MIN_GAP_S if state == "taking_off" else 0.0)
+    # after a stop (or the takeoff packet) only the 0.1 s command gap applies: land never waits the stop's settle
+    # window out. The cancelled command's replies are judged by busy() instead (test below).
+    expected = MIN_GAP_S if settles or state == "taking_off" else 0.0
     assert sum(clock.sleeps) == pytest.approx(expected)
+    assert d._pending.after_stop is (settles and True)
 
 
 @pytest.mark.parametrize("_id, state, sent, flying, settles", LAND_FROM, ids=[r[0] for r in LAND_FROM])
@@ -1007,16 +1008,55 @@ def test_land_during_takeoff_drops_the_takeoff_wait_and_lands_on_the_land_reply(
     assert not d.busy() and not d.flying and fake.is_flying is False
 
 
-def test_late_move_replies_during_the_land_settle_window_are_discarded(clock):
+def test_late_move_replies_after_a_cancelled_move_do_not_end_the_landing(clock):
     d, fake = make(clock)
     fly(d, fake, clock)
     d.move("forward", 200)
-    clock.on_sleep.append(lambda s: fake.reply("ok"))  # the cancelled move / the stop answer while we wait
+    clock.on_sleep.append(lambda s: fake.reply("ok"))  # the cancelled move / the stop answer meanwhile
     d.land()
     clock.on_sleep.clear()
-    assert d.busy() and d.flying  # those 'ok's did not end the landing
     fake.reply("ok")
+    assert d.busy() and d.flying  # those 'ok's did not end the landing: it is still 1.5 m up
+    clock.advance(STOP_SETTLE_S)
+    assert d.busy() and d.flying  # past the window too: an 'ok' with an airborne height is not a landing
+    fake.state = dict(fake.state, h=0, tof=10)  # touched down
+    fake.reply("ok")
+    assert not d.busy() and not d.flying and d.last_result() == "ok"
+
+
+def test_land_after_a_cancelled_move_ends_on_the_height_even_if_its_ok_came_early(clock):
+    d, fake = make(clock)
+    fly(d, fake, clock)
+    d.move("forward", 200)
+    d.land()
+    fake.reply("ok")  # the stop's, the move's or the land's: it cannot tell
+    assert d.busy()
+    fake.state = dict(fake.state, h=0, tof=10)
     assert not d.busy() and not d.flying
+
+
+def test_land_after_a_cancelled_move_without_a_height_waits_out_the_window(clock):
+    d, fake = make(clock)
+    fly(d, fake, clock)
+    d.move("forward", 200)
+    d.land()
+    fake.state = {}  # no state stream
+    fake.reply("ok")
+    assert d.busy()
+    clock.advance(STOP_SETTLE_S)
+    assert not d.busy() and not d.flying
+
+
+def test_land_after_a_cancelled_move_ignores_an_error_in_the_window_only(clock):
+    d, fake = make(clock)
+    fly(d, fake, clock)
+    d.move("forward", 200)
+    d.land()
+    fake.reply("error Not joystick")  # the cancelled move's
+    assert d.busy()
+    clock.advance(STOP_SETTLE_S)
+    fake.reply("error")  # the land's own
+    assert not d.busy() and d.last_result() == "error: error" and d.flying
 
 
 # ====================================================================== TelloDrone: stop()
@@ -1932,6 +1972,7 @@ def test_governed_tello_low_battery_mid_move_stops_then_lands(clock):
     now = clock.time()
     assert gov.check(now, now) == "land"
     assert fake.cmds[-2:] == ["stop", "land"] and d._pending.cmd == "land"
+    fake.state = dict(fake.state, h=0, tof=10)  # touched down
     fake.reply("ok")
     assert not gov.busy() and not gov.flying
 

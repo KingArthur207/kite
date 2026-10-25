@@ -351,7 +351,78 @@ def test_land_is_idempotent_and_never_stops_a_landing():
     n = len(fake.sent)
     d.land()  # again while landing: nothing sent (a 'stop' would abort the landing)
     assert len(fake.sent) == n
+    threading.Timer(0.25, lambda: setattr(fake, "state", dict(fake.state, h=0))).start()  # touches down
     assert wait(d) == "ok" and not d.flying
+
+
+def touch_down_later(fake, delay):
+    threading.Timer(delay, lambda: setattr(fake, "state", dict(fake.state, h=0, tof=10))).start()
+
+
+def test_land_during_a_move_goes_out_at_once_and_stale_oks_do_not_land_it():
+    # the move's own 'ok' (0.4 s) and the stop's arrive while it is still 0.8 m up: neither may count as landed
+    d, fake = make(delays={"move": 0.4, "land": 1.5})
+    d.takeoff()
+    wait(d)
+    d.move("forward", 100)
+    t0 = time.monotonic()
+    d.land()
+    assert time.monotonic() - t0 < 0.4  # no 1 s settle wait with the control loop frozen
+    assert fake.sent[-2:] == ["stop", "land"]
+    time.sleep(0.7)  # both stale 'ok's are in
+    assert d.busy() and d.flying
+    touch_down_later(fake, 0.2)
+    assert wait(d) == "ok" and not d.flying
+
+
+def test_land_after_stop_without_height_trusts_an_ok_only_after_the_window():
+    d, fake = make(delays={"move": 0.3, "land": 0.4})
+    d.takeoff()
+    wait(d)
+    d.move("forward", 100)
+    fake.state = {}  # no state stream: the height cannot confirm anything
+    t0 = time.monotonic()
+    d.land()
+    time.sleep(0.6)  # stop, move and land have all answered 'ok', still inside the 1 s window
+    assert d.busy()
+    assert wait(d) == "ok" and time.monotonic() - t0 >= tello_mod.STOP_SETTLE_S
+
+
+def test_land_after_stop_ignores_errors_in_the_window_but_not_after_it():
+    d, fake = make(delays={"move": 0.3, "land": 1.3})
+    d.takeoff()
+    wait(d)
+    fake.error_for["forward"] = "error Not joystick"  # the cancelled move answers with an error, inside the window
+    d.move("forward", 100)
+    fake.error_for["land"] = "error"  # the land itself fails, after the window
+    d.land()
+    time.sleep(0.6)
+    assert d.busy()
+    assert wait(d) == "error: error" and d.flying  # still 0.8 m up: not landed, so the governor will re-send
+
+
+def test_deadman_and_a_starting_move_never_interleave():
+    # the dead-man decides to send rc 0 while the control loop starts a move: the rc must not land after the move
+    d, fake = make(rc_hold_s=None)  # no watchdog thread: tick it by hand
+    d.takeoff()
+    wait(d)
+    d.rc(0, 30, 0, 0)
+    d.rc_hold_s = 0.6
+    d._rc_call_t -= 5.0  # the loop stalled with the stick held
+    mover, real = {}, fake.send_rc_control
+
+    def rc_and_race(*v):
+        if v == (0, 0, 0, 0) and "t" not in mover:
+            mover["t"] = threading.Thread(target=d.move, args=("forward", 50))
+            mover["t"].start()
+            mover["t"].join(0.3)  # without the lock the move goes out here, before the rc
+        real(*v)
+
+    fake.send_rc_control = rc_and_race
+    assert d._deadman_tick() and d.watchdog_trips == 1
+    mover["t"].join(2)
+    assert fake.sent.index(("rc", 0, 0, 0, 0)) < fake.sent.index("forward 50")
+    assert wait(d) == "ok" and not d._deadman_tick()  # rc 0 went out once; the move ran to completion
 
 
 def test_stop_never_cancels_takeoff_or_landing():

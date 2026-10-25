@@ -24,7 +24,12 @@ rc robustness:
   * dead-man: a non-zero stick that is not refreshed for rc_hold_s (the control loop stalled: a GC pause, a
     blocked print, a hung detector) is followed by ONE rc 0 0 0 0 from a watchdog thread. Nothing is sent after
     that, so a dead program still lets the Tello's own auto-land (15 s without a command) happen. The SDK says rc
-    gets no reply, and reports differ on whether a stick persists without updates: assume it does.
+    gets no reply, and reports differ on whether a stick persists without updates: assume it does. The dead-man
+    checks and sends under the same lock _start() takes, so a move that starts meanwhile is never aborted by it.
+
+land() during a move: 'stop', then 'land' at once (no 1 s settle wait with the control loop frozen). The stop and
+the cancelled move still answer, and replies don't say which command they answer, so that land's 'ok' only counts
+once the height says it is down (LANDED_H_M); an 'error' inside the settle window is taken as theirs.
 """
 
 from __future__ import annotations
@@ -45,6 +50,7 @@ log = logging.getLogger("kite.tello")
 
 MIN_GAP_S = 0.1  # the Tello drops commands sent closer together than this (djitellopy's TIME_BTW_COMMANDS)
 STOP_SETTLE_S = 1.0  # after 'stop', replies within this window belong to the stop / the cancelled command
+LANDED_H_M = 0.2  # 'h' at or below this: on the ground
 STREAMON_TRIES, VIDEO_WAIT_S = 4, 3.0  # streamon is re-sent until video packets arrive
 RC_GATE_S = 0.0015  # djitellopy drops an rc closer than 1 ms to the previous one: wait this long instead
 RC_HOLD_S = 0.6  # dead-man: a non-zero stick not refreshed for this long gets one rc 0 0 0 0 (the loop runs at 10 Hz)
@@ -107,6 +113,13 @@ class _Pending:
     t_sent: float
     timeout_s: float
     expected_s: float  # for dry-run completion
+    after_stop: bool = False  # sent inside a stop's settle window: other commands' replies may still arrive
+    ok_seen: bool = False  # after_stop: an 'ok' came, waiting for the height to confirm it
+
+
+def _is_error(text: str) -> bool:
+    low = text.lower()
+    return low.startswith("error") or "out of range" in low or "motor stop" in low
 
 
 class TelloDrone(Drone):
@@ -141,7 +154,7 @@ class TelloDrone(Drone):
         self._last_state = None
         self._state_t = 0.0
         self.rc_hold_s = rc_hold_s
-        self._rc_lock = threading.Lock()
+        self._rc_lock = threading.RLock()  # rc sends, and the dead-man's check-and-send against _start()
         self._rc_live = False  # the last stick sent was not all zeros
         self._rc_call_t = 0.0  # monotonic time of the last rc() call (sent or not)
         self._rc_sent_t = 0.0  # monotonic time of the last rc packet
@@ -241,20 +254,24 @@ class TelloDrone(Drone):
         self._last_send = time.monotonic()
         return ok
 
-    def _start(self, cmd: str, timeout_s: float, expected_s: float) -> None:
+    def _start(self, cmd: str, timeout_s: float, expected_s: float, settle: bool = True) -> None:
+        """settle=False (land): don't wait out a stop's settle window; busy() judges the replies instead."""
         if self._pending is not None:
             raise RuntimeError(f"'{cmd}' while '{self._pending.cmd}' is still running")
         # Tello replies do not say which command they answer. Right after a stop(), the cancelled command
         # and the stop itself may still answer: wait that window out (hovering) so their late replies
         # cannot be taken as the answer to THIS command.
         wait = self._ignore_until - time.monotonic()
-        if wait > 0 and not self.dry_run:
+        after_stop = wait > 0 and not settle and not self.dry_run
+        if wait > 0 and settle and not self.dry_run:
             time.sleep(wait)
-        self._ignore_until = 0.0
+        if not after_stop:
+            self._ignore_until = 0.0
         self._replies().clear()  # anything queued now is stale
-        self._rc_live = False  # a discrete command replaces the stick
         self._result = None
-        self._pending = _Pending(cmd, time.monotonic(), timeout_s, expected_s)
+        with self._rc_lock:  # the dead-man sees the pending command before it can send a stick
+            self._rc_live = False  # a discrete command replaces the stick
+            self._pending = _Pending(cmd, time.monotonic(), timeout_s, expected_s, after_stop=after_stop)
         if not self._send(cmd):
             self._complete(f"error: not sent ({self.link_error})")  # never reached the drone: free to re-send
 
@@ -274,7 +291,7 @@ class TelloDrone(Drone):
             self._flying = True
         if self._pending is not None:
             self.stop()
-        self._start("land", 15.0, 4.0)
+        self._start("land", 15.0, 4.0, settle=False)
 
     def emergency(self) -> bool:
         """False if the packet could not be sent (Wi-Fi down): nothing changed, the caller must say so."""
@@ -326,15 +343,24 @@ class TelloDrone(Drone):
     def _watch(self) -> None:
         """Dead-man: one rc 0 after a non-zero stick that the control loop stopped refreshing."""
         while not self._closing.wait(0.05):
-            hold = self.rc_hold_s
-            if hold is None:
+            if self.rc_hold_s is None:
                 return
-            if (self._rc_live and self._pending is None and self._flying
+            self._deadman_tick()
+
+    def _deadman_tick(self) -> bool:
+        """One dead-man check; True if it sent rc 0 0 0 0. Checked and sent under _rc_lock, which _start() takes to
+        set a pending command: otherwise a move started between the check and the send would be aborted by it."""
+        hold = self.rc_hold_s
+        with self._rc_lock:
+            if not (hold is not None and self._rc_live and self._pending is None and self._flying
                     and time.monotonic() - self._rc_call_t > hold):
-                if self._send_rc((0, 0, 0, 0)):
-                    self.watchdog_trips += 1
-                    self.log.append((time.time(), f"rc watchdog: no stick update for {hold:g} s -> rc 0 0 0 0"))
-                    log.warning("no rc update for %.1f s (control loop stalled?): sent rc 0 0 0 0", hold)
+                return False
+            if not self._send_rc((0, 0, 0, 0)):
+                return False
+        self.watchdog_trips += 1
+        self.log.append((time.time(), f"rc watchdog: no stick update for {hold:g} s -> rc 0 0 0 0"))
+        log.warning("no rc update for %.1f s (control loop stalled?): sent rc 0 0 0 0", hold)
+        return True
 
     def move(self, direction: str, cm: int) -> None:
         cm = check_move(direction, cm)
@@ -367,13 +393,25 @@ class TelloDrone(Drone):
         while replies:
             raw = replies.pop(0)
             text = raw.decode("utf-8", errors="ignore").strip() if isinstance(raw, (bytes, bytearray)) else str(raw).strip()
+            if p.after_stop:  # the stop and the cancelled move may answer too: judge below, by the height
+                if text.lower().startswith("ok"):
+                    p.ok_seen = True
+                elif _is_error(text) and now >= self._ignore_until:
+                    self._complete(f"error: {text}")
+                    return False
+                continue
             if text.lower().startswith("ok"):
                 self._complete("ok")
                 return False
-            if text.lower().startswith("error") or "out of range" in text.lower() or "motor stop" in text.lower():
+            if _is_error(text):
                 self._complete(f"error: {text}")
                 return False
             # anything else (e.g. a number from a query) is not the answer to this command
+        if p.after_stop and p.ok_seen:
+            h = self.telemetry().height_m
+            if (h is not None and h <= LANDED_H_M) or (h is None and now >= self._ignore_until):
+                self._complete("ok")  # down by the height (or no height and past the window: trust the 'ok')
+                return False
         if now - p.t_sent > p.timeout_s:
             self._complete("error: timeout")
             return False
@@ -386,7 +424,7 @@ class TelloDrone(Drone):
         sent = not result.startswith("error: not sent")
         if p is not None and p.cmd == "land" and result != "ok" and sent and not self.dry_run:
             h = self.telemetry().height_m
-            if h is not None and h <= 0.2:
+            if h is not None and h <= LANDED_H_M:
                 result = "ok"  # the reply was lost / 'error' because it is already down: it has landed
         if p is not None and p.cmd == "takeoff" and result == "error: timeout" and not self.dry_run:
             h = self.telemetry().height_m
