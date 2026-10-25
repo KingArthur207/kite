@@ -3,6 +3,7 @@
     python run/app.py                 # live: drone on, laptop on its Wi-Fi
     python run/app.py --dry-run       # on the table: video, YOLO and commands, nothing reaches the motors
     python run/app.py --yaw law       # steer yaw by bearing instead of the fruit fly brain
+    python run/app.py --yolo          # also show YOLO26n obstacle boxes on the camera (show only)
 
 Each run also writes recordings/<time>_app/video.mkv and recordings/<time>_app/frames/NNNNNN.jpg (the camera
 with the person boxes). Saving runs on its own thread and drops frames if the disk falls behind; it does not
@@ -76,6 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
                    "Windows speech)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="video reader: pyav (default), opencv, raw, auto (raw on macOS)")
+    p.add_argument("--yolo", action="store_true", help="also show YOLO26n (COCO) obstacle boxes on the camera; "
+                   "show only, the drone ignores them")
     p.add_argument("--weights", default=None, help="YOLO pose weights (default data/models/yolo11n-pose.pt)")
     return p
 

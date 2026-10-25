@@ -59,6 +59,11 @@ capped at 35, orbit off (`--orbit` turns it on).
    After 20 s it drops to just below head height and turns 30° at a time to find you; not found after a full turn,
    it says so and hovers until you type `follow`.
 
+`--yolo` also draws YOLO26n's obstacle boxes (COCO: people, bikes, cars, benches, ...) on the camera, the same
+model the webcam demo uses. They are only shown: the follow, the console and the motors never see them. It loads with
+the person detector before the drone is ready and runs on its own thread at up to 10 frames a second; the person being
+followed keeps its own box.
+
 What the drone says ("Ready.", "Landing.", "I can't see you. ...") shows in the console; `--speak` also says it out
 loud.
 

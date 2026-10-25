@@ -66,16 +66,16 @@ def test_defaults_are_the_flown_configuration(app):
     """No flags: live (not dry run), the fruit fly brain on yaw, 1.7 m walker, 1.8 m behind, no orbit, no speech."""
     a = app.build_parser().parse_args([])
     assert (a.dry_run, a.yaw, a.walker_height, a.height, a.behind) == (False, "fly", 1.7, None, 1.8)
-    assert (a.orbit, a.speak, a.video_backend, a.weights) == (False, False, None, None)
+    assert (a.orbit, a.speak, a.video_backend, a.weights, a.yolo) == (False, False, None, None, False)
 
 
 def test_flags_parse(app):
     """Every flag reaches the namespace with its type."""
     a = app.build_parser().parse_args(["--dry-run", "--yaw", "law", "--walker-height", "1.62", "--height", "2.0",
                                        "--behind", "2.5", "--orbit", "--speak", "--video-backend", "raw",
-                                       "--weights", "w.pt"])
+                                       "--weights", "w.pt", "--yolo"])
     assert (a.dry_run, a.yaw, a.walker_height, a.height, a.behind) == (True, "law", 1.62, 2.0, 2.5)
-    assert (a.orbit, a.speak, a.video_backend, a.weights) == (True, True, "raw", "w.pt")
+    assert (a.orbit, a.speak, a.video_backend, a.weights, a.yolo) == (True, True, "raw", "w.pt", True)
 
 
 @pytest.mark.parametrize("argv", [["--yaw", "autopilot"], ["--video-backend", "gstreamer"], ["--height", "tall"]])

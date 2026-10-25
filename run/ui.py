@@ -20,6 +20,7 @@ import cv2
 from PIL import Image, ImageTk
 
 from map_pane import MapPane
+from obstacles import overlaps
 from nav_signal import NavSignal, nav_phrase
 from whereabouts import Whereabouts, format_fix
 
@@ -37,6 +38,7 @@ ERROR = "#e5675e"
 KIND_COLOURS = {"sent": ACCENT, "recv": OK, "info": MUTED, "warn": WARN, "error": ERROR}
 ACCENT_BGR = (87, 119, 217)
 OTHER_BGR = (130, 128, 125)
+OBSTACLE_BGR = (200, 170, 60)
 
 # pilot states in which the drone may be in the air
 AIRBORNE = ("taking off", "climbing", "following", "searching", "holding", "landing")
@@ -71,6 +73,21 @@ def draw_people(img, seen, follow) -> None:
         y = max(y1 - 8, th + 8)
         cv2.rectangle(img, (x1, y - th - 8), (x1 + tw + 12, y + 4), col, -1)
         cv2.putText(img, label, (x1 + 6, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (24, 24, 26), 1, cv2.LINE_AA)
+
+
+def draw_obstacles(img, obstacles, follow) -> None:
+    """YOLO26n's obstacle boxes (--yolo), labelled, drawn in place on img. The person being followed is left to
+    draw_people."""
+    if obstacles is None or time.time() - obstacles.last_t >= 1.0:
+        return
+    track = follow.snapshot() if follow is not None else None
+    for b in obstacles.last:
+        if track is not None and b.label == "person" and overlaps(b.xyxy, track.box):
+            continue
+        x1, y1, x2, y2 = (int(v) for v in b.xyxy)
+        cv2.rectangle(img, (x1, y1), (x2, y2), OBSTACLE_BGR, 2, cv2.LINE_AA)
+        cv2.putText(img, b.label, (x1 + 4, max(y1 - 6, 14)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, OBSTACLE_BGR, 1,
+                    cv2.LINE_AA)
 
 
 def toggle_view(t: dict) -> tuple[str, bool]:
@@ -332,6 +349,7 @@ class App:
         if w < 20 or h < 20:
             return
         img = image.copy()  # frames are shared and read-only: draw on a copy
+        draw_obstacles(img, getattr(self.pilot, "obstacles", None), self.pilot.follow)
         draw_people(img, self.pilot.seen, self.pilot.follow)
         ih, iw = img.shape[:2]
         scale = min(w / iw, h / ih)

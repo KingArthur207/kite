@@ -92,6 +92,7 @@ class Pilot:
         self.frames = None
         self.follow = None  # kite.follow_behind.FollowMission
         self.seen: SeenDetector | None = None
+        self.obstacles = None  # run.obstacles.ObstacleView with --yolo: boxes for the camera pane only
         self._cmds: queue.Queue = queue.Queue()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="pilot", daemon=True)
@@ -231,6 +232,14 @@ class Pilot:
         except Exception as e:
             self.log(f"person detector failed to load: {e}", "error")
             return False
+        if getattr(a, "yolo", False):
+            self.log("loading the obstacle detector (YOLO26n, show only) ...", "info")
+            try:
+                from obstacles import ObstacleView, load_detector
+
+                self.obstacles = ObstacleView(load_detector()).start()
+            except Exception as e:  # the boxes are only shown: flying does not need them
+                self.log(f"obstacle detector unavailable: {e}", "warn")
         # a calibration saved by kite.camera wins; else the focal length measured on the Tello (BehindCfg.camera_fx)
         cam = (CameraModel.from_camera(load_camera()) if CAMERA_FILE.is_file() else
                CameraModel(960, 720, bcfg.camera_fx, bcfg.camera_fx, 480.0, 360.0))
@@ -354,6 +363,8 @@ class Pilot:
         m.sense(f, time.time())  # perception on every NEW frame, flying or not (the overlay shows the lock)
         if m.ctx.new_frame:
             self._capture_frame(f)
+            if self.obstacles is not None and f is not None:
+                self.obstacles.offer(f.image)
         res = m.ctx.res
         if res is not None and res.seq != self._det_seq:
             self._det_seq, self._det_n = res.seq, self._det_n + 1
@@ -419,6 +430,8 @@ class Pilot:
         self.log(f"saved {summary.written} frames{extra} to {summary.directory}{err}", "info")
 
     def _close(self) -> None:
+        if self.obstacles is not None:
+            self.obstacles.stop()
         if self.drone is not None:
             try:
                 self.drone.close()  # lands if still flying (never in dry run), stops the video
