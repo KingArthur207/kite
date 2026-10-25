@@ -57,6 +57,9 @@ CAREGIVER_PREFIX = "Message: "
 CAREGIVER_SQL = "SELECT * FROM event WHERE source = 'caregiver'"   # fixed query, no inputs
 CAREGIVER_TTL_S = 20.0               # waits out an answer or a nav line; older than this it is stale
 CAREGIVER_MAX_AGE_S = 120.0          # a signed row older than this (or a replay of one) is ignored
+CAREGIVER_MAX_TEXT = 200             # the dashboard's own limit (dashboard/src/view.ts MAX_MESSAGE)
+CAREGIVER_MAX_SPOKEN = 6             # at most this many messages spoken in any CAREGIVER_WINDOW_S
+CAREGIVER_WINDOW_S = 60.0
 POLL_S = 1.0
 MIN_POLL_S = 0.5                     # SQL reads cost credits too: never poll faster than 2 Hz
 MAX_BACKOFF_S = 30.0
@@ -401,6 +404,8 @@ class CaregiverInbox:
         never spoken: nobody on this channel can say "safe to cross" or "go");
       * priority is always "info", key is "caregiver-<row id>" (a row can't replace a queued
         safety line) and ttl is CAREGIVER_TTL_S, whatever the row says;
+      * at most CAREGIVER_MAX_SPOKEN messages a minute are spoken, each at most CAREGIVER_MAX_TEXT
+        characters, so a flood of rows can't talk over the walk;
       * with KITE_CAREGIVER_TOKEN set (same value as the dashboard's VITE_KITE_CAREGIVER_TOKEN),
         only rows signed with it are spoken: payload `ts` (ms) and `sig` = hex
         HMAC-SHA256(token, f"{ts}:{text}"), no older than CAREGIVER_MAX_AGE_S. A signature, not
@@ -415,7 +420,8 @@ class CaregiverInbox:
         self.interval = max(interval, MIN_POLL_S)
         self.last_id: int | None = None          # None until the first successful poll
         self.stats = {"polls": 0, "spoken": 0, "bad": 0, "failed": 0, "rejected": 0, "unsigned": 0,
-                      "replayed": 0}
+                      "replayed": 0, "too_long": 0, "flooded": 0}
+        self._spoken_at: list[float] = []       # monotonic times of the messages spoken in the last window
         self._token: str | None = None
         self._seen_sigs: dict[str, float] = {}   # sig -> when first spoken, kept CAREGIVER_MAX_AGE_S
         self.secret = (os.environ.get("KITE_CAREGIVER_TOKEN", "") if token is None else token).strip()
@@ -474,6 +480,15 @@ class CaregiverInbox:
         self._seen_sigs[sig] = now
         return False
 
+    def _flooded(self, now: float | None = None) -> bool:
+        """True when CAREGIVER_MAX_SPOKEN messages were already spoken in the last CAREGIVER_WINDOW_S."""
+        now = time.monotonic() if now is None else now
+        self._spoken_at = [t for t in self._spoken_at if now - t < CAREGIVER_WINDOW_S]
+        if len(self._spoken_at) >= CAREGIVER_MAX_SPOKEN:
+            return True
+        self._spoken_at.append(now)
+        return False
+
     def poll(self, http: httpx.Client) -> None:
         rows = sorted(self.fetch(http))
         self.stats["polls"] += 1
@@ -505,10 +520,20 @@ class CaregiverInbox:
                     self.stats["replayed"] += 1
                     self.log(f"[caregiver] ignored row {rid}: a copy of a message already spoken")
                     continue
+            if len(msg.text or "") > CAREGIVER_MAX_TEXT:
+                self.stats["too_long"] += 1
+                self.log(f"[caregiver] ignored row {rid}: longer than {CAREGIVER_MAX_TEXT} characters")
+                continue
             if forbidden(msg.text):               # same rule as Claude: no permission, all-clear or reroute
                 self.stats["rejected"] += 1
                 self.log(f"[caregiver] rejected row {rid}, not spoken (sounds like permission to move): "
                          f"{msg.text!r}")
+                continue
+            if self._flooded():
+                self.stats["flooded"] += 1
+                if self.stats["flooded"] in (1, 10) or self.stats["flooded"] % 100 == 0:
+                    self.log(f"[caregiver] ignored row {rid}: more than {CAREGIVER_MAX_SPOKEN} messages in "
+                             f"{CAREGIVER_WINDOW_S:.0f} s ({self.stats['flooded']} dropped so far)")
                 continue
             msg.source = CAREGIVER
             msg.priority = "info"                 # never outranks or interrupts a safety cue; "system" never expires
