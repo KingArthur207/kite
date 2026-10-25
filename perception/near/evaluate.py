@@ -508,6 +508,10 @@ def main(argv=None) -> None:
     ap.add_argument("--json")
     ap.add_argument("--md")
     a = ap.parse_args(argv)
+    from . import priority
+    priority.P1_M, priority.P2_M = json.loads(LABELS.read_text()).get("bands", [priority.P1_M, priority.P2_M])
+    print(f"[evaluate] scoring at the labels' bands: P1 under {priority.P1_M:g} m, P2 under {priority.P2_M:g} m",
+          flush=True)
     res = {"synthetic_stills": synthetic_stills(a.n), "synthetic_sequences": synthetic_sequences(),
            "distortion": {**distortion_check(cam="c270"), **distortion_check(cam="c920")}}
     if not a.synthetic:

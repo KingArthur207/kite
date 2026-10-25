@@ -136,7 +136,7 @@ def _run(objs, pitch=7.0, scale=1.3, still=True, ns=None, t=0.0, seed=0):
     return ns, ns.step(synth.image_for(C270), t, r.dets)
 
 
-@pytest.mark.parametrize("F, p", [(1.3, 1), (3.0, 2), (8.0, 3)])
+@pytest.mark.parametrize("F, p", [(1.0, 1), (2.0, 2), (5.0, 3)])
 def test_person_ahead_gets_its_priority(F, p):
     _, nf = _run([synth.Obj("person", F, 0.1, 1.72, 0.5)])
     o = nf.objects[0]
@@ -152,7 +152,7 @@ def test_person_off_to_the_side_is_ignored():
 
 
 def test_unknown_obstacle_without_a_detection_is_prioritised():
-    r = synth.render(C270, [synth.Obj("box", 3.2, 0.0, 1.0, 0.6)], 1.2, 7.0, np.random.default_rng(0), depth_scale=1.2)
+    r = synth.render(C270, [synth.Obj("box", 2.0, 0.0, 1.0, 0.6)], 1.2, 7.0, np.random.default_rng(0), depth_scale=1.2)
     dp = D.DepthProcessor(D.ArrayBackend(lambda f: r.depth), 1.2, 0.0)
     nf = NearSystem(C270, depth=dp, still=True).step(synth.image_for(C270), 0.0, [])
     assert nf.top and nf.top["kind"] == "obstacle" and nf.top["priority"] == 2
@@ -182,7 +182,7 @@ def test_hysteresis_keeps_a_jittery_p2_steady():
     ns = NearSystem(C270, depth=dp, cam_h=1.2, v_ego=0.0)
     seen = []
     for i in range(40):
-        ns, nf = _run([synth.Obj("person", 4.6, 0.0, 1.70, 0.5)], ns=ns, t=i * 0.1, seed=i)
+        ns, nf = _run([synth.Obj("person", 2.76, 0.0, 1.70, 0.5)], ns=ns, t=i * 0.1, seed=i)
         seen.append(nf.top["priority"] if nf.top else None)
     assert seen[2:].count(2) >= 37
 
@@ -193,7 +193,7 @@ def test_far_pavement_under_a_small_pitch_error_is_not_a_drop():
 
 
 def test_no_occupancy_without_an_anchored_ground():
-    r = synth.render(C270, [synth.Obj("box", 3.2, 0.0, 1.0, 0.6)], 1.2, 7.0, np.random.default_rng(0))
+    r = synth.render(C270, [synth.Obj("box", 2.0, 0.0, 1.0, 0.6)], 1.2, 7.0, np.random.default_rng(0))
     wall = np.full((252, 448), 3.0)                                # nothing ground-like: anchoring fails
     dp = D.DepthProcessor(D.ArrayBackend(lambda f: wall), 1.2, 0.0)
     nf = NearSystem(C270, depth=dp, still=True).step(synth.image_for(C270), 0.0, [])

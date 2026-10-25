@@ -51,6 +51,8 @@ def parse_args(argv=None):
     ap.add_argument("--wav", help="render the beeps the run would have made to this WAV (never played)")
     ap.add_argument("--hud", help="files only: write a review video (boxes | turbo depth | radar)")
     ap.add_argument("--radar", action="store_true", help="redraw an ASCII radar in the terminal (a TTY)")
+    ap.add_argument("--bands", help="priority bands in metres, P1,P2 (default 1.2,3: P1 under 1.2 m, P2 under 3 m, "
+                                    "P3 beyond)")
     ap.add_argument("--show", action="store_true", help="a live window: boxes, depth, radar and the tone each priority "
                                                         "plays (q or Esc closes it)")
     ap.add_argument("--no-send", action="store_true", help="do not send obstacles to the earpiece")
@@ -132,6 +134,14 @@ def main(argv=None) -> None:
         for k, p in I.BUILTIN.items():
             print(f"{k:8s} {p.describe()}")
         return
+    if a.bands:
+        from . import priority
+        try:
+            priority.P1_M, priority.P2_M = (float(x) for x in a.bands.split(","))
+        except ValueError:
+            sys.exit("--bands takes two distances in metres, e.g. 1.2,3")
+        if not 0 < priority.P1_M < priority.P2_M:
+            sys.exit("--bands: need 0 < P1 < P2")
     if not a.source:
         sys.exit("--source is required: webcam:Logitech, a video file or a still")
     import cv2

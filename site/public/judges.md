@@ -211,7 +211,7 @@ Pause guidance any time; warnings stay on. Ask anything, in your own words.
 
 **Urgency, not numbers**
 
-The body camera doesn't read out metres. It tells you how urgent: a high, fast tone under 2 m, a middle one from 2 to 5 m, a low, slow one beyond. You hear the answer before you could parse a sentence.
+The body camera doesn't read out metres. It tells you how urgent: a high, almost continuous tone under 1.2 m (about a cane's length), a middle one from 1.2 to 3 m, a low, slow one beyond. You hear the answer before you could parse a sentence.
 
 **Dignity and privacy**
 

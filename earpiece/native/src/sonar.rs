@@ -82,6 +82,15 @@ pub fn priority_urgency(p: u8) -> f64 {
     }
 }
 
+/// How a sender-ranked object sounds, as `sonar.PRIORITY_TONE`: (pitch Hz, seconds between beeps, gain).
+pub fn priority_tone(p: u8) -> (f64, f64, f64) {
+    match p {
+        1 => (1250.0, 0.12, 1.0),
+        2 => (875.0, 0.40, 0.9),
+        _ => (600.0, 0.90, 0.8),
+    }
+}
+
 /// One detected object, as `events.Obstacle`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Obstacle {
@@ -544,15 +553,17 @@ impl Sonar {
             }
             let t = &self.tracks[i];
             let u = if t.critical { 1.0 } else { t.urgency };
-            let interval =
+            let mut interval =
                 c.interval_slow_s - (c.interval_slow_s - c.interval_fast_s) * u.powf(0.8);
-            let pitch = c.pitch_low_hz + (c.pitch_high_hz - c.pitch_low_hz) * u;
+            let mut pitch = c.pitch_low_hz + (c.pitch_high_hz - c.pitch_low_hz) * u;
+            let mut level = distance_gain(t.distance);
+            if let (Some(p), false) = (t.priority, t.critical) {
+                (pitch, interval, level) = priority_tone(p);
+            }
             let pitch_q = pround(pitch / 25.0) * 25;
             let bearing_q = pround(t.bearing / 5.0) * 5;
             let fade = pmin(1.0, pmax(0.0, 1.0 - (now - t.last_seen) / c.stale_track_s));
-            let gain = if rank == 0 { 1.0 } else { c.second_source_gain }
-                * distance_gain(t.distance)
-                * fade;
+            let gain = if rank == 0 { 1.0 } else { c.second_source_gain } * level * fade;
             let step = self.samples(interval);
             let t = &mut self.tracks[i];
             match (t.next_beep, t.last_beep) {

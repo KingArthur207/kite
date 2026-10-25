@@ -1,22 +1,23 @@
 """Distance -> priority, with hysteresis and the time-to-contact override.
 
-    P1  under 2 m           act now
-    P2  2 m to under 5 m    something is coming up
-    P3  5 m or more         it is there, in your line
+    P1  under 1.2 m         act now: about one white-cane length, under a second at walking speed
+    P2  1.2 m to under 3 m  something is coming up: about two seconds of walking
+    P3  3 m or more         it is there, in your line
     None                    nothing in the corridor
 
 Raw distance from one camera is noisy (perception/near/README has the per-cue errors), so the state machine only
 escalates after N_UP agreeing frames and only de-escalates after M_DOWN frames past a 10 % band beyond the
 boundary. The exception is looming: when the time to contact is under TTC_P1 (1.5 s, the low end of the 1.5 to
 2.5 s that pedestrian collision warnings target) the track goes to P1 at once, whatever the distance cues say.
-Thresholds are multiplied by the class's size scale (priors.Prior.size_scale): a car is P1 from 2.6 m.
+Thresholds are multiplied by the class's size scale (priors.Prior.size_scale): a car is P1 from about 1.6 m.
+`python -m perception.near --bands P1,P2` overrides them; evaluate.py scores at the bands its labels were made for.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-P1_M, P2_M = 2.0, 5.0
+P1_M, P2_M = 1.2, 3.0
 TTC_P1 = 1.5
 TTC_RELEASE = 1.9
 N_UP, M_DOWN = 2, 5

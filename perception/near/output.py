@@ -81,7 +81,8 @@ def radar(ev: dict, far_m: float = 8.0, rows: int = 12, half_cols: int = 10, lat
     grid = [[" "] * cols for _ in range(rows)]
     rail = int(round(0.5 / lat_m * half_cols))
     row_of = lambda d: rows - 1 - min(rows - 1, int(d / far_m * rows))      # the row an object at d lands in
-    rings = {row_of(2.0): " 2 m", row_of(5.0): " 5 m"}
+    from . import priority
+    rings = {row_of(priority.P1_M): f" {priority.P1_M:g} m", row_of(priority.P2_M): f" {priority.P2_M:g} m"}
     for r in range(rows):
         for c in range(cols):
             grid[r][c] = "-" if r in rings else " "
