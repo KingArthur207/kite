@@ -17,7 +17,7 @@ import {
 import './App.css';
 
 // Default (analytics) view: what Kite knows (phones on the map, hazards, spoken lines, rates) beside the walker's
-// and the drone's live camera feeds. `?view=caregiver` keeps the old caregiver dashboard below.
+// and the drone's live camera feeds. `?view=walk` opens the walk view below.
 // Caregiver dashboard: live view of the shared Kite world state, plus short messages to the walker
 // (a `say` from source `caregiver`; the earpiece polls for them and speaks them). No camera video (privacy).
 // Press P for presentation mode (the reveal): no raw feed or controls, bigger map, timeline and last line.
@@ -53,7 +53,8 @@ const SHOWN_MESSAGES = 3;
 const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
 // Moment colours on the map; stops are always red.
 const PIN_COLOR: Record<string, string> = { stop: '#FF453A', help: '#FF453A', kite: '#63E6E2', claude: '#FF8A5B', caregiver: '#64D2FF' };
-const CAREGIVER = new URLSearchParams(location.search).get('view') === 'caregiver';
+// `?view=walk` (and the older `?view=caregiver`) opens the walk view: map, walk timeline, messages and shared state.
+const CAREGIVER = ['walk', 'caregiver'].includes(new URLSearchParams(location.search).get('view') ?? '');
 const FIXTURE = fixtureOn();   // ?fixture=two-phones in dev: fake phones rendered locally, never written to SpacetimeDB
 
 const toEv = (r: Row): Ev => ({ id: r.id?.toString() ?? r.key ?? '', type: r.type, source: r.source, priority: r.priority, t: Number(r.t.toMillis()), p: parse(r.payload) });
