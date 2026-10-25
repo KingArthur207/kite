@@ -35,7 +35,7 @@ DIMS = {"FLOWN": 0, "V3-FOLLOW": 25, "V3-JOINT": 59, "V3-LAW": 23}
 
 
 def test_arm_spaces_have_the_design_dimensions_and_names():
-    assert bp.ARMS == ("FLOWN", "V3-FOLLOW", "V3-JOINT", "V3-LAW")
+    assert bp.ARMS == ("FLOWN", "V3-FOLLOW", "V3-JOINT", "V3-LAW", "V3B-FOLLOW", "V3B-JOINT")
     for arm, dim in DIMS.items():
         assert bp.space(arm).dim == dim == len(bp.init_x(arm)) == len(bp.cma_stds(arm))
     follow = [r[0] for r in bp.FOLLOW_KNOBS]
@@ -83,7 +83,7 @@ def test_decode_encode_round_trip():
 
 def test_the_init_is_exactly_the_flown_follow():
     flown = asdict(TunedCfg())
-    for arm in bp.TUNED_ARMS:
+    for arm in tr.TRAINABLE:  # round 1 starts at the flown follow; V3B warm-starts from a round-1 model
         cfg, brain_x = bp.make_cfg(arm, bp.init_x(arm))
         assert type(cfg) is TunedCfg
         got = asdict(cfg)
@@ -141,7 +141,7 @@ def test_a_saved_model_loads_back_as_the_same_cfg(tmp_path):
         if arm == "V3-LAW":
             assert "x" not in rec and back.steering == "pid"
         else:
-            assert rec["x"] == (brain_x if arm == "V3-JOINT" else SMOOTH2_X)  # a FlySteer params file
+            assert rec["x"] == (brain_x if arm in bp.JOINT_ARMS else SMOOTH2_X)  # a FlySteer params file
             assert back.fly_params_path == str(path.resolve())
             assert [float(v) for v in load_params(path)[0]] == rec["x"]
 
@@ -501,3 +501,26 @@ def test_cli_chunk_is_the_launchs_unless_asked():
     assert tr.pick_chunk(None, cfg, ct.Prices(), None, None) == tr.default_chunk("V3-JOINT") == 32
     assert tr.pick_chunk("48", cfg, ct.Prices(), None, None) == 48
     assert tr.pick_chunk("auto", cfg, ct.Prices(), None, None) == tr.auto_chunk(cfg, ct.Prices())
+
+
+def test_round_two_arms_keep_the_speed_up_and_warm_start_from_a_model(tmp_path):
+    """V3B: the same knobs as V3 except a cap of 50-63 when the person-speed gate opens (rising >= 40 per m/s), and
+    a warm start from a round-1 model file whose out-of-range knobs are clipped onto those bounds."""
+    from kite.follow_tuned import save_model
+
+    assert bp.space("V3B-FOLLOW").dim == DIMS["V3-FOLLOW"] and bp.space("V3B-JOINT").dim == DIMS["V3-JOINT"]
+    rows = {r[0]: r for r in bp.ARM_KNOBS["V3B-FOLLOW"]}
+    assert rows["fwd_cap_fast"][1:3] == (50.0, 63.0) and rows["fwd_cap_per_mps"][1:3] == (40.0, 150.0)
+    assert rows["max_rc_forward"][2] == 35.0  # below the gate it is never faster than the flown follow
+    follow = bp.model_follow("V3-JOINT", bp.init_x("V3-JOINT"))
+    follow.update(fwd_cap_fast=41, fwd_cap_per_mps=2.0, dist_gain=52.0)
+    path = save_model(tmp_path / "r1.json", name="r1", follow=follow, brain_x=bp.smooth2_x(), steering="fly",
+                      trained={"behind_arm": "V3-JOINT"})
+    cfg = tr.make_run_cfg("V3B-JOINT", 1, "t", init=str(path))
+    assert cfg["init"]["source"] == str(path) and len(cfg["init"]["x"]) == 34
+    x0 = np.clip(bp.encode_model("V3B-JOINT", cfg["init"]), 0.0, 1.0)
+    d = bp.space("V3B-JOINT").decode(x0)
+    assert d["fwd_cap_fast"] == pytest.approx(50.0) and d["fwd_cap_per_mps"] == pytest.approx(40.0)
+    assert d["dist_gain"] == pytest.approx(52.0)
+    assert bp.space("V3B-JOINT").brain_x(x0) == pytest.approx(bp.smooth2_x())
+

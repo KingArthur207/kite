@@ -89,21 +89,25 @@ EVAL_SPEC = {**ct.EVAL_SPEC, "cpu": 8.0, "workers": 16, "memory_mib": 8192, "max
              "scaledown_s": 30, "timeout_s": 1800, "retries": 2}
 STATE_VERSION = 2  # 2: FLOWN cached per (seed, profile, code digest), the code digest checked on resume
 RANDN_SALT = 0xBE41D  # mixed into the per-generation sampler seed (kite.fly's runs use their own)
-TRAINABLE = bp.TUNED_ARMS
+TRAINABLE = ("V3-FOLLOW", "V3-JOINT", "V3-LAW")  # the round-1 plan; the V3B arms run only when asked
 # DESIGN section 8's plan per arm (CLI flags override); the fly arms on 4 CMA seeds, the law on 2
 ARM_PLAN = {
     "V3-FOLLOW": {"gens": 60, "pop": 24, "k": 32, "sigma0": 0.15, "cma_seeds": (1, 2, 3, 4)},
     "V3-JOINT": {"gens": 100, "pop": 40, "k": 32, "sigma0": 0.15, "cma_seeds": (1, 2, 3, 4)},
     "V3-LAW": {"gens": 60, "pop": 20, "k": 32, "sigma0": 0.15, "cma_seeds": (1, 2)},
+    # round 2: warm-started from a round-1 best (--init), so a smaller step and fewer generations
+    "V3B-FOLLOW": {"gens": 50, "pop": 24, "k": 32, "sigma0": 0.08, "cma_seeds": (1, 2, 3, 4)},
+    "V3B-JOINT": {"gens": 50, "pop": 32, "k": 32, "sigma0": 0.08, "cma_seeds": (1, 2)},
 }
 DEFAULT_BUDGET_USD = 40.0
 DEFAULT_TAG = "v3"
 # A run resumes only if these match its state.pkl (gens, budget_usd, select_every may change)
-RESUME_KEYS = ("arm", "cma_seed", "pop", "k", "sigma0", "episode_s", "profile", "n_sel", "maxstd", "stub_s", "fitness")
+RESUME_KEYS = ("arm", "cma_seed", "pop", "k", "sigma0", "episode_s", "profile", "n_sel", "maxstd", "stub_s", "fitness",
+               "init")
 DEFAULT_PROFILE = "train,slow"  # training / selection seed k flies profile k mod 2: speed only when needed is tested
 # Seconds per 60 s episode on one loaded Modal worker (16 workers on 8 cores): guesses until modal_app::probe has
 # measured them. The fly arms tick the 1,446-neuron brain at 20 Hz plus the pose model; the law arm only the follow.
-S_EPISODE_GUESS = {"FLOWN": 3.5, "V3-FOLLOW": 3.5, "V3-JOINT": 3.5, "V3-LAW": 0.4}
+S_EPISODE_GUESS = {"FLOWN": 3.5, "V3-FOLLOW": 3.5, "V3-JOINT": 3.5, "V3-LAW": 0.4, "V3B-FOLLOW": 3.5, "V3B-JOINT": 3.5}
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -140,12 +144,15 @@ def make_run_cfg(arm: str, cma_seed: int = 1, tag: str = DEFAULT_TAG, **over) ->
     cfg = {"arm": arm, "cma_seed": int(cma_seed), "tag": tag, "gens": d["gens"], "pop": d["pop"], "k": d["k"],
            "sigma0": d["sigma0"], "select_every": 5, "budget_usd": DEFAULT_BUDGET_USD, "episode_s": 60.0,
            "profile": DEFAULT_PROFILE, "n_sel": len(SELECTION_SEEDS), "maxstd": 0.3, "stub_s": None, "fitness": {},
-           "allow_code_change": False}
+           "allow_code_change": False, "init": None}
     for k, v in over.items():
         if k not in cfg:
             raise KeyError(f"unknown config key {k}")
         if v is not None:
             cfg[k] = v
+    if isinstance(cfg["init"], (str, Path)):  # a model file (a round-1 best.json): embedded, so a Modal driver has it
+        rec = json.loads(Path(cfg["init"]).read_text(encoding="utf-8"))
+        cfg["init"] = {"source": str(cfg["init"]), "follow": rec.get("follow") or {}, "x": rec.get("x")}
     FitnessCfg(**cfg["fitness"])  # unknown fields fail here, not after an hour
     profiles(cfg)
     if cfg["pop"] < 2 or cfg["k"] < 1 or cfg["n_sel"] < 1 or cfg["n_sel"] > len(SELECTION_SEEDS):
@@ -390,8 +397,10 @@ class Trainer:
             truncate_jsonl(self.sel_path, st["gen"])
             self.log(f"[{self.name}] resumed at generation {st['gen']}")
             return True
-        x0 = np.clip(bp.init_x(self.arm), 0.0, 1.0)
+        # the flown follow, or a warm start from a model file (make_run_cfg embedded it; knobs outside this arm's
+        # bounds, e.g. a round-1 fwd_cap_fast 41 under V3B's 50-63, are clipped onto them)
         c = self.cfg
+        x0 = np.clip(bp.encode_model(self.arm, c["init"]) if c.get("init") else bp.init_x(self.arm), 0.0, 1.0)
         self.state = {"version": STATE_VERSION, "cfg": copy.deepcopy(c), "x0": x0.tolist(),
                       "names": list(self.space.names), "init_source": "flown follow" + (
                           " + smooth2's brain x" if self.space.brain_names else ""),
@@ -507,7 +516,8 @@ class Trainer:
         append_jsonl(self.sel_path, rec)
         self.state["sel_done"].append(gen)
         note = ""
-        if gen == 0 and self.arm != "V3-LAW" and abs(fit - 1.0) > 1e-9 and self.cfg["stub_s"] is None:
+        if gen == 0 and self.arm != "V3-LAW" and abs(fit - 1.0) > 1e-9 and self.cfg["stub_s"] is None \
+                and not self.cfg.get("init"):
             note = " (the init is the flown follow: expected 1.0, so the tuned controller or the world differs)"
         per = ", ".join(f"{p} {v:.4f}" for p, v in rec["by_profile"].items())
         self.log(f"[{self.name}] selection gen {gen}: {fit:.4f} on {f['n']} seeds ({per}), {f['collisions']} "

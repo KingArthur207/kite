@@ -421,15 +421,20 @@ def _seeds(csv: str | None, default: tuple[int, ...]) -> tuple[int, ...]:
 
 def plan(tag: str = "v3", follow_seeds: str | None = None, joint_seeds: str | None = None,
          law_seeds: str | None = None, gens: int = 0, episode_s: float = 0.0,
-         stub_s: float | None = None, profile: str = "", allow_code_change: bool = False) -> list[dict]:
+         stub_s: float | None = None, profile: str = "", allow_code_change: bool = False,
+         v3b_follow_seeds: str = "", v3b_joint_seeds: str = "", init_follow: str = "", init_joint: str = "",
+         fitness: dict | None = None) -> list[dict]:
     """DESIGN section 8's runs (kite.fly.behind.train.ARM_PLAN: V3-FOLLOW and V3-JOINT on CMA seeds 1-4, V3-LAW on
     1-2), each a make_run_cfg dict; a seeds csv of "" drops that arm. profile "" = train's default (train,slow)."""
     from kite.fly.behind import train as bt
 
-    seeds = {"V3-FOLLOW": follow_seeds, "V3-JOINT": joint_seeds, "V3-LAW": law_seeds}
+    seeds = {"V3-FOLLOW": follow_seeds, "V3-JOINT": joint_seeds, "V3-LAW": law_seeds,
+             "V3B-FOLLOW": v3b_follow_seeds, "V3B-JOINT": v3b_joint_seeds}  # round 2 (V3B): none unless asked
+    inits = {"V3B-FOLLOW": init_follow or None, "V3B-JOINT": init_joint or None}
     over = {"gens": gens or None, "episode_s": episode_s or None, "stub_s": stub_s, "profile": profile or None,
-            "allow_code_change": allow_code_change or None}
-    return [bt.make_run_cfg(arm, s, tag, **over) for arm in ("V3-FOLLOW", "V3-JOINT", "V3-LAW")
+            "allow_code_change": allow_code_change or None, "fitness": fitness or None}
+    return [bt.make_run_cfg(arm, s, tag, init=inits.get(arm), **over)
+            for arm in ("V3-FOLLOW", "V3-JOINT", "V3-LAW", "V3B-FOLLOW", "V3B-JOINT")
             for s in _seeds(seeds[arm], bt.ARM_PLAN[arm]["cma_seeds"])]
 
 
@@ -676,7 +681,8 @@ def probe(n: int = 32, episode_s: float = 60.0, profile: str = "train", seed0: i
 def launch(confirm: bool = False, tag: str = "v3", budget_usd: float = 40.0, follow_seeds: str = "1,2,3,4",
            joint_seeds: str = "1,2,3,4", law_seeds: str = "1,2", gens: int = 0, episode_s: float = 0.0,
            s_per_episode: float = 0.0, s_per_law_episode: float = 0.0, s_max: float = 0.0, profile: str = "",
-           allow_code_change: bool = False, allow_missing: bool = False) -> None:
+           allow_code_change: bool = False, allow_missing: bool = False, v3b_follow_seeds: str = "",
+           v3b_joint_seeds: str = "", init_follow: str = "", init_joint: str = "", fitness_json: str = "") -> None:
     """Print the planned runs (V3-FOLLOW and V3-JOINT on CMA seeds 1-4, V3-LAW on 1-2), their budget shares and
     projected cost and wall time; with --confirm, spawn them (train_all). Refuses when the projection exceeds
     --budget-usd or the image would miss modules. Use `modal run --detach` so the runs outlive this laptop.
@@ -685,10 +691,14 @@ def launch(confirm: bool = False, tag: str = "v3", budget_usd: float = 40.0, fol
     was made by other code refuses to resume: launch a new --tag, or --allow-code-change to go on anyway."""
     prices = ct.load_prices()
     runs = plan(tag, follow_seeds, joint_seeds, law_seeds, gens, episode_s, profile=profile,
-                allow_code_change=allow_code_change)
+                allow_code_change=allow_code_change, v3b_follow_seeds=v3b_follow_seeds,
+                v3b_joint_seeds=v3b_joint_seeds, init_follow=init_follow, init_joint=init_joint,
+                fitness=json.loads(fitness_json) if fitness_json else None)
     s_fly = s_per_episode or None
-    s_by = {"V3-FOLLOW": s_fly, "V3-JOINT": s_fly, "V3-LAW": s_per_law_episode or None}
-    s_mx = {"V3-FOLLOW": s_max or None, "V3-JOINT": s_max or None}
+    s_by = {"V3-FOLLOW": s_fly, "V3-JOINT": s_fly, "V3-LAW": s_per_law_episode or None, "V3B-FOLLOW": s_fly,
+            "V3B-JOINT": s_fly}
+    s_mx = {"V3-FOLLOW": s_max or None, "V3-JOINT": s_max or None, "V3B-FOLLOW": s_max or None,
+            "V3B-JOINT": s_max or None}
     projs, total = split_budget(runs, prices, budget_usd, s_by, s_fly, s_mx)
     from kite.fly.behind import train as bt
 

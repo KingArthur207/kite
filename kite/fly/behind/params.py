@@ -34,9 +34,9 @@ import numpy as np
 from kite.fly.params import ParamSpace
 from kite.follow_behind import FLY_PARAMS, BehindCfg
 
-ARMS = ("FLOWN", "V3-FOLLOW", "V3-JOINT", "V3-LAW")
+ARMS = ("FLOWN", "V3-FOLLOW", "V3-JOINT", "V3-LAW", "V3B-FOLLOW", "V3B-JOINT")
 TUNED_ARMS = ARMS[1:]
-FLY_ARMS = ("FLOWN", "V3-FOLLOW", "V3-JOINT")  # the fly brain steers yaw
+FLY_ARMS = ("FLOWN", "V3-FOLLOW", "V3-JOINT", "V3B-FOLLOW", "V3B-JOINT")  # the fly brain steers yaw
 BRAIN_PREFIX = "brain."
 FWD_SLEW_OFF = 2000.0  # the top of fwd_slew = no slew limit (TunedCfg.fwd_slew 0)
 SNAP_DIGITS = 12
@@ -84,8 +84,30 @@ LAW_KNOBS: tuple[tuple[str, float, float, str, float], ...] = (  # FollowBehind'
 )
 INT_KNOBS = frozenset({"creep_rc", "max_rc_forward", "fwd_cap_fast", "max_rc_backoff", "max_rc_up", "fly_max_rc_yaw",
                        "max_rc_yaw"})  # int fields of BehindCfg / TunedCfg: rounded when decoded
+# Round 2 (V3B, 2026-10-25): round 1 never used the speed-up (every run settled fwd_cap_fast at 36-41, ~0.35-0.39
+# m/s), so a person walking faster than the flown 0.34 m/s still outwalked it. The V3B arms keep the capacity (a cap
+# of 50-63 when the person-speed gate opens, rising at least 40 stick per m/s) and tune only WHEN the gate opens
+# (fwd_cap_v0_mps, walker_speed_tau_s, ...), not whether there is a speed-up at all. Below the gate the cap is still
+# max_rc_forward (<= the flown 35), so a slow or stopped person is matched as before.
+SPEED_BOUNDS = {"fwd_cap_fast": (50.0, 63.0), "fwd_cap_per_mps": (40.0, 150.0)}
+
+
+def _with_bounds(rows: tuple, bounds: dict[str, tuple[float, float]]) -> tuple:
+    """rows with the named knobs' bounds replaced (their flown value clipped into the new range)."""
+    out = []
+    for n, lo, hi, scale, flown in rows:
+        if n in bounds:
+            lo, hi = bounds[n]
+            flown = min(max(flown, lo), hi)
+        out.append((n, lo, hi, scale, flown))
+    return tuple(out)
+
+
+SPEED_KNOBS = _with_bounds(FOLLOW_KNOBS, SPEED_BOUNDS)
 ARM_KNOBS = {"FLOWN": (), "V3-FOLLOW": FOLLOW_KNOBS + FLY_KNOBS, "V3-JOINT": FOLLOW_KNOBS + FLY_KNOBS,
-             "V3-LAW": FOLLOW_KNOBS + LAW_KNOBS}
+             "V3-LAW": FOLLOW_KNOBS + LAW_KNOBS, "V3B-FOLLOW": SPEED_KNOBS + FLY_KNOBS,
+             "V3B-JOINT": SPEED_KNOBS + FLY_KNOBS}
+JOINT_ARMS = ("V3-JOINT", "V3B-JOINT")  # the brain's 34 numbers are trained too
 
 # Per-dimension CMA step multipliers (pycma CMA_stds). The knobs search widely (sigma0 0.15 of their range); the
 # brain only fine-tunes: its base multiplier is BRAIN_STEP / sigma0 (0.2 at sigma0 0.15, i.e. kite.fly's FLY-YAW
@@ -211,7 +233,7 @@ def space(arm: str) -> BehindSpace:
         raise ValueError(f"unknown arm {arm!r}; one of {ARMS}")
     rows = list(ARM_KNOBS[arm])
     n_knobs = len(rows)
-    if arm == "V3-JOINT":
+    if arm in JOINT_ARMS:
         bs = brain_space()
         rows += [(BRAIN_PREFIX + n, 0.0, 1.0, "lin", v) for n, v in zip(bs.names, _smooth2_x())]
     if rows:
