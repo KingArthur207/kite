@@ -345,3 +345,21 @@ def test_check_never_raises_and_lands_or_hovers_on_bad_data(cfg, now, frame_t, t
         assert action == "hover" and d.rcs == [(0, 0, 0, 0)]
     else:
         assert action == "ok"
+
+
+@pytest.mark.parametrize("h, ud_in, want", [(INF, 40, "down"), (-INF, -40, "no descent"), (NAN, 40, "as asked")])
+def test_infinite_height_is_a_reading_not_unknown(h, ud_in, want):
+    """A garbage +inf height must cut the climb (it once read as 'unknown' and let the drone climb past the
+    ceiling); -inf must stop a descent; only NaN is unknown and passes the stick through."""
+    d = FakeDrone()
+    d._flying = True
+    d.tel = Telemetry(t=0.0, height_m=h)
+    gov = SafetyGovernor(d, SafetyCfg())
+    gov.rc(0, 0, ud_in, 0)
+    ud = d.rcs[-1][2]
+    if want == "down":
+        assert ud < 0
+    elif want == "no descent":
+        assert ud >= 0
+    else:
+        assert ud == ud_in
