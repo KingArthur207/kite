@@ -25,5 +25,4 @@ Logos on `/judges` are the companies' own marks, fetched from their sites and st
 - `cartesia.svg`: header logo on https://cartesia.ai (icon green `#309d4b` from the site's own CSS)
 - `anthropic.svg`: header wordmark on https://www.anthropic.com
 - `spacetimedb.svg`: https://spacetimedb.com/images/brand.svg, recoloured from light grey to near-black for the paper background
-- `moss.svg`: `moss_wordmark_dark.svg` from the Moss brand kit, https://www.moss.dev/brand-kit (viewBox trimmed to the mark)
 - `xai.svg`: header mark on https://x.ai (SpaceXAI)

@@ -10,7 +10,7 @@ A white cane reports the street one step at a time. A guide dog looks ahead, sto
 
 ## What works today
 
-- **The earpiece:** spatial beeps, the beacon toward the next turn, the speech queue, and stop and wait, on a real-time Rust audio engine. Cartesia voice in and out, with every safety phrase pre-rendered so it speaks even with no signal, Claude's careful judgment calls, scene descriptions and reading text aloud, and Moss memory of the walker's places.
+- **The earpiece:** spatial beeps, the beacon toward the next turn, the speech queue, and stop and wait, on a real-time Rust audio engine. Cartesia voice in and out, with every safety phrase pre-rendered so it speaks even with no signal, Claude's careful judgment calls, scene descriptions and reading text aloud, and a memory of the walker's places.
 - **The body camera:** a Logitech webcam on an Arduino UNO Q streams over Wi-Fi to the laptop, which ranks what's straight ahead into three priorities, each with its own tone. Distance comes from five fused cues, and on hand-labelled real frames it is right 92.7% of the time.
 - **The drone:** a DJI Tello that locks onto the walker and follows, guarded by a safety governor and a preflight GO/NO-GO check.
 - **The phone and the live map:** a phone app sends GPS to the board and the laptop for walking directions, the SpacetimeDB dashboard shows the walk live, and a message typed there reaches the walker's AirPods seconds later.
@@ -19,7 +19,7 @@ A white cane reports the street one step at a time. A guide dog looks ahead, sto
 
 ## How it's built
 
-Python and a real-time Rust audio engine on the walker's laptop; TypeScript for the browser simulation and the dashboard. Cartesia is Kite's voice and ears, Claude its judgment, SpacetimeDB the live state every device and the dashboard share, and Moss its memory of the walker's places. Grok Imagine generates the street scenes we can't safely film, and Kite is tested against them. Every decision that can hurt someone runs in deterministic code first; AI may only make Kite more careful.
+Python and a real-time Rust audio engine on the walker's laptop; TypeScript for the browser simulation and the dashboard. Cartesia is Kite's voice and ears, Claude its judgment, and SpacetimeDB the live state every device and the dashboard share. Grok Imagine generates the street scenes we can't safely film, and Kite is tested against them. Every decision that can hurt someone runs in deterministic code first; AI may only make Kite more careful.
 
 ## Open source
 

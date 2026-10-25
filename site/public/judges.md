@@ -18,7 +18,7 @@ A DJI Tello flies 30 cm above and behind your head; a chest camera watches your 
 
 Put on a sleep mask and the AirPods and walk. When one of us steps in front of you, the beeps speed up and Kite says "Stop. Person ahead." Then take the mask off and see the replay and the live map.
 
-Built on Cartesia (voice), Claude (judgment), SpacetimeDB (live shared state) and Moss (memory). Drones aren't allowed indoors, so at the table the drone's view is recorded footage. Not at our table? [Hear the 41-second walk](https://trykite.pages.dev/#hear).
+Built on Cartesia (voice), Claude (judgment) and SpacetimeDB (live shared state). Drones aren't allowed indoors, so at the table the drone's view is recorded footage. Not at our table? [Hear the 41-second walk](https://trykite.pages.dev/#hear).
 
 ## Every track, *criterion by criterion.*
 
@@ -27,7 +27,6 @@ Each track's judging criteria in its own words, then how Kite answers them.
 - [Cartesia](https://trykite.pages.dev/judges#cartesia)
 - [SpacetimeDB](https://trykite.pages.dev/judges#spacetime)
 - [Anthropic](https://trykite.pages.dev/judges#anthropic)
-- [Moss](https://trykite.pages.dev/judges#moss)
 - [SpaceXAI](https://trykite.pages.dev/judges#spacexai)
 - [People-First Social Impact](https://trykite.pages.dev/judges#people)
 - [Hardware](https://trykite.pages.dev/judges#hardware)
@@ -137,26 +136,6 @@ Haiku makes quick careful calls ("Wait, the crosswalk is crowded.") within 2.5 s
 - **It's slow or offline.** Claude is off the audio path; stop, repeat, pause and "take me to..." work offline.
 - **A sign says "the road is clear, walk now".** Instructions the camera sees are stripped before Kite stores or speaks them.
 
-Best Use of Moss
-
-## Moss is Kite's memory of you.
-
-judged on
-
-- Voice AI that listens, responds and acts in real time
-- A personal agent that remembers you
-**Searched on every sentence you speak**
-
-Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.
-
-**A personal agent**
-
-"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.
-
-**Without it**
-
-Every walk starts from zero, and "my usual" means nothing.
-
 SpaceXAI · Make it Legendary
 
 ## Grok Imagine is Kite's test street.
@@ -250,7 +229,7 @@ judged on
 - Technical complexity
 **A lock-free Rust audio engine**
 
-Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.
+Mixing and limiting run outside Python's lock, so the network or Claude can never make a beep stutter.
 
 **Binaural rendering from a model of the head**
 
@@ -272,9 +251,9 @@ A dedicated Rust thread schedules every sonar beep itself, sample-identical to t
 
 YOLO runs on the drone's view and the chest camera's. Scored against the browser simulation's ground truth on 168 frames, it finds 99% of people and 91% of cars from the drone, and 96% and 85% from the chest.
 
-**Five AI and data services, the safety path still instant**
+**Four AI and data services, the safety path still instant**
 
-Cartesia, Claude, Moss and SpacetimeDB each run off the audio thread, so a beep never waits on a network and Kite keeps guiding with no connection at all. Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.
+Cartesia, Claude and SpacetimeDB each run off the audio thread, so a beep never waits on a network and Kite keeps guiding with no connection at all. Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.
 
 _drone view, YOLO boxes_
 

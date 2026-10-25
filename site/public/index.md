@@ -114,7 +114,7 @@ One live world for the drone, the earpiece and the live map.
 
 the memory
 
-### Moss
+### Memory
 
 Your places and hazards, found in milliseconds each time you speak: "my usual coffee shop", "the curb here is tall".
 

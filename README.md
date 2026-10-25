@@ -25,7 +25,6 @@
   <img src="https://img.shields.io/badge/Cartesia-Sonic%20%2B%20Ink-FF6B35" alt="Cartesia">
   <img src="https://img.shields.io/badge/Claude-Opus%20%2B%20Haiku-D97757?logo=anthropic&logoColor=white" alt="Claude">
   <img src="https://img.shields.io/badge/SpacetimeDB-Maincloud-6E40C9" alt="SpacetimeDB">
-  <img src="https://img.shields.io/badge/Moss-memory-2E8B57" alt="Moss">
   <img src="https://img.shields.io/badge/Grok-Imagine-000000?logo=x&logoColor=white" alt="Grok">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
@@ -39,7 +38,7 @@
 - **Who it's for:** blind and low-vision people who walk city streets on their own. About a million Americans are blind; fewer than 10,000 guide dogs work in the US.
 - **The problem:** a white cane finds the pole when you reach it. Nothing tells you about the crowd at the corner or the car turning in until it's too late.
 - **What Kite does:** a small drone watches the street from 30 cm above and behind your head, a camera on your chest watches your feet, and your AirPods tell you what's coming: beeps from where things are, faster as they get closer, and a calm voice that says "Stop." first.
-- **What it's made of:** Cartesia is its voice and ears, Claude its judgment, SpacetimeDB the live state every device and the dashboard share, Moss its memory of your places. Safety never waits on any of them.
+- **What it's made of:** Cartesia is its voice and ears, Claude its judgment, and SpacetimeDB the live state every device and the dashboard share. Safety never waits on any of them.
 
 ## 🏆 Tracks at a glance
 
@@ -50,7 +49,6 @@ Each track below has its own section further down. The same answers, laid out ag
 | **Best Use of Cartesia** | Sonic streaming over one WebSocket with per-utterance contexts and cancel, `pcm_f32le` at 48 kHz into the mixer, speed control, pre-rendered safety phrases, Ink streaming STT with `finalize`. [Features](#-cartesia-the-voice-both-ways) | [`speech.py`](earpiece/earpiece/speech.py), [`listen.py`](earpiece/earpiece/listen.py), [`selftest.py`](earpiece/earpiece/selftest.py), [`config.py`](earpiece/earpiece/config.py) |
 | **Anthropic** | Named community, a judgment layer boxed in by code, scene description from camera frames, a voice brain with allow-listed tools, and [where it could go wrong](#where-claude-could-go-wrong-and-what-we-did-about-it) | [`judgment.py`](earpiece/earpiece/judgment.py), [`brain.py`](earpiece/earpiece/brain.py), [`test_judgment.py`](earpiece/tests/test_judgment.py), [`test_speech_brain.py`](earpiece/tests/test_speech_brain.py) |
 | **SpacetimeDB** | `event` and `latest` tables, validated `push` and `clear` reducers, an earpiece bridge that mirrors every event, a dashboard that reads only from Spacetime | [`index.ts`](dashboard/spacetimedb/src/index.ts), [`spacetime.py`](earpiece/earpiece/spacetime.py), [`App.tsx`](dashboard/src/App.tsx), [`test_replay_bridge.py`](earpiece/tests/test_replay_bridge.py) |
-| **Best Use of Moss** | A real-time voice agent's memory: personal places and hazards in `kite-memory`, 3–12 ms local lookups on every utterance, place resolution before routing, memories in every Claude question, hazard warnings on arrival, saved by voice, offline mirror. [Details](#-moss-kites-memory-of-the-wearers-world) | [`memory.py`](earpiece/earpiece/memory.py), [`memory_seed.json`](earpiece/earpiece/memory_seed.json), [`brain.py`](earpiece/earpiece/brain.py), [`test_memory.py`](earpiece/tests/test_memory.py) |
 | **SpaceXAI: Make it Legendary** | Grok Imagine generates the street scenes we can't film (a car turning in, a cyclist cutting across, someone stepping out of a doorway). Kite's detector is benchmarked on them, the earpiece plays them, and Claude's prompt-injection tests paint fake signs onto them. Built in Cursor, planned with Grok. [Details](#-spacexai-grok-imagine-is-kites-test-street) | [`imagine_scenes.py`](scripts/imagine_scenes.py), [`data/imagined/`](data/imagined/), [`bench_labels.json`](perception/bench_labels.json), [`run_live.py`](earpiece/evals/run_live.py), [`test_imagine_scenes.py`](tests/test_imagine_scenes.py) |
 | **Best Hardware Hack** | Tello above and behind the head, chest camera for the near field, AirPods as a managed output with stem-press controls, a real-time Rust audio engine | [`native/src/`](earpiece/native/src/), [`controls.py`](earpiece/earpiece/controls.py), [`devices.py`](earpiece/earpiece/devices.py), [`tests/drone_test.py`](tests/drone_test.py), [`sim/`](sim/) |
 | **Best People-First Social Impact Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; urgency as three tones, not numbers; no video in the shared walk view, and none ever stored in SpacetimeDB | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
@@ -131,12 +129,11 @@ flowchart LR
       stop["'Stop.' · stop and wait<br/>crossing signals"]:::safe
       beacon["Beacon ticks<br/>toward the next turn"]:::safe
     end
-    subgraph CLAUDE["Claude + Moss · off the audio path"]
+    subgraph CLAUDE["Claude · off the audio path"]
       direction TB
       judgment["Judgment · Haiku<br/>one cautious sentence"]:::ai
       brain["Voice brain · Opus<br/>answers and tools"]:::ai
       vision["Vision · Opus<br/>describe · read text aloud"]:::ai
-      moss[("Moss memory<br/>3–12 ms local search")]:::ai
     end
     subgraph VOICE["Cartesia"]
       direction TB
@@ -254,7 +251,6 @@ A white cane reports the world one step at a time. It finds the pole when you re
 
 - **Speech is fast enough to be a safety channel.** Cartesia's Sonic streams the first audio in about a tenth of a second in our tests, so a warning arrives while it still matters.
 - **Vision models can read a street.** Claude describes a camera frame in a sentence or two, which is what a blind walker needs, rather than a list of bounding boxes.
-- **Memory can live on the device.** Moss searches a local index in milliseconds, so "my usual coffee shop" resolves on every sentence.
 - **The hardware is already consumer gear.** AirPods, a laptop and an 80 g toy drone with a 720p camera.
 - **Shared state is a database, not a project.** SpacetimeDB lets the drone laptop, the earpiece and a browser see one live world without a sync server.
 
@@ -311,7 +307,7 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 | **Scene description** | Turns a JPEG `scene_image` event (drone, chest or sim camera) into one or two sentences about sidewalk, people, vehicles, crossings and head-height obstacles. That text becomes the `scene` context for answers and judgment. Raw frames stay on the earpiece. [`sim/scene_describe.py`](sim/scene_describe.py) does the same from outside the earpiece | [`vision.py`](earpiece/earpiece/vision.py) `Vision.describe_image` |
 | **Reading text aloud** | "Read this": Claude transcribes the text in the body-camera frame in reading order, and Cartesia reads it sentence by sentence so a warning can cut in. It says so plainly when there is no readable text | `Vision.read_text`, `Earpiece.read_text`, [`camera.py`](earpiece/earpiece/camera.py) |
 | **"What's in front of me?"** | Answered from the newest body-camera frame; falls back to the obstacle tracks when there is no frame or no internet | `Earpiece.describe_front` |
-| **Conversational answers with tools** | Anything the local intents don't cover, streamed and spoken sentence by sentence, with the relevant Moss memories in context. Tools: `navigate_to`, `control` (settings), `remember` (Moss) | [`brain.py`](earpiece/earpiece/brain.py) |
+| **Conversational answers with tools** | Anything the local intents don't cover, streamed and spoken sentence by sentence, with the walker's saved places in context. Tools: `navigate_to`, `control` (settings), `remember` | [`brain.py`](earpiece/earpiece/brain.py) |
 
 ### Where Claude could go wrong, and what we did about it
 
@@ -342,27 +338,6 @@ The module in [`dashboard/spacetimedb/src/index.ts`](dashboard/spacetimedb/src/i
 
 **Both ways, between people.** Type a message in the dashboard's "Message the walker" box and it becomes a row in SpacetimeDB; the earpiece's inbox picks it up within about a second, runs it through the same go-ahead filter as Claude (nothing on this channel can say "cross" or "go"), and speaks it in Cartesia's voice at info priority, so it never interrupts a warning. The safety corpus checks the filter on 20 everyday messages that must get through and 325 go-ahead phrasings that must not ([`CaregiverInbox`](earpiece/earpiece/spacetime.py), [`corpus.json`](earpiece/evals/corpus.json)).
 
-## 📍 Moss: Kite's memory of the wearer's world
-
-Kite's earpiece is a real-time voice agent, and Moss is its memory. Without it, every walk starts from zero.
-
-**What it holds** (index `kite-memory`): the wearer's own places ("my usual coffee shop: Blue Bottle Coffee on Chestnut Street", with coordinates), remembered hazards ("the curb at Lyon Street and Bay Street is very tall"), and notes ("I prefer quieter side streets"). A seed set ships in [`memory_seed.json`](earpiece/earpiece/memory_seed.json).
-
-**How Kite uses it, on every utterance:**
-
-| Moment | What Moss does |
-|---|---|
-| "Take me to my usual coffee shop" | The personal place is resolved before routing, so navigation gets the real name, address and coordinates |
-| Any question to Claude | The few most relevant memories ride along in the context, so "home" and "my usual" mean something |
-| Arriving at a place | A saved hazard or tip for that place is spoken once ("Heads up: the curb at Lyon Street and Bay Street is very tall") |
-| "Remember this place as the bench" | Saves the current location as a place, by voice |
-| "Remember that the curb on Union is broken" | Saves a hazard (hazard words are detected; anything else is a note) |
-| A `memory` event | Any producer, such as a script, can add a place, hazard or note |
-
-**Why it's fast enough.** The index is loaded into Moss's local runtime, so a lookup takes **3 to 12 ms in process, measured**, cheap enough to run on every sentence. Writes go to the Moss cloud index and a local JSON mirror, so memories survive restarts and keyword search works with no network. Loading the index stalls Python for about 1.9 s at startup; the Rust audio engine runs outside the GIL, so the audio is unaffected. Code: [`earpiece/earpiece/memory.py`](earpiece/earpiece/memory.py), tests: [`test_memory.py`](earpiece/tests/test_memory.py).
-
-**Setup.** Put `MOSS_PROJECT_ID` and `MOSS_PROJECT_KEY` in `.env` and install the `memory` extra. Without them, Kite uses the local mirror only.
-
 ## 🚀 SpaceXAI: Grok Imagine is Kite's test street
 
 The moments Kite exists for are the ones nobody can stage safely, so Grok Imagine generates them and Kite's own code is tested against them.
@@ -383,7 +358,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 - The cues are directional, so the AirPods must stay in stereo. That is why the MacBook mic is the default.
 - Speech is slow, so sound carries distance and voice is saved for decisions.
 - "Pause" silences guidance but never safety warnings. An ear check ("Left ear." from the left, "Right ear." from the right) catches swapped AirPods before a walk.
-- A walker's world is personal: their coffee shop, their tall curb. Moss remembers it.
+- A walker's world is personal: their coffee shop, their tall curb. Kite remembers it.
 
 **Customer impact.** The goal is independence: walking a street alone and knowing what is ahead before the cane finds it. It is built from consumer parts, so the hardware is within reach.
 
@@ -392,7 +367,6 @@ The team built Kite in Cursor and used Grok for research and planning.
 | Number | What it is | Source |
 |---|---|---|
 | ~0.1 s | Decision to first spoken word, streamed from Cartesia | `speech.py`, `selftest.py` |
-| 3–12 ms | Moss lookup of a saved place or hazard, in process | `memory.py` |
 | 0 | Audio glitches while five threads hammer the CPU and the mixer for 3 s, with the Rust engine on a real device | `test_real_device_survives_python_abuse` in [`test_rust_engine.py`](earpiece/tests/test_rust_engine.py) |
 | 0 | Audio glitches replaying the 673-event sample walk through `scripts/replay.py` on laptop speakers | [`data/sample_walk.jsonl`](data/sample_walk.jsonl) |
 | 6,100 | Automated tests, all run by [`scripts/check.sh`](scripts/check.sh): 3,456 earpiece (2,405 of them the safety-eval corpus), 2,051 drone layer, 254 perception, 147 for the phone link, walk server and sim, 93 UNO Q link, 54 Rust and 48 site. They include a flood of 20,000 datagrams, a third of them malformed, from three senders | [`earpiece/tests/`](earpiece/tests/), [`test_app_stress.py`](earpiece/tests/test_app_stress.py) |
@@ -403,7 +377,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 **Responsible design.**
 
 - *Privacy:* the shared walk view shows positions and events, never camera video; video never goes through SpacetimeDB, and frames sent to Claude are not mirrored anywhere. Our rule is that faces in any stored frame are blurred, and no frames are stored during the live demo.
-- *Local safety path:* obstacle cues travel over localhost UDP, never through the cloud. Claude, Cartesia, Moss and SpacetimeDB can all be down and Kite still beeps and says "Stop."
+- *Local safety path:* obstacle cues travel over localhost UDP, never through the cloud. Claude, Cartesia and SpacetimeDB can all be down and Kite still beeps and says "Stop."
 - *Hearing:* a limiter caps output at -1 dBFS, and critical warnings can't be muted or paused by any remote command.
 - *Security:* see [`SECURITY.md`](SECURITY.md). Inputs bind to localhost by default, Claude's tools are allow-listed, no API keys are in the repo, and [`scripts/check.sh`](scripts/check.sh) runs gitleaks, pip-audit, bandit, npm audit and cargo audit.
 
@@ -437,7 +411,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 - **A depth shoot-out instead of a guess** ([`perception/docs/depth_shootout.md`](perception/docs/depth_shootout.md)). Depth Anything V2 variants, ARCore-style depth from motion, and fused combinations are scored on laser-scanned DIODE frames and rendered walks with exact depth. Anchoring a model's scale to the floor cuts its error 3 to 7 times; fusing it with motion stereo catches every P1 frame on the walks.
 - **Beeps that survive a frozen interpreter.** A dedicated Rust thread (`KITE_SONAR_THREAD=native`) builds and schedules every sonar beep itself, sample-identical to the Python path. When Python froze for 500 ms in a test, the beats due during the freeze still played on time.
 - **A speech scheduler that reasons about time**: priorities, mid-word preemption with re-queueing, per-utterance time-to-live, de-duplication and a phrase cache, on one Cartesia WebSocket.
-- **Five AI and data services at the core, the safety path still instant**: Cartesia, Claude, Moss and SpacetimeDB each run off the audio thread, so a beep never waits on a network, and Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.
+- **Four AI and data services at the core, the safety path still instant**: Cartesia, Claude and SpacetimeDB each run off the audio thread, so a beep never waits on a network, and Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.
 
 ## 🔬 Anatomy
 
@@ -456,7 +430,7 @@ Status as of this commit. **Core** is in the main path and tested. **On by defau
 | Claude voice brain with tools ([`brain.py`](earpiece/earpiece/brain.py)) | Key-gated | Answers from Kite's live context; tools for navigation, settings and memory |
 | Claude judgment layer ([`judgment.py`](earpiece/earpiece/judgment.py)) | Key-gated | At most one cautious sentence and an optional priority raise, checked in code |
 | Claude vision ([`vision.py`](earpiece/earpiece/vision.py), [`camera.py`](earpiece/earpiece/camera.py), [`sim/scene_describe.py`](sim/scene_describe.py)) | Key-gated | Scene text from drone, chest and sim frames, "what's in front of me?", and reading text aloud |
-| Moss memory ([`memory.py`](earpiece/earpiece/memory.py)) | Core (Moss keys; a local JSON mirror keeps it working without them) | The wearer's places and hazards, searched on every utterance |
+| Memory ([`memory.py`](earpiece/earpiece/memory.py)) | Core | The wearer's places and hazards, kept in a local file |
 | Google Places API (New) and Routes API v2 ([`destinations.py`](earpiece/earpiece/destinations.py), [`route.py`](earpiece/earpiece/route.py)) | Key-gated | "The nearest pharmacy", spoken turns and the beacon's bearing, rerouting when the walker strays |
 | SpacetimeDB module and live dashboard ([`dashboard/`](dashboard/)) | Core (`--spacetime` mirrors the earpiece live) | `event` and `latest` tables; live map, hazards, last spoken, devices, walk timeline and presentation mode (`P`) |
 | Live walk and reveal window ([`sim/standin_detect.py`](sim/standin_detect.py), [`sim/live_walk.py`](sim/live_walk.py)) | Core for the demo | Body camera to "Stop." at about 1.5 m; the reveal replays the last 20 s from memory with heads pixelated |
@@ -473,7 +447,7 @@ Status as of this commit. **Core** is in the main path and tested. **On by defau
 
 ## 🚀 Quick start on one laptop
 
-You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.19 or later, and the [SpacetimeDB CLI](https://spacetimedb.com/install) for the offline fallback. Put the Cartesia, Anthropic, Moss, SpacetimeDB, Google Maps and xAI keys in `.env` (see `.env.example`) for the full Kite: Cartesia's voice and ears, Claude's judgment, Moss's memory, the live SpacetimeDB world and Grok Imagine.
+You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.19 or later, and the [SpacetimeDB CLI](https://spacetimedb.com/install) for the offline fallback. Put the Cartesia, Anthropic, SpacetimeDB, Google Maps and xAI keys in `.env` (see `.env.example`) for the full Kite: Cartesia's voice and ears, Claude's judgment, the live SpacetimeDB world and Grok Imagine.
 
 Install once (the demo script tells you if any of these is missing):
 
@@ -618,7 +592,7 @@ We think the right way to help a blind pedestrian is not a smarter cane or a tal
 - Perception models: Ultralytics YOLO11n (AGPL-3.0) and Depth Anything V2 Small (metric, indoor; Apache-2.0). In `perception/`: Ultralytics YOLO-World v2-S (AGPL-3.0; YOLO-World by Tencent AI Lab), OpenAI CLIP ViT-B/32 to embed its prompts (MIT), and Depth Anything V2 Small metric outdoor (Apache-2.0). The depth shoot-out scores against DIODE (Vasiljevic et al., MIT). Ideas, not code: Google's ARCore Depth API and DepthLab (Apache-2.0) for depth from motion, depth confidence and collision checks, and ScrollSafe by MrAnitude, whose box-height rule is the near-field baseline.
 - Fruit-fly pursuit circuit in [`kite/fly/`](kite/fly/): a subgraph of the MaleCNS v1.0 connectome (Janelia FlyEM et al., CC-BY 4.0), run with the leaky integrate-and-fire model and parameters of Shiu et al., Nature 2024, and tuned with pycma (CMA-ES).
 - Video segmentation ([`sim/seg_standin.py`](sim/seg_standin.py)): Ultralytics YOLO26n-sem trained on ADE20K (`yolo26n-sem-ade20k.pt`), AGPL-3.0 like the rest of Ultralytics. ADE20K is from MIT CSAIL (Zhou et al., "Scene Parsing through ADE20K Dataset", CVPR 2017).
-- Open-source libraries: djitellopy, three.js, 3d-tiles-renderer, SpacetimeDB, React, Leaflet, react-leaflet, Vite, NumPy, SciPy, sounddevice, websockets, httpx, the Anthropic Python SDK, Moss (`inferedge-moss`), OpenCV, PyAV, Ultralytics, Hugging Face Transformers, Playwright, cpal, rtrb, PyO3. Services: Google Routes API v2, Places API (New), Map Tiles API and Street View Static API
+- Open-source libraries: djitellopy, three.js, 3d-tiles-renderer, SpacetimeDB, React, Leaflet, react-leaflet, Vite, NumPy, SciPy, sounddevice, websockets, httpx, the Anthropic Python SDK, OpenCV, PyAV, Ultralytics, Hugging Face Transformers, Playwright, cpal, rtrb, PyO3. Services: Google Routes API v2, Places API (New), Map Tiles API and Street View Static API
 - Head model for binaural rendering: Brown and Duda's spherical-head model
 - Built with Claude Code: Claude worked alongside the team on the earpiece, the Rust audio engine, perception, the safety evals and this site.
 - Built with Cursor: the team wrote Kite in Cursor, and Cursor's agent built the phone GPS link and the walking map.
