@@ -27,12 +27,12 @@ button { font: inherit; color: inherit; }
 code { font: .85em ui-monospace, "SF Mono", monospace; }
 
 /* Buttons: quiet pills. */
-header button, .banner button, .message button, .quick button {
+header button, .message button, .quick button {
   background: var(--card); color: var(--ink); border: 1px solid var(--edge); border-radius: 999px;
   padding: .5rem 1rem; min-height: 40px; cursor: pointer; font-size: .9rem; font-weight: 500;
   transition-property: background-color, border-color, transform; transition-duration: 150ms; transition-timing-function: ease-out;
 }
-header button:hover:not(:disabled), .banner button:hover, .message button:hover:not(:disabled), .quick button:hover:not(:disabled) { background: var(--sunk); border-color: #636366; }
+header button:hover:not(:disabled), .message button:hover:not(:disabled), .quick button:hover:not(:disabled) { background: var(--sunk); border-color: #636366; }
 header button:active:not(:disabled), .quick button:active:not(:disabled), .message button:active:not(:disabled) { transform: scale(.97); }
 button:disabled { opacity: .45; cursor: not-allowed; }
 kbd { font: 600 .7rem ui-monospace, monospace; border: 1px solid var(--edge); border-radius: 5px; padding: 0 .3rem; margin-left: .35rem; color: var(--ink-3); }
@@ -53,12 +53,10 @@ header h1 .subtitle { font-weight: 450; margin-left: .35rem; color: var(--ink-3)
 .fixture-chip { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-soft); border-radius: 999px; padding: .15rem .6rem; }
 @keyframes pulse { 50% { opacity: .3; } }
 
-/* Banners: connection trouble, a quiet database, a help request. */
+/* Banners: connection trouble, a quiet database. */
 .banner { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .9rem; margin: 0 24px 12px; padding: .7rem 1.1rem; border-radius: 14px; font-weight: 500; }
 .banner.warn { background: var(--warn-soft); color: var(--warn-text); }
 .banner.quiet { background: var(--sunk); color: var(--ink-2); border: 1px solid var(--line); }
-.banner.help { background: var(--stop-soft); color: var(--stop-text); font-size: 1.05rem; box-shadow: inset 0 0 0 1px rgba(255, 69, 58, .35); }
-.banner-actions { margin-left: auto; display: flex; gap: .5rem; }
 
 /* Layout: the map and timeline on the left, a calm column of cards on the right. */
 .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 400px; gap: 16px; padding: 0 24px 20px; }

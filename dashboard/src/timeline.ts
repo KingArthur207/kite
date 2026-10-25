@@ -7,12 +7,12 @@ export type Ev = { id: string; type: string; source: string; priority: string; t
 
 // Who acted: Kite's deterministic code, Claude (judgment, answers, scene text) or the caregiver.
 export type Who = 'kite' | 'claude' | 'caregiver';
-export type Kind = 'stop' | 'help' | 'hazard' | 'judgment' | 'answer' | 'scene' | 'caregiver' | 'guidance';
+export type Kind = 'stop' | 'hazard' | 'judgment' | 'answer' | 'scene' | 'caregiver' | 'guidance';
 export type Moment = { id: string; t: number; kind: Kind; who: Who; text: string; detail: string; source: string; pos?: LatLng };
 
 export const WHO_LABEL: Record<Who, string> = { kite: 'Kite', claude: 'Claude', caregiver: 'Dashboard' };
 export const KIND_LABEL: Record<Kind, string> = {
-  stop: 'Stop', help: 'Help request', hazard: 'Hazard', judgment: 'Judgment', answer: 'Answer', scene: 'Scene', caregiver: 'Message', guidance: 'Guidance',
+  stop: 'Stop', hazard: 'Hazard', judgment: 'Judgment', answer: 'Answer', scene: 'Scene', caregiver: 'Message', guidance: 'Guidance',
 };
 
 const WALK_GAP_MS = 45_000;     // a quiet gap this long starts a new walk
@@ -110,9 +110,6 @@ function toMoment(e: Ev): Omit<Moment, 'pos'> | undefined {
       return e.source.startsWith('scene-') && text ? { ...base, kind: 'scene', who: 'claude', text, detail: `sees (${e.source.slice(6)})` } : undefined;
     case 'guidance':
       return text ? { ...base, kind: 'guidance', who: 'kite', text, detail: 'route' } : undefined;
-    case 'caregiver_alert':
-      // The walker asked Kite to tell their caregiver; Claude made the call (alert_caregiver tool).
-      return { ...base, kind: 'help', who: 'claude', text: clip(p.message) || 'The walker asked for help.', detail: 'the walker asked Kite to tell you' };
     default:
       return undefined;
   }

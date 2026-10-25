@@ -18,8 +18,8 @@ import './App.css';
 
 // Default (analytics) view: what Kite knows (phones on the map, hazards, spoken lines, rates) beside the walker's
 // and the drone's live camera feeds. `?view=walk` opens the walk view below.
-// Caregiver dashboard: live view of the shared Kite world state, plus short messages to the walker
-// (a `say` from source `caregiver`; the earpiece polls for them and speaks them). No camera video (privacy).
+// Walk view: live view of the shared Kite world state, plus short messages to the walker
+// (a `say` from source `caregiver`; the earpiece polls for them and speaks them). No camera video here (privacy).
 // Press P for presentation mode (the reveal): no raw feed or controls, bigger map, timeline and last line.
 // Every payload is untrusted: it is parsed defensively and rendered as text by React, never as HTML.
 
@@ -31,7 +31,6 @@ const DEFAULT_HAZARD_TTL_S = 20;
 const MAX_HAZARD_TTL_S = 120;
 const MAX_HAZARDS = 8;
 const BEACON_TTL_S = 30;
-const HELP_FRESH_S = 10 * 60;  // a help request stays on screen this long unless acknowledged
 const EVENT_TABLE_CAP = 500;   // the module keeps the newest 500 events
 // The earpiece drops any message that could be heard as permission to move ("you can", "go", "clear"...),
 // so the quick ones avoid those words (view.check.ts checks them).
@@ -52,7 +51,7 @@ async function signMessage(text: string): Promise<{ ts: number; sig: string } | 
 const SHOWN_MESSAGES = 3;
 const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
 // Moment colours on the map; stops are always red.
-const PIN_COLOR: Record<string, string> = { stop: '#FF453A', help: '#FF453A', kite: '#63E6E2', claude: '#FF8A5B', caregiver: '#64D2FF' };
+const PIN_COLOR: Record<string, string> = { stop: '#FF453A', kite: '#63E6E2', claude: '#FF8A5B', caregiver: '#64D2FF' };
 // `?view=walk` (and the older `?view=caregiver`) opens the walk view: map, walk timeline, messages and shared state.
 const CAREGIVER = ['walk', 'caregiver'].includes(new URLSearchParams(location.search).get('view') ?? '');
 const FIXTURE = fixtureOn();   // ?fixture=two-phones in dev: fake phones rendered locally, never written to SpacetimeDB
@@ -78,8 +77,6 @@ function summary(type: string, p: Payload): string {
       return [clip(p.label, 60), whereOf(p)].filter(Boolean).join(' · ');
     case 'obstacles':
       return `${Array.isArray(p.objects) ? p.objects.length : 0} objects`;
-    case 'caregiver_alert':
-      return `Help request: ${clip(p.message, 160) || 'no message'}`;
     default:
       return clip(p.text ?? p.action ?? p.kind ?? '', 160);
   }
@@ -115,7 +112,6 @@ function App() {
   const [present, setPresent] = useState(() => location.hash === '#present');
   const [focusId, setFocusId] = useState<string>();
   const [follow, setFollow] = useState<string>();
-  const [ackHelp, setAckHelp] = useState<string>();
   const [everLive, setEverLive] = useState(false);
   const [polite, announce] = useAnnouncer();
   const [urgent, announceUrgent] = useAnnouncer();
@@ -173,12 +169,10 @@ function App() {
   const walkStart = walk.length ? Math.min(happenedAt(walk[0]), moments[0]?.t ?? Infinity) : undefined;
   const walkEnd = walk.length ? happenedAt(walk[walk.length - 1]) : undefined;
   const pins: Pin[] = useMemo(() => moments.flatMap(mo => mo.pos ? [{
-    id: mo.id, at: mo.pos, stop: mo.kind === 'stop' || mo.kind === 'help', label: mo.text,
-    color: PIN_COLOR[mo.kind === 'stop' || mo.kind === 'help' ? mo.kind : mo.who],
+    id: mo.id, at: mo.pos, stop: mo.kind === 'stop', label: mo.text,
+    color: PIN_COLOR[mo.kind === 'stop' ? mo.kind : mo.who],
   }] : []), [moments]);
   const lastStop = useMemo(() => [...moments].reverse().find(m => m.kind === 'stop'), [moments]);
-  const lastHelp = useMemo(() => [...moments].reverse().find(m => m.kind === 'help'), [moments]);
-  const helpOpen = lastHelp && lastHelp.id !== ackHelp && ageS(now, lastHelp.t) < HELP_FRESH_S ? lastHelp : undefined;
 
   // Active hazards: newest per (source, kind) still inside its ttl.
   const hazards = new Map<string, Ev>();
@@ -220,19 +214,18 @@ function App() {
   const spokenText = lastSpoken ? clip(lastSpoken.p.text) : '';
 
   // Announce what changes after the page has loaded (never the backlog): new spoken lines politely,
-  // stops and help requests assertively.
-  const seen = useRef<{ spoken?: string; stop?: string; help?: string }>();
+  // stops assertively.
+  const seen = useRef<{ spoken?: string; stop?: string }>();
   useEffect(() => {
     if (!ready) return;
-    const cur = { spoken: lastSpoken && `${lastSpoken.id}@${lastSpoken.t}`, stop: lastStop?.id, help: lastHelp?.id };
+    const cur = { spoken: lastSpoken && `${lastSpoken.id}@${lastSpoken.t}`, stop: lastStop?.id };
     const was = seen.current;
     seen.current = cur;
     if (!was) return;
-    if (cur.help && cur.help !== was.help && lastHelp) announceUrgent(`The walker asked for help: ${lastHelp.text}`);
-    else if (cur.stop && cur.stop !== was.stop && lastStop) announceUrgent(`Stop. Kite said: ${lastStop.text}`);
+    if (cur.stop && cur.stop !== was.stop && lastStop) announceUrgent(`Stop. Kite said: ${lastStop.text}`);
     else if (cur.spoken && cur.spoken !== was.spoken && lastSpoken && speaker && !isStopText(spokenText) && lastSpoken.priority !== 'critical')
       announce(`${SAID_BY[speaker]}: ${spokenText.replace(/^message:\s*/i, '')}`);
-  }, [ready, lastSpoken?.id, lastSpoken?.t, lastStop?.id, lastHelp?.id]);
+  }, [ready, lastSpoken?.id, lastSpoken?.t, lastStop?.id]);
 
   // Caregiver messages: the newest few from the table, plus local ones still on their way.
   const sentRows = sorted.filter(e => e.type === 'say' && e.source === 'caregiver').slice(0, SHOWN_MESSAGES);
@@ -321,17 +314,6 @@ function App() {
       ) : quiet ? (
         <div className="banner quiet">No device has written for {ago(quietS).replace(' ago', '')}. The walk may be over, or the devices are offline.</div>
       ) : null}
-
-      {CAREGIVER && helpOpen && (
-        <div className="banner help">
-          <strong>The walker asked for help</strong> <span>“{helpOpen.text}”</span>
-          <span className="muted">{ago(ageS(now, helpOpen.t))}</span>
-          <span className="banner-actions">
-            {helpOpen.pos && <button type="button" onClick={() => setFocusId(helpOpen.id)}>Show on map</button>}
-            <button type="button" onClick={() => setAckHelp(helpOpen.id)}>Got it</button>
-          </span>
-        </div>
-      )}
 
       {!CAREGIVER ? (
         <main className="analytics">

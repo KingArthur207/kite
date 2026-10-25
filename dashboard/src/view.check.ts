@@ -28,12 +28,15 @@ const junk = [
   ev(T, 'say', 'judgment', { text: { a: 1 }, upgrade: 'nope', latency_ms: 'fast' }),
   ev(T + 1, 'spoken', 'earpiece', { text: 42, priority: 5 }),
   ev(T + 2, 'hazard', 'drone', { kind: null, bearing: 'left', distance: -3, ttl: 'soon' }),
-  ev(T + 3, 'caregiver_alert', 'earpiece', { message: { x: 1 } }),
+  ev(T + 3, 'guidance', 'route', { text: ['Head', 'north'] }),
+  ev(T + 3.5, 'say', 'caregiver', { text: { evil: '<b>' } }),
   ev(T + 4, 'scene', 'scene-chest', {}),
 ];
 const ms = moments(junk, undefined);
-eq(ms.map(m => m.kind), ['hazard', 'help'], 'junk rows become safe moments or none');
-eq(ms[1].text, 'The walker asked for help.', 'help request without a message');
+eq(ms.map(m => m.kind), ['hazard'], 'junk rows become safe moments or none');
+eq(ms[0].text, 'hazard', 'a hazard with no usable kind still has a label');
+// A row type the dashboard doesn't know is not a key moment.
+eq(moments([ev(T, 'unknown_type', 'earpiece', { text: 'hi', message: 'hi' })], undefined), [], 'unknown types are ignored');
 
 // Map placement only for sane bearing/distance.
 eq(relative({ bearing: 10, distance: 8 }), { bearing: 10, distance: 8 }, 'usable relative');
