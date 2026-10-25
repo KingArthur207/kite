@@ -118,3 +118,16 @@ bless, and starts the `kite-phone` service (as root, which BlueZ needs to advert
 `python -m earpiece run --bind 0.0.0.0 --spacetime`. Board log: `journalctl -u kite-phone -f`. Turn the Mac's
 receiver off first, or the phone may connect to whichever "Kite" it finds first. On Linux every phone shares
 the source `phone` (only macOS tells phones apart), so use one phone with the board.
+
+## Reading the GPS from another computer (any network)
+
+eduroam doesn't always route between laptops, so the receiver can also put each phone's newest position in
+SpacetimeDB (about once a second, newest only), and any computer with internet reads it:
+
+```
+python -m phone.ble --spacetime            # on the computer the phone connects to (add --no-send if no earpiece)
+python -m phone.latest --watch             # on the main computer: each phone's newest position, every second
+```
+
+In a script: `from phone.latest import latest` gives `[{"source", "lat", "lng", "accuracy", "speed", "course", "age_s", ...}]`,
+newest first. Standard library only.
