@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { tables, reducers } from './module_bindings';
 import { useSpacetimeDB, useTable, useReducer } from 'spacetimedb/react';
-import { WalkMap, PRIORITY_COLOR, type LatLng, type Pin, type Pose, type Relative } from './WalkMap';
+import { WalkMap, PRIORITY_COLOR, type Pin, type Pose, type Relative } from './WalkMap';
+import { accuracyText, clientsOf, speedText, type Client } from './clients';
+import { fixtureOn, twoPhones } from './fixture';
 import {
   clip, happenedAt, isStopText, lastWalk, liveStats, moments as walkMoments, num, parse, speakerOf, str,
   type Ev, type Moment, type Payload, type Who,
 } from './timeline';
 import { Badge, LiveState, StopCard, Timeline } from './Reveal';
 import {
-  MAX_MESSAGE, QUIET_S, UNHEARD_AFTER_S, ago, ageS, blockedWord, deliveryOf, direction, facing, freshOf, humanize,
+  MAX_MESSAGE, QUIET_S, UNHEARD_AFTER_S, ago, ageS, blockedWord, deliveryOf, direction, facing, humanize,
   linkOf, meters, relative, type Link,
 } from './view';
 import './App.css';
@@ -22,7 +24,6 @@ import './App.css';
 type Row = { id?: bigint; key?: string; type: string; source: string; priority: string; payload: string; t: { toMillis(): bigint } };
 
 const FEED_SIZE = 40;
-const TRAIL_SIZE = 150;
 const DEFAULT_HAZARD_TTL_S = 20;
 const MAX_HAZARD_TTL_S = 120;
 const MAX_HAZARDS = 8;
@@ -48,7 +49,8 @@ async function signMessage(text: string): Promise<{ ts: number; sig: string } | 
 const SHOWN_MESSAGES = 3;
 const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
 // Moment colours on the map; stops are always red.
-const PIN_COLOR: Record<string, string> = { stop: '#ef4444', help: '#ef4444', kite: '#2dd4bf', claude: '#e8875f', caregiver: '#4da3ff' };
+const PIN_COLOR: Record<string, string> = { stop: '#D92D20', help: '#D92D20', kite: '#1E9E8A', claude: '#D9702A', caregiver: '#2F80ED' };
+const FIXTURE = fixtureOn();   // ?fixture=two-phones in dev: fake phones rendered locally, never written to SpacetimeDB
 
 const toEv = (r: Row): Ev => ({ id: r.id?.toString() ?? r.key ?? '', type: r.type, source: r.source, priority: r.priority, t: Number(r.t.toMillis()), p: parse(r.payload) });
 const newestFirst = (rows: readonly Ev[]) => [...rows].sort((a, b) => b.t - a.t);
@@ -78,11 +80,6 @@ function summary(type: string, p: Payload): string {
   }
 }
 
-const poseOf = (p: Payload): Pose | undefined => {
-  const lat = num(p.lat), lng = num(p.lng);
-  return lat != null && lng != null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng, heading: num(p.heading) } : undefined;
-};
-const isPose = (e: Ev) => e.type === 'position' && poseOf(e.p) != null;
 
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 
@@ -112,6 +109,7 @@ function App() {
   const [now, setNow] = useState(Date.now());
   const [present, setPresent] = useState(() => location.hash === '#present');
   const [focusId, setFocusId] = useState<string>();
+  const [follow, setFollow] = useState<string>();
   const [ackHelp, setAckHelp] = useState<string>();
   const [everLive, setEverLive] = useState(false);
   const [polite, announce] = useAnnouncer();
@@ -141,26 +139,17 @@ function App() {
   }, [present]);
 
   // Parse every payload once per table change, not once per render (the clock re-renders every second).
-  const sorted = useMemo(() => newestFirst(events.map(toEv)), [events]);
+  const fixtureTick = FIXTURE ? Math.floor(now / 1000) : 0;
+  const sorted = useMemo(() => newestFirst([...events.map(toEv), ...(FIXTURE ? twoPhones(now) : [])]), [events, fixtureTick]);
   const latestSorted = useMemo(() => newestFirst(latest.map(toEv)), [latest]);
   const haveData = ready || sorted.length > 0 || latestSorted.length > 0;
 
-  // Walker: newest position (any source) with usable coordinates, from either table, so one bad
-  // payload in `latest` doesn't hide the walker. Its trail comes from the same source.
-  const lastPosRow = useMemo(() => {
-    const a = latestSorted.find(isPose), b = sorted.find(isPose);
-    return a && b ? (a.t >= b.t ? a : b) : a ?? b;
-  }, [latestSorted, sorted]);
-  const pos = lastPosRow?.p;
-  const pose = pos && poseOf(pos);
-  const walkerSource = lastPosRow?.source;
-  const trail: LatLng[] = useMemo(() => sorted
-    .filter(e => e.type === 'position' && e.source === walkerSource)
-    .slice(0, TRAIL_SIZE)
-    .map(e => poseOf(e.p))
-    .filter((p): p is Pose => p != null)
-    .map(p => [p.lat, p.lng] as LatLng)
-    .reverse(), [sorted, walkerSource]);
+  // Every client with a usable position, from both tables, so one bad payload in `latest` doesn't hide
+  // anyone. The newest one is the walker that hazards, the beacon and the timeline are placed around.
+  const clients = useMemo(() => clientsOf(sorted, latestSorted, now), [sorted, latestSorted, now]);
+  const primary: Client | undefined = clients.reduce<Client | undefined>((a, c) => (!a || c.fix.t > a.fix.t ? c : a), undefined);
+  const pose: Pose | undefined = primary && { lat: primary.fix.lat, lng: primary.fix.lng, heading: primary.fix.heading };
+  const walkerSource = primary?.source;
 
   // The last walk's key moments, oldest first.
   const walk = useMemo(() => lastWalk([...sorted].reverse()), [sorted]);
@@ -279,19 +268,29 @@ function App() {
     : sorted.length === 0 && latestSorted.length === 0
       ? 'The database is empty. The map appears with the first position event that has lat/lng.'
       : 'No position with coordinates yet. The map appears as soon as a position event with lat/lng arrives.';
-  const posAge = lastPosRow ? ageS(now, lastPosRow.t) : 0;
+
+  const liveCount = clients.filter(c => c.fresh !== 'dead').length;
+  const hero = !primary
+    ? { word: 'Waiting', tone: 'idle', line: haveData ? 'No phone has connected yet.' : 'Loading…' }
+    : primary.fresh === 'fresh'
+      ? { word: primary.ahead ? 'Walking' : 'Live', tone: 'live',
+        line: [liveCount === 1 ? 'One phone live' : `${liveCount} phones live`, primary.fix.place, ago(primary.ageS)].filter(Boolean).join(' · ') }
+      : primary.fresh === 'stale'
+        ? { word: 'Delayed', tone: 'warn', line: `Last position ${ago(primary.ageS)}` }
+        : { word: 'Quiet', tone: 'idle', line: `Last position ${ago(primary.ageS)}` };
 
   return (
     <div className={`app ${present ? 'present' : ''}`}>
       <header>
-        <h1>Kite <span className="subtitle">{present ? 'what Kite saw and did on this walk' : 'caregiver view'}</span></h1>
+        <img className="mark" src={`${import.meta.env.BASE_URL}kite-mark.svg`} alt="" width="34" height="34" />
+        <h1>Kite <span className="subtitle">{present ? 'The walk' : 'Caregiver'}</span></h1>
         <span className={`conn ${link}`} role="status">
-          <i aria-hidden="true" />{LINK_TEXT[link]}<span className="conn-via"> via SpacetimeDB</span>
+          <i aria-hidden="true" />{LINK_TEXT[link]}<span className="conn-via"> · SpacetimeDB</span>
         </span>
-        {quiet && present && <span className="quiet-chip">Last update {ago(quietS)}</span>}
+        {FIXTURE && <span className="fixture-chip">Fixture data</span>}
         <span className="header-actions">
           <button type="button" className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
-            aria-keyshortcuts="P" title="Presentation mode (P, Esc to leave)">{present ? 'Exit presentation' : 'Present'} <kbd aria-hidden="true">P</kbd></button>
+            aria-keyshortcuts="P" title="Presentation mode (P, Esc to leave)">{present ? 'Exit' : 'Present'} <kbd aria-hidden="true">P</kbd></button>
           {!present && <button type="button" onClick={onClear} disabled={!live}>Clear run</button>}
         </span>
       </header>
@@ -302,7 +301,7 @@ function App() {
             ? <>Connection to SpacetimeDB lost. {newestT != null ? <>Showing what arrived until {clock(newestT)}. </> : null}Reconnecting automatically.</>
             : <>Can't reach SpacetimeDB{conn.connectionError?.message ? ` (${clip(conn.connectionError.message, 120)})` : ''}. Retrying automatically.</>}
         </div>
-      ) : quiet && !present ? (
+      ) : quiet ? (
         <div className="banner quiet">No device has written for {ago(quietS).replace(' ago', '')}. The walk may be over, or the devices are offline.</div>
       ) : null}
 
@@ -319,40 +318,54 @@ function App() {
 
       <main className="layout">
         <div className="main-col">
-          <WalkMap pose={pose} trail={trail} hazards={hazardMarks} beacon={beacon}
-            place={pos ? clip(pos.place, 60) : ''} where={pos ? facing(pos.heading) : ''}
-            freshness={ago(posAge)} fresh={freshOf(posAge)} pins={pins} focusId={focusId} onPick={setFocusId}
-            initialView={present ? 'walk' : 'follow'} waiting={waiting} />
+          <WalkMap clients={clients} pose={pose} follow={follow} onFollow={setFollow} hazards={hazardMarks} beacon={beacon}
+            pins={pins} focusId={focusId} onPick={setFocusId} initialView={present ? 'walk' : 'all'} waiting={waiting} />
           <Timeline moments={moments} walkStart={walkStart} walkEnd={walkEnd} focusId={focusId} onPick={setFocusId} />
         </div>
 
         <aside key={present ? 'present' : 'normal'} aria-label="Walk details" tabIndex={0}>{/* remount: each mode starts scrolled to the top */}
+          <div className={`hero ${hero.tone}`}>
+            <span className="ring" aria-hidden="true"><i /></span>
+            <div>
+              <p className="hero-word" role="status">{hero.word}</p>
+              <p className="hero-line">{hero.line}</p>
+            </div>
+          </div>
+
+          <section className="clients" aria-labelledby="clients-h">
+            <h2 id="clients-h">{clients.length === 1 ? 'Phone' : 'Phones'}</h2>
+            {clients.length === 0 ? <p className="muted">{haveData ? 'Each phone appears here when it sends its first position.' : 'Waiting for data…'}</p> : (
+              <ul className="client-list">
+                {clients.map(c => (
+                  <li key={c.source}>
+                    <button type="button" className={`client ${c.fresh}`} aria-pressed={follow === c.source}
+                      title={follow === c.source ? 'Stop following' : 'Follow on the map'}
+                      onClick={() => setFollow(f => (f === c.source ? undefined : c.source))}>
+                      <span className="swatch" style={{ background: c.color }} aria-hidden="true" />
+                      <span className="client-main">
+                        <span className="client-name">{c.name}</span>
+                        <span className="client-sub">{[accuracyText(c.fix), speedText(c.fix), c.fix.place].filter(Boolean).join(' · ') || 'Position only'}</span>
+                      </span>
+                      <span className={`client-age ${c.fresh}`}>{c.fresh === 'fresh' ? 'Live' : ago(c.ageS)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {beacon && <p className="beacon-line">Next: <strong>{beacon.label}</strong>, {meters(beacon.distance)} {direction(beacon.bearing)}</p>}
+          </section>
+
           <section className="last-spoken" aria-labelledby="spoken-h">
             <h2 id="spoken-h">{present ? 'Kite just said' : 'Last spoken line'}</h2>
             {lastSpoken && speaker ? (
               <>
                 <p className={`spoken ${isStopText(spokenText) ? 'is-stop' : ''}`}>“{spokenText}”</p>
-                <p className="spoken-meta"><Badge who={speaker} /><span className="muted small">{lastSpoken.type} · {ago(ageS(now, lastSpoken.t))}</span></p>
+                <p className="spoken-meta"><Badge who={speaker} /><span className="muted small">{ago(ageS(now, lastSpoken.t))}</span></p>
               </>
             ) : <p className="muted">{haveData ? 'Nothing spoken yet.' : 'Loading…'}</p>}
           </section>
 
           <StopCard stop={lastStop} walkStart={walkStart} now={now} onPick={setFocusId} focused={focusId === lastStop?.id} />
-
-          {!present && (
-            <section className="walker" aria-labelledby="walker-h">
-              <h2 id="walker-h">Walker</h2>
-              {pos ? (
-                <>
-                  <div className="big">{clip(pos.place, 60) || 'Unknown place'}</div>
-                  <div className="muted">
-                    {summary('position', { ...pos, place: undefined })} · {ago(posAge)}
-                  </div>
-                  {beacon && <div className="beacon-line">Next: <strong>{beacon.label}</strong>, {meters(beacon.distance)} {direction(beacon.bearing)}</div>}
-                </>
-              ) : <p className="muted">{haveData ? 'No position yet.' : 'Waiting for data…'}</p>}
-            </section>
-          )}
 
           <section aria-labelledby="hazards-h">
             <h2 id="hazards-h">Active hazards {hazardList.length > 0 && <span className="count-pill">{hazardList.length}</span>}</h2>
@@ -425,8 +438,8 @@ function App() {
           <LiveState perMin={stats.perMin} capped={capped} sources={stats.sources} limit={present ? PRESENT_SOURCES : undefined} statusOf={statusOf} compact={present} />
 
           {!present && (
-            <section aria-labelledby="feed-h">
-              <h2 id="feed-h">Live feed <span className="muted small">newest first</span></h2>
+            <details className="feed-card">
+              <summary>Live feed <span className="muted small">newest first</span></summary>
               {sorted.length === 0 ? <p className="muted">{haveData ? 'No events yet.' : 'Loading…'}</p> : (
                 <table className="feed">
                   <caption className="sr-only">Newest events first</caption>
@@ -443,7 +456,7 @@ function App() {
                   </tbody>
                 </table>
               )}
-            </section>
+            </details>
           )}
         </aside>
       </main>
