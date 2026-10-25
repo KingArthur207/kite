@@ -158,6 +158,13 @@ def test_heartbeats_are_never_mirrored(fake, make):
 # ------------------------------------------------------------------ coalescing and the call budget
 def test_100hz_obstacle_flood_sends_1hz_newest_wins_and_publish_never_blocks(fake, make):
     b = make()
+    delivered_on: set = set()
+    deliver = b._deliver
+
+    def tracked(*a, **k):
+        delivered_on.add(threading.current_thread())
+        return deliver(*a, **k)
+    b._deliver = tracked
     worst, seq, t0 = 0.0, 0, time.monotonic()
     while time.monotonic() - t0 < 2.5:
         seq += 1
@@ -175,9 +182,11 @@ def test_100hz_obstacle_flood_sends_1hz_newest_wins_and_publish_never_blocks(fak
     assert [h["n"] for h in fake.of("hazard")] == list(range(25, seq + 1, 25))   # never coalesced
     assert b.stats["coalesced"] == seq - len(frames)
     gaps = [b2 - a for a, b2 in zip(fake.times, fake.times[1:])]
-    # publish only enqueues: microseconds normally; the bound is loose so a loaded CI box
-    # (GIL contention from other threads) can't fail it, while a blocking call (>= 80 ms) still would
-    assert worst < 0.05 and gaps
+    # publish only enqueues: no HTTP call ever runs on the caller's thread (checked, not timed;
+    # a 50 ms timing bound lost at 51 ms under four parallel workers). The time bound left only
+    # catches a stall.
+    assert delivered_on and threading.current_thread() not in delivered_on
+    assert worst < 0.5 and gaps
 
 
 def test_each_source_is_throttled_on_its_own_and_order_holds_for_the_rest(fake, make):
