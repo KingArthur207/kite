@@ -149,7 +149,9 @@ TIME_ERRORS = (ValueError, OverflowError, OSError)  # parse_time / datetime.time
 
 def read_gpx(path: str | Path, tz: tzinfo = timezone.utc) -> list[Fix]:
     """Points with an unreadable time are skipped; if no point has a readable one, the first error is raised."""
-    root = ET.parse(path).getroot()
+    # the user's own GPX file; the stdlib parser never fetches external entities, and expat >= 2.4.1
+    # (every Python 3.12 build) refuses entity-expansion bombs
+    root = ET.parse(path).getroot()  # nosec B314
     fixes, bad = [], None
     for el in root.iter():
         if _local(el.tag) not in ("trkpt", "rtept"):

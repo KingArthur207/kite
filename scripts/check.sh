@@ -41,11 +41,12 @@ earpiece_venv() {
 }
 
 pytest_earpiece() {  # pytest_earpiece <engine>: 4 workers, then failures once more on their own
-  # a few tests measure wall-clock timing and can lose under load; a real failure fails twice
+  # a few tests measure wall-clock timing and can lose under load; a real failure fails twice.
+  # `slow` tests are benchmarks (latency budgets): they run alone in step_earpiece, never in parallel.
   local env="KITE_AUDIO_ENGINE=$1"
-  bash -c "cd '$EAR' && $env '$PY' -m pytest -q -n 4" && return 0
+  bash -c "cd '$EAR' && $env '$PY' -m pytest -q -n 4 -m 'not slow'" && return 0
   echo "-- rerunning the failures serially (wall-clock tests can lose under parallel load)"
-  bash -c "cd '$EAR' && $env '$PY' -m pytest -q --lf"
+  bash -c "cd '$EAR' && $env '$PY' -m pytest -q --lf -m 'not slow'"
 }
 
 step_earpiece() {
@@ -54,6 +55,7 @@ step_earpiece() {
   run "earpiece, rust engine" pytest_earpiece rust
   if [ "${1:-}" != quick ]; then
     run "earpiece, python engine" pytest_earpiece python
+    run "earpiece benchmarks (slow, one at a time)" bash -c "cd '$EAR' && '$PY' -m pytest -q -m slow"
   fi
 }
 
@@ -98,8 +100,10 @@ step_hardware() {
 }
 
 step_dashboard() {
-  bold "dashboard (build, module typecheck)"
+  bold "dashboard (build, logic self-checks, module typecheck)"
   run "dashboard build" bash -c "cd '$ROOT/dashboard' && npm ci --silent && npm run -s build"
+  # timeline, payload parsing, freshness and message delivery (src/*.check.ts, plain Node 22+)
+  run "dashboard self-checks" bash -c "cd '$ROOT/dashboard' && npm run -s check"
   run "spacetime module typecheck" bash -c "cd '$ROOT/dashboard/spacetimedb' && npm ci --silent && npx tsc --noEmit -p ."
 }
 
@@ -110,8 +114,18 @@ step_site() {
 }
 
 step_lint() {
-  bold "python lint (ruff, config in pyproject.toml)"
+  bold "lint (ruff for Python, shellcheck, JS syntax, hidden characters)"
   run "ruff" uvx -q ruff check "$ROOT"
+  # every tracked shell script except hardware/arduino/ (checked in its own step)
+  if command -v shellcheck >/dev/null; then
+    run "shellcheck" bash -c "cd '$ROOT' && git ls-files -z '*.sh' ':!hardware/arduino' | xargs -0 shellcheck -S warning"
+  else
+    skip "shellcheck" "not installed: brew install shellcheck"
+  fi
+  # the site's JS has no build step, so a syntax error would only show up in a browser or on deploy
+  run "site JS syntax" bash -c "cd '$ROOT' && for f in site/functions/*.js site/public/*.js; do node --check \"\$f\" || exit 1; done"
+  # bidi overrides and isolates in source (Trojan Source, CVE-2021-42574): write them as escapes
+  run "no bidi control characters" bash -c "cd '$ROOT' && ! git grep -nIP '[\x{202A}-\x{202E}\x{2066}-\x{2069}]' -- . ':!*.svg'"
 }
 
 step_precommit() {  # what the git hook runs: fast checks on the staged change only
@@ -136,6 +150,8 @@ install_hooks() {
     exit 1
   fi
   mkdir -p "$(dirname "$hook")"
+  # the $(...) is meant literally: the hook expands it when it runs
+  # shellcheck disable=SC2016
   printf '#!/usr/bin/env bash\n# installed by scripts/check.sh hooks\nexec "$(git rev-parse --show-toplevel)/scripts/check.sh" precommit\n' > "$hook"
   chmod +x "$hook"
   echo "installed $hook (skip once with: git commit --no-verify)"
@@ -153,8 +169,17 @@ step_secrets() {
 step_audit() {
   bold "dependency and code audit"
   earpiece_venv
-  run "pip-audit" uvx -q pip-audit --path "$EAR/.venv/lib/python3.12/site-packages" --progress-spinner off
-  run "bandit" uvx -q bandit -q -r "$EAR/earpiece" -ll
+  run "pip-audit, earpiece" uvx -q pip-audit --path "$EAR/.venv/lib/python3.12/site-packages" --progress-spinner off
+  if [ -d "$DRONE_VENV/lib/python3.12/site-packages" ]; then
+    run "pip-audit, drone layer" uvx -q pip-audit --path "$DRONE_VENV/lib/python3.12/site-packages" --progress-spinner off
+  else
+    skip "pip-audit, drone layer" "no $DRONE_VENV yet: run scripts/check.sh drone"
+  fi
+  # medium and above; each accepted finding is marked `# nosec <id>` with its reason. kite/sources,
+  # camera.py and record.py are another team's (skipped here, not judged). scripts/ are dev tools run by
+  # hand, so their /tmp caches, fixed-URL fetches and the Tello's all-interfaces video port are expected.
+  run "bandit" bash -c "cd '$ROOT' && uvx -q bandit -q -ll -r earpiece/earpiece earpiece/evals kite perception site/tools -x kite/sources,kite/camera.py,kite/record.py"
+  run "bandit, scripts" bash -c "cd '$ROOT' && uvx -q bandit -q -ll -r scripts -s B104,B108,B310"
   run "npm audit, dashboard" bash -c "cd '$ROOT/dashboard' && npm audit --audit-level=high"
   run "npm audit, spacetime module" bash -c "cd '$ROOT/dashboard/spacetimedb' && npm audit --audit-level=high"
   if command -v cargo-audit >/dev/null; then

@@ -141,23 +141,6 @@ def headphones_output_name(prefer: str = "airpods") -> str | None:
     return None
 
 
-def airpods_output_present(substr: str = "airpods") -> bool:
-    s = substr.lower()
-    for d in outputs():
-        if s in d["name"].lower() and (d["transport"].startswith("bluetooth") or d["transport"] == "unknown"):
-            return True
-    return False
-
-
-def airpods_output_rate(substr: str = "airpods") -> float | None:
-    """< 44.1 kHz means the AirPods are in the low-quality two-way (call) profile:
-    something is using their microphone."""
-    for d in outputs():
-        if substr.lower() in d["name"].lower():
-            return d["rate"]
-    return None
-
-
 def on_device_change(fn: Callable[[], None]) -> bool:
     """fn() on a CoreAudio thread whenever the default output or the device list changes."""
     if _CA is None:

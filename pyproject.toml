@@ -39,12 +39,20 @@ filterwarnings = ["ignore::DeprecationWarning"]
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["site", "video", "dashboard", "sim/node_modules", "sim/blender", "earpiece/native"]  # blender: runs inside Blender
+extend-exclude = ["video", "dashboard", "sim/node_modules", "sim/blender", "earpiece/native"]  # blender: runs inside Blender
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "W6", "B"]
+select = [
+    "E4", "E7", "E9", "F", "W6", "B",
+    "PLE",                     # pylint errors: bad format strings, return in __init__, await outside async...
+    "T10",                     # a forgotten breakpoint()
+    "ISC001",                  # "a" "b" on one line: almost always a missing comma in a list
+    "RUF006",                  # create_task() result dropped: the loop holds tasks weakly, so it can vanish
+    "PIE794", "PIE796",        # a class attribute or enum value defined twice
+    "PLW0120", "PLW0127", "PLW0129", "PLW0602", "PLW0604", "PLW0711", "PLW1501", "PLW2101",  # likely bugs
+]
 ignore = [
-    "E402", "E702", "E731", "E741",   # imports after sys.path setup, one-liners, named lambdas, short names
+    "E402", "E701", "E702", "E731", "E741",   # imports after sys.path setup, one-liners, named lambdas, short names
     "B007", "B008", "B027",    # unused loop variables, call defaults, empty base-class hooks
     "B904", "B905",            # raise-from inside except, zip(strict=)
 ]

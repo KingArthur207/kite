@@ -17,6 +17,26 @@ export const PAGES = {
 
 const NOT_FOUND_MD = "/404.md";
 
+// Pages does not apply public/_headers to a Response a Function builds, so every response made
+// here carries the same security headers itself. site/tests/middleware.test.mjs checks these
+// match the `/*` block of public/_headers, so the two can't drift apart.
+export const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), interest-cohort=()",
+  "X-Frame-Options": "DENY",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'none'",
+};
+
+/** The given headers plus any security header they lack (a value already there is kept). */
+function secured(headers) {
+  const h = new Headers(headers);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!h.has(k)) h.set(k, v);
+  return h;
+}
+
 /** The q-value the Accept header gives a media type (exact type, then type/*, then *\/*). */
 export function quality(accept, type) {
   if (!accept) return type === "text/html" ? 1 : 0;
@@ -66,12 +86,11 @@ async function markdown(context, assetPath, status) {
   const url = new URL(assetPath, context.request.url);
   const res = await context.env.ASSETS.fetch(new Request(url, { method: "GET" }));
   const body = res.ok ? await res.text() : "# Not found\n\nThis page has no Markdown version. See https://trykite.pages.dev/llms.txt\n";
-  const headers = withVary({
+  const headers = secured(withVary({
     "Content-Type": "text/markdown; charset=utf-8",
     "Cache-Control": "public, max-age=300",
-    "X-Content-Type-Options": "nosniff",
     Link: '<https://trykite.pages.dev/llms.txt>; rel="describedby"; type="text/plain"',
-  });
+  }));
   return new Response(context.request.method === "HEAD" ? null : body, { status, headers });
 }
 
@@ -89,7 +108,7 @@ export async function onRequest(context) {
 
   const res = await context.next();
   if (page || res.status === 404 || (res.headers.get("Content-Type") || "").startsWith("text/html")) {
-    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: withVary(res.headers) });
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: secured(withVary(res.headers)) });
   }
   return res;
 }

@@ -801,9 +801,11 @@ class Speaker:
         self._wake = asyncio.Event()
         self._warm_lock = asyncio.Lock()
         self._loop = loop
-        loop.create_task(self._consumer())
+        # the loop only keeps weak references to tasks: hold these so the consumer can never be
+        # garbage-collected mid-walk (that would silence speech without an error)
+        self._loop_tasks = [loop.create_task(self._consumer())]
         if self.tts.key:
-            loop.create_task(self._probe_loop())
+            self._loop_tasks.append(loop.create_task(self._probe_loop()))
         loop.run_forever()
 
     async def _probe_loop(self) -> None:

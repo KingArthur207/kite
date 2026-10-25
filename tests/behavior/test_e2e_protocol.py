@@ -19,8 +19,8 @@ import time
 import cv2
 import pytest
 
-from kite.config import Config, DroneCfg, SafetyCfg
-from kite.drone import SafetyGovernor, make_tello
+from kite.config import Config, DroneCfg
+from kite.drone import make_tello
 from kite.drone import tello as tello_mod
 from kite.drone.tello import TelloDrone
 from kite.record import Recorder, RecordCfg

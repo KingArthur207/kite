@@ -14,7 +14,7 @@ python -m earpiece run                           # the real thing (AirPods + ste
 python -m earpiece run --sim walk                # with a scripted street scenario
 python -m earpiece render walk out/walk.wav      # render what the wearer would hear
 python -m earpiece render --jsonl events.jsonl out/heard.wav   # same, from a JSONL timeline (docs/internal/video-runbook.md)
-python -m pytest                                 # 400+ tests (also with KITE_AUDIO_ENGINE=python / KITE_SONAR_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
+python -m pytest                                 # 3,300+ tests, 2,404 of them safety evals (also with KITE_AUDIO_ENGINE=python / KITE_SONAR_ENGINE=python; KITE_LIVE_TESTS=1 adds live API checks)
 ```
 
 Keys come from the repo-root `.env` (`CARTESIA_API_KEY`, `ANTHROPIC_API_KEY`, `MOSS_PROJECT_ID`, `MOSS_PROJECT_KEY`, `GOOGLE_MAPS_API_KEY`, and `XAI_API_KEY` for the caregiver line). Everything degrades gracefully without them.

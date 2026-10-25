@@ -437,6 +437,49 @@ def test_new_walker_alert_is_announced_unasked():
     asyncio.run(go())
 
 
+def test_an_oversized_frame_ends_the_session_instead_of_filling_memory(monkeypatch):
+    """The realtime socket has a frame cap: a runaway frame closes the line (and every wait
+    on it is released) rather than being buffered whole."""
+    from websockets.asyncio.server import serve
+
+    monkeypatch.setattr(cv, "MAX_FRAME", 4096)
+    t, _ = tools()
+
+    async def server(ws):
+        await ws.send(json.dumps({"type": "response.output_text.delta", "delta": "x" * 10_000}))
+        await ws.wait_closed()
+
+    async def go():
+        async with serve(server, "127.0.0.1", 0) as srv:
+            port = srv.sockets[0].getsockname()[1]
+            ws = await cv._connect(f"ws://127.0.0.1:{port}/", "test-key")
+            logs: list = []
+            s = cv.Session(ws, t, text_mode=True, log=logs.append)
+            await asyncio.wait_for(s.run(), 5)
+            return s, logs
+
+    s, logs = asyncio.run(go())
+    assert s.closed.is_set() and s.idle.is_set() and s.ready.is_set()
+    assert any("connection ended" in m for m in logs) and s._said == ""
+
+
+def test_the_model_name_is_url_encoded(monkeypatch):
+    """--model goes into the query string; anything odd in it can't add parameters."""
+    seen: list = []
+
+    async def fake_connect(url, key):
+        seen.append(url)
+        raise OSError("no network in tests")
+
+    monkeypatch.setattr(cv, "_connect", fake_connect)
+    monkeypatch.setattr(cv, "_xai_key", lambda: "test-key")
+    from earpiece.__main__ import build_parser
+    a = build_parser().parse_args(["caregiver", "--text", "--model", "grok voice&key=1#x"])
+    monkeypatch.setattr(cv, "KiteLink", lambda **k: object())
+    assert asyncio.run(cv.run_line(a, log=lambda *_: None)) == 1
+    assert seen == [f"{cv.XAI_URL}?model=grok+voice%26key%3D1%23x"]
+
+
 def test_round_trip_over_a_local_websocket_server():
     """Text turn -> tool call -> output -> response.create -> audio, against a scripted server."""
     from websockets.asyncio.server import serve

@@ -157,6 +157,56 @@ def test_a_row_with_a_garbled_time_is_skipped_not_fatal(tmp_path):
         gps.read_track(tmp_path / "none.csv")
 
 
+GPX_HEAD = '<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>'
+
+
+def test_gpx_points_missing_a_coordinate_or_a_time_are_skipped(tmp_path):
+    pts = ['<trkpt lat="37.7783" lon="-122.4087"><time>2026-10-24T14:00:00Z</time><hdop>2</hdop></trkpt>',
+           '<trkpt lon="-122.4087"><time>2026-10-24T14:00:01Z</time></trkpt>',              # no lat
+           '<trkpt lat="abc" lon="-122.4087"><time>2026-10-24T14:00:02Z</time></trkpt>',    # junk lat
+           '<trkpt lat="nan" lon="-122.4087"><time>2026-10-24T14:00:03Z</time></trkpt>',    # non-finite
+           '<trkpt lat="37.7784" lon="-122.4087"></trkpt>',                                  # no time
+           '<trkpt lat="95" lon="-122.4087"><time>2026-10-24T14:00:05Z</time></trkpt>',     # off the globe
+           '<trkpt lat="0" lon="0"><time>2026-10-24T14:00:06Z</time></trkpt>',              # null island
+           '<rtept lat="37.7785" lon="-122.4087"><time>2026-10-24T14:00:07Z</time></rtept>']
+    (tmp_path / "w.gpx").write_text(GPX_HEAD + "".join(pts) + "</trkseg></trk></gpx>")
+    fixes = gps.read_track(tmp_path / "w.gpx")
+    assert [round(f.lat, 4) for f in fixes] == [37.7783, 37.7785]
+    assert fixes[0].accuracy == 10.0                     # from HDOP when no accuracy field is logged
+
+
+@pytest.mark.parametrize("body", ["<gpx><trk>", "<gpx>&undefined;</gpx>", "<<<"])
+def test_broken_gpx_raises_a_parse_error_not_something_odd(tmp_path, body):
+    (tmp_path / "w.gpx").write_text(body)
+    with pytest.raises(gps.ET.ParseError):
+        gps.read_track(tmp_path / "w.gpx")
+
+
+def test_an_entity_expansion_bomb_is_refused(tmp_path):
+    """A GPX is the user's own file, but a hostile one must not eat memory: expat refuses the bomb."""
+    lol = '<!DOCTYPE gpx [<!ENTITY a "aaaaaaaaaa">' + "".join(
+        f'<!ENTITY {chr(98 + i)} "{("&" + chr(97 + i) + ";") * 10}">' for i in range(8)) + "]>"
+    (tmp_path / "bomb.gpx").write_text(f'<?xml version="1.0"?>{lol}<gpx><trk><name>&i;</name></trk></gpx>')
+    with pytest.raises(gps.ET.ParseError):
+        gps.read_track(tmp_path / "bomb.gpx")
+
+
+def test_csv_shapes_that_are_not_a_track(tmp_path):
+    (tmp_path / "empty.csv").write_text("")
+    assert gps.read_track(tmp_path / "empty.csv") == []
+    (tmp_path / "cols.csv").write_text("when,where\n1,2\n")
+    with pytest.raises(ValueError, match="need time, lat and lon"):
+        gps.read_track(tmp_path / "cols.csv")
+    (tmp_path / "rows.csv").write_text("time,lat,lon,accuracy\n"
+                                       "2026-10-24T14:00:00Z,37.7783,-122.4087,5\n"
+                                       "2026-10-24T14:00:01Z,37.7784\n"                     # torn row
+                                       "2026-10-24T14:00:02Z,north,-122.4087,5\n"           # junk lat
+                                       ",37.7785,-122.4087,5\n"                               # no time
+                                       "2026-10-24T14:00:04Z,37.7786,-122.4087,inf\n")      # bad accuracy only
+    fixes = gps.read_track(tmp_path / "rows.csv")
+    assert [round(f.lat, 4) for f in fixes] == [37.7783, 37.7786] and fixes[1].accuracy is None
+
+
 def test_a_fix_with_an_impossible_date_cannot_blow_up_the_grid(tmp_path):
     """Track sampled the whole time span at 10 Hz: one 1970 placeholder fix (loggers write epoch 0 before the first
     satellite fix) made it allocate ~1.8e10 grid points and die of MemoryError (or swap the laptop to a halt)."""

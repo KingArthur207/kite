@@ -126,7 +126,8 @@ GITHUB_SVG = ('<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true
 
 def nav(path: str) -> str:
     items = [('/', 'Hear it'), ('/how', 'How it works'), ('/judges', 'For judges')]
-    lis = ''.join(f'<li><a href="{h}"{" aria-current=\"page\"" if h == path else ""}>{t}</a></li>' for h, t in items)
+    current = ' aria-current="page"'    # outside the f-string: a backslash inside one needs Python 3.12
+    lis = ''.join(f'<li><a href="{h}"{current if h == path else ""}>{t}</a></li>' for h, t in items)
     return f'''  <a class="skip" href="#main">Skip to content</a>
   <header class="nav-wrap">
     <nav class="nav" aria-label="Main">

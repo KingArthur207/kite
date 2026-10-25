@@ -62,7 +62,7 @@ def _weights(name: str) -> Path:
 
 
 def embedded_path(model: str, prompts: list[str]) -> Path:
-    h = hashlib.sha1("\n".join(prompts).encode()).hexdigest()[:10]
+    h = hashlib.sha1("\n".join(prompts).encode(), usedforsecurity=False).hexdigest()[:10]   # a cache key
     return WEIGHTS / f"world-{Path(model).stem}-{h}.pt"
 
 
@@ -186,7 +186,7 @@ class MetricDepth:
         from transformers import AutoModelForDepthEstimation
         name = DEPTH_MODELS.get(which, which)
         self.torch, self.device = torch, device
-        self.model = AutoModelForDepthEstimation.from_pretrained(
+        self.model = AutoModelForDepthEstimation.from_pretrained(  # nosec B615: local_files_only, see download()
             name, cache_dir=HF_CACHE, local_files_only=True).to(device).eval()
         self.mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
         self.std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
@@ -216,5 +216,7 @@ def download(vocab: dict[str, list[str]] | None = None, open_model: str = OPEN_M
     if depth:
         from transformers import AutoModelForDepthEstimation
         for name in DEPTH_MODELS.values():
-            AutoModelForDepthEstimation.from_pretrained(name, cache_dir=HF_CACHE)
+            # unpinned on purpose: an explicit, by-hand --download of a vendor's safetensors weights;
+            # pinning now would break every cache already fetched from main (accepted in SECURITY.md)
+            AutoModelForDepthEstimation.from_pretrained(name, cache_dir=HF_CACHE)  # nosec B615
             print(f"cached {name}")

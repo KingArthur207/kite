@@ -298,6 +298,7 @@ class FakeSTT:
     async def transcribe_stream(self, chunks, timeout_s=4.0, on_segment=None):
         voiced, quiet, sent = False, 0.0, 0.0
         segmented = False
+        pending: list = []                   # hold flush tasks: the loop keeps only weak references
 
         async def flushed():
             nonlocal segmented
@@ -312,7 +313,7 @@ class FakeSTT:
                 break
             if c == FLUSH:
                 self.flushes += 1
-                asyncio.ensure_future(flushed())
+                pending.append(asyncio.ensure_future(flushed()))
                 continue
             a = np.frombuffer(c, dtype="<i2").astype(np.float32) / 32767
             sent += a.size / self.rate

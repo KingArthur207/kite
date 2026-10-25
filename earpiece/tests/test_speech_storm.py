@@ -37,11 +37,14 @@ def test_a_flood_of_untimed_lines_stays_bounded(spk, monkeypatch):
     from the network would queue for hours and make every say() slower."""
     hold(spk, monkeypatch)
     dropped = []
-    t0 = time.perf_counter()
+    longest = 0
     for i in range(5000):
         spk.say(f"status line number {i}", "system" if i % 2 else "answer",
                 on_done=lambda uid, how: dropped.append(how))
-    elapsed = time.perf_counter() - t0
+        longest = max(longest, len(spk._queue))
+    # the queue never grows past its cap, so each say() works on at most MAX_QUEUE lines: O(cap)
+    # per call, not O(n). Counted, not timed, so a loaded machine can't fail it.
+    assert longest == Speaker.MAX_QUEUE
     with spk._qlock:
         n = len(spk._queue)
         kept = [q.text for q in spk._queue]
@@ -49,7 +52,6 @@ def test_a_flood_of_untimed_lines_stays_bounded(spk, monkeypatch):
     assert dropped.count("dropped") == 5000 - n            # every shed line is reported
     # the least important ("system") go first, then the oldest: the newest answers survive
     assert kept == [f"status line number {i}" for i in range(5000 - 2 * n, 5000, 2)]
-    assert elapsed < 5.0                                    # O(cap) per call, not O(n)
     monkeypatch.undo()
     spk.cancel_all(keep_critical=False)
     assert wait_for(lambda: not spk.busy, 5)

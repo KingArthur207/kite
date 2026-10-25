@@ -48,8 +48,10 @@ def free_port() -> int:
 
 
 def wait_for(pred, timeout=5.0, step=0.02):
-    t0 = time.time()
-    while time.time() - t0 < timeout:
+    """Poll pred() until it is true or `timeout` seconds pass; returns its last value.
+    Monotonic, so a wall-clock change (NTP, sleep/wake) can't end the wait early or late."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
         if pred():
             return True
         time.sleep(step)

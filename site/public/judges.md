@@ -159,7 +159,7 @@ Kite does a guide dog's jobs: stop at curbs and crossings, watch overhead, refus
 
 **Measurable usefulness**
 
-About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 500 automated tests.
+About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 5,000 automated tests.
 
 **Path to production**
 

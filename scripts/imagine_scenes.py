@@ -97,13 +97,31 @@ def call(method: str, path: str, body: dict | None = None, timeout: float = 120)
         return json.loads(r.read())
 
 
-def download(url: str) -> bytes:
-    """Fetch a generated clip. Only https: the URL comes back from the API, so refuse anything else."""
+MAX_CLIP = 200 << 20          # a 6 s clip is a few MB; anything this big is not one
+
+
+class _HttpsOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    """urllib follows redirects to any scheme; a clip URL must stay on https all the way."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        from urllib.parse import urlparse
+        if urlparse(newurl).scheme != "https":
+            raise ValueError(f"refusing a redirect to a non-https URL: {newurl[:80]}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def download(url: str, max_bytes: int = MAX_CLIP) -> bytes:
+    """Fetch a generated clip. Only https, redirects included: the URL comes back from the API,
+    so refuse anything else, and stop reading past max_bytes."""
     from urllib.parse import urlparse
     if urlparse(url).scheme != "https":
         raise ValueError(f"refusing to download a non-https URL: {url[:80]}")
-    with urllib.request.urlopen(url, timeout=120) as r:   # nosec B310: https checked above
-        return r.read()
+    opener = urllib.request.build_opener(_HttpsOnlyRedirects)
+    with opener.open(url, timeout=120) as r:   # nosec B310: https checked above and on every redirect
+        data = r.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"clip is over {max_bytes >> 20} MB: not a generated scene")
+    return data
 
 
 def manifest() -> dict:
@@ -190,7 +208,8 @@ def main() -> None:
     g = sub.add_parser("generate")
     g.add_argument("names", nargs="*")
     g.add_argument("--all", action="store_true")
-    g.add_argument("--duration", type=int, default=6)
+    g.add_argument("--duration", type=int, default=6, choices=range(1, 16), metavar="1-15",
+                   help="clip length in seconds (each second costs credits)")
     g.add_argument("--force", action="store_true")
     r = sub.add_parser("rehearse")
     r.add_argument("names", nargs="*")

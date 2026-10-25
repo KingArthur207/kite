@@ -424,7 +424,7 @@ def _video_checks(drone, tello, first_frame_s: float, measure_s: float) -> list[
     first = src.wait_first(first_frame_s)
     if first is None:
         stats = _reader_stats(src)
-        why = getattr(src, "diagnosis", lambda: None)()  # the socket reader says which case it is
+        why = getattr(src, "diagnosis", lambda: None)()  # a reader with diagnosis() says which case it is
         detail = _no_frame_detail(stats, first_frame_s) + (f". Reader: {why}" if why else "")
         return [Check("video", NO_GO, detail + "; try another --video-backend", {"reader": stats})]
     wait = time.monotonic() - t_wait
@@ -646,7 +646,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--drone", action="store_true", help="run the drone checks even when not on the Tello Wi-Fi")
     p.add_argument("--json", action="store_true", help="print machine-readable results")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="Tello H.264 reader to check (default pyav; opt-in: raw, socket, auto = raw on macOS)")
+                   help="Tello H.264 reader to check (default pyav; also opencv; opt-in: raw, auto = raw on macOS)")
     add_video_link_args(p)
     args = p.parse_args(argv)
     if args.quick and args.drone:

@@ -76,7 +76,7 @@ def encode_nonidr(path: Path, seconds: float = 20.0, fps: int = 30, keyint: int 
 
 def cached_stream(cache: Path, **kw) -> Path:
     cache.mkdir(parents=True, exist_ok=True)
-    key = hashlib.sha1(repr(sorted(kw.items())).encode()).hexdigest()[:10]
+    key = hashlib.sha1(repr(sorted(kw.items())).encode(), usedforsecurity=False).hexdigest()[:10]   # a cache key
     path = cache / f"tello_sim_{key}.h264"
     if not path.exists() or path.stat().st_size == 0:
         if kw.pop("nonidr", False):

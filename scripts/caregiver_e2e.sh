@@ -16,7 +16,11 @@ MAIN="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/
 
 for f in "$ROOT/.env" "${MAIN:+$MAIN/.env}"; do
   if [ -n "$f" ] && [ -f "$f" ]; then
-    set -a; . "$f"; set +a          # never echoed
+    # .env is the user's own git-ignored file, so there is nothing for shellcheck to follow
+    set -a
+    # shellcheck source=/dev/null
+    . "$f"                          # never echoed
+    set +a
     break
   fi
 done
