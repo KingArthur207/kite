@@ -621,7 +621,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pulse", type=float, default=1.0, help="seconds one key press drives a stick (default 1.0)")
     p.add_argument("--max-s", type=float, default=0.0, help="stop after this many seconds (default: Ctrl+C)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="Tello H.264 reader (default pyav; opt-in: raw, socket, auto = raw on macOS)")
+                   help="Tello H.264 reader (default pyav; also opencv; opt-in: raw, auto = raw on macOS)")
     add_video_link_args(p)
     p.add_argument("--follow", action="store_true", help="with --fly: g toggles follow mode (needs the 'follow' extra "
                    "and data/models/yolo11n.pt, see kite/follow.py)")

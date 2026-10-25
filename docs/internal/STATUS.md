@@ -9,7 +9,7 @@ Merged:
 - Shot recorder for the demo video (#95). Draft takes are in `out/shots/` (local only). `follow-photo.mp4` is usable. `corner-tiles.mp4` reads well, but the tiles smear.
 - Live walk fixes from a 40-run bench (#81): Stop now fires in 37 of 40 runs, up from 16, with no false stops.
 - Claude judgment: a stricter safety filter that still passes all 24 of 24 warning scenarios. When a reply is cut off, the first full sentence is kept (#69, #75).
-- Socket video reader for the Tello, opt-in with `--video-backend socket` (#92). It did not reproduce the Mac "no image" bug here, but it reports why a picture is missing. Arthur's `fix/mac-video` branch is diagnosing the bug on his laptop.
+- Socket video reader for the Tello, opt-in with `--video-backend socket` (#92; removed in #140, the `raw` reader replaces it). It did not reproduce the Mac "no image" bug here, but it reports why a picture is missing. Arthur's `fix/mac-video` branch is diagnosing the bug on his laptop.
 - Follow-mode path prediction behind `--follow-predict` (#68). Never flown.
 - Facade scripts for each side of the street (#87, #94). The photos stay local under the Google permission.
 

@@ -10,7 +10,7 @@
 
 Specs (case-insensitive kinds):
     tello                   live Tello, dry run: video + telemetry only, motion is never sent. Newest frame only.
-    tello:<backend>         the same with one video reader: pyav | opencv | raw | socket | auto (default pyav)
+    tello:<backend>         the same with one video reader: pyav | opencv | raw | auto (default pyav)
     recording:<dir>, <dir>  a kite.record take (a folder with meta.json / frames.csv): RecordingSource, every frame.
     <file>, file:<file>     a video file: every frame in order (realtime=True paces it at the file's fps).
     webcam:<n>, <n>         camera index n (cv2.VideoCapture(n)). Newest frame only.
@@ -29,7 +29,7 @@ Options (keyword arguments; an option a source does not take raises TypeError):
     cam_height=m, pitch=deg                     pose of a webcam (default 1.3 m, 0: a chest camera) or a video file
     realtime=True, speed=x                      pace a file or recording at its own frame rate
     timeout=s                                   live sources: how long read() waits for a new frame
-    video_backend=pyav|opencv|raw|socket|auto   tello: the H.264 reader (default DroneCfg's pyav; auto: raw on macOS)
+    video_backend=pyav|opencv|raw|auto   tello: the H.264 reader (default DroneCfg's pyav; auto: raw on macOS)
 
     python -m kite.sources.open <spec> [--seconds 5] [--preview]    does this source work? fps, size, camera, poses
     python -m kite.sources.open --list-cameras [--probe]            this Mac's cameras with their indices
@@ -595,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fx", type=float, help="focal length in px at the frame size (instead of the default)")
     p.add_argument("--hfov", type=float, help="horizontal field of view in deg (instead of the default)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
-                   help="tello: the H.264 reader (default pyav; opt-in: raw, socket, auto = raw on macOS)")
+                   help="tello: the H.264 reader (default pyav; also opencv; opt-in: raw, auto = raw on macOS)")
     args = p.parse_args(argv)
     if args.list_cameras:
         list_cameras(args.probe)
