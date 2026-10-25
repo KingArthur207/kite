@@ -77,6 +77,10 @@ class Track:
 #   P1 ~1228 Hz every ~0.14 s, P2 ~812 Hz every ~0.57 s, P3 ~630 Hz every ~0.81 s.
 # The Rust twin is native/src/sonar.rs priority_urgency.
 PRIORITY_URGENCY = {1: 0.97, 2: 0.40, 3: 0.15}
+# How each priority sounds: (pitch Hz, seconds between beeps, gain). Fixed, not derived from distance, so the
+# three are easy to tell apart by ear: high and almost continuous, middle, low and slow, each about three times
+# slower than the one above, and none quieter just because the object is farther. Critical still overrides.
+PRIORITY_TONE = {1: (1250.0, 0.12, 1.0), 2: (875.0, 0.40, 0.9), 3: (600.0, 0.90, 0.8)}
 
 # The canonical object kinds (events._kind) that have their own sonar cue.
 PREWARM_KINDS = ("person", "vehicle", "bike", "curb", "stairs_down", "obstacle")
@@ -290,10 +294,13 @@ class Sonar:
             u = t.urgency if not t.critical else 1.0
             interval = c.interval_slow_s - (c.interval_slow_s - c.interval_fast_s) * (u ** 0.8)
             pitch = c.pitch_low_hz + (c.pitch_high_hz - c.pitch_low_hz) * u
+            level = spatial.distance_gain(t.distance)
+            if t.priority is not None and not t.critical:
+                pitch, interval, level = PRIORITY_TONE[t.priority]
             pitch_q = int(round(pitch / 25.0) * 25)
             bear_q = int(round(t.bearing / 5.0) * 5)
             fade = min(1.0, max(0.0, 1.0 - (now - t.last_seen) / c.stale_track_s))
-            gain = (1.0 if rank == 0 else c.second_source_gain) * spatial.distance_gain(t.distance) * fade
+            gain = (1.0 if rank == 0 else c.second_source_gain) * level * fade
             step = self.engine.samples(interval)
             if t.next_beep is None:
                 t.next_beep = self.engine.now + self.engine.samples(0.02)

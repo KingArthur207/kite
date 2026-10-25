@@ -162,7 +162,7 @@ def test_kalman_looming_alone_sets_the_rate_and_gates_outliers():
 
 
 # ------------------------------------------------------------------ priorities
-@pytest.mark.parametrize("d, p", [(0.5, 1), (1.999, 1), (2.0, 2), (4.99, 2), (5.0, 3), (30.0, 3), (None, None)])
+@pytest.mark.parametrize("d, p", [(0.5, 1), (1.199, 1), (1.2, 2), (2.99, 2), (3.0, 3), (30.0, 3), (None, None)])
 def test_raw_priority_boundaries(d, p):
     assert priority.raw_priority(d) == p
 
@@ -170,17 +170,17 @@ def test_raw_priority_boundaries(d, p):
 def test_size_scales_thresholds():
     car, pole = prior_for("vehicle").size_scale(), prior_for("pole").size_scale()
     assert car > 1.25 and pole < 1.0
-    assert priority.raw_priority(2.4, car) == 1 and priority.raw_priority(2.4, 1.0) == 2
-    assert priority.raw_priority(1.9, pole) == 2
+    assert priority.raw_priority(1.4, car) == 1 and priority.raw_priority(1.4, 1.0) == 2
+    assert priority.raw_priority(1.15, pole) == 2
 
 
 def test_hysteresis_escalates_after_n_and_deescalates_after_m():
     s = priority.PriorityState()
-    assert s.update(3.0) is None and s.update(3.0) == 2           # N_UP = 2 frames
-    assert s.update(1.5) == 2 and s.update(1.5) == 1
+    assert s.update(1.8) is None and s.update(1.8) == 2           # N_UP = 2 frames
+    assert s.update(0.9) == 2 and s.update(0.9) == 1
     for _ in range(10):
-        assert s.update(2.1) == 1                                # inside the 10 % band: hold P1
-    seq = [s.update(2.5) for _ in range(5)]
+        assert s.update(1.26) == 1                               # inside the 10 % band: hold P1
+    seq = [s.update(1.5) for _ in range(5)]
     assert seq[:4] == [1, 1, 1, 1] and seq[4] == 2                # M_DOWN = 5 frames
     for _ in range(4):
         assert s.update(None) == 2
@@ -189,11 +189,11 @@ def test_hysteresis_escalates_after_n_and_deescalates_after_m():
 
 def test_escalation_through_p2_to_p1_commits():
     s = priority.PriorityState()
-    s.update(8.0)
-    s.update(8.0)
+    s.update(4.8)
+    s.update(4.8)
     assert s.current == 3
-    assert s.update(4.0) == 3 and s.update(1.5) == 2              # two frames more urgent: at least P2
-    assert s.update(1.5) == 2 and s.update(1.4) == 1
+    assert s.update(2.4) == 3 and s.update(0.9) == 2              # two frames more urgent: at least P2
+    assert s.update(0.9) == 2 and s.update(0.84) == 1
 
 
 def test_ttc_override_is_immediate_and_released_with_margin():

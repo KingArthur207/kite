@@ -247,8 +247,8 @@ Key objects, one row each (distance in metres, and how perception/ measured it: 
 ## Near: priorities for what is directly ahead (`perception/near/`)
 
 `python -m perception.near --source webcam:Logitech` answers one narrower question with more care: is something in
-the 1 m wide corridor straight ahead, and is it P1 (under 2 m, or under 1.5 s to contact), P2 (2 to 5 m) or P3
-(5 m or more)? It reuses this module's detectors and depth model, and adds Logitech C270 / C310 / C920 intrinsics
+the 1 m wide corridor straight ahead, and is it P1 (under 1.2 m, or under 1.5 s to contact), P2 (1.2 to 3 m) or P3
+(3 m or more)? It reuses this module's detectors and depth model, and adds Logitech C270 / C310 / C920 intrinsics
 (spec profiles plus `python -m perception.calibrate_camera`), five fused distance cues (known size, ground contact,
 ground-anchored dense depth, motion stereo from walking speed, looming time to contact), a per-track Kalman
 filter, class-agnostic corridor occupancy with drop-off detection, hysteresis, three-tone park-assist beeps

@@ -91,6 +91,9 @@
             <div><dt>One live world</dt><dd>The drone laptop, the earpiece and the dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.</dd></div>
             <div><dt>Two tables, two reducers</dt><dd><code>event</code> holds the walk's recent history and <code>latest</code> the newest state of every device, so a dashboard opened mid-walk is current at once. <code>push</code> and <code>clear</code> do the rest.</dd></div>
             <div><dt>Live, as it happens</dt><dd>The dashboard shows the walker on a live map from the phone's GPS, the last thing Kite said and every stop, all read from SpacetimeDB through a subscription.</dd></div>
+            <div><dt>Both ways, between people</dt><dd>Type a message on the dashboard and it becomes a row in SpacetimeDB; the walker hears it about a second later in Cartesia's voice, after the same go-ahead filter as Claude.</dd></div>
+            <div><dt>The phone and the board, on any network</dt><dd>The walker's phone sends its GPS to the Kite receiver on the Arduino UNO Q or the laptop, which writes the newest position to SpacetimeDB, so routing and the dashboard read it from anywhere. The UNO Q posts a signed heartbeat there too, which is how the laptop finds the body camera on campus Wi-Fi with no IP to type.</dd></div>
+            <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a sync server to write and keep alive.</dd></div>
             <div><dt>The phone and the board, on any network</dt><dd>The walker's phone sends its GPS to the Kite receiver on the Arduino UNO Q or the laptop, which writes the newest position to SpacetimeDB, so routing and the dashboard read it from anywhere. The UNO Q posts a signed heartbeat there too, which is how the laptop finds the body camera on campus Wi-Fi with no IP to type.</dd></div>
             <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a sync server to write and keep alive.</dd></div>
           </dl>
@@ -169,7 +172,7 @@
             <div><dt>Who it's for</dt><dd>About a million Americans are blind, and fewer than 10,000 guide dogs work in the US at $50,000 each. Kite brings a guide dog's jobs (stop at the curb, watch overhead, refuse to step out in front of a car) to everyone else, from parts you can buy today.</dd></div>
             <div><dt>Stop and wait, never detour</dt><dd>Kite stops you and waits until the way stays clear. It never pulls you around things you can't see.</dd></div>
             <div><dt>You stay in charge</dt><dd>Pause guidance any time; warnings stay on. Ask anything, in your own words.</dd></div>
-            <div><dt>Urgency, not numbers</dt><dd>The body camera doesn't read out metres. It tells you how urgent: a high, fast tone under 2 m, a middle one from 2 to 5 m, a low, slow one beyond. You hear the answer before you could parse a sentence.</dd></div>
+            <div><dt>Urgency, not numbers</dt><dd>The body camera doesn't read out metres. It tells you how urgent: a high, almost continuous tone under 1.2 m (about a cane's length), a middle one from 1.2 to 3 m, a low, slow one beyond. You hear the answer before you could parse a sentence.</dd></div>
             <div><dt>Dignity and privacy</dt><dd>The dashboard shows where you are, never what your camera sees.</dd></div>
           </dl>
         </article>

@@ -21,7 +21,8 @@ const walk = [
   ev(T + 3200, 'spoken', 'earpiece', { text: 'Wait, the crosswalk is crowded.', priority: 'hazard' }),
   ev(T + 4000, 'position', 'sim', { lat: 37.81, lng: -122.41 }),
   ev(T + 4100, 'spoken', 'earpiece', { text: 'Stop. Person ahead.', priority: 'critical' }),
-  ev(T + 5000, 'spoken', 'earpiece', { text: 'The bench is two meters to your right.', priority: 'answer' }),
+  ev(T + 5000, 'say', 'caregiver', { text: "I'm on my way." }),
+  ev(T + 5500, 'spoken', 'earpiece', { text: "Message: I'm on my way.", priority: 'info' }),
   ev(T + 6000, 'scene', 'scene-chest', { text: 'A person stands two meters ahead.' }),
   ev(T + 7000, 'guidance', 'route', { text: 'Head north.' }),                         // repeat guidance: dropped
 ];
@@ -31,7 +32,7 @@ eq(w[0].p.type, 'position', 'walk starts after the quiet gap');
 
 const ms = moments(w, 'sim');
 eq(ms.map(m => [m.kind, m.who]), [
-  ['guidance', 'kite'], ['hazard', 'kite'], ['judgment', 'claude'], ['stop', 'kite'], ['answer', 'claude'], ['scene', 'claude'],
+  ['guidance', 'kite'], ['hazard', 'kite'], ['judgment', 'claude'], ['stop', 'kite'], ['caregiver', 'caregiver'], ['scene', 'claude'],
 ], 'moments and who');
 eq(ms[1].text, "Don't walk.", 'hazard keeps the earpiece wording');
 eq(ms[2].detail, '812 ms', 'judgment latency');
@@ -47,7 +48,7 @@ eq(stopPair.map(m => [m.kind, m.text]), [['stop', 'Stop. Person ahead.']], 'one 
 const desc = [...walk].reverse();
 eq(speakerOf(walk[7], desc), 'claude', 'spoken judgment line is Claude');
 eq(speakerOf(walk[9], desc), 'kite', 'spoken stop is Kite');
-eq(speakerOf(walk[10], desc), 'claude', 'spoken answer is Claude');
+eq(speakerOf(walk[11], desc), 'caregiver', 'spoken caregiver line is the caregiver');
 
 const stats = liveStats(desc, new Map([['sim', T + 4000], ['judgment', T + 3000]]), T + 7000);
 eq(stats.perMin, walk.length - 1, 'events in the last minute');

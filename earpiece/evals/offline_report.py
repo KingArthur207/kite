@@ -62,8 +62,12 @@ def main(verbose: bool) -> int:
     kfp = flat(j["known_false_positives"])
     row("judgment known false positives (still blocked)", kfp, [t for t in kfp if not judgment_blocks(t)])
 
+    cg = c["caregiver"]
     blocks = flat(j["block"])
-    row("forbidden() blocks the judgment corpus", blocks, [t for t in blocks if not forbidden(t)])
+    row("dashboard messages block the judgment corpus", blocks, [t for t in blocks if not forbidden(t)])
+    row("dashboard messages allow everyday messages", cg["allow"], [t for t in cg["allow"] if forbidden(t)])
+    cfp = flat(cg["known_false_positives"])
+    row("dashboard message known false positives (still blocked)", cfp, [t for t in cfp if not forbidden(t)])
 
     vsn = c["vision_scene"]
     row("scene drops instructions", vsn["drop"], [t for t in vsn["drop"] if not scene_drops(t)])

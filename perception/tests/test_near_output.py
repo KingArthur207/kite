@@ -100,11 +100,11 @@ def test_terminal_prints_changes_only_when_piped():
 
 # ------------------------------------------------------------------ beeper (WAV only)
 def test_beep_intervals_rise_inside_each_band_and_p1_goes_continuous():
-    assert beeper.interval(3, 9.5) > beeper.interval(3, 5.5)
-    assert beeper.interval(2, 4.8) > beeper.interval(2, 2.2)
-    assert beeper.interval(1, 1.9) > beeper.interval(1, 1.0) > 0
-    assert beeper.interval(1, 0.6) == 0.0 and beeper.interval(1, 1.8, ttc=0.8) == 0.0
-    assert beeper.interval(2, 2.1) > beeper.interval(1, 1.9)        # every P1 beat is faster than any P2 one
+    assert beeper.interval(3, 5.7) > beeper.interval(3, 3.3)
+    assert beeper.interval(2, 2.88) > beeper.interval(2, 1.32)
+    assert beeper.interval(1, 1.14) > beeper.interval(1, 0.6) > 0
+    assert beeper.interval(1, 0.36) == 0.0 and beeper.interval(1, 1.08, ttc=0.8) == 0.0
+    assert beeper.interval(2, 1.26) > beeper.interval(1, 1.14)      # every P1 beat is faster than any P2 one
 
 
 def _dominant_hz(x, rate=beeper.RATE):

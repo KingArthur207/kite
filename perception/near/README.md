@@ -11,9 +11,9 @@ result over time, and turns it into one of three priorities and one of three bee
 
 | Priority | Distance (person-sized object) | Beep (WAV only) | Earpiece sonar (existing fields) |
 |---|---|---|---|
-| **P1** | under 2 m, or time to contact under 1.5 s | F#6 1480 Hz, every 0.20 s down to a continuous tone | ~1225 Hz every 0.13 s |
-| **P2** | 2 m to under 5 m | B5 988 Hz, every 0.55 to 0.25 s | ~800 Hz every 0.57 s |
-| **P3** | 5 m or more | E5 659 Hz, every 1.1 to 0.7 s | ~625 Hz every 0.81 s |
+| **P1** | under 1.2 m (about a cane's length), or time to contact under 1.5 s | F#6 1480 Hz, every 0.20 s down to a continuous tone | 1250 Hz every 0.12 s |
+| **P2** | 1.2 m to under 3 m | B5 988 Hz, every 0.55 to 0.25 s | 875 Hz every 0.4 s |
+| **P3** | 3 m or more | E5 659 Hz, every 1.1 to 0.7 s | 600 Hz every 0.9 s |
 
 It outputs priorities, not distances, because one camera's distance is a noisy number (the tables below say how
 noisy), while "something is less than 2 m ahead of you" survives a 20 % range error most of the time.
@@ -85,9 +85,9 @@ boost and no corridor-edge shaping, in both the Python sonar and its Rust twin.
 
 | Priority | Tone | Beep every |
 |---|---|---|
-| P1 | 1228 Hz | 0.13 s |
-| P2 | 812 Hz | 0.57 s |
-| P3 | 630 Hz | 0.8 s |
+| P1 | 1250 Hz | 0.12 s |
+| P2 | 875 Hz | 0.4 s |
+| P3 | 600 Hz | 0.9 s |
 
 `python -m perception.near.e2e_bodycam` proves the chain on one computer with nothing played aloud and no paid API
 calls. It runs:
@@ -221,8 +221,8 @@ too wide beyond, which is why every object gets a range first.
 
 ### 5. Priorities
 
-P1 under 2 m, P2 under 5 m, P3 beyond, each multiplied by the class's size scale ((W H / person's W H)^0.25,
-clamped to 0.85 to 1.35): a car is P1 from 2.6 m, a pole from 1.8 m. Escalation needs 2 agreeing frames,
+P1 under 1.2 m, P2 under 3 m, P3 beyond (`--bands` changes them), each multiplied by the class's size scale ((W H / person's W H)^0.25,
+clamped to 0.85 to 1.35): a car is P1 from about 1.6 m, a pole from 1.1 m. Escalation needs 2 agreeing frames,
 de-escalation 5 frames past a 10 % band. Time to contact under 1.5 s (on the cautious side of its estimate) is P1
 at once, held until it rises past 1.9 s, but only if the object is on a collision course (its lateral track still
 overlaps the corridor at contact), so a car turning across 5 m ahead is not P1 just for closing fast.
@@ -264,6 +264,8 @@ Unknown objects from the occupancy check go through the same filter and state ma
 ## Results
 
 The full tables are in [`docs/eval.md`](docs/eval.md) (regenerate with `python -m perception.near.evaluate`).
+The hand labels were made for 2 m / 5 m bands, so the evaluation scores at those (they are recorded in
+`near_labels.json`); walking uses 1.2 m / 3 m.
 | Test set | Fused (what ships) | Best single cue | ScrollSafe rule |
 |---|---|---|---|
 | 509 synthetic renders, exact distance | **85.5 %** right, 10 false P1 | depth anchored 84.1 %, 10 false P1 | 33.6 %, 153 false P1 |

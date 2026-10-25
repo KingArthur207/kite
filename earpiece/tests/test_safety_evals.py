@@ -456,6 +456,33 @@ def test_suite_size():
     """The corpus is the evidence; keep it big."""
     n = (len(flat(J["block"])) + len(J["allow"]) + len(flat(C["vision_scene"]["drop"])) + len(C["vision_scene"]["keep"])
          + len(C["vision_scene"]["trim"]) + len(C["ocr"]["framed"]) + len(C["ocr"]["verbatim"]) + len(B["block"])
-         + len(B["allow"]))
+         + len(B["allow"]) + len(C["caregiver"]["allow"]))
     assert n >= 500
     assert len(list(variants(C["seeds"]))) >= 500
+
+
+# ================================================================ dashboard messages to the walker (shared filter)
+@pytest.mark.parametrize("text", cases(C["caregiver"]["allow"]))
+def test_everyday_dashboard_messages_get_through(text):
+    assert not forbidden(text)
+
+
+@pytest.mark.parametrize("text", cases(C["caregiver"]["known_false_positives"]))
+def test_dashboard_message_known_false_positives(text):
+    assert forbidden(text)
+
+
+def test_dashboard_messages_end_to_end_speak_only_safe_text():
+    from test_caregiver_inbox import FakeSpacetime, make, say
+    fake = FakeSpacetime()
+    inbox, got, http = make(fake)
+    inbox.poll(http)
+    unsafe = [t for t in flat(J["block"]) if t.strip()]
+    safe = C["caregiver"]["allow"]
+    for i, t in enumerate(unsafe + safe):
+        fake.add(10 + i, say(t))
+    inbox.poll(http)
+    heard = [m.text for m in got]
+    assert len(heard) == len(safe)
+    assert all(any(h.endswith(x) for h in heard) for x in safe)
+    assert inbox.stats["rejected"] + inbox.stats["bad"] == len(unsafe)

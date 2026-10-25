@@ -75,7 +75,8 @@ def radar_strip(nf: NearFrame, width: int, height: int = 150, far: float = 8.0) 
     s = np.full((height, width, 3), 18, np.uint8)
     px_m = (width - 40) / far
     y0 = height // 2
-    for d, name in ((2.0, "2 m"), (5.0, "5 m")):
+    from . import priority
+    for d, name in ((priority.P1_M, f"{priority.P1_M:g} m"), (priority.P2_M, f"{priority.P2_M:g} m")):
         x = 20 + int(d * px_m)
         cv2.line(s, (x, 10), (x, height - 10), (70, 70, 70), 1)
         cv2.putText(s, name, (x + 3, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (120, 120, 120), 1)
@@ -104,8 +105,9 @@ def draw(frame: np.ndarray, nf: NearFrame, prof: CameraProfile, dets, cam_h: flo
         cv2.line(img, (0, int(hz)), (w, int(hz)), (120, 120, 120), 1, cv2.LINE_AA)
     corridor_lines(img, prof, cam_h, nf.pitch)
     top = nf.top["priority"] if nf.top else None
-    reticle(img, prof, cam_h, nf.pitch, 2.0, BGR[1 if top == 1 else None], "2 m")
-    reticle(img, prof, cam_h, nf.pitch, 5.0, BGR[2 if top == 2 else None], "5 m")
+    from . import priority
+    reticle(img, prof, cam_h, nf.pitch, priority.P1_M, BGR[1 if top == 1 else None], f"{priority.P1_M:g} m")
+    reticle(img, prof, cam_h, nf.pitch, priority.P2_M, BGR[2 if top == 2 else None], f"{priority.P2_M:g} m")
     by_box = {}
     for d, o in zip(dets, [o for o in nf.objects if not o["id"].startswith("occ:")]):
         by_box[id(d)] = o
@@ -135,3 +137,24 @@ def draw(frame: np.ndarray, nf: NearFrame, prof: CameraProfile, dets, cam_h: flo
     corridor_lines(right, prof, cam_h, nf.pitch, color=(255, 255, 255))
     top_row = cv2.hconcat([img, right])
     return cv2.vconcat([top_row, radar_strip(nf, top_row.shape[1])])
+
+
+# what the earpiece plays for each priority (earpiece/earpiece/sonar.py PRIORITY_TONE)
+TONES = {1: (1250, 0.12), 2: (875, 0.40), 3: (600, 0.90)}   # sonar.PRIORITY_TONE
+
+
+def tone_banner(img: np.ndarray, top: dict | None) -> np.ndarray:
+    """A strip across the bottom: the priority in force and the tone the walker hears for it, in its colour."""
+    h, w = img.shape[:2]
+    out = cv2.copyMakeBorder(img, 0, 64, 0, 0, cv2.BORDER_CONSTANT, value=(18, 18, 18))
+    p = top["priority"] if top else None
+    if p in TONES:
+        hz, every = TONES[p]
+        what = f"{top.get('kind', 'object')} ~{top['distance_m']:.1f} m" if top.get("distance_m") else top.get("kind", "")
+        text = f"P{p}  {hz} Hz, a beep every {every:.2f} s   {what}"
+        col = BGR[p]
+    else:
+        text, col = "clear ahead: no beeps", (150, 150, 150)
+    cv2.rectangle(out, (0, h), (w, h + 64), col, 3)
+    cv2.putText(out, text, (18, h + 43), cv2.FONT_HERSHEY_SIMPLEX, 1.0, col, 2, cv2.LINE_AA)
+    return out

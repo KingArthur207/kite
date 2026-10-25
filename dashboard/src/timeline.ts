@@ -5,20 +5,21 @@ export type LatLng = [number, number];
 // One event-table row, parsed once. `t` is the server timestamp in ms.
 export type Ev = { id: string; type: string; source: string; priority: string; t: number; p: Payload };
 
-// Who acted: Kite's deterministic code or Claude (judgment, answers, scene text).
-export type Who = 'kite' | 'claude';
-export type Kind = 'stop' | 'hazard' | 'judgment' | 'answer' | 'scene' | 'guidance';
+// Who acted: Kite's deterministic code, Claude (judgment, answers, scene text) or the caregiver.
+export type Who = 'kite' | 'claude' | 'caregiver';
+export type Kind = 'stop' | 'help' | 'hazard' | 'judgment' | 'answer' | 'scene' | 'caregiver' | 'guidance';
 export type Moment = { id: string; t: number; kind: Kind; who: Who; text: string; detail: string; source: string; pos?: LatLng };
 
-export const WHO_LABEL: Record<Who, string> = { kite: 'Kite', claude: 'Claude' };
+export const WHO_LABEL: Record<Who, string> = { kite: 'Kite', claude: 'Claude', caregiver: 'Dashboard' };
 export const KIND_LABEL: Record<Kind, string> = {
-  stop: 'Stop', hazard: 'Hazard', judgment: 'Judgment', answer: 'Answer', scene: 'Scene', guidance: 'Guidance',
+  stop: 'Stop', help: 'Help request', hazard: 'Hazard', judgment: 'Judgment', answer: 'Answer', scene: 'Scene', caregiver: 'Message', guidance: 'Guidance',
 };
 
 const WALK_GAP_MS = 45_000;     // a quiet gap this long starts a new walk
 const REPEAT_MS = 15_000;       // the same hazard/scene/guidance again inside this window is one moment
 const POS_MATCH_MS = 10_000;    // a moment gets the walker's position only if one is this close in time
 const MAX_MOMENTS = 200;        // the event table keeps 500 rows; this bounds the strip and the map pins
+export const CAREGIVER_PREFIX = 'Message:';   // earpiece/earpiece/spacetime.py
 export const MAX_TEXT = 280;    // longest payload text shown anywhere; the module allows 16 KB payloads
 
 export const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
@@ -78,6 +79,7 @@ function toMoment(e: Ev): Omit<Moment, 'pos'> | undefined {
   const base = { id: e.id, t: happenedAt(e), source: e.source };
   switch (e.type) {
     case 'say':
+      if (e.source === 'caregiver') return text ? { ...base, kind: 'caregiver', who: 'caregiver', text, detail: 'sent from this dashboard' } : undefined;
       if (e.source === 'judgment') {
         const up = p.upgrade as Payload | null | undefined;
         const upText = up && typeof up === 'object' ? clip(`raised ${str(up.key)} to ${str(up.priority)}`, 80) : '';
@@ -91,7 +93,7 @@ function toMoment(e: Ev): Omit<Moment, 'pos'> | undefined {
     case 'spoken': {
       // The earpiece's record of what it actually said. Stops come from sonar; `answer` lines are Claude
       // answering the walker. Everything else it speaks already shows up as its source event.
-      if (!text) return undefined;
+      if (!text || text.startsWith(CAREGIVER_PREFIX)) return undefined;
       if (e.priority === 'critical' || str(p.priority) === 'critical' || isStopText(text))
         return { ...base, kind: 'stop', who: 'kite', text, detail: 'spoken by Kite, no Claude' };
       if (str(p.priority) === 'answer') return { ...base, kind: 'answer', who: 'claude', text, detail: 'answer to the walker' };
@@ -108,6 +110,9 @@ function toMoment(e: Ev): Omit<Moment, 'pos'> | undefined {
       return e.source.startsWith('scene-') && text ? { ...base, kind: 'scene', who: 'claude', text, detail: `sees (${e.source.slice(6)})` } : undefined;
     case 'guidance':
       return text ? { ...base, kind: 'guidance', who: 'kite', text, detail: 'route' } : undefined;
+    case 'caregiver_alert':
+      // The walker asked Kite to tell their caregiver; Claude made the call (alert_caregiver tool).
+      return { ...base, kind: 'help', who: 'claude', text: clip(p.message) || 'The walker asked for help.', detail: 'the walker asked Kite to tell you' };
     default:
       return undefined;
   }
@@ -177,12 +182,14 @@ export function liveStats(desc: readonly Ev[], latestBySource: ReadonlyMap<strin
 
 const SAME_LINE_MS = 10_000;
 
-/** Who a spoken line came from. The earpiece speaks Claude's words too, so a
+/** Who a spoken line came from. The earpiece speaks Claude's and the caregiver's words too, so a
  *  `spoken` row is attributed by matching it to the `say` it came from. `desc` is newest first. */
 export function speakerOf(e: Ev, desc: readonly Ev[]): Who {
+  if (e.source === 'caregiver') return 'caregiver';
   if (e.source === 'judgment' || e.source.startsWith('scene-')) return 'claude';
   if (e.type !== 'spoken') return 'kite';
   const text = norm(str(e.p.text));
+  if (text.startsWith(norm(CAREGIVER_PREFIX))) return 'caregiver';
   if (str(e.p.priority) === 'answer') return 'claude';
   const fromClaude = desc.some(s => s.type === 'say' && s.source === 'judgment' &&
     Math.abs(s.t - e.t) <= SAME_LINE_MS && norm(str(s.p.text)) === text);

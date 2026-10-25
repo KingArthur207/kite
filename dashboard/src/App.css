@@ -1,4 +1,4 @@
-/* Kite demo dashboard. Dark, in the Kite iPhone app's palette: black page, #1C1C1E cards, white text,
+/* Kite caregiver dashboard. Dark, in the Kite iPhone app's palette: black page, #1C1C1E cards, white text,
    green for live, amber for stale. Status colours are bright enough to work as text on black and on the cards. */
 :root {
   color-scheme: dark;
@@ -9,7 +9,7 @@
   --warn: #FF9F0A; --warn-text: #FF9F0A; --warn-soft: rgba(255, 159, 10, .14);
   --stop: #FF453A; --stop-text: #FF6961; --stop-soft: rgba(255, 69, 58, .16);
   --ok: #30D158; --ok-text: #30D158;
-  --kite: #63E6E2; --claude: #FF8A5B; --blue: #64D2FF;
+  --kite: #63E6E2; --claude: #FF8A5B; --caregiver: #64D2FF;
   --radius: 20px;
   --shadow: 0 0 0 1px rgba(255, 255, 255, .04);
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, "Helvetica Neue", sans-serif;
@@ -27,13 +27,13 @@ button { font: inherit; color: inherit; }
 code { font: .85em ui-monospace, "SF Mono", monospace; }
 
 /* Buttons: quiet pills. */
-header button, .banner button {
+header button, .banner button, .message button, .quick button {
   background: var(--card); color: var(--ink); border: 1px solid var(--edge); border-radius: 999px;
   padding: .5rem 1rem; min-height: 40px; cursor: pointer; font-size: .9rem; font-weight: 500;
   transition-property: background-color, border-color, transform; transition-duration: 150ms; transition-timing-function: ease-out;
 }
-header button:hover:not(:disabled), .banner button:hover { background: var(--sunk); border-color: #636366; }
-header button:active:not(:disabled) { transform: scale(.97); }
+header button:hover:not(:disabled), .banner button:hover, .message button:hover:not(:disabled), .quick button:hover:not(:disabled) { background: var(--sunk); border-color: #636366; }
+header button:active:not(:disabled), .quick button:active:not(:disabled), .message button:active:not(:disabled) { transform: scale(.97); }
 button:disabled { opacity: .45; cursor: not-allowed; }
 kbd { font: 600 .7rem ui-monospace, monospace; border: 1px solid var(--edge); border-radius: 5px; padding: 0 .3rem; margin-left: .35rem; color: var(--ink-3); }
 @media (hover: none) { kbd { display: none; } }
@@ -53,10 +53,12 @@ header h1 .subtitle { font-weight: 450; margin-left: .35rem; color: var(--ink-3)
 .fixture-chip { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-soft); border-radius: 999px; padding: .15rem .6rem; }
 @keyframes pulse { 50% { opacity: .3; } }
 
-/* Banners: connection trouble, a quiet database, a failed clear. */
+/* Banners: connection trouble, a quiet database, a help request. */
 .banner { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .9rem; margin: 0 24px 12px; padding: .7rem 1.1rem; border-radius: 14px; font-weight: 500; }
 .banner.warn { background: var(--warn-soft); color: var(--warn-text); }
 .banner.quiet { background: var(--sunk); color: var(--ink-2); border: 1px solid var(--line); }
+.banner.help { background: var(--stop-soft); color: var(--stop-text); font-size: 1.05rem; box-shadow: inset 0 0 0 1px rgba(255, 69, 58, .35); }
+.banner-actions { margin-left: auto; display: flex; gap: .5rem; }
 
 /* Layout: the map and timeline on the left, a calm column of cards on the right. */
 .layout { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 400px; gap: 16px; padding: 0 24px 20px; }
@@ -142,7 +144,7 @@ button.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2p
 .hazards li { background: var(--warn-soft); border-left: 3px solid var(--warn); padding: .55rem .8rem; border-radius: 10px; }
 .hazards li strong { text-transform: capitalize; }
 .hazards li.p-critical { background: var(--stop-soft); }
-.hazards li.p-nav { background: rgba(100, 210, 255, .12); border-left-color: var(--blue); }
+.hazards li.p-nav { background: rgba(100, 210, 255, .12); border-left-color: var(--caregiver); }
 .hz-where { color: var(--ink-2); }
 
 /* Devices and the feed. */
@@ -167,12 +169,36 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 .feed td { overflow-wrap: anywhere; }
 .feed tr.p-critical td { color: var(--stop-text); }
 .feed tr.p-hazard td { color: var(--warn-text); }
+.feed tr.caregiver td { color: var(--caregiver); }
 
+/* Caregiver messages. */
+.messages > .small { margin: 0 0 .8rem; text-wrap: pretty; }
+.message { display: flex; gap: .5rem; }
+.message input { flex: 1; min-width: 0; background: var(--sunk); color: var(--ink); border: 1px solid var(--edge); border-radius: 999px; padding: .55rem 1rem; font: inherit; }
+.message input::placeholder { color: var(--ink-3); }
+.message input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; background: var(--card); }
+.message input[aria-invalid="true"] { border-color: var(--warn); }
+.message button[type="submit"]:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #000; }
+.message button[type="submit"]:hover:not(:disabled) { background: #28B84C; }
+.msg-under { display: flex; justify-content: space-between; gap: .8rem; margin-top: .35rem; font-size: .8rem; min-height: 1.2rem; padding: 0 .5rem; }
+.blocked { color: var(--warn-text); }
+.count { color: var(--ink-3); font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+.count.near { color: var(--warn-text); font-weight: 600; }
+.quick { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0; }
+.quick button { font-size: .85rem; min-height: 36px; padding: .35rem .85rem; background: var(--sunk); }
+.send-note { margin: .3rem 0; font-size: .85rem; min-height: 1.2rem; }
+.send-note.ok { color: var(--ok-text); } .send-note.error { color: var(--stop-text); }
+.sent { list-style: none; padding: 0; margin: .3rem 0 0; display: grid; gap: .4rem; }
+.sent li { display: flex; flex-direction: column; padding: .5rem .8rem; border-radius: 12px; background: var(--sunk); }
+.sent-text { font-weight: 600; }
+.sent-state { font-size: .8rem; color: var(--ink-2); }
+.sent li.heard .sent-state { color: var(--ok-text); }
+.sent li.unheard .sent-state, .sent li.failed .sent-state { color: var(--warn-text); }
 
 /* Who acted: a small coloured dot and the name, no pills. */
 .badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; font-weight: 600; white-space: nowrap; line-height: 1.4; }
 .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.badge.kite { color: var(--kite); } .badge.claude { color: var(--claude); }
+.badge.kite { color: var(--kite); } .badge.claude { color: var(--claude); } .badge.caregiver { color: var(--caregiver); }
 .who-acted { list-style: none; display: flex; flex-wrap: wrap; gap: .3rem 1.1rem; padding: 0; margin: 0 0 0 auto; font-size: .8rem; }
 .who-acted li { display: inline-flex; align-items: baseline; gap: .35rem; }
 .who-acted b { font-variant-numeric: tabular-nums; }
@@ -190,8 +216,8 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 .ribbon-track { position: absolute; left: 0; right: 0; top: 1.05rem; height: 2px; border-radius: 1px; background: var(--line); }
 .tick { position: absolute; top: .82rem; width: .55rem; height: .55rem; margin-left: -.275rem; padding: 0; border-radius: 50%;
   border: 2px solid var(--card); background: var(--kite); cursor: pointer; }
-.tick.w-claude { background: var(--claude); }
-.tick.k-stop { top: .45rem; width: .4rem; height: 1.3rem; margin-left: -.2rem; border-radius: 3px; background: var(--stop); }
+.tick.w-claude { background: var(--claude); } .tick.w-caregiver { background: var(--caregiver); }
+.tick.k-stop, .tick.k-help { top: .45rem; width: .4rem; height: 1.3rem; margin-left: -.2rem; border-radius: 3px; background: var(--stop); }
 .tick.on { box-shadow: 0 0 0 2px var(--ink); }
 .tick-label { position: absolute; top: 1.4rem; left: 50%; transform: translateX(-50%); font-size: .7rem; font-weight: 650; color: var(--stop-text); white-space: nowrap; }
 .ribbon-end { position: absolute; top: -.2rem; font-size: .7rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
@@ -201,9 +227,9 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 .moment { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: .15rem;
   width: 14.5rem; height: 100%; padding: .7rem .85rem; border-radius: 14px; background: var(--sunk); box-shadow: inset 0 0 0 1px var(--line);
   transition-property: transform, background-color, box-shadow; transition-duration: 150ms; transition-timing-function: ease-out; }
-.moment.k-stop { background: var(--stop-soft); box-shadow: inset 0 0 0 1px rgba(255, 69, 58, .3); }
+.moment.k-stop, .moment.k-help { background: var(--stop-soft); box-shadow: inset 0 0 0 1px rgba(255, 69, 58, .3); }
 .moment:hover { background: #3A3A3C; }
-.moment.k-stop:hover { background: rgba(255, 69, 58, .24); }
+.moment.k-stop:hover, .moment.k-help:hover { background: rgba(255, 69, 58, .24); }
 .moment:active { transform: scale(.98); }
 .moment:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .moment.on { background: #3A3A3C; box-shadow: inset 0 0 0 1.5px var(--ink); }
@@ -211,7 +237,7 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 .when { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 650; font-size: .85rem; }
 .when .muted { font-weight: 400; font-size: .75rem; margin-left: .2rem; }
 .moment-kind { font-size: .7rem; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
-.k-stop .moment-kind { color: var(--stop-text); }
+.k-stop .moment-kind, .k-help .moment-kind { color: var(--stop-text); }
 .moment-text { font-weight: 550; line-height: 1.3; text-wrap: pretty; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .moment-detail { font-size: .78rem; }
 
@@ -273,7 +299,7 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 .present .stat-value { font-size: 1.8rem; }
 .present .stat .spoken-now { font-size: 1.3rem; }
 
-/* Narrow screens (a phone): one scrolling column, the status first. */
+/* Narrow screens (a caregiver's phone): one scrolling column, the status first. */
 @media (max-width: 900px) {
   .app { height: auto; min-height: 100vh; }
   header { padding: 12px 16px; }
@@ -297,8 +323,8 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .moment, .client, .segmented button, header button { transition: none; }
-  .moment:active, header button:active { transform: none; }
+  .moment, .client, .segmented button, header button, .quick button { transition: none; }
+  .moment:active, header button:active, .quick button:active { transform: none; }
   .conn i, .hero .ring::after { animation: none !important; }
   .strip { scroll-behavior: auto; }
 }
