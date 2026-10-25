@@ -244,6 +244,20 @@ Key objects, one row each (distance in metres, and how perception/ measured it: 
 - **Big crowns, low prompts.** Street trees come back as boxes around the whole crown; the trunk bearing comes from depth, and without depth it is the crown's centre. Rare classes score 0.15 to 0.3, so the open-vocabulary thresholds are low (`models.OPEN_MIN_CONF`) and a far bin or pole is sometimes wrong. They are far and off the corridor, so the sonar (6 m, corridor only) ignores them, but they do show up in `scene` text.
 - **Latency.** perception/ costs about 2 to 3 times the stand-in per frame on an M1 (two detectors plus depth). `--open-every 2` halves the open-vocabulary cost (fixed things barely move between frames), `--depth off` drops the depth model and everything that needs it.
 
+## Near: priorities for what is directly ahead (`perception/near/`)
+
+`python -m perception.near --source webcam:Logitech` answers one narrower question with more care: is something in
+the 1 m wide corridor straight ahead, and is it P1 (under 2 m, or under 1.5 s to contact), P2 (2 to 5 m) or P3
+(5 m or more)? It reuses this module's detectors and depth model, and adds Logitech C270 / C310 / C920 intrinsics
+(spec profiles plus `python -m perception.calibrate_camera`), five fused distance cues (known size, ground contact,
+ground-anchored dense depth, motion stereo from walking speed, looming time to contact), a per-track Kalman
+filter, class-agnostic corridor occupancy with drop-off detection, hysteresis, three-tone park-assist beeps
+(WAV only) and an earpiece mapping. Ideas adopted from Google's ARCore Depth API and DepthLab (Du et al.,
+[DepthLab: Real-time 3D Interaction with Depth Maps for Mobile AR](https://github.com/googlesamples/arcore-depth-lab),
+UIST 2020; Valentin et al., [Depth from motion for smartphone AR](https://research.google/pubs/depth-from-motion-for-smartphone-ar/),
+SIGGRAPH Asia 2018): per-pixel depth confidence, temporal smoothing, depth from motion, depth-based collision
+checks, oriented reticles and the Turbo depth view. Design, sources and accuracy: [near/README.md](near/README.md).
+
 ## Depth sources: the shoot-out (`depth_zoo.py`, `bench_depth/`)
 
 `depth_zoo.py` puts every depth source behind one interface: `estimate(frame) -> depth in metres, a confidence map,
@@ -280,6 +294,8 @@ the time on the walks, catches every P1 frame and raises a false P1 on 3 % of fr
 | `depth_zoo.py` | pluggable depth sources, floor anchoring, motion stereo, temporal smoothing, confidence fusion |
 | `bench_depth/` | the depth shoot-out against ground truth ([docs/depth_shootout.md](docs/depth_shootout.md)) |
 | `bytetrack_open.yaml` | ByteTrack with a 0.15 start threshold, since rare street objects score low |
+| `near/` | camera-only priorities P1 / P2 / P3 for the corridor ahead, beeps, calibration ([near/README.md](near/README.md)) |
+| `calibrate_camera.py` | ChArUco / chessboard calibration of the chest webcam into a profile `near/` loads |
 | `tests/` | 45 tests with fake models (no download): geometry, ground fit, overhead and stairs, corridor rises and drops, NMS, hazard gating, every event parsed by `earpiece.events.parse`, the CLI's guards (no overlay from a live camera) and the review overlay. `-m slow` adds a real-model test |
 
 ```bash
