@@ -186,17 +186,46 @@ class Pilot:
         cfg = Config()
         if a.video_backend:
             cfg.drone.video_backend = resolve_video_backend(a.video_backend)
-        bcfg = BehindCfg(distance_m=a.behind, altitude_m=a.height, person_height_m=a.walker_height,
-                         min_altitude_m=cfg.safety.min_altitude_m, max_altitude_m=cfg.safety.max_altitude_m,
-                         orbit_gain=0.5 if a.orbit else 0.0, video_lag_s=cfg.drone.video_lag_s,
-                         steering="fly" if a.yaw == "fly" else "pid")
+        model = getattr(a, "model", None)
+        mission_cls = FollowMission
+        if model:  # opt in: a trained follow model (kite.follow_tuned): the whole follow's settings, its own steering
+            from kite.follow_tuned import TunedFollowMission, app_follow_cfg, model_governor, resolve_model
+
+            try:
+                bcfg = app_follow_cfg(model, distance_m=a.behind, altitude_m=a.height, person_height_m=a.walker_height,
+                                      min_altitude_m=cfg.safety.min_altitude_m,
+                                      max_altitude_m=cfg.safety.max_altitude_m, orbit_gain=0.5 if a.orbit else 0.0,
+                                      video_lag_s=cfg.drone.video_lag_s)
+            except (OSError, ValueError, TypeError) as e:
+                self.log(f"follow model: {e}", "error")
+                return False
+            mission_cls = TunedFollowMission
+            need = model_governor(resolve_model(model)).get("needs_max_rc")
+            self.log(f"follow model {bcfg.model_name} (simulation-tested, opt-in): steering {bcfg.steering}, its own "
+                     f"distance, speed and height settings" + (f"; --yaw {a.yaw} is not used" if a.yaw != "fly" else "")
+                     + (f"; it asks for stick up to {need}, the safety cap {cfg.safety.max_rc} limits it"
+                        if need and need > cfg.safety.max_rc else ""), "info")
+        else:
+            bcfg = BehindCfg(distance_m=a.behind, altitude_m=a.height, person_height_m=a.walker_height,
+                             min_altitude_m=cfg.safety.min_altitude_m, max_altitude_m=cfg.safety.max_altitude_m,
+                             orbit_gain=0.5 if a.orbit else 0.0, video_lag_s=cfg.drone.video_lag_s,
+                             steering="fly" if a.yaw == "fly" else "pid")
         try:
             bcfg.check()
         except ValueError as e:
             self.log(f"follow settings: {e}", "error")
             return False
         yaw_source = None
-        if a.yaw in ("retrained", "pd"):  # kite.fly's own yaw sources (simulation-tested)
+        if model:
+            if bcfg.steering == "fly":  # the model's brain (read from its file): load it now, not in the air
+                try:
+                    steer = FlyYaw.load(bcfg)
+                    self.log(f"steering: fruit fly brain ({steer.stats['arm']}, {Path(bcfg.fly_params_path).name})",
+                             "info")
+                except Exception as e:
+                    bcfg.steering = "pid"
+                    self.log(f"fly steering unavailable ({type(e).__name__}: {e}); using the yaw law", "warn")
+        elif a.yaw in ("retrained", "pd"):  # kite.fly's own yaw sources (simulation-tested)
             try:
                 yaw_source, line = build_yaw_source("fly" if a.yaw == "retrained" else "pd",
                                                     FollowCfg(behind_m=a.behind, video_lag_s=cfg.drone.video_lag_s))
@@ -211,7 +240,10 @@ class Pilot:
             except Exception as e:
                 bcfg.steering = "pid"
                 self.log(f"fly steering unavailable ({type(e).__name__}: {e}); using the yaw law", "warn")
-        self.snap.yaw = a.yaw if (yaw_source is not None or bcfg.steering == "fly") else "law"
+        if model:
+            self.snap.yaw = f"model {bcfg.model_name}" + ("" if bcfg.steering == "fly" else " (law)")
+        else:
+            self.snap.yaw = a.yaw if (yaw_source is not None or bcfg.steering == "fly") else "law"
         self.drone = SafetyGovernor(make_tello(cfg, dry_run=a.dry_run), cfg.safety)
         self.log(f"connecting to the Tello ({'DRY RUN: nothing reaches the motors' if a.dry_run else 'LIVE'}) ...",
                  "info")
@@ -244,8 +276,8 @@ class Pilot:
         cam = (CameraModel.from_camera(load_camera()) if CAMERA_FILE.is_file() else
                CameraModel(960, 720, bcfg.camera_fx, bcfg.camera_fx, 480.0, 360.0))
         perception = Perception(bcfg, self.seen, cam)
-        self.follow = FollowMission(self.drone, perception, bcfg, log=self.log, yaw_source=yaw_source,
-                                    say=speaker() if a.speak else None)
+        self.follow = mission_cls(self.drone, perception, bcfg, log=self.log, yaw_source=yaw_source,
+                                  say=speaker() if a.speak else None)
         self._ready_line = (f"ready: video ({cfg.drone.video_backend} reader), person detector on "
                             f"{self.seen._detect.device}, camera fx {cam.fx:.0f}. Stand about 2 m in front of the "
                             "drone facing away, then type takeoff")

@@ -3,6 +3,7 @@
     python run/app.py                 # live: drone on, laptop on its Wi-Fi
     python run/app.py --dry-run       # on the table: video, YOLO and commands, nothing reaches the motors
     python run/app.py --yaw law       # steer yaw by bearing instead of the fruit fly brain
+    python run/app.py --model v3b-joint   # opt in: a trained follow model (kite/fly/data/behind), simulation-tested
     python run/app.py --yolo          # also show YOLO26n obstacle boxes on the camera (show only)
 
 Each run also writes recordings/<time>_app/video.mkv and recordings/<time>_app/frames/NNNNNN.jpg (the camera
@@ -66,6 +67,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="what steers yaw while following: fly (the fruit fly brain it flew with, FLY-YAW smooth2, "
                         "default), law (turn toward the person by bearing), retrained (kite.fly's retrained brain, "
                         "simulation-tested only) or pd")
+    p.add_argument("--model", default=None, help="opt in: fly a trained follow model instead of the default follow: a "
+                   "name in kite/fly/data/behind (v3b-joint, v3b-follow, ...) or a path to a model file. It brings its "
+                   "own distance, speed, height and steering settings, so --yaw is not used; --behind, --height and "
+                   "--walker-height still apply. Simulation-tested only")
     p.add_argument("--walker-height", type=float, default=1.7, help="the walker's real height WITH SHOES in m, to "
                    "+-2 cm (default 1.7): the follow distance is read from it, 5 cm off is 10-20 %% distance error")
     p.add_argument("--height", type=float, default=None, help="follow altitude above the floor, m (default: walker "

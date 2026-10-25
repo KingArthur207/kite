@@ -73,6 +73,14 @@ decides only the yaw stick; distance, height and safety stay as above. `law` tur
 `retrained` and `pd` are kite.fly's own yaw sources (simulation-tested only). Keep a hand on `e` and a spotter next
 to the walker.
 
+Trained follow models (`--model`, opt in): `python run/app.py --model v3b-joint` flies a model from
+`kite/fly/data/behind/` (`v3b-joint`, `v3b-follow`, or a path to a model file) through `kite.follow_tuned`. A model
+brings the whole follow's settings, trained in the simulator in `kite/fly/behind/`: distance keeping, a speed-up to
+about 0.5 m/s only while the person is measured walking faster, the damped back-off, height and its own steering.
+So `--yaw` is not used with it; `--behind`, `--height` and `--walker-height` still apply. Without `--model` nothing
+changes. Simulation-tested only ([docs/follow-v3-results.md](../docs/follow-v3-results.md)): fly it next to the
+default first.
+
 The YOLO weights are in `data/models/` and come down with a pull (`yolo11n-pose.pt` for the follow, `yolo11n.pt` for detection). To fetch the pose file again:
 
 ```bash
