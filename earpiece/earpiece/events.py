@@ -121,6 +121,7 @@ class Obstacle:
     distance: float
     closing_speed: float | None = None
     confidence: float = 1.0
+    priority: int | None = None        # 1 (most urgent) to 3 when the sender ranks objects itself (perception/near)
 
 
 @dataclass
@@ -200,7 +201,7 @@ def parse(raw: bytes | str | dict) -> Msg:
             except BadMessage:
                 conf = 1.0
             objs.append(Obstacle(_ident(o.get("id"), f"{src}-{i}"), _kind(o.get("kind", o.get("class"))),
-                                 wrap_deg(bear), dist, cs, conf))
+                                 wrap_deg(bear), dist, cs, conf, _level(o.get("priority"))))
         objs.sort(key=lambda o: o.distance)
         return Msg("obstacles" if t == "obstacles" else "obstacle", src, seq, objects=objs[:MAX_OBJECTS],
                    ttl=_num(d, "ttl", lo=0.05, hi=10.0))
@@ -277,6 +278,13 @@ def _coord(d: dict, name: str, limit: float) -> float | None:
     clamped: a fix pinned to the pole would route the walker somewhere wrong."""
     v = _num(d, name)
     return v if v is not None and -limit <= v <= limit else None
+
+
+def _level(v) -> int | None:
+    """An obstacle's sender priority: the integer 1, 2 or 3 (3.0 is fine), anything else None."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != v:
+        return None
+    return int(v) if v in (1, 2, 3) else None
 
 
 def _seq(v: Any) -> int | None:

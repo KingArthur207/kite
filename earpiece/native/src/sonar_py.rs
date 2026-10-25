@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-/// `(id, kind, bearing, distance, closing_speed | None, confidence)`.
-type ObTuple = (String, String, f64, f64, Option<f64>, f64);
+/// `(id, kind, bearing, distance, closing_speed | None, confidence, priority | None)`.
+type ObTuple = (String, String, f64, f64, Option<f64>, f64, Option<u8>);
 
 fn obstacle(o: ObTuple) -> Obstacle {
     Obstacle {
@@ -32,6 +32,7 @@ fn obstacle(o: ObTuple) -> Obstacle {
         distance: o.3,
         closing_speed: o.4,
         confidence: o.5,
+        priority: o.6,
     }
 }
 
@@ -59,6 +60,7 @@ pub struct TrackState {
     last_label_t: f64,
     last_stop_t: f64,
     first_seen: f64,
+    priority: Option<u8>,
 }
 
 impl From<&Track> for TrackState {
@@ -84,6 +86,7 @@ impl From<&Track> for TrackState {
             last_label_t: t.last_label_t,
             last_stop_t: t.last_stop_t,
             first_seen: t.first_seen,
+            priority: t.priority,
         }
     }
 }
@@ -340,7 +343,7 @@ impl PySonar {
     }
 
     /// A full perception frame from `source`: objects are
-    /// `(id, kind, bearing, distance, closing_speed | None, confidence)`.
+    /// `(id, kind, bearing, distance, closing_speed | None, confidence, priority | None)`.
     /// Returns False when the frame was dropped as out of order.
     #[pyo3(signature = (source, objects, seq, now))]
     fn update_frame(

@@ -72,6 +72,16 @@ impl Default for SonarCfg {
     }
 }
 
+/// Urgency for a sender-ranked object, as `sonar.PRIORITY_URGENCY`: P1 ~1228 Hz every ~0.14 s,
+/// P2 ~812 Hz every ~0.57 s, P3 ~630 Hz every ~0.81 s with the default pitch and interval range.
+pub fn priority_urgency(p: u8) -> f64 {
+    match p {
+        1 => 0.97,
+        2 => 0.40,
+        _ => 0.15,
+    }
+}
+
 /// One detected object, as `events.Obstacle`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Obstacle {
@@ -81,6 +91,8 @@ pub struct Obstacle {
     pub distance: f64,
     pub closing_speed: Option<f64>,
     pub confidence: f64,
+    /// The sender's priority, 1 (most urgent) to 3, when it ranks objects itself (perception/near).
+    pub priority: Option<u8>,
 }
 
 /// One tracked object, as `sonar.Track`.
@@ -108,6 +120,7 @@ pub struct Track {
     pub last_label_t: f64,
     pub last_stop_t: f64,
     pub first_seen: f64,
+    pub priority: Option<u8>,
 }
 
 impl Track {
@@ -373,6 +386,7 @@ impl Sonar {
                 t.given_speed = o.closing_speed;
                 t.last_seen = now;
                 t.ttl = ttl;
+                t.priority = o.priority;
                 i
             }
             None => {
@@ -397,6 +411,7 @@ impl Sonar {
                     last_label_t: -1e9,
                     last_stop_t: -1e9,
                     first_seen: now,
+                    priority: o.priority,
                 });
                 self.tracks.len() - 1
             }
@@ -436,6 +451,9 @@ impl Sonar {
             corridor = if t.distance < 0.8 { 1.0 } else { 0.0 };
             fwd = t.distance;
         }
+        if t.priority.is_some() {
+            corridor = 1.0; // the sender already put it in the walking corridor
+        }
         let v = t.closing_speed();
         let approach = match v {
             None => c.walk_speed_mps,
@@ -457,6 +475,9 @@ impl Sonar {
         let mut u = pmax(u_ttc, 0.85 * u_dist) * corridor * conf;
         if t.kind == "vehicle" {
             u = pmin(1.0, u * 1.25);
+        }
+        if let Some(p) = t.priority {
+            u = priority_urgency(p); // one fixed tone and rate per priority, whatever the kind or bearing
         }
         let h = if t.critical { 1.0 - c.hysteresis } else { 1.0 };
         let critical = corridor > 0.5
@@ -636,6 +657,7 @@ mod tests {
             distance,
             closing_speed: v,
             confidence: 1.0,
+            priority: None,
         }
     }
 

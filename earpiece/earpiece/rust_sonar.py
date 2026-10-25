@@ -43,8 +43,28 @@ _I64 = (-(2 ** 63), 2 ** 63 - 1)
 TICK_PERIOD_S = 0.02           # the native thread's step, the Python control loop's period
 
 
+# every kite_audio.Sonar method RustSonar calls outside the native thread: a build older than these sources lacks
+# some, and "auto" must then fall back to the Python sonar rather than fail on the first obstacle message
+REQUIRED = ("clear", "note_perception", "perception_ok", "poll", "set_profile", "stats", "tick", "tracks",
+            "update_frame", "update_one")
+
+
+SONAR_ABI = 2                  # native/src/lib.rs SONAR_ABI: 2 = obstacles carry a priority (7-tuples)
+
+
+def stale_build() -> list[str]:
+    """What this build of kite_audio.Sonar lacks (empty when it is current or not built at all): missing methods,
+    or an older obstacle signature (SONAR_ABI) that would reject the tuples this wrapper sends."""
+    if _ka is None or not hasattr(_ka, "Sonar"):
+        return []
+    missing = [m for m in REQUIRED if not hasattr(_ka.Sonar, m)]
+    if getattr(_ka, "SONAR_ABI", 1) < SONAR_ABI:
+        missing.append(f"SONAR_ABI {SONAR_ABI}")
+    return missing
+
+
 def available() -> bool:
-    return _ka is not None and hasattr(_ka, "Sonar")
+    return _ka is not None and hasattr(_ka, "Sonar") and not stale_build()
 
 
 def native_available() -> bool:
@@ -54,7 +74,7 @@ def native_available() -> bool:
 
 def _ob(o: Obstacle) -> tuple:
     # str(): Python builds the track key with an f-string, so a non-str id works there too
-    return (str(o.id), str(o.kind), o.bearing, o.distance, o.closing_speed, o.confidence)
+    return (str(o.id), str(o.kind), o.bearing, o.distance, o.closing_speed, o.confidence, o.priority)
 
 
 class RustSonar:

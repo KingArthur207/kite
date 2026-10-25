@@ -475,6 +475,7 @@ mod tests {
             distance: d,
             closing_speed: None,
             confidence: 1.0,
+            priority: None,
         }
     }
 
