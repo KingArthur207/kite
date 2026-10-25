@@ -621,6 +621,7 @@ We think the right way to help a blind pedestrian is not a smarter cane or a tal
 - Open-source libraries: djitellopy, three.js, 3d-tiles-renderer, SpacetimeDB, React, Leaflet, react-leaflet, Vite, NumPy, SciPy, sounddevice, websockets, httpx, the Anthropic Python SDK, Moss (`inferedge-moss`), OpenCV, PyAV, Ultralytics, Hugging Face Transformers, Playwright, cpal, rtrb, PyO3. Services: Google Routes API v2, Places API (New), Map Tiles API and Street View Static API
 - Head model for binaural rendering: Brown and Duda's spherical-head model
 - Built with Claude Code: Claude worked alongside the team on the earpiece, the Rust audio engine, perception, the safety evals and this site.
+- Built with Cursor: the team wrote Kite in Cursor, and Cursor's agent built the phone GPS link and the walking map.
 
 ## License
 
