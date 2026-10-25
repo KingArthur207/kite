@@ -110,7 +110,7 @@ the nervous system
 
 ### SpacetimeDB
 
-One live world for the drone, the earpiece and your caregiver's map. Your caregiver can send you a message mid-walk.
+One live world for the drone, the earpiece and the live map.
 
 the memory
 

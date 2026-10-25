@@ -10,14 +10,14 @@ A white cane reports the street one step at a time. A guide dog looks ahead, sto
 
 ## What works today, and what doesn't
 
-- **Real and running:** the earpiece (spatial beeps, the beacon toward the next turn, the speech queue, stop and wait), Cartesia voice in and out with offline fallbacks, Claude's careful judgment calls, scene descriptions and reading text aloud, Moss memory of the walker's places, walking directions, and the SpacetimeDB caregiver dashboard with two-way messages.
+- **Real and running:** the earpiece (spatial beeps, the beacon toward the next turn, the speech queue, stop and wait), Cartesia voice in and out with offline fallbacks, Claude's careful judgment calls, scene descriptions and reading text aloud, Moss memory of the walker's places, walking directions, and the live SpacetimeDB dashboard.
 - **A stand-in:** obstacle detection uses an off-the-shelf detector (YOLO11n) while a dedicated street model is finished.
 - **Simulated:** the 41-second walk on the home page is a simulated street rendered by the real earpiece code. Drones aren't allowed to fly at the venue, so the drone's view at our table is recorded footage.
 - **Not a medical device:** Kite is a hackathon prototype. It has not been tested with blind travellers or orientation and mobility instructors yet, and it should not be relied on for a real walk.
 
 ## How it's built
 
-Python and a real-time Rust audio engine on the walker's laptop; TypeScript for the browser simulation and the caregiver dashboard. Cartesia is Kite's voice and ears, Claude its judgment, SpacetimeDB the live state every device and the caregiver share, and Moss its memory of the walker's places. Grok powers a voice line for caregivers and generates street scenes we can't safely film. Every decision that can hurt someone runs in deterministic code first; AI may only make Kite more careful.
+Python and a real-time Rust audio engine on the walker's laptop; TypeScript for the browser simulation and the dashboard. Cartesia is Kite's voice and ears, Claude its judgment, SpacetimeDB the live state every device and the dashboard share, and Moss its memory of the walker's places. Grok Imagine generates the street scenes we can't safely film, and Kite is tested against them. Every decision that can hurt someone runs in deterministic code first; AI may only make Kite more careful.
 
 ## Open source
 

@@ -16,7 +16,7 @@ There is no automatic deploy: the repo has no hosted CI runners, so deploy by ha
 
 ## Evidence images
 
-Evidence images in `public/assets/evidence/` are copies of real artifacts from this repo, resized with `sips`: `caregiver-dashboard.jpg` is `dashboard/docs/reveal-normal.png` (a replayed test walk), and `yolo-drone-view.jpg` and `yolo-chest-view.jpg` are `sim/docs/yolo_drone.jpg` and `sim/docs/yolo_chest.jpg` (YOLO on the browser simulation, scored in `sim/README.md`). Only add an image to a card when a real artifact proves the claim.
+Evidence images in `public/assets/evidence/` are copies of real artifacts from this repo, resized with `sips`: `live-dashboard.jpg` is `dashboard/docs/reveal-normal.png` (a replayed test walk), and `yolo-drone-view.jpg` and `yolo-chest-view.jpg` are `sim/docs/yolo_drone.jpg` and `sim/docs/yolo_chest.jpg` (YOLO on the browser simulation, scored in `sim/README.md`). Only add an image to a card when a real artifact proves the claim.
 
 ## Sponsor logos
 
@@ -26,5 +26,4 @@ Logos on `/judges` are the companies' own marks, fetched from their sites and st
 - `anthropic.svg`: header wordmark on https://www.anthropic.com
 - `spacetimedb.svg`: https://spacetimedb.com/images/brand.svg, recoloured from light grey to near-black for the paper background
 - `moss.svg`: `moss_wordmark_dark.svg` from the Moss brand kit, https://www.moss.dev/brand-kit (viewBox trimmed to the mark)
-- `meta.svg`: header logo on https://www.meta.com/about/, served from https://static.xx.fbcdn.net/rsrc.php/y9/r/tL_v571NdZ0.svg
 - `xai.svg`: header mark on https://x.ai (SpaceXAI)

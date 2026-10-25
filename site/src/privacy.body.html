@@ -16,11 +16,10 @@
 
       <h2>The Kite earpiece</h2>
       <ul>
-        <li><b>Camera frames</b> are processed on the walker's laptop. A single frame is sent to Anthropic's Claude API only when the walker asks "what's in front of me?" or "read this", or when scene descriptions are turned on. Frames and video are never sent to the caregiver dashboard.</li>
+        <li><b>Camera frames</b> are processed on the walker's laptop. A single frame is sent to Anthropic's Claude API only when the walker asks "what's in front of me?" or "read this", or when scene descriptions are turned on. Frames and video are never sent to the dashboard.</li>
         <li><b>Voice:</b> after an AirPod press (or the optional wake word), the walker's speech is streamed to Cartesia to be transcribed, and Kite's replies are sent to Cartesia as text to be spoken. Questions that need an answer go to Claude as text.</li>
         <li><b>Memories</b> such as "remember this place as the bench" are stored in the walker's Moss index and in a local file on the laptop.</li>
-        <li><b>Caregiver sharing</b> is off unless the walker turns it on. When it is on, the walker's position, the hazards Kite reports, what Kite says and the text of what the walker says are shared through SpacetimeDB so a caregiver can follow the walk on a map. Video is never shared. "Clear run" on the dashboard deletes the walk's events.</li>
-        <li><b>Caregiver voice line:</b> if a caregiver uses it, their speech is processed by xAI's Grok voice service on the caregiver's own computer.</li>
+        <li><b>Dashboard sharing</b> is off unless it is turned on for the demo. When it is on, the walker's position, the hazards Kite reports, what Kite says and the text of what the walker says are shared through SpacetimeDB so the walk can be followed on a map. Video is never shared. "Clear run" on the dashboard deletes the walk's events.</li>
         <li>API keys stay on the device in a local file and are never sent anywhere except to the service they belong to.</li>
       </ul>
 
