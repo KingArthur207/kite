@@ -244,6 +244,27 @@ Key objects, one row each (distance in metres, and how perception/ measured it: 
 - **Big crowns, low prompts.** Street trees come back as boxes around the whole crown; the trunk bearing comes from depth, and without depth it is the crown's centre. Rare classes score 0.15 to 0.3, so the open-vocabulary thresholds are low (`models.OPEN_MIN_CONF`) and a far bin or pole is sometimes wrong. They are far and off the corridor, so the sonar (6 m, corridor only) ignores them, but they do show up in `scene` text.
 - **Latency.** perception/ costs about 2 to 3 times the stand-in per frame on an M1 (two detectors plus depth). `--open-every 2` halves the open-vocabulary cost (fixed things barely move between frames), `--depth off` drops the depth model and everything that needs it.
 
+## Depth sources: the shoot-out (`depth_zoo.py`, `bench_depth/`)
+
+`depth_zoo.py` puts every depth source behind one interface: `estimate(frame) -> depth in metres, a confidence map,
+latency`. The sources:
+- Depth Anything V2 (Metric Indoor and Outdoor, Small and Base; relative);
+- Apple Depth Pro, UniDepth V2, Metric3D V2 and Video Depth Anything, if they are installed;
+- our own motion stereo: depth from a single moving camera, the idea behind ARCore's Depth API;
+- a flat-ground prior.
+
+It also has wrappers that anchor any map's scale to the floor (RANSAC, the camera's known height), smooth it over
+time, and fuse it with motion stereo by confidence. Run `python -m perception --depth-backend <name>` to use any of
+them in the pipeline.
+
+`python -m perception.bench_depth` scores every source against laser-scanned DIODE frames and rendered chest-camera
+walks with exact depth, and writes [docs/depth_shootout.md](docs/depth_shootout.md). The verdict: Depth Anything V2
+Metric Indoor Small, anchored to the floor and fused with motion stereo. It gets the priority band right 84 % of
+the time on the walks, catches every P1 frame and raises a false P1 on 3 % of frames. The ScrollSafe rule scores
+18 % with perfect boxes.
+
+![GT and each depth source](docs/depth_shootout.png)
+
 ## Files
 
 | File | What it is |
@@ -256,6 +277,8 @@ Key objects, one row each (distance in metres, and how perception/ measured it: 
 | `hazards.py` | drone path hazards and the hazard gate |
 | `overlay.py` | review overlays (never on live cameras or Street View) |
 | `bench.py`, `bench_labels.json` | the comparison above |
+| `depth_zoo.py` | pluggable depth sources, floor anchoring, motion stereo, temporal smoothing, confidence fusion |
+| `bench_depth/` | the depth shoot-out against ground truth ([docs/depth_shootout.md](docs/depth_shootout.md)) |
 | `bytetrack_open.yaml` | ByteTrack with a 0.15 start threshold, since rare street objects score low |
 | `tests/` | 45 tests with fake models (no download): geometry, ground fit, overhead and stairs, corridor rises and drops, NMS, hazard gating, every event parsed by `earpiece.events.parse`, the CLI's guards (no overlay from a live camera) and the review overlay. `-m slow` adds a real-model test |
 

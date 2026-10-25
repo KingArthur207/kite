@@ -39,6 +39,8 @@ earpiece/.cache/
 .wrangler/
 recordings/
 data/models/
+# perception/bench_depth datasets (DIODE slice) and caches, never committed
+data/depth_bench/
 
 # Claude Code agent worktrees
 .claude/worktrees/
