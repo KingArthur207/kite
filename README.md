@@ -1,24 +1,36 @@
+<h1 align="center">
+  <img src="site/public/assets/kite-mark.svg" alt="" width="54" valign="middle">&nbsp;Kite
+</h1>
+
+<p align="center"><b>A guide dog that flies. Kite tells a blind pedestrian what's coming before they reach it.</b></p>
+
 <p align="center">
-  <img src="site/public/assets/kite-mark.svg" alt="Kite logo: a kite flying on the wind, its line running down to the walker" width="132">
+  <a href="https://trykite.pages.dev"><img src="site/public/assets/try-kite.svg" alt="Try Kite at trykite.pages.dev" width="400"></a>
 </p>
 
-<h1 align="center">Kite</h1>
+<p align="center">
+  <a href="https://trykite.pages.dev"><img src="site/public/assets/og.png" alt="Kite: hear the street before you reach it. Open trykite.pages.dev" width="760"></a>
+</p>
 
-**A guide dog that flies. Kite tells a blind pedestrian what's coming before they reach it.**
+<p align="center">
+  <a href="https://trykite.pages.dev/#hear"><b>🎧 Hear a 41-second walk</b></a> &nbsp;·&nbsp;
+  <a href="https://trykite.pages.dev/how"><b>How it works</b></a> &nbsp;·&nbsp;
+  <a href="https://trykite.pages.dev/judges"><b>For judges: every track, criterion by criterion</b></a>
+</p>
 
-![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![Rust](https://img.shields.io/badge/Rust-audio%20engine-000000?logo=rust&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-sim%20%2B%20dashboard-3178C6?logo=typescript&logoColor=white)
-![Cartesia](https://img.shields.io/badge/Cartesia-Sonic%20%2B%20Ink-FF6B35)
-![Claude](https://img.shields.io/badge/Claude-Opus%20%2B%20Haiku-D97757?logo=anthropic&logoColor=white)
-![SpacetimeDB](https://img.shields.io/badge/SpacetimeDB-Maincloud-6E40C9)
-![Moss](https://img.shields.io/badge/Moss-memory-2E8B57)
-![Grok](https://img.shields.io/badge/Grok-Voice%20%2B%20Imagine-000000?logo=x&logoColor=white)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/Rust-audio%20engine-000000?logo=rust&logoColor=white" alt="Rust">
+  <img src="https://img.shields.io/badge/TypeScript-sim%20%2B%20dashboard-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Cartesia-Sonic%20%2B%20Ink-FF6B35" alt="Cartesia">
+  <img src="https://img.shields.io/badge/Claude-Opus%20%2B%20Haiku-D97757?logo=anthropic&logoColor=white" alt="Claude">
+  <img src="https://img.shields.io/badge/SpacetimeDB-Maincloud-6E40C9" alt="SpacetimeDB">
+  <img src="https://img.shields.io/badge/Moss-memory-2E8B57" alt="Moss">
+  <img src="https://img.shields.io/badge/Grok-Voice%20%2B%20Imagine-000000?logo=x&logoColor=white" alt="Grok">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
 
-🛰️ sees the street from above · 🎧 beeps from where things are · 🛑 stops you, then waits · 🗣️ ~0.1 s to first spoken word · 🧠 remembers your places · 📴 safety cues keep working offline · 👪 caregiver sees the walk live, never the video
-
-**[🎧 Hear a 41-second walk](https://trykite.pages.dev/#hear)** · **[How it works](https://trykite.pages.dev/how)** · **[For judges: every track, criterion by criterion](https://trykite.pages.dev/judges)**
+<p align="center">🛰️ sees the street from above · 🎧 beeps from where things are · 🛑 stops you, then waits · 🗣️ ~0.1 s to first spoken word · 🧠 remembers your places · 📴 safety cues keep working offline · 👪 caregiver sees the walk live, never the video</p>
 
 ---
 
@@ -40,7 +52,6 @@ Each track below has its own section further down. The same answers, laid out ag
 | **SpacetimeDB** | `event` and `latest` tables, validated `push` and `clear` reducers, an earpiece bridge that mirrors every event, a dashboard that reads only from Spacetime | [`index.ts`](dashboard/spacetimedb/src/index.ts), [`spacetime.py`](earpiece/earpiece/spacetime.py), [`App.tsx`](dashboard/src/App.tsx), [`test_replay_bridge.py`](earpiece/tests/test_replay_bridge.py) |
 | **Best Use of Moss** | A real-time voice agent's memory: personal places and hazards in `kite-memory`, 3–12 ms local lookups on every utterance, place resolution before routing, memories in every Claude question, hazard warnings on arrival, saved by voice, offline mirror. [Details](#-moss-kites-memory-of-the-wearers-world) | [`memory.py`](earpiece/earpiece/memory.py), [`memory_seed.json`](earpiece/earpiece/memory_seed.json), [`brain.py`](earpiece/earpiece/brain.py), [`test_memory.py`](earpiece/tests/test_memory.py) |
 | **SpaceXAI: Make it Legendary** | Grok Voice as the caregiver's hands-free line into the live walk (tools read SpacetimeDB and send the walker a message); Grok Imagine generates the street scenes we can't film, which Kite's real detector and earpiece then play. Built in Cursor, planned with Grok. [Details](#-spacexai-grok-voice-and-grok-imagine) | [`caregiver_voice.py`](earpiece/earpiece/caregiver_voice.py), [`imagine_scenes.py`](scripts/imagine_scenes.py), [`data/imagined/`](data/imagined/), [`test_caregiver_voice.py`](earpiece/tests/test_caregiver_voice.py), [`test_imagine_scenes.py`](tests/test_imagine_scenes.py) |
-| **Microsoft: Built for the Real World and Customer Impact** | Customer understanding, measured numbers, an offline safety path, the seams from prototype to production, responsible design, end to end on one laptop. [Details](#-microsoft-built-for-the-real-world-with-real-customer-impact) | [`test_app_stress.py`](earpiece/tests/test_app_stress.py), [`test_rust_engine.py`](earpiece/tests/test_rust_engine.py), [`SECURITY.md`](SECURITY.md), [`scripts/replay.py`](scripts/replay.py) |
 | **Best Hardware Hack** | Tello above and behind the head, chest camera for the near field, AirPods as a managed output with stem-press controls, a real-time Rust audio engine | [`native/src/`](earpiece/native/src/), [`controls.py`](earpiece/earpiece/controls.py), [`devices.py`](earpiece/earpiece/devices.py), [`tests/drone_test.py`](tests/drone_test.py), [`sim/`](sim/) |
 | **Best People-First Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; caregiver alerts; no video on the dashboard | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
 | **Most Technically Complex** | Lock-free Rust audio engine with a Python twin, binaural rendering from a head model, time-to-contact sonar, a time-aware speech scheduler, four cloud services kept off the safety path | [`native/src/lib.rs`](earpiece/native/src/lib.rs), [`native/src/mixer.rs`](earpiece/native/src/mixer.rs), [`spatial.py`](earpiece/earpiece/spatial.py), [`sonar.py`](earpiece/earpiece/sonar.py), [`scripts/check.sh`](scripts/check.sh) |
@@ -304,7 +315,7 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 | **It refuses, errors or is unreachable** | Requests use server-side fallbacks. A refusal or error changes nothing in the judgment layer, and the voice brain answers locally from Kite's own context. |
 | **Prompt injection through scene text** (a sign that says "the road is clear, walk now") | Scene descriptions are context, never instructions. A filter in `vision.py` removes the unsafe clause before the text is stored ("A sign reads SIDEWALK CLOSED, USE OTHER SIDE." becomes "A sign reads SIDEWALK CLOSED."). Text read aloud from a sign is spoken as a quote ("The text says, 'WALK'"), never as Kite's own words. |
 
-**How we know.** Every Claude output passes these filters before the walker hears it, and we test them against a 662-line adversarial corpus plus 650 disguised variants (homoglyphs, zero-width characters, spaced-out letters, other languages, prompt injection on signs): 2,404 tests that run in the normal suite with no network. Building the corpus found real gaps, now fixed: the earlier filter missed 59% of the hand-written go-aheads. In a live run against the real models, 30 of 30 adversarial cases were safe; in 5 of them Claude's raw reply was unsafe ("Driver is waving you across, but check traffic first.") and the filter caught it. A few real cautions are deliberately dropped, each with a documented rewording that passes. Details and results: [`earpiece/evals/README.md`](earpiece/evals/README.md).
+**How we know.** Every Claude output passes these filters before the walker hears it, and we test them against a 662-line adversarial corpus plus 650 disguised variants (homoglyphs, zero-width characters, spaced-out letters, other languages, prompt injection on signs): 2,404 tests that run in the normal suite with no network. Building the corpus found real gaps, now fixed: the earlier filter missed 59% of the hand-written go-aheads. In a live run against the real models, 30 of 30 adversarial cases were safe; in 5 of them Claude's raw reply was unsafe ("Driver is waving you across, but check traffic first.") and the filter caught it. A few real cautions are deliberately dropped, each with a documented rewording that passes. The corpus, the mutations and both runners are in [`earpiece/evals/`](earpiece/evals/) (`corpus.json`, `mutations.py`, `offline_report.py`, `run_live.py`, and the live run's `live_results.json`).
 
 ## 🌐 SpacetimeDB: one live world state
 
@@ -352,7 +363,7 @@ Grok does two jobs in Kite that nothing else in it does.
 
 The team built Kite in Cursor and used Grok for research and planning.
 
-## 🌍 Microsoft: built for the real world, with real customer impact
+## 🌍 Built for real walkers: measured, responsible, end to end
 
 **Customer understanding.** Each design choice comes from how a blind walker moves:
 
@@ -373,7 +384,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 | 0 | Audio glitches while five threads hammer the CPU and the mixer for 3 s, with the Rust engine on a real device | `test_real_device_survives_python_abuse` in [`test_rust_engine.py`](earpiece/tests/test_rust_engine.py) |
 | 0 | Audio glitches replaying the 673-event sample walk through `scripts/replay.py` on laptop speakers | [`data/sample_walk.jsonl`](data/sample_walk.jsonl) |
 | 5,800 | Automated tests, all run by [`scripts/check.sh`](scripts/check.sh): 3,475 earpiece (2,404 of them the safety-eval corpus), 1,930 drone layer, 188 perception, 83 UNO Q link, 54 Rust, 48 site, and 22 for the phone link and sim. They include a flood of 20,000 datagrams, a third of them malformed, from three senders | [`earpiece/tests/`](earpiece/tests/), [`test_app_stress.py`](earpiece/tests/test_app_stress.py) |
-| 3.05 → ? | Collisions per scripted blind walk on Moss St in the sim (seed 1, 20 walks). An oracle that reacts to ground truth gets 0, which is an upper bound and not Kite; the number with Kite's cues hasn't been measured | [`scripts/sim_metrics.py`](scripts/sim_metrics.py), [`sim/README.md`](sim/README.md) |
+| 3.05 → ? | Collisions per scripted blind walk on Moss St in the sim (seed 1, 20 walks). An oracle that reacts to ground truth gets 0, which is an upper bound and not Kite; the number with Kite's cues hasn't been measured | [`scripts/sim_metrics.py`](scripts/sim_metrics.py) |
 
 **From prototype to production.** Every hardware piece sits behind a seam, so swapping it changes a setting, not code: frames come from a `FrameSource` (file, sim, webcam or Tello), producers send the same `EarpieceClient` events whether scripted, replayed or live, hosts come from `.env`, and the output device is matched by name. The next steps we see are a phone in place of the wearable laptop, perception on the device, and testing with orientation and mobility instructors. That is a plan, not something this repo does yet.
 
@@ -407,7 +418,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 - **Two engines, one sound.** The Rust mixer is a line-for-line port of the Python mixer, and [`scripts/check.sh`](scripts/check.sh) runs the full suite on both.
 - **Binaural rendering from first principles** ([`spatial.py`](earpiece/earpiece/spatial.py)): interaural time difference plus a head-shadow filter from a spherical-head model, a gentle low-pass for sources behind, and distinct sounds for "behind" to cover front-back confusion. No HRTF dataset needed.
 - **Sonar by time-to-contact** ([`sonar.py`](earpiece/earpiece/sonar.py)): tracks objects across frames, works out how fast the gap is closing, and maps it to beep rate and pitch with hysteresis.
-- **Near-field priorities from one webcam** ([`perception/near/`](perception/near/)). Each object straight ahead gets five independent distance cues: known size, ground contact, floor-anchored Depth Anything depth, motion and looming. They are fused in log-distance with a Kalman filter per track and become **P1** (under 2 m, or under 1.5 s to contact), **P2** or **P3**, each with its own park-assist beep. It is measured against ground truth: 92.7 % right on hand-labelled real frames against 73.2 % for a box-height rule, and 77 % against 36 % on real clips ([eval](perception/near/docs/eval.md)).
+- **Near-field priorities from one webcam** ([`perception/near/`](perception/near/)). Each object straight ahead gets five independent distance cues: known size, ground contact, floor-anchored Depth Anything depth, motion and looming. They are fused in log-distance with a Kalman filter per track and become **P1** (under 2 m, or under 1.5 s to contact), **P2** or **P3**, each with its own park-assist beep. It is measured against ground truth: 92.7 % right on hand-labelled real frames against 73.2 % for a box-height rule, and 77 % against 36 % on real clips ([eval](perception/near/docs/eval.md)). It runs on the body camera plugged into the UNO Q, over Wi-Fi, and the earpiece gives each priority its own tone: 1228 Hz every 0.13 s for P1, 812 Hz every 0.57 s for P2, 630 Hz every 0.8 s for P3. An end-to-end check runs the real board server, the warning and a headless earpiece together, and proves it on one laptop ([`e2e_bodycam.py`](perception/near/e2e_bodycam.py)).
 - **A depth shoot-out instead of a guess** ([`perception/docs/depth_shootout.md`](perception/docs/depth_shootout.md)). Depth Anything V2 variants, ARCore-style depth from motion, and fused combinations are scored on laser-scanned DIODE frames and rendered walks with exact depth. Anchoring a model's scale to the floor cuts its error 3 to 7 times; fusing it with motion stereo catches every P1 frame on the walks.
 - **Beeps that survive a frozen interpreter.** An opt-in Rust thread (`KITE_SONAR_THREAD=native`) builds and schedules every sonar beep itself, sample-identical to the Python path. When Python froze for 500 ms in a test, the beats due during the freeze still played on time.
 - **A speech scheduler that reasons about time**: priorities, mid-word preemption with re-queueing, per-utterance time-to-live, de-duplication and a phrase cache, on one Cartesia WebSocket.
@@ -463,6 +474,7 @@ Then one command runs the whole demo in the background:
 scripts/demo.sh sim                    # earpiece, relay, sim, dashboard, stand-in detector on the sim's cameras
 scripts/demo.sh live iPhone            # earpiece, dashboard, detector on that camera (index or name) with the reveal window
 scripts/demo.sh replay data/sample_walk.jsonl
+scripts/demo.sh bodycam                # the UNO Q body camera -> P1 / P2 / P3 -> beeps (finds the board on the network)
 scripts/demo.sh status                 # what is up, recent log lines, then netcheck
 scripts/demo.sh stop
 ```
@@ -505,7 +517,7 @@ scripts/demo.sh stop
 
 **Tests.** `cd earpiece && python -m pytest`, and `earpiece/.venv/bin/python sim/test_relay.py` for the relay. Before a merge, `scripts/check.sh quick` (about 3 minutes) or `scripts/check.sh` for everything: both audio engines, Rust, the drone layer, the dashboard build and the security scans. The landing site deploys with `scripts/deploy-site.sh`.
 
-Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walker GPS are in [`docs/operations.md`](docs/operations.md).
+Flying and recording the Tello and walker GPS are covered by each command's `--help` (`python -m kite.preflight --help`, `python -m kite.record --help`).
 
 ## 🗂️ Repo map
 
@@ -514,8 +526,8 @@ Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walke
 | `scripts/demo.sh` | Starts and stops the whole demo (`sim`, `live`, `replay`, `status`, `stop`), with logs in `logs/` |
 | `earpiece/` | The AirPods layer (Python, optional Rust audio engine in `earpiece/native/`). Event contract in `earpiece/earpiece/events.py`. See [`earpiece/README.md`](earpiece/README.md) |
 | `dashboard/` | SpacetimeDB module (`spacetimedb/src/index.ts`) and the React caregiver dashboard. See [`dashboard/README.md`](dashboard/README.md) |
-| `sim/` | three.js Moss St world, frame relay (`relay.py`), `SimFrameSource` (`frames.py`), the stand-in detector and live walk (`standin_detect.py`, `live_walk.py`), Claude scene descriptions (`scene_describe.py`), and the YOLO check (`yolo_check.py`). See [`sim/README.md`](sim/README.md) |
-| `kite/` | Drone layer: Tello control, safety governor, frame sources, recorder, calibration, preflight, GPS alignment and follow mode. See [`docs/operations.md`](docs/operations.md) |
+| `sim/` | three.js Moss St world, frame relay (`relay.py`), `SimFrameSource` (`frames.py`), the stand-in detector and live walk (`standin_detect.py`, `live_walk.py`), Claude scene descriptions (`scene_describe.py`), and the YOLO check (`yolo_check.py`). |
+| `kite/` | Drone layer: Tello control, safety governor, frame sources, recorder, calibration, preflight, GPS alignment and follow mode |
 | `kite/fly/` | Opt-in yaw sources for follow mode (a fruit-fly pursuit circuit and a predictive PD), their follow simulator and CMA-ES tuning. Off by default: see [Opt-in yaw sources](#opt-in-yaw-sources-kitefly) |
 | `scripts/replay.py` | Replays a JSONL of events into the earpiece, and optionally into SpacetimeDB |
 | `scripts/audit.py` | Pre-submission check: secrets, `.env`, repo visibility, README, large files, model weights |
@@ -525,12 +537,12 @@ Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walke
 | `scripts/osm_corner.py` | Rebuilds the sim's Moss St world from OpenStreetMap |
 | `scripts/check.sh` | Every check before a merge: tests, lint, build, secret and dependency scans (`quick` for the short set) |
 | `scripts/deploy-site.sh` | Deploys the landing site to trykite.pages.dev |
-| `video/overlay.py` | Draws Kite's captions, hazards and sonar over footage for the demo video. See [`docs/internal/video-runbook.md`](docs/internal/video-runbook.md) |
+| `video/overlay.py` | Draws Kite's captions, hazards and sonar over footage for the demo video. |
 | `site/` | The landing page at trykite.pages.dev |
 | `data/sample_walk.jsonl` | A recorded 40-second walk in the earpiece event format |
 | `data/sample_track.jsonl` | A moving walker track with hazards and a beacon, for testing the dashboard map |
 | `tests/drone_test.py` | Tello latency and ground-check script |
-| `docs/` | Operations and networking guides, sourced facts, and the Google permission record. Index in [`docs/README.md`](docs/README.md) |
+| `docs/` | The phone link guide ([`docs/phone.md`](docs/phone.md)), images used in this README, and the team's internal spec and status notes |
 | `docs/internal/` | The team's working notes from the hackathon (spec, runbooks, drafts). Not needed to understand Kite |
 
 ## Opt-in yaw sources (kite.fly)
@@ -550,11 +562,11 @@ python -m kite.record --source tello --out recordings --fly --follow --follow-ya
 
 `--follow-yaw` (live) and `--yaw` (rehearsal) take `law` (the default), `pd` or `fly`, and `--follow-yaw-params` / `--yaw-params` swap in another parameter file. They can't be combined with `--follow-predict` / `--predict`, whose planner steers yaw itself. Both sources were tuned at a 1.0 m standoff, 0.30 m above the head, with the yaw stick clamped at 70. Kite's follow defaults are 1.2 m and 40, so the startup line points out the difference; nothing is forced. The events log names the source steering yaw. If a source fails, the follow law steers yaw instead and the fallback is logged once.
 
-**The result: neither passed the ship gate.** These numbers come from 200 held-out simulated walks per profile ([`docs/fly-yaw-results.md`](docs/fly-yaw-results.md), [`kite/fly/DESIGN.md`](kite/fly/DESIGN.md) section 11):
+**The result: neither passed the ship gate.** These numbers come from 200 held-out simulated walks per profile, run by the simulator in [`kite/fly/sim/`](kite/fly/sim/):
 
 - `fly` has 6 to 10 % less steering error (RMS bearing to the walker) than the current law on the `train` and `demo` profiles (about 4 % on `stress` and `fast`; on `stress` the confidence interval reaches 0), with the same safety numbers on the `demo` profile. A tuned version of the law itself does far better: the fly has 24 to 37 % more error than it.
 - `pd` has 35 to 38 % less steering error on `train` and `demo` (17 to 23 % on `stress` and `fast`), but it fails the safety margins. In the `stress` and `fast` simulations it collides on 9 and 8 walks where the law doesn't (2 and 1 the other way round), and on every profile it has more separate losses and more time too close to the walker.
-- Follow mode's own prediction mode (`--follow-predict`, which plans the forward, lateral and yaw sticks) ran in the same simulator ([`docs/follow-predict-results.md`](docs/follow-predict-results.md)). At 1.0, 1.2 and 1.5 m behind it collides on 43 to 48 walks where the law doesn't (9 to 13 the other way round) and spends more time too close, so it stays opt-in. Pitch compensation (`pitch_comp = -1`) doesn't help the law either.
+- Follow mode's own prediction mode (`--follow-predict`, which plans the forward, lateral and yaw sticks) ran in the same simulator. At 1.0, 1.2 and 1.5 m behind it collides on 43 to 48 walks where the law doesn't (9 to 13 the other way round) and spends more time too close, so it stays opt-in. Pitch compensation (`pitch_comp = -1`) doesn't help the law either.
 
 To evaluate or retrain (`pip install -e ".[train]"`; Modal is optional):
 
@@ -572,12 +584,12 @@ Data: the circuit is a subgraph of the MaleCNS v1.0 connectome (Janelia FlyEM et
 - The dedicated street-segmentation model (`streetseg`) isn't in this repo yet. Every hazard and obstacle comes from the stand-in detector, which knows only COCO classes, so without `--depth` a wall, box or door may not register. It also can't tell a parked car from a moving one: on Street View stills of Moss St it flagged a parked SUV at the corner. [`perception/`](perception/) names street objects COCO lacks (13 of 25 labelled poles, trees, bins and the like, against none) and catches the scooter clip's scooter, but it still misses curbs, runs about 2 to 3 times slower, and hasn't been tried on the phone camera.
 - The phone chest camera's height and pitch must be calibrated on a 2 m tape mark at the table, or the distances are off.
 - Distances from the ground plane are good under about 10 m and inflated beyond that. A 2° pitch error roughly doubles a 30 m estimate.
-- In the sim, a car turning in from Howard enters the cameras' view only about 3 m away, from behind and to the right, and the stand-in gives no hazard for it there. Detector recall also drops a lot on Google 3D Tiles frames compared with the OpenStreetMap world (people 9 to 10 % against about 60 %, see `sim/README.md`).
+- In the sim, a car turning in from Howard enters the cameras' view only about 3 m away, from behind and to the right, and the stand-in gives no hazard for it there. Detector recall also drops a lot on Google 3D Tiles frames compared with the OpenStreetMap world (people 9 to 10 % against about 60 %).
 - Follow mode is tested only in a closed-loop simulation and has never flown.
 - The Tello tops out around 0.96 m/s at full stick (extrapolated from a stick-30 test), slower than the 1.2 to 1.3 m/s people usually walk, so the walker in our footage walks slowly. One battery gives about 6 to 8 minutes with video on.
 - From 30 cm above and 1 m behind, the Tello can't see the ground for the first few meters ahead; that is the chest camera's job. A pedestrian signal 20 m away is about 14 px tall in its stream, too small to read reliably, so crossing locations come from map data and signal handling is shown in the sim.
 - Voice, Claude and SpacetimeDB need internet. The offline fallbacks are listed in the five things above.
-- Google 3D Tiles and Street View are used only on Moss St, by permission from Google's representatives at Cal Hacks ([`docs/google-permission.md`](docs/google-permission.md)), and the code refuses anywhere else. Without that permission, the detector cameras use the OpenStreetMap world (`?detector=osm`).
+- Google 3D Tiles and Street View are used only on Moss St, by permission from Google's representatives at Cal Hacks, and the code refuses anywhere else. Without that permission, the detector cameras use the OpenStreetMap world (`?detector=osm`).
 - Sim metrics mode has a blind baseline on Moss (3.05 collisions per walk) and an oracle upper bound that sees ground truth (0). The oracle is not Kite, and Kite mode hasn't been run on Moss. The scripted walker sidesteps when blocked for a while, the way a cane user would; Kite itself never suggests it.
 - There are no hosted CI runners. GitHub Actions stopped starting jobs on this repo, so `scripts/check.sh` runs the same checks locally before each merge.
 

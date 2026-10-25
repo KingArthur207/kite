@@ -13,8 +13,12 @@ confidence is sent as 1.0 (the priority state machine already required agreement
 the real one but clamped so its lateral offset at the canonical distance stays inside the sonar's 0.55 m
 corridor (the sign, left or right, is kept). When the measured time to contact is shorter than the canonical
 one, the closing speed is raised to canonical_distance / ttc so the sonar's own ttc equals ours, and below 1 s
-the sonar goes critical and says "Stop." on its own. Each object also carries "priority" (ignored by today's
-parser) so a future sonar can key on it directly; the PR describes that change.
+the sonar goes critical and says "Stop." on its own.
+
+Each object also carries "priority", and the earpiece's sonar keys on it (events.Obstacle.priority,
+sonar.PRIORITY_URGENCY, and the Rust twin): a ranked object gets one fixed tone and rate per priority, with no
+vehicle boost and no corridor-edge shaping, so P1, P2 and P3 never share a pitch. The canonical distance and
+closing speed above still drive time to contact, "Stop." and any earpiece build that predates the field.
 """
 
 from __future__ import annotations
@@ -116,3 +120,59 @@ class Terminal:
             self.stream.write(line(ev, self.tty) + "\n")
             self.stream.flush()
             self.last_key, self.last_t = key, ev["t"]
+
+
+# ------------------------------------------------------------------ a steady beat to the earpiece
+class SteadySender:
+    """Sends each frame's `obstacles` at once, then repeats the newest one every 1/hz s until it is max_age old.
+
+    The earpiece's sonar fades a track 0.6 s after its last update and switches itself off ("Obstacle detection
+    paused.") after 1.5 s. Near frames take 0.15 to 0.6 s each on a laptop, so without this the beeps would stutter
+    whenever a frame is slow. Repeating is honest only briefly: after max_age with no new frame nothing is sent,
+    so a stalled camera or model still goes quiet, the way the earpiece's watchdog expects."""
+
+    def __init__(self, ear, hz: float = 5.0, max_age: float = 1.0, clock=None) -> None:
+        import threading
+        import time
+        self.ear, self.period, self.max_age = ear, 1.0 / hz, max_age
+        self.clock = clock or time.monotonic
+        self._lock = threading.Lock()
+        self._msg: dict | None = None
+        self._at = self._sent = 0.0
+        self.seq = 0
+        self.repeats = 0
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="near-steady", daemon=True)
+        self._thread.start()
+
+    def update(self, msg: dict) -> None:
+        with self._lock:
+            now = self.clock()
+            self._msg, self._at = msg, now
+            self._send(now)
+
+    def _send(self, now: float) -> None:
+        self.seq += 1
+        self.ear.send({**self._msg, "seq": self.seq})
+        self._sent = now
+
+    def tick(self) -> bool:
+        """One beat of the repeat loop (the thread calls it; tests call it with a fake clock)."""
+        with self._lock:
+            now = self.clock()
+            if self._msg is None or now - self._at > self.max_age or now - self._sent < self.period * 0.999:
+                return False
+            self._send(now)
+            self.repeats += 1
+            return True
+
+    def _run(self) -> None:
+        while not self._stop.wait(self.period / 2):
+            try:
+                self.tick()
+            except OSError:
+                pass
+
+    def close(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=1.0)

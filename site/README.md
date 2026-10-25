@@ -26,6 +26,5 @@ Logos on `/judges` are the companies' own marks, fetched from their sites and st
 - `anthropic.svg`: header wordmark on https://www.anthropic.com
 - `spacetimedb.svg`: https://spacetimedb.com/images/brand.svg, recoloured from light grey to near-black for the paper background
 - `moss.svg`: `moss_wordmark_dark.svg` from the Moss brand kit, https://www.moss.dev/brand-kit (viewBox trimmed to the mark)
-- `microsoft.png`: header logo on https://www.microsoft.com/en-us, served from https://img-prod-cms-rt-microsoft-com.akamaized.net/cms/api/am/imageFileData/RE1Mu3b
 - `meta.svg`: header logo on https://www.meta.com/about/, served from https://static.xx.fbcdn.net/rsrc.php/y9/r/tL_v571NdZ0.svg
 - `xai.svg`: header mark on https://x.ai (SpaceXAI)

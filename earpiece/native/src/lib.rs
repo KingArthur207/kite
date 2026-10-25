@@ -883,6 +883,8 @@ fn synth<'py>(
 
 #[pymodule]
 fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // bumped when a Python-facing signature changes, so a stale build is detected (rust_sonar.stale_build)
+    m.add("SONAR_ABI", 2)?;
     m.add_class::<Engine>()?;
     m.add_class::<sonar_py::PySonar>()?;
     m.add_class::<sonar_py::TrackState>()?;

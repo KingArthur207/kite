@@ -28,7 +28,6 @@ Each track's judging criteria in its own words, then how Kite answers them.
 - [Anthropic](https://trykite.pages.dev/judges#anthropic)
 - [SpacetimeDB](https://trykite.pages.dev/judges#spacetime)
 - [Moss](https://trykite.pages.dev/judges#moss)
-- [Microsoft](https://trykite.pages.dev/judges#microsoft)
 - [Meta](https://trykite.pages.dev/judges#meta)
 - [SpaceXAI](https://trykite.pages.dev/judges#spacexai)
 - [People-First](https://trykite.pages.dev/judges#people)
@@ -141,37 +140,6 @@ Saved places and hazards are searched in 3 to 12 ms, in process, before Claude a
 **Without it**
 
 Every walk starts from zero, and "my usual" means nothing.
-
-Microsoft · Built for the Real World · Customer Impact
-
-## A production-minded agent for getting around.
-
-judged on
-
-- Customer understanding
-- Measurable usefulness
-- Path from prototype to production
-- Responsible design
-- End-to-end functionality
-**Customer understanding**
-
-Kite does a guide dog's jobs: stop at curbs and crossings, watch overhead, refuse to go when a car is coming. Like a dog, it stops and waits instead of steering you.
-
-**Measurable usefulness**
-
-About 0.1 s to the first spoken word, 3 to 12 ms to recall a saved place, and zero audio glitches with every CPU core saturated. More than 5,000 automated tests.
-
-**Path to production**
-
-Any camera in, any Bluetooth headset out, and the same events live, replayed or simulated. Next: a phone instead of the laptop, and testing with orientation and mobility instructors.
-
-**Responsible design**
-
-The caregiver sees a map, never the video. Safety cues work with no internet. AI can only make Kite more careful.
-
-**End to end**
-
-Camera, detector, earpiece, AirPods and the caregiver's dashboard, running live, from a recording, or in a browser simulation of a San Francisco corner.
 
 Meta · Bringing People Closer Together
 

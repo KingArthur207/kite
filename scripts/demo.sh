@@ -6,6 +6,9 @@
 #                                                        the Moss St Street View walk opens in a new Chrome window
 #   scripts/demo.sh live [camera] [--output <dev>]       earpiece, dashboard, detector on a camera (index, name or video file)
 #   scripts/demo.sh replay <file.jsonl> [--output <dev>] earpiece, dashboard, scripts/replay.py
+#   scripts/demo.sh bodycam [unoq|HOST|file] [--output <dev>]
+#                                                        earpiece, dashboard, perception.near on the UNO Q body camera
+#                                                        (found on the network; or its IP, or a video file to rehearse)
 #   scripts/demo.sh stop                                 stops only what this script started
 #   scripts/demo.sh status                               what is up, last log lines, netcheck
 #
@@ -25,6 +28,7 @@ UDP_PORT=$((5010 + OFF)) WS_PORT=$((5011 + OFF)) RELAY_PORT=$((5020 + OFF))
 SIM_PORT=$((5173 + OFF)) DASH_PORT=$((5174 + OFF))
 export PYTHONUNBUFFERED=1   # so logs/ fills as things happen
 DETECT_DEPS="--with ultralytics --with lap --with websockets --with python-dotenv --with numpy --with scipy"
+NEAR_DEPS="--with ultralytics --with lap --with transformers --with torch --with scipy --with opencv-python-headless --with python-dotenv"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'demo: %s\n' "$*" >&2; exit 1; }
@@ -144,6 +148,19 @@ start_detector() {  # extra standin flags...
   launch detector "$ROOT" env KITE_EARPIECE_PORT="$UDP_PORT" uv run --no-project $deps python sim/standin_detect.py "$@" ${extra[@]+"${extra[@]}"}
 }
 
+start_near() {  # source: unoq, unoq:HOST[:PORT] or a video file
+  if [ ! -f "$ROOT/weights/yolo11n.pt" ]; then
+    say "  skip near: weights/yolo11n.pt missing. Fix (once, with internet): uv run --no-project $NEAR_DEPS python -m perception --download"
+    return 1
+  fi
+  local extra=()
+  # shellcheck disable=SC2206
+  [ -n "${KITE_NEAR_ARGS:-}" ] && extra+=(${KITE_NEAR_ARGS})
+  # shellcheck disable=SC2086
+  launch near "$ROOT" env KITE_EARPIECE_PORT="$UDP_PORT" uv run --no-project --python 3.12 $NEAR_DEPS \
+    python -m perception.near --source "$1" ${extra[@]+"${extra[@]}"}
+}
+
 open_url() {
   [ "${KITE_NO_OPEN:-0}" = 1 ] && { say "  open $1 in the browser"; return; }
   open "$1"
@@ -237,6 +254,33 @@ cmd_live() {
   fi
 }
 
+cmd_bodycam() {
+  local src="${1:-unoq}"
+  if [ -f "$src" ]; then src="$(cd "$(dirname "$src")" && pwd)/$(basename "$src")"   # rehearse on a clip
+  elif [[ "$src" != unoq && "$src" != unoq:* ]]; then src="unoq:$src"; fi          # a bare IP or host name
+  begin venv dashboard uv -- earpiece:$UDP_PORT:udp earpiece:$WS_PORT:tcp dashboard:$DASH_PORT:tcp
+  say "starting body camera -> priorities -> beeps on $src"
+  start_earpiece
+  start_vite dashboard "$DASH_PORT"
+  local ok=1
+  start_near "$src" || ok=0
+  wait_port dashboard "$DASH_PORT" tcp 20; wait_port earpiece "$WS_PORT" tcp 45
+  open_url "http://localhost:$DASH_PORT"
+  if [ $ok = 1 ]; then   # it prints "[near] device=" once the board and the models are ready
+    local i
+    for ((i = 0; i < 240; i++)); do
+      grep -q '^\[near\] device=' "$LOGS/near.log" 2>/dev/null && { say "  ok   near is reading the body camera"; break; }
+      still_up near || { ok=0; say "  FAIL near exited. Last log lines:"; tail -n 3 "$LOGS/near.log" | sed 's/^/       /'; break; }
+      sleep 0.5
+    done
+  fi
+  if [ $ok = 1 ]; then
+    say "up. P1 / P2 / P3 beep at 1228 / 812 / 630 Hz; watch: tail -f logs/near.log. Stop with: scripts/demo.sh stop"
+  else
+    say "earpiece and dashboard are up, but near is not running, so nothing will beep. Stop with: scripts/demo.sh stop"
+  fi
+}
+
 cmd_replay() {
   local file="${1:-}"
   [ -n "$file" ] || die "usage: scripts/demo.sh replay <file.jsonl>   (try data/sample_walk.jsonl)"
@@ -311,7 +355,8 @@ case "$MODE" in
   streetview) cmd_streetview ;;
   live) cmd_live "$@" ;;
   replay) cmd_replay "$@" ;;
+  bodycam) cmd_bodycam "$@" ;;
   stop) cmd_stop ;;
   status) cmd_status ;;
-  *) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

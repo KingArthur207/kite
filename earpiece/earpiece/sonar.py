@@ -25,6 +25,7 @@ Robustness:
 from __future__ import annotations
 
 import math
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -64,11 +65,18 @@ class Track:
     last_label_t: float = -1e9
     last_stop_t: float = -1e9
     first_seen: float = 0.0
+    priority: int | None = None        # set by a sender that ranks objects itself (perception/near)
 
     @property
     def closing_speed(self) -> float | None:
         return self.given_speed if self.given_speed is not None else self.est_speed
 
+
+# A sender-ranked object (Obstacle.priority) gets one fixed urgency, so each priority has its own tone and rate
+# whatever the object's kind or where it sits in the corridor (default pitch and interval ranges):
+#   P1 ~1228 Hz every ~0.14 s, P2 ~812 Hz every ~0.57 s, P3 ~630 Hz every ~0.81 s.
+# The Rust twin is native/src/sonar.rs priority_urgency.
+PRIORITY_URGENCY = {1: 0.97, 2: 0.40, 3: 0.15}
 
 # The canonical object kinds (events._kind) that have their own sonar cue.
 PREWARM_KINDS = ("person", "vehicle", "bike", "curb", "stairs_down", "obstacle")
@@ -167,7 +175,7 @@ class Sonar:
         t = self.tracks.get(key)
         if t is None:
             t = Track(key, o.kind, source, o.bearing, o.distance, o.confidence, o.closing_speed,
-                      last_seen=now, ttl=ttl, first_seen=now)
+                      last_seen=now, ttl=ttl, first_seen=now, priority=o.priority)
             self.tracks[key] = t
         else:
             # wrap-aware bearing smoothing; distance mostly trusted (it is what matters)
@@ -178,6 +186,7 @@ class Sonar:
             t.given_speed = o.closing_speed
             t.last_seen = now
             t.ttl = ttl
+            t.priority = o.priority
         t.hist.append((now, o.distance))
         t.est_speed = self._estimate_speed(t)
 
@@ -222,6 +231,8 @@ class Sonar:
             # beside or behind: only matters when very close (someone right next to you)
             corridor = 1.0 if t.distance < 0.8 else 0.0
             fwd = t.distance
+        if t.priority is not None:
+            corridor = 1.0                 # the sender already put it in the walking corridor
         v = t.closing_speed
         approach = c.walk_speed_mps if v is None else max(v, 0.0)
         approach = max(approach, 0.25)
@@ -234,6 +245,8 @@ class Sonar:
         u = max(u_ttc, 0.85 * u_dist) * corridor * conf
         if t.kind == "vehicle":
             u = min(1.0, u * 1.25)
+        if t.priority is not None:
+            u = PRIORITY_URGENCY[t.priority]   # one fixed tone and rate per priority, whatever the kind or bearing
         h = 1.0 - c.hysteresis if t.critical else 1.0
         critical = corridor > 0.5 and (t.distance <= c.critical_dist_m / h or
                                         (v is not None and v > 0.3 and ttc <= c.ttc_critical_s / h))
@@ -342,10 +355,24 @@ def use_rust(cfg: SonarCfg) -> bool:
     choice = (cfg.engine or "auto").strip().lower()
     if choice not in ("auto", "rust", "python"):
         raise ValueError(f"sonar engine must be rust, python or auto, not {cfg.engine!r}")
+    stale = rust_sonar.stale_build()
     if choice == "rust" and not rust_sonar.available():
-        raise RuntimeError("sonar.engine='rust' but kite_audio is not built with the sonar "
+        why = f"is older than its sources (missing {', '.join(stale)})" if stale else "is not built with the sonar"
+        raise RuntimeError(f"sonar.engine='rust' but kite_audio {why} "
                            "(maturin develop --release -m native/Cargo.toml)")
+    if choice == "auto" and stale and not _warned_stale:
+        _warn_stale(stale)
     return choice == "rust" or (choice == "auto" and rust_sonar.available())
+
+
+_warned_stale = False
+
+
+def _warn_stale(missing: list[str]) -> None:
+    global _warned_stale
+    _warned_stale = True
+    print(f"[sonar] kite_audio is older than its sources (missing {', '.join(missing)}): using the Python sonar, "
+          "same beeps. Rebuild: maturin develop --release -m native/Cargo.toml", file=sys.stderr, flush=True)
 
 
 def use_thread(cfg: SonarCfg, engine) -> tuple[bool, str]:

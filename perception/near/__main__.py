@@ -2,6 +2,7 @@
 
     python -m perception.near --source webcam:Logitech                    # the chest C270 (Windows or macOS)
     python -m perception.near --source webcam:Logitech --radar            # live ASCII radar in the terminal
+    python -m perception.near --source unoq                               # the body camera on the UNO Q, over Wi-Fi
     python -m perception.near --source data/imagined/doorway.mp4 --no-send --hud out/doorway_hud.mp4 \\
         --wav out/doorway_beeps.wav --jsonl out/doorway_near.jsonl        # a file: review video, beeps, events
     python -m perception.near --source photo.jpg --no-send                # one still
@@ -28,7 +29,8 @@ STILL = (".jpg", ".jpeg", ".png", ".bmp", ".webp")
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(prog="python -m perception.near", description=__doc__.split("\n")[0])
-    ap.add_argument("--source", help="webcam:<name or index>, a video file, a still image, or a kite.sources spec")
+    ap.add_argument("--source", help="webcam:<name or index>, unoq or unoq:HOST[:PORT] (the UNO Q body camera), "
+                                       "a video file, a still image, or a kite.sources spec")
     ap.add_argument("--profile", default="auto", help="auto (USB name; calibrated JSON in data/cameras/ wins), "
                                                       "c270, c310, c920, generic, or a profile JSON path")
     ap.add_argument("--list-profiles", action="store_true", help="print the built-in camera profiles and exit")
@@ -82,6 +84,10 @@ def open_live(spec: str):
     """A camera through kite.sources (macOS names, indices). On Windows, where kite.sources cannot list cameras by
     name, fall back to DirectShow: names from pygrabber if installed, else the first camera, labelled with the
     PnP name Windows reports (enough to pick the profile)."""
+    from .unoq import UnoqSource, is_unoq
+    if is_unoq(spec):                     # the body camera on the UNO Q, over the network
+        src = UnoqSource(spec)
+        return src, src.name
     from kite.sources import open_source
     try:
         src = open_source(spec)
@@ -170,11 +176,11 @@ def main(argv=None) -> None:
     ear = None
     if not a.no_send:
         from earpiece.client import EarpieceClient
-        ear = EarpieceClient(host=os.environ.get("KITE_EARPIECE_HOST", "127.0.0.1"), port=a.ear_port,
-                             source=output.SOURCE)
+        ear = output.SteadySender(EarpieceClient(host=os.environ.get("KITE_EARPIECE_HOST", "127.0.0.1"),
+                                                 port=a.ear_port, source=output.SOURCE))
     term = output.Terminal(a.radar)
     jsonl = open(a.jsonl, "w") if a.jsonl else None
-    writer, events, n, seq, t0, fidx = None, [], 0, 0, time.monotonic(), 0
+    writer, events, n, t0, fidx = None, [], 0, time.monotonic(), 0
     stage: dict[str, list[float]] = {}
     print(f"[near] device={device} depth={a.depth} detector={a.detector} cam_h={a.cam_height} m "
           f"source={a.source}", flush=True)
@@ -221,8 +227,7 @@ def main(argv=None) -> None:
             if jsonl:
                 jsonl.write(json.dumps(ev, separators=(",", ":")) + "\n")
             if ear:
-                seq += 1
-                ear.send(output.to_obstacles(ev, seq))
+                ear.update(output.to_obstacles(ev, 0))     # the sender numbers every message, repeats included
             if a.hud:
                 from .hud import draw
                 frame = draw(img, nf, prof, dets, a.cam_height)
@@ -247,6 +252,8 @@ def main(argv=None) -> None:
             cap.release()
         if src is not None:
             src.release()
+        if ear:
+            ear.close()
         if a.wav and events:
             p = beeper.write_wav(a.wav, beeper.render(beeper.timeline_from_events(events)))
             print(f"[near] wrote {p} (not played)", flush=True)

@@ -40,7 +40,7 @@ REPO = Path(__file__).resolve().parents[2]
 TOL = 1e-9
 FLOAT_FIELDS = ("bearing", "distance", "confidence", "given_speed", "est_speed", "last_seen", "ttl",
                 "urgency", "ttc", "last_label_t", "last_stop_t", "first_seen", "closing_speed")
-EXACT_FIELDS = ("id", "kind", "source", "active", "critical", "next_beep", "last_beep")
+EXACT_FIELDS = ("id", "kind", "source", "active", "critical", "next_beep", "last_beep", "priority")
 WORST = {"float": 0.0, "where": None, "gain": 0.0, "ticks": 0, "beeps": 0, "says": 0}
 
 
@@ -217,6 +217,41 @@ def test_approaching_person():
     assert r["beeps"] > 20 and r["criticals"] >= 1
     assert any(a[0][0] == "Stop. Person ahead." for a in p.said_p)
     print(f"\n[parity] approaching person: {r}")
+
+
+def test_sender_priorities_match_and_keep_their_own_tone():
+    """perception/near's ranked objects: P1 / P2 / P3 changing every second, off-centre bearings, a vehicle (which
+    would get a boost without a priority), canonical distances and closing speeds as near sends them."""
+    rng = random.Random(7)
+    p = Pair()
+    canon = {1: (1.3, 1.2), 2: (3.0, 1.2), 3: (4.0, 1.2)}
+
+    def objs(t):
+        pr = (1, 2, 3, 2, 1, 3)[int(t) % 6]
+        d, cs = canon[pr]
+        out = [Obstacle("a", "person", rng.uniform(-20, 20), d, cs, 1.0, pr)]
+        if t > 2:
+            out.append(Obstacle("v", "vehicle", rng.uniform(-10, 10), canon[3][0], canon[3][1], 1.0, 3))
+        return out
+    r = replay(p, frames(0, 8, objs, fps=5, rng=rng, jitter=0.01), 9.0, jitter=0.004)
+    assert r["beeps"] > 20
+    print(f"\n[parity] sender priorities: {r}")
+
+
+def test_priority_fixes_urgency_whatever_the_kind_or_bearing():
+    """Same priority, different kind and bearing: same urgency (so the same pitch and rate) in both engines;
+    different priorities: distinct urgencies, highest for P1. Without a priority the old shaping applies."""
+    p = Pair()
+    p.frame("near", [Obstacle("p1", "person", 18, 1.3, 1.2, 1.0, 1), Obstacle("v1", "vehicle", -3, 1.3, 1.2, 1.0, 1),
+                     Obstacle("p2", "person", 0, 3.0, 1.2, 1.0, 2), Obstacle("v2", "vehicle", 21, 3.0, 1.2, 1.0, 2),
+                     Obstacle("p3", "pole", 9, 4.0, 1.2, 1.0, 3), Obstacle("v3", "vehicle", 0, 4.0, 1.2, 1.0, 3),
+                     Obstacle("x", "vehicle", 0, 4.0, 1.2, 1.0)], 1, 10.0)
+    p.tick(10.0, 0)                                   # also asserts the Rust twin agrees
+    u = {k.split(":")[1]: t.urgency for k, t in p.py.tracks.items()}
+    for n in (1, 2, 3):
+        assert u[f"p{n}"] == u[f"v{n}"] == sonar_mod.PRIORITY_URGENCY[n]
+    assert u["p1"] > u["p2"] > u["p3"]
+    assert u["x"] != u["v3"]                          # no priority: the vehicle boost still applies
 
 
 def test_crossing_cyclist_and_wraparound_behind():

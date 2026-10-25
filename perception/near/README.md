@@ -19,6 +19,8 @@ It outputs priorities, not distances, because one camera's distance is a noisy n
 noisy), while "something is less than 2 m ahead of you" survives a 20 % range error most of the time.
 
 ```bash
+scripts/demo.sh bodycam                                                # UNO Q body camera -> priorities -> earpiece beeps
+python -m perception.near --source unoq                                 # the body camera on the UNO Q, over Wi-Fi
 python -m perception.near --source webcam:Logitech                     # the chest C270 (Windows or macOS)
 python -m perception.near --source webcam:Logitech --radar             # live ASCII radar in a terminal
 python -m perception.near --source data/imagined/doorway.mp4 --no-send --hud out/doorway_hud.mp4 \
@@ -63,6 +65,46 @@ t=   4.12  P1  person ~1.9 m  ttc 2.8 s  conf 0.91  [size_w 0.8 | depth 2.3]
 *`--hud` on the doorway clip: the corridor's two rails on the pavement, rings at 2 m and 5 m lying on the ground
 (DepthLab-style oriented reticles), the anchored depth map in Turbo (dimmed where its confidence is low), and a
 top-down radar.*
+
+## The body camera on the UNO Q, end to end
+
+The Logitech is plugged into the UNO Q, which serves it at `/video.mjpg` behind its token
+([`hardware/arduino/unoq_link/`](../../hardware/arduino/unoq_link/)). `--source unoq` finds the board the way
+`kite_link.py` does (its signed heartbeat in SpacetimeDB, then Tailscale; `unoq:HOST[:PORT]` skips discovery),
+reuses the token saved by `kite_link.py token`, and:
+
+- keeps only the newest frame, so a slow model never builds a backlog of old frames;
+- refuses to range the board's "NO CAMERA" test pattern, and says when the camera comes back;
+- reopens the stream with back-off when Wi-Fi drops, and finds the board again if it changed networks;
+- sends the earpiece a steady 5 Hz beat: each frame at once, then the newest one repeated until it is 1 s old.
+  The sonar fades a track 0.6 s after its last update, and frames take 0.15 to 0.6 s on a laptop, so without it
+  the beeps would stutter. A stalled camera still goes quiet, as the earpiece's watchdog expects.
+
+The earpiece keys its sonar on each object's `priority`: one fixed tone and rate per priority, with no vehicle
+boost and no corridor-edge shaping, in both the Python sonar and its Rust twin.
+
+| Priority | Tone | Beep every |
+|---|---|---|
+| P1 | 1228 Hz | 0.13 s |
+| P2 | 812 Hz | 0.57 s |
+| P3 | 630 Hz | 0.8 s |
+
+`python -m perception.near.e2e_bodycam` proves the chain on one computer with nothing played aloud and no paid API
+calls. It runs:
+1. the real `board.py`, with its camera swapped for a clip player;
+2. `perception.near --source unoq:127.0.0.1:<port>`;
+3. a UDP tee that records every message;
+4. a headless earpiece (`run --null`), whose live sonar state is read over its WebSocket;
+5. `earpiece render` of the recorded messages to a WAV.
+
+Its 16 checks include:
+- the board found with the token;
+- every frame delivered;
+- updates at most 0.28 s apart;
+- the earpiece tracking people, vehicles and unnamed obstacles;
+- each priority always getting its own tone in the live earpiece.
+
+On an 8 GB M1 it ran at 4.1 frames per second.
 
 ## Research: what "the way Tesla does it" means for one chest camera
 
@@ -262,7 +304,9 @@ Known weak spots, measured rather than hidden:
 | `occupancy.py` | class-agnostic rises (obstacle, wall) and drops (curb, stairs down) |
 | `priority.py` | thresholds, hysteresis, the time-to-contact override |
 | `system.py` | tracks, the per-frame pipeline, collision course |
-| `output.py` | terminal line and radar, the earpiece `obstacles` mapping |
+| `output.py` | terminal line and radar, the earpiece `obstacles` mapping, the steady 5 Hz sender |
+| `unoq.py` | the UNO Q body camera as a source: discovery, token, newest frame only, test-pattern guard, reconnects |
+| `e2e_bodycam.py` | the end-to-end check: board, near, earpiece, rendered beeps |
 | `beeper.py` | the three-tone park-assist WAV renderer |
 | `hud.py` | the review video: boxes, ground rings, Turbo depth, radar |
 | `synth.py` | pinhole renders with known geometry (boxes and a depth model's view) |
