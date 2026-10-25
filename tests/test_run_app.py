@@ -67,15 +67,18 @@ def test_defaults_are_the_flown_configuration(app):
     a = app.build_parser().parse_args([])
     assert (a.dry_run, a.yaw, a.walker_height, a.height, a.behind) == (False, "fly", 1.7, None, 1.8)
     assert (a.orbit, a.speak, a.video_backend, a.weights, a.yolo) == (False, False, None, None, False)
+    assert (a.board, a.camera) == ("", "")
 
 
 def test_flags_parse(app):
     """Every flag reaches the namespace with its type."""
     a = app.build_parser().parse_args(["--dry-run", "--yaw", "law", "--walker-height", "1.62", "--height", "2.0",
                                        "--behind", "2.5", "--orbit", "--speak", "--video-backend", "raw",
-                                       "--weights", "w.pt", "--yolo"])
+                                       "--weights", "w.pt", "--yolo", "--board", "10.31.226.210",
+                                       "--camera", "Logi C270"])
     assert (a.dry_run, a.yaw, a.walker_height, a.height, a.behind) == (True, "law", 1.62, 2.0, 2.5)
     assert (a.orbit, a.speak, a.video_backend, a.weights, a.yolo) == (True, True, "raw", "w.pt", True)
+    assert (a.board, a.camera) == ("10.31.226.210", "Logi C270")
 
 
 @pytest.mark.parametrize("argv", [["--yaw", "autopilot"], ["--video-backend", "gstreamer"], ["--height", "tall"]])

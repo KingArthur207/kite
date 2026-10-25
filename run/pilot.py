@@ -82,6 +82,19 @@ class SeenDetector:
         return dets
 
 
+class PaneFrame:
+    """A picture for the camera pane. overlay is false for the body camera: its boxes are not the drone's."""
+
+    def __init__(self, image, seq: int):
+        self.image = image
+        self.seq = seq
+        self.view = "body"
+        self.overlay = False
+
+
+_VIEWS = {"body": "body", "bodycam": "body", "drone": "drone"}
+
+
 class Pilot:
     def __init__(self, args, log):
         """log(text, kind): kind is sent | recv | info | warn | error (the console colours them)."""
@@ -99,7 +112,12 @@ class Pilot:
         self.state = "starting"
         self._pending = None  # discrete command we wait on: "takeoff" | "land"
         self._ready_line = ""
-        self.last_frame = None  # newest kite Frame (BGR), for the UI
+        self.last_frame = None  # newest drone Frame (BGR): takeoff, the follow and the governor use this
+        self._view = "drone"  # what the pane shows; the body camera never replaces last_frame
+        self._body_note = ""
+        self._drone_note = ""
+        self._body_frame = None  # PaneFrame, or None while the body camera is opening
+        self._body_thread: threading.Thread | None = None
         self._capture = None  # run.capture.SessionCapture: video + JPEGs, off the flight path
         self._capture_warned = False
         self._fps_n, self._fps_t = 0, time.time()
@@ -108,8 +126,36 @@ class Pilot:
 
     # ------------------------------------------------------------------ public (any thread)
     def start(self) -> Pilot:
+        self._body_thread = threading.Thread(target=self._body_loop, name="bodycam", daemon=True)
+        self._body_thread.start()
         self._thread.start()
         return self
+
+    def toggles(self) -> list[dict]:
+        """BODYCAM and DRONE VIEW for the camera header. The follow stays on the drone camera either way."""
+        return [
+            {"key": "body", "label": "BODYCAM", "on": self._view == "body", "note": self._body_note},
+            {"key": "drone", "label": "DRONE VIEW", "on": self._view == "drone", "note": self._drone_note},
+        ]
+
+    def toggle(self, key: str, on: bool | None = None) -> None:
+        if key not in ("body", "drone") or on is False:
+            return
+        self._select_view(key)
+
+    def display_frame(self):
+        """The picture for the pane. The drone frame stays in last_frame for the flight."""
+        if self._view == "body" and self._body_frame is not None:
+            return self._body_frame
+        return self.last_frame
+
+    def _select_view(self, view: str) -> None:
+        if view == self._view:
+            return
+        self._view = view
+        if view == "body":
+            self._body_note = "opening"
+        self.log("BODYCAM" if view == "body" else "DRONE VIEW", "info")
 
     def send(self, text: str) -> None:
         """A console command. 'e' is handled right here (no queue): motors off now."""
@@ -117,6 +163,10 @@ class Pilot:
         if not cmd:
             return
         self.log(text.strip(), "sent")
+        view = _VIEWS.get(cmd)
+        if view:  # a picture switch, including while the drone is offline
+            self._select_view(view)
+            return
         if self.closed.is_set() and cmd not in ("quit",):
             self.log("not connected: restart the app", "error")
             return
@@ -133,7 +183,7 @@ class Pilot:
             self._cmds.put(cmd)
         else:
             self.log(f"unknown command {text.strip()!r}: takeoff | land | follow | stop | hold | resume | "
-                     "e (emergency) | status | quit", "warn")
+                     "bodycam | drone | e (emergency) | status | quit", "warn")
 
     def emergency(self) -> None:
         """Motors off immediately, from the caller's thread: the drone falls if it is in the air."""
@@ -162,6 +212,8 @@ class Pilot:
                 time.sleep(0.1)
         self._stop.set()
         self._thread.join(timeout=5)
+        if self._body_thread is not None:
+            self._body_thread.join(timeout=8)
         self._close()
 
     # ------------------------------------------------------------------ control thread
@@ -318,6 +370,77 @@ class Pilot:
             self._stop_capture()
             self.closed.set()
 
+    def _body_loop(self) -> None:
+        """Open the Arduino body camera (laptop webcam if it is not a real camera) and publish pictures.
+
+        This thread never writes last_frame, so takeoff, the follow and the video-stall landing keep the drone's
+        own picture. It idles until BODYCAM is selected, and lets the camera go when DRONE VIEW is selected.
+        """
+        try:
+            from demo import open_body_reader, open_webcam_reader
+        except Exception as exc:
+            self._body_note = "unavailable"
+            self.log(f"body camera: {exc}", "error")
+            return
+        reader = None
+        seq = 0
+        try:
+            while not self._stop.is_set():
+                if self._view != "body":
+                    if reader is not None:
+                        reader.release()
+                        reader = None
+                        self._body_frame = None
+                    if self._stop.wait(0.05):
+                        return
+                    continue
+                if reader is None:
+                    self._body_note = "opening"
+                    board = str(getattr(self.args, "board", "") or "")
+                    camera = str(getattr(self.args, "camera", "") or "")
+                    try:
+                        reader, note = open_body_reader(
+                            board, self.log, lambda camera=camera: open_webcam_reader(camera))
+                    except Exception as exc:
+                        self._body_note = "unavailable"
+                        self.log(f"body camera: {exc}", "error")
+                        if self._stop.wait(2.0):
+                            return
+                        continue
+                    if reader is None:
+                        self._body_note = "unavailable"
+                        if self._stop.wait(2.0):
+                            return
+                        continue
+                    if self._stop.is_set() or self._view != "body":
+                        reader.release()
+                        reader = None
+                        continue
+                    self._body_note = note
+                    self.log(f"body camera: {getattr(reader, 'name', '')}", "info")
+                try:
+                    ok, frame = reader.read()
+                except Exception as exc:
+                    self.log(f"body camera: {exc}", "error")
+                    reader.release()
+                    reader = None
+                    self._body_frame = None
+                    self._body_note = "unavailable"
+                    if self._stop.wait(1.0):
+                        return
+                    continue
+                if not ok or frame is None:
+                    if self._stop.wait(0.02):
+                        return
+                    continue
+                seq += 1
+                image = frame.copy() if hasattr(frame, "copy") else frame
+                self._body_frame = PaneFrame(image, seq)
+        finally:
+            if reader is not None:
+                reader.release()
+            self._body_frame = None
+
     def _read_frame(self):
         f = self.frames.read() if self.frames is not None else None
         if f is not None and (self.last_frame is None or f.seq != self.last_frame.seq):
@@ -338,7 +461,8 @@ class Pilot:
         if cmd == "help":
             self.log("takeoff: take off, climb, follow the person in front | land | follow (or follow me): look for "
                      "the person again | hold: pause and hover | resume: look for the person, then follow | stop: "
-                     "from hold, look for the person | e: EMERGENCY motors off, quits | status | quit: land, close",
+                     "from hold, look for the person | bodycam / drone: which picture the pane shows (the follow "
+                     "stays on the drone camera) | e: EMERGENCY motors off, quits | status | quit: land, close",
                      "info")
         elif cmd == "status":
             s = self.snap

@@ -6,6 +6,10 @@
     python run/app.py --model v3b-joint   # opt in: a trained follow model (kite/fly/data/behind), simulation-tested
     python run/app.py --yolo          # also show YOLO26n obstacle boxes on the camera (show only)
 
+BODYCAM and DRONE VIEW (the camera-header buttons, or the words bodycam and drone) only change the picture in the
+pane. BODYCAM is the Arduino body camera, or the laptop webcam when that camera is not a Logitech or Lenovo.
+DRONE VIEW is the drone's own video. Takeoff and the follow always use the drone camera.
+
 Each run also writes recordings/<time>_app/video.mkv and recordings/<time>_app/frames/NNNNNN.jpg (the camera
 with the person boxes). Saving runs on its own thread and drops frames if the disk falls behind; it does not
 change takeoff.
@@ -17,6 +21,8 @@ Console commands (type in the window, Enter):
     hold      pause: stop and hover          resume   turn until the person is seen, then follow
     stop      while holding: look for the person again
     e         EMERGENCY: motors off at once (the drone drops if it is in the air), then the app quits
+    bodycam   show the Arduino body camera (laptop webcam if it is not reachable)
+    drone     show the drone's camera again
     status    battery, height, video and follow state
     quit      land, then close (closing the window does the same)
 
@@ -84,6 +90,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="video reader: pyav (default), opencv, raw, auto (raw on macOS)")
     p.add_argument("--yolo", action="store_true", help="also show YOLO26n (COCO) obstacle boxes on the camera; "
                    "show only, the drone ignores them")
+    p.add_argument("--board", default="", help="Arduino HOST[:PORT] for the body camera (default: 10.31.226.210, "
+                   "then discovery). The laptop webcam is used when that camera is not a Logitech or Lenovo")
+    p.add_argument("--camera", default="", help="DirectShow name for the body camera's laptop-webcam fallback")
     p.add_argument("--weights", default=None, help="YOLO pose weights (default data/models/yolo11n-pose.pt)")
     return p
 

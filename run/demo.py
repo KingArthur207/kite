@@ -6,7 +6,7 @@
 The camera pane has two streams, BODYCAM and DRONE VIEW. BODYCAM is the Logitech or Lenovo
 on the Arduino UNO Q (the same MJPEG stream as ``kite_link.py watch``). If that board cannot
 be reached, or it has no such camera, the pane uses this computer's webcam. DRONE VIEW opens
-the Tello's video only: it never takes off, and ``run/app.py`` is unchanged.
+the Tello's video only: it never takes off. ``run/app.py`` has the same two picture buttons and still flies the drone.
 
 YOLO and segmentation are the other two buttons (or ``yolo`` and ``seg`` in the console).
 YOLO makes every detected object something to go around, and segmentation steers by the ground.
@@ -285,6 +285,28 @@ class _CapReader:
 
     def release(self) -> None:
         self.cap.release()
+
+
+def open_webcam_reader(requested: str = ""):
+    """The laptop webcam, a Logitech C270 before the built-in camera.
+
+    ``requested`` is a DirectShow name. Raises RuntimeError when none of the listed cameras opens.
+    """
+    name = (requested or "").strip() or None
+    names = list_dshow_videos()
+    errors = []
+    for candidate in camera_order(names, name):
+        if candidate not in names:
+            errors.append(f"{candidate}: not in the camera list")
+            continue
+        try:
+            cap = open_index(names.index(candidate))
+        except Exception as exc:
+            errors.append(f"{candidate}: {exc}")
+            continue
+        return _CapReader(cap, candidate)
+    detail = "; ".join(errors) if errors else "no camera listed"
+    raise RuntimeError(detail)
 
 
 class _DroneReader:
@@ -621,27 +643,9 @@ class Demo:
         self.log(f"camera: {name}", "info")
 
     def _open_webcam(self):
-        cap = self._open_camera()
-        return _CapReader(cap, self._camera_name)
-
-    def _open_camera(self):
-        requested = (getattr(self.args, "camera", None) or "").strip() or None
-        names = list_dshow_videos()
-        errors = []
-        for name in camera_order(names, requested):
-            if name not in names:
-                errors.append(f"{name}: not in the camera list")
-                continue
-            index = names.index(name)
-            try:
-                cap = open_index(index)
-            except Exception as exc:
-                errors.append(f"{name}: {exc}")
-                continue
-            self._camera_name = name
-            return cap
-        detail = "; ".join(errors) if errors else "no camera listed"
-        raise RuntimeError(detail)
+        reader = open_webcam_reader(getattr(self.args, "camera", "") or "")
+        self._camera_name = reader.name
+        return reader
 
     def _run(self) -> None:
         self._grabber = threading.Thread(target=self._grab, name="video", daemon=True)

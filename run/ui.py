@@ -97,6 +97,17 @@ def toggle_view(t: dict) -> tuple[str, bool]:
     return (f"{label} ({note})" if note else label), bool(t.get("on"))
 
 
+def console_lines(window_h: int, line_px: int) -> int:
+    """Log lines that leave the camera and the map most of the window.
+
+    ``line_px`` is the console font's line spacing. A fixed 11 lines is a short log at 100% and, at
+    200%, a block tall enough to push the panes into a strip at the top.
+    """
+    chrome = int(line_px * 3.5) + 24  # header, input row, and padding, which grow with the font
+    budget = int(window_h * 0.30) - chrome
+    return max(4, min(11, budget // max(line_px, 1)))
+
+
 def _dpi_aware() -> None:
     """Windows: sharp text with display scaling (must run before the Tk window exists)."""
     if sys.platform == "win32":
@@ -116,9 +127,12 @@ class App:
         self.root.title(title)
         self.root.configure(bg=BG)
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
-        w, h = min(1440, int(sw * 0.92)), min(900, int(sh * 0.88))
+        # Caps are in 100% pixels. At 200% a 900px window is a short band, and the panes sit in its top.
+        scale = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96 / 72))
+        w, h = min(int(sw * 0.92), int(round(1440 * scale))), min(int(sh * 0.88), int(round(900 * scale)))
+        self._window_h = h
         self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{max(0, (sh - h) // 3)}")
-        self.root.minsize(min(900, w), min(600, h))
+        self.root.minsize(min(int(round(900 * scale)), w), min(int(round(600 * scale)), h))
         self.ui_font, self.mono_font = _fonts(self.root)
         self.lines: queue.Queue = queue.Queue()
         self.history: list[str] = []
@@ -169,10 +183,13 @@ class App:
         map_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
         self.map_pane = MapPane(map_panel)
         self.map_pane.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        self.status = tk.Label(cam_head, text="", bg=PANEL, fg=FAINT, font=(self.mono_font, 10))
-        self.status.pack(side="right")
         self.state_label = tk.Label(cam_head, text="starting", bg=PANEL, fg=MUTED, font=(self.ui_font, 11, "bold"))
-        self.state_label.pack(side="right", padx=(0, 12))
+        self.state_label.pack(side="right")
+        # Its own row: in the title row at 200% it is wider than the pane and collapses the buttons.
+        self.status = tk.Label(cam_panel, text="", bg=PANEL, fg=FAINT, font=(self.mono_font, 10), anchor="w",
+                               justify="left")
+        self.status.pack(fill="x", padx=14, pady=(0, 4))
+        cam_panel.bind("<Configure>", self._fit_status, add="+")
         self.cam = tk.Label(cam_panel, bg="#121110", fg=FAINT, text="waiting for video", font=(self.ui_font, 12))
         self.cam.pack(fill="both", expand=True, padx=14, pady=(0, 14))
 
@@ -180,7 +197,8 @@ class App:
         console, _ = self._panel(self.root, "console")
         row = tk.Frame(console, bg=PANEL)
         row.pack(side="bottom", fill="x", padx=14, pady=(6, 12))  # the input row first: it never gets squeezed
-        lines = 11 if self.root.winfo_screenheight() >= 900 else 7
+        line_px = tkfont.Font(root=self.root, font=(self.mono_font, 12)).metrics("linespace")
+        lines = console_lines(self._window_h, line_px)
         self.text = tk.Text(console, height=lines, bg=PANEL, fg=TEXT, insertbackground=TEXT, relief="flat", bd=0,
                             highlightthickness=0, wrap="word", font=(self.mono_font, 12), padx=4, pady=2)
         self.text.pack(side="top", fill="both", expand=True, padx=14)
@@ -304,13 +322,21 @@ class App:
         self._show_toggles(p)
         self._show_gps()
         self._show_route()
-        f = p.last_frame
-        if f is not None and f.seq != self._shown_seq:  # redraw only when a new frame arrived
-            self._shown_seq = f.seq
-            self._show_frame(f.image)
+        f = self._camera_frame(p)
+        mark = None if f is None else (getattr(f, "view", "drone"), f.seq)
+        if f is not None and mark != self._shown_seq:  # redraw only when a new frame arrived
+            self._shown_seq = mark
+            self._show_frame(f.image, overlay=getattr(f, "overlay", True))
+
+    def _camera_frame(self, p):
+        """The pane's picture. A pilot with display_frame() can show the body camera; the flight still uses last_frame."""
+        fn = getattr(p, "display_frame", None)
+        if callable(fn):
+            return fn()
+        return p.last_frame
 
     def _show_toggles(self, p):
-        """Pills in the camera header for a pilot with toggles() (the webcam demo); the drone pilot has none."""
+        """Pills in the camera header for a pilot with toggles() (BODYCAM and DRONE VIEW, or the webcam demo)."""
         fn = getattr(p, "toggles", None)
         if not callable(fn):
             return
@@ -326,8 +352,8 @@ class App:
             btn = self._toggle_btns.get(key)
             if btn is None:
                 if self._toggle_row is None:
-                    self._toggle_row = tk.Frame(self._cam_head, bg=PANEL)
-                    self._toggle_row.pack(side="left", padx=(12, 0))
+                    self._toggle_row = tk.Frame(self.cam.master, bg=PANEL)
+                    self._toggle_row.pack(fill="x", padx=14, pady=(0, 8), before=self.cam)
                 btn = tk.Label(self._toggle_row, text=text, bg=PANEL, fg=FAINT, font=(self.ui_font, 10),
                                padx=8, pady=1, cursor="hand2", highlightthickness=1, highlightbackground=BORDER)
                 btn.pack(side="left", padx=(0, 6))
@@ -338,19 +364,26 @@ class App:
             if btn.cget("text") != text or btn.cget("bg") != look["bg"]:
                 btn.configure(text=text, **look)
 
+    def _fit_status(self, event=None) -> None:
+        """Keep the status on one or two lines of the camera pane instead of widening the window."""
+        width = (event.width if event is not None else 0) - 28
+        if width > 80:
+            self.status.configure(wraplength=width)
+
     def _click_toggle(self, key: str):
         try:
             self.pilot.toggle(key)
         except Exception as e:
             self.log(f"toggle {key}: {e}", "error")
 
-    def _show_frame(self, image):
+    def _show_frame(self, image, overlay: bool = True):
         w, h = self.cam.winfo_width(), self.cam.winfo_height()
         if w < 20 or h < 20:
             return
         img = image.copy()  # frames are shared and read-only: draw on a copy
-        draw_obstacles(img, getattr(self.pilot, "obstacles", None), self.pilot.follow)
-        draw_people(img, self.pilot.seen, self.pilot.follow)
+        if overlay:  # the body camera is a different picture: the drone's boxes do not belong on it
+            draw_obstacles(img, getattr(self.pilot, "obstacles", None), self.pilot.follow)
+            draw_people(img, self.pilot.seen, self.pilot.follow)
         ih, iw = img.shape[:2]
         scale = min(w / iw, h / ih)
         size = (max(1, int(iw * scale)), max(1, int(ih * scale)))

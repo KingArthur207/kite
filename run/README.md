@@ -47,6 +47,8 @@ The console prints the folder when recording starts and the frame count when the
 | `follow` (or `follow me`) | look for the person again (while holding, or once they have been out of view for 2 s) |
 | `hold` / `resume` | pause and hover / turn until the person is seen, then follow |
 | `stop` | while holding: look for the person again |
+| `bodycam` | show the Arduino body camera in the pane (the laptop webcam when that camera is not reachable) |
+| `drone` | show the drone's camera again |
 | `e` | EMERGENCY: motors off at once (the drone drops if it is in the air), then the app quits |
 | `status` | battery, height, video and follow state |
 | `quit` | land, then close (closing the window does the same) |
@@ -65,10 +67,17 @@ capped at 35, orbit off (`--orbit` turns it on).
    After 20 s it drops to just below head height and turns 30° at a time to find you; not found after a full turn,
    it says so and hovers until you type `follow`.
 
-`--yolo` also draws YOLO26n's obstacle boxes (COCO: people, bikes, cars, benches, ...) on the camera, the same
-model the webcam demo uses. They are only shown: the follow, the console and the motors never see them. It loads with
-the person detector before the drone is ready and runs on its own thread at up to 10 frames a second; the person being
-followed keeps its own box.
+The camera header has BODYCAM and DRONE VIEW (the same words work in the console). BODYCAM is the Arduino body
+camera, the Logitech or Lenovo on the board, and the laptop webcam when that stream is not a real camera.
+DRONE VIEW is the drone's own video, the one the app already flies from: it does not open a second reader.
+Either button only changes the picture. Takeoff, the follow and the landing on a stalled video keep using the
+drone camera. `--board HOST` names the Arduino; the default tries `10.31.226.210` and then the usual discovery.
+`--camera NAME` picks the webcam fallback.
+
+`--yolo` also draws YOLO26n's obstacle boxes (COCO: people, bikes, cars, benches, ...) on the drone picture, the same
+model the webcam demo uses. They are only shown: the follow, the console and the motors never see them, and they are
+not drawn on the body camera. It loads with the person detector before the drone is ready and runs on its own thread
+at up to 10 frames a second; the person being followed keeps its own box.
 
 What the drone says ("Ready.", "Landing.", "I can't see you. ...") shows in the console; `--speak` also says it out
 loud.
