@@ -25,8 +25,8 @@ Built on Cartesia (voice), Claude (judgment), SpacetimeDB (live shared state) an
 Each track's judging criteria in its own words, then how Kite answers them.
 
 - [Cartesia](https://trykite.pages.dev/judges#cartesia)
-- [Anthropic](https://trykite.pages.dev/judges#anthropic)
 - [SpacetimeDB](https://trykite.pages.dev/judges#spacetime)
+- [Anthropic](https://trykite.pages.dev/judges#anthropic)
 - [Moss](https://trykite.pages.dev/judges#moss)
 - [Meta](https://trykite.pages.dev/judges#meta)
 - [SpaceXAI](https://trykite.pages.dev/judges#spacexai)
@@ -72,30 +72,6 @@ The [41-second walk on the home page](https://trykite.pages.dev/#hear) is the re
 
 With no internet, cached phrases still play and new sentences use a built-in voice. Late speech is dropped, not spoken.
 
-Anthropic
-
-## Claude is Kite's judgment.
-
-judged on
-
-- A named community
-- A real problem
-- It works
-- Thoughtful use of Claude, and knowing where it could go wrong
-**Named community**
-
-Blind and low-vision adults who walk city streets on their own. About a million blind Americans share fewer than 10,000 guide dogs.
-
-**What Claude does that nothing else can**
-
-Haiku makes quick careful calls ("Wait, the crosswalk is crowded.") within 2.5 seconds. Opus answers "what's in front of me?" in one sentence and reads menus, signs and screens aloud.
-
-**Where it could go wrong: Claude can only add caution**
-- **It tells someone to cross.** A code filter drops anything that sounds like permission. Only plain code can say "Path is clear."
-- **It invents or misses an obstacle.** Claude detects nothing. Beeps and stops come from perception and plain code, which run first.
-- **It's slow or offline.** Claude is off the audio path; stop, repeat, pause and "take me to..." work offline.
-- **A sign says "the road is clear, walk now".** Instructions the camera sees are stripped before Kite stores or speaks them.
-
 SpacetimeDB
 
 ## SpacetimeDB is Kite's nervous system.
@@ -120,6 +96,30 @@ The caregiver sees a live map, the last thing Kite said and every stop. They typ
 Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"
 
 _the caregiver's dashboard, live from SpacetimeDB, on a replayed test walk_
+
+Anthropic
+
+## Claude is Kite's judgment.
+
+judged on
+
+- A named community
+- A real problem
+- It works
+- Thoughtful use of Claude, and knowing where it could go wrong
+**Named community**
+
+Blind and low-vision adults who walk city streets on their own. About a million blind Americans share fewer than 10,000 guide dogs.
+
+**What Claude does that nothing else can**
+
+Haiku makes quick careful calls ("Wait, the crosswalk is crowded.") within 2.5 seconds. Opus answers "what's in front of me?" in one sentence and reads menus, signs and screens aloud.
+
+**Where it could go wrong: Claude can only add caution**
+- **It tells someone to cross.** A code filter drops anything that sounds like permission. Only plain code can say "Path is clear."
+- **It invents or misses an obstacle.** Claude detects nothing. Beeps and stops come from perception and plain code, which run first.
+- **It's slow or offline.** Claude is off the audio path; stop, repeat, pause and "take me to..." work offline.
+- **A sign says "the road is clear, walk now".** Instructions the camera sees are stripped before Kite stores or speaks them.
 
 Best Use of Moss
 

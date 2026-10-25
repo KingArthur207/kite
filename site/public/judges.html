@@ -55,7 +55,7 @@
       <h2 id="tracks-h" class="display">Every track, <em>criterion by criterion.</em></h2>
       <p class="lede">Each track's judging criteria in its own words, then how Kite answers them.</p>
       <nav class="toc" aria-label="Tracks on this page">
-        <a href="#cartesia">Cartesia</a><a href="#anthropic">Anthropic</a><a href="#spacetime">SpacetimeDB</a><a href="#moss">Moss</a><a href="#meta">Meta</a><a href="#spacexai">SpaceXAI</a><a href="#people">People-First</a><a href="#hardware">Hardware</a><a href="#complex">Technically Complex</a><a href="#overall">Overall</a><a href="#commit">Commit Fellowship</a>
+        <a href="#cartesia">Cartesia</a><a href="#spacetime">SpacetimeDB</a><a href="#anthropic">Anthropic</a><a href="#moss">Moss</a><a href="#meta">Meta</a><a href="#spacexai">SpaceXAI</a><a href="#people">People-First</a><a href="#hardware">Hardware</a><a href="#complex">Technically Complex</a><a href="#overall">Overall</a><a href="#commit">Commit Fellowship</a>
       </nav>
     </section>
 
@@ -80,6 +80,25 @@
           </dl>
         </article>
 
+        <article class="card track" id="spacetime">
+          <div class="meta">
+            <img class="track-logo" src="/assets/logos/spacetimedb.svg" alt="SpacetimeDB logo" width="100" height="24" />
+            <p class="sticker">SpacetimeDB</p>
+            <h2>SpacetimeDB is <mark>Kite's nervous system</mark>.</h2>
+            <div class="crit"><p class="crit-h">judged on</p><ul><li>SpacetimeDB as the core real-time backend: live shared state, instant sync between users, agents and systems</li></ul></div>
+          </div>
+          <dl>
+            <div><dt>One live world</dt><dd>The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.</dd></div>
+            <div><dt>Two tables, two reducers</dt><dd><code>event</code> holds the walk's recent history and <code>latest</code> the newest state of every device, so a dashboard opened mid-walk is current at once. <code>push</code> and <code>clear</code> do the rest.</dd></div>
+            <div><dt>Both ways, live</dt><dd>The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.</dd></div>
+            <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"</dd></div>
+          </dl>
+          <figure class="evidence one">
+            <img src="/assets/evidence/caregiver-dashboard.jpg" alt="Kite's caregiver dashboard, marked Live via SpacetimeDB. A dark map of Lyon Street shows the walker, a crosswalk, a crowd and a vehicle, with the last spoken line, Stop, person ahead. On the right, active hazards and a shared live state panel counting sources and events per minute; below, a timeline of stops and a caregiver message" width="900" height="562" loading="lazy" />
+            <figcaption>the caregiver's dashboard, live from SpacetimeDB, on a replayed test walk</figcaption>
+          </figure>
+        </article>
+
         <article class="card track" id="anthropic">
           <div class="meta">
             <img class="track-logo" src="/assets/logos/anthropic.svg" alt="Anthropic logo" width="125" height="14" />
@@ -99,25 +118,6 @@
               </ul>
             </dd></div>
           </dl>
-        </article>
-
-        <article class="card track" id="spacetime">
-          <div class="meta">
-            <img class="track-logo" src="/assets/logos/spacetimedb.svg" alt="SpacetimeDB logo" width="100" height="24" />
-            <p class="sticker">SpacetimeDB</p>
-            <h2>SpacetimeDB is <mark>Kite's nervous system</mark>.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>SpacetimeDB as the core real-time backend: live shared state, instant sync between users, agents and systems</li></ul></div>
-          </div>
-          <dl>
-            <div><dt>One live world</dt><dd>The drone laptop, the earpiece and the caregiver's dashboard share one SpacetimeDB module, and every screen subscribes to it. Only the beeps skip it, so safety never waits on a network.</dd></div>
-            <div><dt>Two tables, two reducers</dt><dd><code>event</code> holds the walk's recent history and <code>latest</code> the newest state of every device, so a dashboard opened mid-walk is current at once. <code>push</code> and <code>clear</code> do the rest.</dd></div>
-            <div><dt>Both ways, live</dt><dd>The caregiver sees a live map, the last thing Kite said and every stop. They type a message; the walker hears it seconds later.</dd></div>
-            <div><dt>Without it</dt><dd>Three machines with three versions of the truth, and a caregiver who has to call to ask "where are you?"</dd></div>
-          </dl>
-          <figure class="evidence one">
-            <img src="/assets/evidence/caregiver-dashboard.jpg" alt="Kite's caregiver dashboard, marked Live via SpacetimeDB. A dark map of Lyon Street shows the walker, a crosswalk, a crowd and a vehicle, with the last spoken line, Stop, person ahead. On the right, active hazards and a shared live state panel counting sources and events per minute; below, a timeline of stops and a caregiver message" width="900" height="562" loading="lazy" />
-            <figcaption>the caregiver's dashboard, live from SpacetimeDB, on a replayed test walk</figcaption>
-          </figure>
         </article>
 
         <article class="card track" id="moss">
