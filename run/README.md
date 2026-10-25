@@ -7,7 +7,18 @@ pip install -r requirements.txt          # once per laptop
 python run/app.py --dry-run              # on the table: video, YOLO and commands, nothing reaches the motors
 python run/app.py                        # fly
 python run/demo.py                       # same window, webcam, YOLO26n obstacles (add --seg for SegFormer-B0)
+python run/epic.py                       # fly, and show that camera processing on the pane
 ```
+
+## epic.py: fly, with the demo's camera processing on the pane
+
+`python run/epic.py` is `app.py` and the demo's picture together. Takeoff, follow, land and `e` are the flight
+app: the drone camera, the person lock and the yaw steering. BODYCAM, DRONE VIEW, YOLO and Segmentation are the
+pane. YOLO and segmentation run on a copy of whichever picture is showing, and their overlay and scene lines stay
+in the window. They are not stick commands, and they never replace the frame the follow reads. The body camera is
+the one the flight app already opens. DRONE VIEW is that same drone picture, not a second connection to the Tello.
+`--seg` starts with segmentation on. `--no-yolo` starts with the pane's YOLO overlay off. `--yolo` is still the
+flight window's own show-only boxes.
 
 ## demo.py: the same window, body camera or drone
 

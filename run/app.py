@@ -97,20 +97,27 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def check_flight(args) -> str | None:
+    """Fill the default follow height. Return why these settings must not start."""
+    min_height = round(args.walker_height + 0.2, 2)  # to the cm: 1.81 + 0.2 is 2.0100000000000002 in floats
+    if args.height is None:
+        args.height = min(min_height, 2.2)
+    if not 0.8 <= args.height <= 2.2:
+        return "--height must be 0.8-2.2 m (the safety governor holds 0.5-2.3 m)"
+    if args.height < min_height:
+        return (f"--height must be at least --walker-height + 0.2 m ({min_height:.2f}): the follow flies "
+                "above the head and reads the distance from the angle down to it")
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):  # Windows consoles that cannot print the console arrows must not crash
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
-    min_height = round(args.walker_height + 0.2, 2)  # to the cm: 1.81 + 0.2 is 2.0100000000000002 in floats
-    if args.height is None:
-        args.height = min(min_height, 2.2)
-    if not 0.8 <= args.height <= 2.2:
-        print("--height must be 0.8-2.2 m (the safety governor holds 0.5-2.3 m)")
-        return 2
-    if args.height < min_height:
-        print(f"--height must be at least --walker-height + 0.2 m ({min_height:.2f}): the follow flies "
-              "above the head and reads the distance from the angle down to it")
+    why = check_flight(args)
+    if why:
+        print(why)
         return 2
     quiet_libraries()
 
