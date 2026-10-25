@@ -1,0 +1,49 @@
+---
+description: Kite protected features and writing rules (prize tracks depend on them)
+alwaysApply: true
+---
+
+# Rules for every coding agent working on Kite
+
+Read this before changing code, the README or the site. Kite is entered in the Cal Hacks 13.0 tracks below, and
+some features exist because a track's judges score them. Removing one can cost a prize even when the code looks
+like scope creep.
+
+## Protected features: never remove, disable or hide them
+
+If a task seems to need one of these gone, stop and ask Karthik first. "The team cut it" is not enough: check
+with him.
+
+| Feature | Files | Why it stays |
+|---|---|---|
+| Grok Voice line into the live walk (`python -m earpiece caregiver`) | `earpiece/earpiece/caregiver_voice.py` and its tests | SpaceXAI ("uses the Grok Imagine or Voice API"), SpacetimeDB (an agent reading and writing live state) |
+| Dashboard "Message the walker" and the walker's inbox | `dashboard/src/App.tsx`, `CaregiverInbox` in `earpiece/earpiece/spacetime.py` | SpacetimeDB ("instant sync between users, agents and systems"), People-First Social Impact |
+| Claude's `alert_caregiver` tool and `caregiver_alert` events | `earpiece/earpiece/brain.py`, `app.py`, `events.py`, `transport.py`, `dashboard/spacetimedb/src/index.ts` | Anthropic (tool use with checks in code), People-First Social Impact |
+| Grok Imagine scenes and the benchmarks and evals that run on them | `scripts/imagine_scenes.py`, `perception/bench*`, `earpiece/evals/run_live.py` | SpaceXAI |
+| Cartesia Sonic and Ink, the Sonic phrase cache | `earpiece/earpiece/speech.py`, `listen.py` | Cartesia |
+| Moss memory | `earpiece/earpiece/memory.py` | Moss |
+| Claude judgment, vision and the safety evals (`corpus.json` and its cases) | `judgment.py`, `vision.py`, `earpiece/evals/` | Anthropic. Add eval cases; never delete them |
+| Arduino UNO Q body camera, phone GPS, near-field priorities with three tones | `hardware/arduino/unoq_link/`, `phone/`, `perception/near/` | Best Hardware Hack, Most Technically Complex, People-First Social Impact |
+| Rust audio engine and the native sonar thread | `earpiece/native/` | Most Technically Complex |
+
+Renaming user-facing words is fine. "Live dashboard", "walk view" and `?view=walk` are all welcome, as long as the
+feature underneath keeps working.
+
+## The tracks
+
+Best Use of Cartesia, Anthropic, SpacetimeDB, Moss, SpaceXAI (Make it Legendary), Best Hardware Hack, Best
+People-First Social Impact Hack, Most Technically Complex, First Overall and Hacker's Choice, and the MLH Commit
+Fellowship. Kite no longer enters Microsoft or Meta.
+
+## Writing the README and the site (`site/src`, then `python3 site/tools/build_pages.py`)
+
+- **Only strengths.** Every sponsor is core to Kite and meets its criteria, and goes beyond them. No "known
+  limitations", "weak spots", TODOs, "stand-in", "not yet tested" or "has not flown". Write what's next as
+  "What's next".
+- **Keep every claim true.** Frame each fact at full strength, but never invent a number or a capability.
+- **Don't delete docs that are linked.** Before deleting a doc, check that nothing links to it (`git grep`).
+
+## Before you push
+
+- Run `scripts/check.sh quick` (or the steps you touched) and `uvx ruff check .`.
+- Never play sound or open a camera on a teammate's laptop. Tests run headless (`KITE_NO_DEVICE_TESTS=1`).
