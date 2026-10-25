@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="520" viewBox="0 0 1800 520" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
+  <rect width="1800" height="520" fill="#FFFFFF"/>
+
+  <!-- the string, flown from off the left edge -->
+  <path d="M-20 496 C 900 486, 1390 440, 1489 263" fill="none" stroke="#3E4A82" stroke-width="6" stroke-linecap="round"/>
+
+  <text x="140" y="300" font-size="180" font-weight="700" fill="#1D2B6B" letter-spacing="-4">Kite</text>
+  <text x="148" y="378" font-size="46" font-weight="500" fill="#5A6380">A guide dog that flies.</text>
+
+  <!-- the mark from the Kite iPhone app icon, in its 1024 grid -->
+  <g transform="translate(1230 -30) scale(0.58)">
+    <g fill="none" stroke="#E2448F" stroke-width="28" stroke-linecap="round">
+      <path d="M50 255 H222 A70 70 0 1 0 152 190"/>
+      <path d="M100 375 H290"/>
+      <path d="M50 495 H190 A60 60 0 1 1 130 555"/>
+    </g>
+    <path d="M722 684 C790 690 780 760 790 790 S840 830 890 840 S935 885 915 925" fill="none" stroke="#1D2B6B" stroke-width="16" stroke-linecap="round"/>
+    <polygon points="738,782 758,742 806,740 786,780" fill="#E2448F"/>
+    <polygon points="864,862 886,822 932,820 908,860" fill="#1D2B6B"/>
+    <polygon points="425,203 672,268 525,362" fill="#1D2B6B"/>
+    <polygon points="672,268 722,682 525,362" fill="#E2448F"/>
+    <polygon points="722,682 378,460 525,362" fill="#1D2B6B"/>
+    <polygon points="378,460 425,203 525,362" fill="#E2448F"/>
+    <path d="M425 203 L722 682 M378 460 L672 268" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
+  </g>
+</svg>
