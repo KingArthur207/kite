@@ -222,7 +222,30 @@ Unknown objects from the occupancy check go through the same filter and state ma
 ## Results
 
 The full tables are in [`docs/eval.md`](docs/eval.md) (regenerate with `python -m perception.near.evaluate`).
-RESULTS_PLACEHOLDER
+| Test set | Fused (what ships) | Best single cue | ScrollSafe rule |
+|---|---|---|---|
+| 509 synthetic renders, exact distance | **85.5 %** right, 10 false P1 | depth anchored 84.1 %, 10 false P1 | 33.6 %, 153 false P1 |
+| 41 hand-labelled real frames | **92.7 %**, 0 false P1 | size only 90.2 % | 73.2 %, 5 false P1 |
+| 5 real clips, 365 frames at 12 Hz | **77.0 %**, 2 P1 missed, 4 false P1 | size only 67.9 %, 27 P1 missed | 35.9 %, 140 false P1 |
+
+- **Fusion helps on every test set.** On the clips, depth alone (anchored) is right on 64.9 % of frames and the size
+  cue alone on 67.9 %; fused, 77.0 %.
+- **Looming is what makes P1 early enough.** For a person walking towards the camera, fused P1 comes 1.2 s before
+  impact; without looming it comes at 0.7 s, and the time-to-contact error rises from 11 % to 50 %.
+- **Distance error:** the fused distance is within 5.2 % of the truth at the median and 14.7 % at the 90th
+  percentile. That is better than any single cue that applies to every object (depth: 7.1 % and 19.3 %).
+- **Doorway and oncoming clips:** P1 comes on within 0.9 s of the hand-labelled moment. The ScrollSafe rule calls P1
+  from the first frame.
+
+Known weak spots, measured rather than hidden:
+- **A scooter lying flat on the pavement is missed.** It scores 0 % on that clip, and occupancy flags it only as
+  P3, then P2. The detector does not box a fallen scooter, and its 0.1 to 0.2 m rise sits under the occupancy
+  threshold until it is close.
+- **A car turning across the path 3 to 4 m ahead** raises P1 for about 1 s (`car_turning`). The collision-course
+  test needs more lateral history than a short turn gives.
+- **Over-calling clear corridors on synthetic renders:** when nothing was ahead, it says P2 or P3 on about a third
+  of the frames. Only 5 of the 164 clear renders became a false P1.
+
 
 ## Files
 
