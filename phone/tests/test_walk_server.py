@@ -13,7 +13,7 @@ import phone  # noqa: F401  (puts the earpiece package on sys.path)
 from earpiece import route as route_mod
 from earpiece.route import NoKey, Route, RouteDenied, RouteQuota, RouteUnavailable, Step
 from phone import walk_server
-from phone.walk_server import QUOTA_S, REROUTE_MIN_S, UNAVAILABLE_S, Handler, WalkSession, _opt_num, load_env
+from phone.walk_server import QUOTA_S, REROUTE_MIN_S, UNAVAILABLE_S, Handler, WalkSession, load_env
 
 LAT, LNG = 37.8667, -122.2577
 DEST = "Cloyne Court Hotel, 2600 Ridge Road, Berkeley, CA"
@@ -80,7 +80,9 @@ def call(port, method, path, body=None, headers=None):
     try:
         if isinstance(body, dict):
             body = json.dumps(body).encode()
-        conn.request(method, path, body=body, headers=headers or {})
+        if headers is None:                      # what the walk page sends; main checks it
+            headers = {"Content-Type": "application/json"} if method == "POST" else {}
+        conn.request(method, path, body=body, headers=headers)
         r = conn.getresponse()
         data = r.read()
         ctype = r.getheader("Content-Type", "")
@@ -100,13 +102,6 @@ def raw_request(port, head: bytes) -> bytes:
 
 
 # ---------------------------------------------------------------- pure helpers
-@pytest.mark.parametrize("v, want", [(None, None), (True, None), ("x", None), ({"a": 1}, None), ([1], None),
-                                     (float("nan"), None), (float("inf"), None), (10 ** 400, None),
-                                     (4.5, 4.5), (7, 7.0), ("12.5", 12.5)])
-def test_opt_num_treats_anything_but_a_finite_number_as_missing(v, want):
-    assert _opt_num(v) == want
-
-
 def test_load_env_reads_only_the_given_root_and_never_overrides(tmp_path, monkeypatch):
     """Comments, blanks, quotes and lines without '=' are handled; a variable already set wins."""
     for k in ("KITE_FAKE_A", "KITE_FAKE_B", "KITE_FAKE_C", "KITE_FAKE_EMPTY"):
@@ -205,12 +200,14 @@ def test_tick_before_start_is_answered_not_crashed(server):
     assert status == 200 and body["ok"] is False and body["error"] == "Navigation has not started."
 
 
-def test_bad_optional_fields_are_dropped_and_the_position_is_kept(server):
+@pytest.mark.parametrize("extra", [{"accuracy": "bad"}, {"heading": {"deg": 3}}, {"accuracy": float("nan")},
+                                   {"heading": True}])
+def test_bad_optional_fields_are_a_400_and_the_walk_carries_on(server, extra):
     call(server, "POST", "/api/start", {"lat": LAT, "lng": LNG, "destination": DEST})
-    lat2 = LAT + 0.0001
-    status, view, _ = call(server, "POST", "/api/tick", {"lat": lat2, "lng": LNG, "accuracy": "bad",
-                                                         "heading": {"deg": 3}})
-    assert status == 200 and view["raw"] == [round(lat2, 6), LNG] and view["accuracy_m"] is None
+    status, reply, _ = call(server, "POST", "/api/tick", {"lat": LAT + 0.0001, "lng": LNG, **extra})
+    assert status == 400 and reply["error"] == "accuracy and heading must be numbers."
+    status, view, _ = call(server, "POST", "/api/tick", {"lat": LAT + 0.0001, "lng": LNG})
+    assert status == 200 and view["raw"] == [round(LAT + 0.0001, 6), LNG]
 
 
 def test_concurrent_ticks_all_get_answers(server):
@@ -238,7 +235,7 @@ def test_concurrent_ticks_all_get_answers(server):
 @pytest.mark.parametrize("body", [b"not json", b"\xff\xfe", b"null", b"[1, 2]", b'"lat"', b"5", b"[" * 60000])
 def test_bad_json_is_a_400(server, body):
     status, reply, _ = call(server, "POST", "/api/tick", body=body)
-    assert status == 400 and reply == {"ok": False, "error": "Expected JSON."}
+    assert status == 400 and reply == {"ok": False, "error": "Expected a JSON object."}
 
 
 @pytest.mark.parametrize("body", [b"{}", b'{"lat": 1}', b'{"lat": "north", "lng": 1}', b'{"lat": null, "lng": 1}',
@@ -266,7 +263,7 @@ def test_empty_body_is_an_empty_object(server):
 
 def test_oversized_body_is_refused_and_the_connection_closed(server):
     """The unread body must never be parsed as a second request on the same keep-alive connection."""
-    out = raw_request(server, b"POST /api/tick HTTP/1.1\r\nHost: x\r\nContent-Length: 70000\r\n\r\n")
+    out = raw_request(server, b"POST /api/tick HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 70000\r\n\r\n")
     head, _, body = out.partition(b"\r\n\r\n")
     assert head.startswith(b"HTTP/1.1 413")
     assert json.loads(body) == {"ok": False, "error": "Request is too large."}
@@ -274,7 +271,7 @@ def test_oversized_body_is_refused_and_the_connection_closed(server):
 
 @pytest.mark.parametrize("length", [b"-1", b"abc", b"1.5"])
 def test_bad_content_length_is_a_400_not_a_hung_thread(server, length):
-    out = raw_request(server, b"POST /api/tick HTTP/1.1\r\nHost: x\r\nContent-Length: " + length + b"\r\n\r\n")
+    out = raw_request(server, b"POST /api/tick HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: " + length + b"\r\n\r\n")
     head, _, body = out.partition(b"\r\n\r\n")
     assert head.startswith(b"HTTP/1.1 400")
     assert json.loads(body)["ok"] is False
