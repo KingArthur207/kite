@@ -3,6 +3,8 @@ nothing played aloud, no paid API calls.
 
     python -m perception.near.e2e_bodycam                       # doorway, oncoming, car_turning clips, ~25 s
     python -m perception.near.e2e_bodycam --clips data/imagined/doorway.mp4 --seconds 12
+    python -m perception.near.e2e_bodycam --board unoq            # the REAL board: walk toward its camera
+    python -m perception.near.e2e_bodycam --board 10.31.226.210   # same, by IP (the token saved by kite_link.py)
 
 Every piece is the real code, wired the way it runs on the street:
   1. board.py, the UNO Q's own server, in this process, with its camera swapped for a clip player (the board's
@@ -34,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LINK_DIR = ROOT / "hardware" / "arduino" / "unoq_link"
-EAR_PY = ROOT / "earpiece" / ".venv" / "bin" / "python"
+EAR_PY = ROOT / "earpiece" / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 NEAR_CMD = ["uv", "run", "-q", "--no-project", "--python", "3.12", "--with", "ultralytics", "--with", "lap",
             "--with", "transformers", "--with", "torch", "--with", "scipy", "--with", "opencv-python-headless",
             "python", "-m", "perception.near"]
@@ -240,21 +242,30 @@ def main(argv=None) -> int:
     ap.add_argument("--depth", default="outdoor", help="passed to perception.near --depth")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--out", default=str(ROOT / "out" / "e2e_bodycam"))
+    ap.add_argument("--board", help="test the real UNO Q instead of a local board.py: unoq (find it) or its HOST[:PORT]; "
+                                    "uses the token saved by kite_link.py. Walk toward the camera while it runs.")
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    clips = [find_clip(c) for c in a.clips]
-    seconds = a.seconds or 6.0 * len(clips) + 4.0
+    clips = [] if a.board else [find_clip(c) for c in a.clips]
+    seconds = a.seconds or (30.0 if a.board else 6.0 * len(clips) + 4.0)
     results: list[tuple[bool, str, str]] = []
 
     def check(ok: bool, what: str, detail: str = "") -> None:
         results.append((bool(ok), what, detail))
         print(f"{'PASS' if ok else 'FAIL'}  {what}" + (f": {detail}" if detail else ""), flush=True)
 
-    token = secrets.token_urlsafe(24)
-    board, b, srv, cam = start_board(token, clips)
-    port = srv.server_address[1]
-    print(f"[e2e] board.py on 127.0.0.1:{port}, camera = {', '.join(c.stem for c in clips)}", flush=True)
+    board = b = srv = cam = None
+    if a.board:
+        token = None
+        source = a.board if a.board.lower().startswith("unoq") else f"unoq:{a.board}"
+        print(f"[e2e] the real board ({source}). After the models load (~20 s), walk slowly toward its camera from "
+              "about 6 m away, stop about 1 m from it, then step aside.", flush=True)
+    else:
+        token = secrets.token_urlsafe(24)
+        board, b, srv, cam = start_board(token, clips)
+        source = f"unoq:127.0.0.1:{srv.server_address[1]}"
+        print(f"[e2e] board.py on {source[5:]}, camera = {', '.join(c.stem for c in clips)}", flush=True)
 
     udp_ear, ws_ear, udp_tee = free_port(socket.SOCK_DGRAM), free_port(), free_port(socket.SOCK_DGRAM)
     env = {**os.environ, "KITE_NO_DEVICE_TESTS": "1", **{k: "" for k in NO_KEYS}}
@@ -268,8 +279,10 @@ def main(argv=None) -> int:
     watch.start()
 
     near_jsonl = out / "near.jsonl"
-    near_env = {**env, "KITE_TOKEN": token, "KITE_NO_CLOUD": "1", "KITE_EARPIECE_HOST": "127.0.0.1"}
-    near_cmd = NEAR_CMD + ["--source", f"unoq:127.0.0.1:{port}", "--ear-port", str(udp_tee), "--depth", a.depth,
+    near_env = {**env, "KITE_EARPIECE_HOST": "127.0.0.1"}
+    if token:
+        near_env.update(KITE_TOKEN=token, KITE_NO_CLOUD="1")
+    near_cmd = NEAR_CMD + ["--source", source, "--ear-port", str(udp_tee), "--depth", a.depth,
                            "--max-seconds", str(seconds), "--jsonl", str(near_jsonl)]
     if a.device != "auto":
         near_cmd += ["--device", a.device]
@@ -288,15 +301,19 @@ def main(argv=None) -> int:
         except subprocess.TimeoutExpired:
             ear.kill()
         ear_log.close()
-        board.shutdown(b, srv)
-        cam.close()
+        if board is not None:
+            board.shutdown(b, srv)
+            cam.close()
     (out / "near.log").write_text(near.stdout + near.stderr)
     near_lines = [ln for ln in (near.stdout + near.stderr).splitlines() if ln.startswith(("[near]", "t="))]
     print("\n".join("    " + ln for ln in near_lines[-12:]), flush=True)
 
     # 2. near: reached the board, saw frames, produced priorities
     check(near.returncode == 0, "near ran to the end", f"exit {near.returncode}")
-    check(any("UNO Q at 127.0.0.1" in ln for ln in near_lines), "near found the board over HTTP with the token")
+    check(any("[near] UNO Q at " in ln for ln in near_lines), "near found the board over HTTP with the token",
+          next((ln[7:] for ln in near_lines if "[near] UNO Q at " in ln), ""))
+    if a.board:
+        check(not any("test pattern" in ln for ln in near_lines), "the board is sending its camera, not the test pattern")
     evs = [json.loads(ln) for ln in near_jsonl.read_text().splitlines() if ln.strip()] if near_jsonl.exists() else []
     run_s = max(1e-6, (evs[-1]["t"] - evs[0]["t"]) if len(evs) > 1 else 0)
     fps = (len(evs) - 1) / run_s if len(evs) > 1 else 0
