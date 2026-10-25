@@ -233,20 +233,31 @@ def _routed(query: str, origin: tuple[float, float], dest: Place) -> Plan:
         points, steps, dist, dur = walking_route(origin, dest)
     except (OSError, RuntimeError) as e:
         return _failed(query, f"I found {dest.name} but can't get walking directions.", origin, e)
-    mins = f", about {max(1, round(dur / 60))} minutes" if dur else ""
+    n = max(1, round(dur / 60)) if dur else 0
+    mins = f", about {n} minute{'s' if n != 1 else ''}" if n else ""
     return Plan("route", query, f"Going to {dest.name}{_how_far(dist)}{mins}.", origin, dest,
                 points=points or [origin, (dest.lat, dest.lng)], steps=steps, distance_m=dist, duration_s=dur)
+
+
+def _lat_lng(text: str) -> tuple[float, float]:
+    """--from as "lat,lng": two finite numbers on the globe, or a usage error before any network call."""
+    try:
+        lat, lng = (float(x) for x in text.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected lat,lng, got {text!r}") from None
+    if not (math.isfinite(lat) and math.isfinite(lng) and abs(lat) <= 90 and abs(lng) <= 180):
+        raise argparse.ArgumentTypeError(f"not a place on the globe: {text!r}")
+    return lat, lng
 
 
 def main(argv: list[str] | None = None) -> int:
     a = argparse.ArgumentParser(prog="python -m kite.navigate", description=__doc__.splitlines()[0])
     a.add_argument("text", help='what the walker said, e.g. "take me to the nearest pharmacy"')
-    a.add_argument("--from", dest="origin", help="lat,lng instead of the phone's GPS")
+    a.add_argument("--from", dest="origin", type=_lat_lng, help="lat,lng instead of the phone's GPS")
     a.add_argument("--pick", type=int, help="answer 'which one?' with this choice (1-based)")
     a.add_argument("--json", action="store_true", help="print the whole plan as JSON")
     args = a.parse_args(argv)
-    origin = tuple(float(x) for x in args.origin.split(",")) if args.origin else None
-    p = plan(args.text, origin)
+    p = plan(args.text, args.origin)
     if p.status == "clarify" and args.pick:
         p = choose(p, args.pick)
     if args.json:

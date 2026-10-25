@@ -257,7 +257,7 @@ def test_a_named_place_with_several_matches_asks_which_one_then_routes_the_pick(
     r = choose(p, 2)
     assert r.status == "route" and r.destination is p.choices[1]
     assert r.points == [HOME, (37.8750, -122.2577)]  # no polyline: a straight line for the map
-    assert r.say == "Going to Starbucks, about 1 minutes."
+    assert r.say == "Going to Starbucks, about 1 minute."
     assert json.loads(json.dumps(r.to_dict()))["destination"]["name"] == "Starbucks"
 
 
@@ -310,3 +310,12 @@ def test_main_exits_1_on_an_error_and_2_without_text(monkeypatch, capsys):
     with pytest.raises(SystemExit) as e:
         nav.main([])
     assert e.value.code == 2
+
+
+@pytest.mark.parametrize("bad", ["37.8", "north,east", "37.8,-122.2,5", "nan,1", "91,0", "0,181"])
+def test_a_malformed_from_is_a_usage_error_before_any_request(bad, monkeypatch, capsys):
+    """--from is checked by argparse: no IndexError, no Places request with half an origin."""
+    monkeypatch.setattr(nav, "plan", lambda *a, **k: pytest.fail("planned with a bad origin"))
+    with pytest.raises(SystemExit) as e:
+        nav.main(["coffee", "--from", bad])
+    assert e.value.code == 2 and "--from" in capsys.readouterr().err
