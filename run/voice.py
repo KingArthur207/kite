@@ -165,8 +165,12 @@ class VoiceCommands:
         return True
 
     def stop(self) -> None:
+        """Stop listening and let the microphone close (the listener checks every 0.3 s), at most 2 s."""
         if self.listener is not None:
             self.listener.stop()
+            thread = getattr(self.listener, "_hf_thread", None)
+            if thread is not None and thread is not threading.current_thread():
+                thread.join(timeout=2.0)
 
     def _meter(self, listener) -> None:
         """Print the microphone's loudness once a second: 0.000 means no sound reaches this program."""
@@ -324,4 +328,7 @@ def _main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(_main())
+    code = _main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)  # never wait on an audio or network thread at exit: Ctrl+C always ends this script
