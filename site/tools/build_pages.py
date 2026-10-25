@@ -182,7 +182,7 @@ class ToMarkdown(HTMLParser):
             self.out.append(self.prefix + text)
         self.prefix = ''
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = dict(attrs)
         hidden = a.get('aria-hidden') == 'true' or tag in self.SKIP or 'skip' in (a.get('class') or '').split()
         if tag in ('br', 'img', 'input', 'meta', 'link', 'hr', 'source'):
@@ -216,7 +216,7 @@ class ToMarkdown(HTMLParser):
             self.href.append(a.get('href'))
             self.buf.append('[')
 
-    def handle_endtag(self, tag):
+    def handle_endtag(self, tag: str) -> None:
         if not any(t == tag for t, _ in self.stack):
             return
         while True:
@@ -254,7 +254,7 @@ class ToMarkdown(HTMLParser):
         elif tag in self.BLOCK:
             self._flush()
 
-    def handle_data(self, data):
+    def handle_data(self, data: str) -> None:
         if not self.skip:
             self.buf.append(data)
 
