@@ -4,8 +4,13 @@
     python -m kite.sources.mjpeg --source tello --port 8090                    # live Tello (only when run/app.py isn't flying it)
     python -m kite.sources.mjpeg --source webcam:0 --port 8090 --fps 15 --width 640
 
-GET /video.mjpg is multipart/x-mixed-replace JPEG with CORS *, so a plain <img src> shows it.
+GET /video.mjpg is multipart/x-mixed-replace JPEG, so a plain <img src> shows it.
 Files and recordings play at their own frame rate and loop at the end.
+
+It is a live camera with no password, so it listens on this computer only (127.0.0.1) and sends no CORS header:
+another web page can show the stream in an <img> but can't read its pixels, and a page that rebinds its own
+domain to 127.0.0.1 is refused by the Host check. To watch from another machine, pass --host 0.0.0.0, and only
+on a network you trust: anyone on it can then watch.
 """
 
 from __future__ import annotations
@@ -21,6 +26,19 @@ from .open import open_source, parse_spec
 
 BOUNDARY = "kiteframe"
 LOOPED_KINDS = ("file", "recording")
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def host_ok(host_header: str | None, bound: str) -> bool:
+    """Bound to loopback, only requests that name this computer are served (DNS rebinding sends its own name)."""
+    if bound not in LOOPBACK:
+        return True                           # --host 0.0.0.0 or a LAN address: shared on purpose
+    name = (host_header or "").strip().lower()
+    if name.startswith("["):
+        name = name[1:].split("]", 1)[0]
+    else:
+        name = name.rsplit(":", 1)[0] if name.count(":") == 1 else name
+    return name in LOOPBACK
 
 
 class Latest:
@@ -73,7 +91,7 @@ def produce(spec: str, latest: Latest, fps: float, width: int, quality: int):
             time.sleep(2)
 
 
-def make_handler(latest: Latest):
+def make_handler(latest: Latest, bound: str = "127.0.0.1"):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             pass
@@ -82,8 +100,10 @@ def make_handler(latest: Latest):
             if self.path.split("?")[0] != "/video.mjpg":
                 self.send_error(404, "try /video.mjpg")
                 return
+            if not host_ok(self.headers.get("Host"), bound):
+                self.send_error(403, "this stream is for this computer only")
+                return
             self.send_response(200)
-            self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}")
             self.end_headers()
@@ -101,20 +121,26 @@ def make_handler(latest: Latest):
     return Handler
 
 
-def main():
+def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", required=True, help="any kite.sources spec: tello | webcam:N | file.mp4 | recordings/<take>")
     ap.add_argument("--port", type=int, default=8090)
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="where to listen (default this computer only; 0.0.0.0 shares the camera with the network)")
     ap.add_argument("--fps", type=float, default=15)
     ap.add_argument("--width", type=int, default=640, help="downscale wider frames to this width (0: never)")
     ap.add_argument("--quality", type=int, default=75)
-    a = ap.parse_args()
+    return ap
+
+
+def main():
+    a = parser().parse_args()
     latest = Latest()
     threading.Thread(target=produce, args=(a.source, latest, a.fps, a.width, a.quality), daemon=True).start()
-    server = ThreadingHTTPServer((a.host, a.port), make_handler(latest))
+    server = ThreadingHTTPServer((a.host, a.port), make_handler(latest, a.host))
     server.daemon_threads = True
-    print(f"mjpeg: http://localhost:{a.port}/video.mjpg", flush=True)
+    print(f"mjpeg: http://localhost:{a.port}/video.mjpg" + ("" if a.host in LOOPBACK else
+          f" (listening on {a.host}: anyone on this network can watch)"), flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
