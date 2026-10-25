@@ -76,7 +76,6 @@ Anti-goals (failure even if it technically works)
 
 ## 3. Constraints
 
-- Cal Hacks rules: no copying pre-made team code into the repo. VIGIL (HackGT 13) ideas can be rewritten, not pasted. Open-source libraries are fine.
 - Team cap is 4. Our host can advise but not build, and won't be at our base in the morning.
 - Laptops are macOS on Apple Silicon, no NVIDIA GPU. ASUS lends 30 GX10s at the venue; we don't plan to use one, since YOLO11n runs at about 40 fps on a Mac.
 - Each judging table is shared by 2 or 3 teams (hacker guide), so the live walk has 3 or 4 m of aisle, in a crowded hall.
