@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One command to bring the Kite demo up and down on this Mac (docs/internal/demo-runbook.md).
+# One command to bring the Kite demo up and down on this Mac.
 #
 #   scripts/demo.sh sim [--output <device>]              earpiece, relay, sim, dashboard, stand-in detector
 #   scripts/demo.sh streetview [--output <device>]       earpiece, relay, Street View bridge, sim, dashboard, detector;
