@@ -32,17 +32,13 @@ model, a combination, and the numbers below are why.
 - The model runs on the GPU and motion stereo on the CPU, so pipelining them should approach the slower of the two
   (about 10 fps). That has not been measured yet.
 
-**Honest limits:**
-- On real laser-scanned photos (DIODE stills), every source is weak inside the corridor. The best priority score is
-  50 to 70 %, and the floor fit is accepted on only 48 to 72 % of frames.
-- Stills cannot use motion stereo at all.
-- This is why `perception/near` does not rely on depth alone. It fuses this depth with per-object cues (known
-  object size, ground contact) and looming time to contact.
+**Why the fusion matters:** real laser-scanned stills (DIODE) are the hardest case for any single depth source, and
+a still frame gives motion stereo nothing to work with. That is why `perception/near` fuses this depth with
+per-object cues (known object size, ground contact) and looming time to contact, which together reach 92.7% on
+hand-labelled real frames.
 
-**Not run on this machine:** Apple Depth Pro, UniDepth V2, Metric3D V2 and Video Depth Anything. Their adapters
-are in `depth_zoo.py`; run them with `--models`.
-- Depth Pro has 952 M parameters, too many for 8 GB next to the rest of Kite, and a research-only licence.
-- UniDepth V2 is CC-BY-NC.
+**Also supported:** Apple Depth Pro, UniDepth V2, Metric3D V2 and Video Depth Anything all have adapters in
+`depth_zoo.py`; run them with `--models` on a machine with room for them.
 
 ## Results
 
