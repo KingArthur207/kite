@@ -21,9 +21,9 @@ const ZOOM = 19;
 const MAX_ZOOM = 21;
 const FIT_MAX_ZOOM = 19;
 export const PRIORITY_COLOR: Record<string, string> = {
-  critical: '#D92D20', hazard: '#D98A00', nav: '#2F80ED', answer: '#7B5CD6', info: '#8A90A8', system: '#8A90A8',
+  critical: '#FF453A', hazard: '#FF9F0A', nav: '#64D2FF', answer: '#BF5AF2', info: '#8E8E93', system: '#8E8E93',
 };
-const INK = '#1D2B6B';
+const INK = '#F2F2F7';
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Walker-frame bearing + distance -> lat/lng. Heading is compass degrees (0 north, 90 east).
@@ -44,7 +44,7 @@ const clientIcon = (color: string, heading: number | undefined, on: boolean, dim
     ${on ? `<circle r="17" fill="none" stroke="${color}" stroke-width="1.5" opacity=".5"/>` : ''}
     <g transform="rotate(${heading ?? 0})">
       ${heading == null ? '' : `<path d="M0 -15 L6 -7 L-6 -7 Z" fill="${color}"/>`}
-      <circle r="8" fill="${color}" stroke="#fff" stroke-width="3"/>
+      <circle r="8" fill="${color}" stroke="#000" stroke-width="3"/>
     </g></svg>`,
 });
 
@@ -52,7 +52,7 @@ const beaconIcon = L.divIcon({
   className: 'beacon-icon',
   iconSize: [22, 22],
   iconAnchor: [11, 11],
-  html: `<svg viewBox="-11 -11 22 22" width="22" height="22" aria-hidden="true"><path d="M0 -9 L9 0 L0 9 L-9 0 Z" fill="#fff" stroke="${INK}" stroke-width="2"/></svg>`,
+  html: `<svg viewBox="-11 -11 22 22" width="22" height="22" aria-hidden="true"><path d="M0 -9 L9 0 L0 9 L-9 0 Z" fill="#000" stroke="${INK}" stroke-width="2"/></svg>`,
 });
 
 function Camera({ view, setView, target, live, frame }: {
@@ -137,7 +137,7 @@ export function WalkMap({ clients, pose, follow, onFollow, hazards, beacon, pins
         <button type="button" aria-pressed={view === 'walk'} onClick={() => pick('walk')}>Whole walk</button>
       </div>
       <MapContainer center={target} zoom={ZOOM} maxZoom={MAX_ZOOM} zoomControl={false} style={{ height: '100%', width: '100%' }}>
-        {/* OSM standard tiles, muted toward cream in CSS (.leaflet-tile-pane). CARTO's light and dark tiles now need an API key. */}
+        {/* OSM standard tiles, inverted toward black in CSS (.leaflet-tile-pane). CARTO's light and dark tiles now need an API key. */}
         <TileLayer
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -187,7 +187,7 @@ export function WalkMap({ clients, pose, follow, onFollow, hazards, beacon, pins
           return (
             <CircleMarker key={`${pin.id}-${on}`} center={pin.at} radius={on ? 10 : pin.stop ? 7 : 4}
               eventHandlers={{ click: () => onPick(pin.id) }}
-              pathOptions={{ color: '#fff', weight: on ? 3 : 2, fillColor: pin.color, fillOpacity: 1 }}>
+              pathOptions={{ color: '#000', weight: on ? 3 : 2, fillColor: pin.color, fillOpacity: 1 }}>
               <Tooltip permanent={on || pin.stop} direction="top" offset={[0, -8]}
                 className={`map-label ${pin.stop ? 'p-critical' : ''} ${on ? 'focus' : ''}`}>
                 {on || !pin.stop ? pin.label : 'Stop'}

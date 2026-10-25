@@ -49,7 +49,7 @@ async function signMessage(text: string): Promise<{ ts: number; sig: string } | 
 const SHOWN_MESSAGES = 3;
 const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
 // Moment colours on the map; stops are always red.
-const PIN_COLOR: Record<string, string> = { stop: '#D92D20', help: '#D92D20', kite: '#1E9E8A', claude: '#D9702A', caregiver: '#2F80ED' };
+const PIN_COLOR: Record<string, string> = { stop: '#FF453A', help: '#FF453A', kite: '#63E6E2', claude: '#FF8A5B', caregiver: '#64D2FF' };
 const FIXTURE = fixtureOn();   // ?fixture=two-phones in dev: fake phones rendered locally, never written to SpacetimeDB
 
 const toEv = (r: Row): Ev => ({ id: r.id?.toString() ?? r.key ?? '', type: r.type, source: r.source, priority: r.priority, t: Number(r.t.toMillis()), p: parse(r.payload) });
