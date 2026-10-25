@@ -2,7 +2,11 @@
 
 Started by Karthik on Oct 24; continued by Eddy. This is unfinished: read this first.
 
-**Update, Oct 24 evening: Bluetooth with the native app is now the primary path.** The walker's iPhone runs the
+**Update, Oct 25: the app now sends GPS straight to SpacetimeDB over the phone's internet** (`phone-app/cloud.ts`),
+and `python -m phone.cloud` on the laptop forwards it to the earpiece. Bluetooth is no longer in the app; the notes
+below are history. Current setup: `docs/phone.md`.
+
+**Earlier update, Oct 24 evening: Bluetooth with the native app is now the primary path.** The walker's iPhone runs the
 React Native app in `phone-app/`, a BLE central that writes GPS fixes (no compass: the team dropped heading) to
 `python -m phone.ble` on the computer. Setup, the terminal line and troubleshooting: `docs/phone.md`. The Wi-Fi,
 HTTPS and certificate plan below (`certs.py`, the bridge server) is parked; leave it as it is.

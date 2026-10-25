@@ -235,7 +235,7 @@ A Logitech webcam on the UNO Q streams over Wi-Fi to the laptop, which ranks wha
 
 **The walker's phone as GPS**
 
-A phone app sends its position to the UNO Q and the laptop over Bluetooth or Wi-Fi, for walking directions and the live map.
+The iPhone app sends each fix straight to SpacetimeDB over the phone's own internet, even with the screen locked, for the earpiece, walking directions and the live map.
 
 **AirPods as a managed device**
 
