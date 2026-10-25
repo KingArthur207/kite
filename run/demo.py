@@ -1,14 +1,16 @@
-"""The kite window, with YOLO26n and SegFormer-B0 on the webcam.
+"""The kite window, with YOLO26n and SegFormer-B0 on the body camera or the drone's video.
 
-    python run/demo.py              # YOLO obstacles only (fast)
+    python run/demo.py              # YOLO obstacles only (fast), body camera
     python run/demo.py --seg        # segmentation on as well
 
-Two switches, the buttons on the camera pane or ``yolo`` and ``seg`` typed in the console:
+The camera pane has two streams, BODYCAM and DRONE VIEW. BODYCAM is the Logitech or Lenovo
+on the Arduino UNO Q (the same MJPEG stream as ``kite_link.py watch``). If that board cannot
+be reached, or it has no such camera, the pane uses this computer's webcam. DRONE VIEW opens
+the Tello's video only: it never takes off, and ``run/app.py`` is unchanged.
+
+YOLO and segmentation are the other two buttons (or ``yolo`` and ``seg`` in the console).
 YOLO makes every detected object something to go around, and segmentation steers by the ground.
 Both on, the guidance reads both. Both models load at start, before any frame is guided.
-
-The camera pane shows that overlay. The map and the console are the same window as
-``python run/app.py``. This script does not open the drone, and ``run/app.py`` is unchanged.
 """
 
 from __future__ import annotations
@@ -33,6 +35,16 @@ VENDOR = os.path.join(ROOT, "third_party", "videotesting")
 CANDIDATES = ("Logi C270 HD WebCam", "Logitech HD Webcam C270", "HD Webcam C270")
 WEBCAM_HEIGHT_M = 1.2
 WEBCAM_PITCH_DEG = 8.0  # positive looks down; a lid camera is nearly level
+# The Tello's published diagonal field of view, and the pose the street overlay was tuned on.
+DRONE_DIAGONAL_FOV = 82.6
+DRONE_HEIGHT_M = 1.6
+DRONE_PITCH_DEG = 12.0
+# The demo board on this network. Discovery (heartbeat, Tailscale) is the second try.
+BODY_BOARD = "10.31.226.210"
+BODY_TIMEOUT_S = 1.0
+# What the Arduino calls a real UVC webcam. The board does not send the product string.
+_BODY_CAMERA = ("logi", "lenovo", "c270", "usb camera", "uvc", "webcam")
+_VIEWS = {"drone": "drone", "body": "body", "bodycam": "body"}
 
 
 def dshow_video_names(listing: str) -> list[str]:
@@ -177,6 +189,124 @@ def open_index(index: int):
     return cap
 
 
+def looks_like_body_camera(source: str) -> bool:
+    """True when the Arduino is streaming a Logitech or Lenovo, not its test pattern.
+
+    The board reports a real webcam as ``usb camera /dev/videoN`` (or a UVC name). ``synthetic``
+    is the "NO CAMERA" pattern and is not a body camera.
+    """
+    low = (source or "").strip().lower()
+    if not low or "synthetic" in low or low == "unknown":
+        return False
+    return any(token in low for token in _BODY_CAMERA)
+
+
+def body_attempts(board: str) -> list[tuple[str, float]]:
+    """(unoq spec, connect timeout). An explicit board is the only try."""
+    picked = (board or "").strip()
+    if picked:
+        return [(f"unoq:{picked}", max(BODY_TIMEOUT_S, 1.5))]
+    return [(f"unoq:{BODY_BOARD}", BODY_TIMEOUT_S), ("unoq", 1.5)]
+
+
+def open_unoq(spec: str, timeout: float):
+    """The board's MJPEG stream. Raises SystemExit when the board or the token is missing."""
+    from perception.near.unoq import UnoqSource
+
+    return UnoqSource(spec, out=lambda *_a, **_k: None, connect_timeout=timeout)
+
+
+def open_body_reader(board: str, log, webcam, unoq=None):
+    """The Arduino body camera, or (webcam reader, ``"webcam"``) when that stream cannot be used.
+
+    ``webcam`` is called only after every board attempt fails. Returns ``(None, "webcam")`` when
+    the fallback camera cannot be opened either.
+    """
+    errors: list[str] = []
+    if unoq is None:
+        unoq = open_unoq
+    for spec, timeout in body_attempts(board):
+        try:
+            src = unoq(spec, timeout)
+        except SystemExit as exc:
+            text = str(exc).splitlines()[0][:180]
+            errors.append(f"body camera: {spec}: {text}")
+            if "no token" in text:
+                break
+            continue
+        except Exception as exc:
+            errors.append(f"body camera: {spec}: {exc}")
+            continue
+        camera = str(getattr(src, "camera", "") or "")
+        if getattr(src, "test_pattern", False) or not looks_like_body_camera(camera):
+            release = getattr(src, "release", None)
+            if release is not None:
+                release()
+            errors.append(f"body camera: the Arduino camera is {camera or 'missing'}, not a Logitech or Lenovo")
+            break
+        return src, ""
+    for line in errors:
+        log(line, "warn")
+    try:
+        cap = webcam()
+    except Exception as exc:
+        log(f"webcam did not open: {exc}", "error")
+        return None, "webcam"
+    log("body camera: using the webcam", "warn")
+    return cap, "webcam"
+
+
+def open_drone_reader():
+    """The Tello's video. ``connect`` starts the stream and does not take off."""
+    from kite.config import Config
+    from kite.drone import make_tello
+
+    drone = make_tello(Config())
+    try:
+        drone.connect()
+    except Exception:
+        drone.close()
+        raise
+    return _DroneReader(drone)
+
+
+class _CapReader:
+    """A local webcam. ``read`` matches the Arduino source: (ok, bgr)."""
+
+    def __init__(self, cap, name: str):
+        self.cap = cap
+        self.name = name
+
+    def read(self):
+        ok, frame = self.cap.read()
+        if not ok or frame is None:
+            return False, None
+        return True, frame
+
+    def release(self) -> None:
+        self.cap.release()
+
+
+class _DroneReader:
+    """Frames from a connected Tello. ``release`` closes the link and does not land: nothing took off."""
+
+    name = "tello"
+
+    def __init__(self, drone):
+        self.drone = drone
+        self.frames = drone.frame_source()
+
+    def read(self):
+        frame = self.frames.read()
+        image = None if frame is None else frame.image
+        if image is None:
+            return False, None
+        return True, image
+
+    def release(self) -> None:
+        self.drone.close()
+
+
 class Shown:
     def __init__(self, image, seq: int):
         self.image = image
@@ -222,7 +352,13 @@ class Demo:
         self._said: tuple[str, ...] = ()
         self._camera_name = ""
         self._size = ""
-        self._cap = None
+        self._view = "body"  # body | drone; the button the operator picked
+        self._live = "body"  # the view the newest frame belongs to
+        self._body_note = ""
+        self._drone_note = ""
+        self._fov = 60.0
+        self._height = WEBCAM_HEIGHT_M
+        self._pitch = WEBCAM_PITCH_DEG
         self._perception = None
         self._video_times: deque[float] = deque()
         self._seg_times: deque[float] = deque()
@@ -238,6 +374,10 @@ class Demo:
         if not cmd:
             return
         self.log(text.strip(), "sent")
+        view = _VIEWS.get(cmd)
+        if view is not None:
+            self._select_view(view)
+            return
         switch = switch_word(cmd)
         if switch is not None:
             key, on = switch
@@ -253,19 +393,26 @@ class Demo:
         elif cmd in ("takeoff", "land", "follow", "follow me", "hold", "resume", "stop", "come back", "cancel"):
             self.log("this window is the camera", "info")
         else:
-            self.log("yolo, seg, status, or quit", "warn")
+            self.log("bodycam, drone, yolo, seg, status, or quit", "warn")
 
     def toggles(self) -> list[dict]:
-        """The camera pane's buttons."""
+        """The camera pane's buttons. BODYCAM and DRONE VIEW pick the stream; the other two pick the guidance."""
         loading = "" if self._loaded else "loading"
         seg_note = "unavailable" if self._seg_state == "failed" else loading
         return [
+            {"key": "body", "label": "BODYCAM", "on": self._view == "body", "note": self._body_note},
+            {"key": "drone", "label": "DRONE VIEW", "on": self._view == "drone", "note": self._drone_note},
             {"key": "yolo", "label": "YOLO", "on": self._yolo_on, "note": loading if self._yolo_on else ""},
             {"key": "seg", "label": "Segmentation", "on": self._seg_on, "note": seg_note if self._seg_on else ""},
         ]
 
     def toggle(self, key: str, on: bool | None = None) -> None:
-        """Use YOLO or segmentation, or stop using it (None flips). Both stay loaded; the frame loop picks it up."""
+        """Use YOLO or segmentation, or stop using it (None flips), or select a stream. Both models stay loaded."""
+        if key in ("body", "drone"):
+            if on is False:
+                return
+            self._select_view(key)
+            return
         if key not in ("seg", "yolo"):
             return
         with self._lock:
@@ -281,6 +428,19 @@ class Demo:
         self.log(f"{name} {'on' if now else 'off'}", "info")
         if not (seg or yolo):
             self.log("guidance off: camera only", "info")
+
+    def _select_view(self, view: str) -> None:
+        """Ask the grab thread for the body camera or the drone's video. The open happens off the UI thread."""
+        with self._lock:
+            if view == self._view:
+                return
+            self._view = view
+            self._painted = False
+            if view == "drone":
+                self._drone_note = "opening"
+            else:
+                self._body_note = "opening"
+        self.log("DRONE VIEW" if view == "drone" else "BODYCAM", "info")
 
     def _load_models(self) -> bool:
         """YOLO26n, then SegFormer-B0, one after the other on this thread, before any frame is processed.
@@ -315,7 +475,7 @@ class Demo:
         self._stop.set()
         self._thread.join(timeout=30)
         if self._grabber is not None:
-            self._grabber.join(timeout=5)
+            self._grabber.join(timeout=20)  # a Tello connect in progress has to finish before the link can close
         self.closed.set()
 
     def _set_state(self, state: str) -> None:
@@ -339,10 +499,16 @@ class Demo:
         bucket.append(now)
         return float(len(bucket))
 
-    def _publish(self, image, painted: bool) -> None:
-        """A painted frame replaces the raw ones until guidance is turned off."""
+    def _publish(self, image, painted: bool, view: str | None = None) -> None:
+        """A painted frame replaces the raw ones until guidance is turned off.
+
+        ``view`` is the stream that frame came from. A late overlay from the previous stream is dropped
+        once the pane has switched, so the drone picture is never painted with the body camera's boxes.
+        """
         with self._lock:
             if painted:
+                if view is not None and view != self._live:
+                    return
                 if not (self._seg_on or self._yolo_on):
                     return
                 self._painted = True
@@ -357,13 +523,69 @@ class Demo:
             self._latest = None
         return frame
 
-    def _grab(self) -> None:
-        cap = self._cap
+    def _close_reader(self, reader) -> None:
+        if reader is None:
+            return
         try:
-            while not self._stop.is_set() and cap is not None:
-                ok, frame = cap.read()
+            reader.release()
+        except Exception as exc:
+            self.log(f"closing the camera: {exc}", "warn")
+
+    def _open_view(self, view: str):
+        """(reader, button note) for this stream, or None when it cannot be opened."""
+        if view == "drone":
+            try:
+                return open_drone_reader(), ""
+            except Exception as exc:
+                self._drone_note = "unavailable"
+                self.log(f"drone camera did not open: {exc}", "error")
+                return None
+        reader, note = open_body_reader(getattr(self.args, "board", "") or "", self.log, self._open_webcam)
+        if reader is None:
+            return None
+        return reader, note
+
+    def _grab(self) -> None:
+        """Keep the newest frame from the stream the buttons selected. A failed drone view stays on the body camera."""
+        reader = None
+        opened = None
+        try:
+            while not self._stop.is_set():
+                with self._lock:
+                    want = self._view
+                if opened != want or reader is None:
+                    self._close_reader(reader)
+                    reader = None
+                    opened = None
+                    got = self._open_view(want)
+                    if self._stop.is_set():
+                        self._close_reader(got[0] if got else None)
+                        return
+                    with self._lock:
+                        still = self._view
+                    if got is None or still != want:
+                        self._close_reader(got[0] if got else None)
+                        if got is None and want == "drone" and still == "drone":
+                            with self._lock:
+                                self._view = "body"
+                            self._drone_note = "unavailable"
+                            self.log("staying on the body camera", "warn")
+                        elif got is None and still == "body":
+                            self._body_note = "unavailable"
+                            self._set_state("offline")
+                            self._stop.wait(2.0)
+                        else:
+                            if want == "drone" and self._drone_note == "opening":
+                                self._drone_note = ""
+                            if want == "body" and self._body_note == "opening":
+                                self._body_note = ""
+                        continue
+                    reader, note = got
+                    opened = want
+                    self._use(want, reader, note)
+                ok, frame = reader.read()
                 if not ok or frame is None:
-                    self._stop.wait(0.05)
+                    self._stop.wait(0.02)
                     continue
                 frame = frame.copy()
                 now = time.monotonic()
@@ -374,8 +596,33 @@ class Demo:
                     self._size = f"{width}x{height}"
                 self._publish(frame, False)
         finally:
-            if cap is not None:
-                cap.release()
+            self._close_reader(reader)
+
+    def _use(self, view: str, reader, note: str) -> None:
+        """The frames from here belong to ``view``, so the overlay uses that camera's geometry."""
+        if view == "drone":
+            fov, height, pitch = DRONE_DIAGONAL_FOV, DRONE_HEIGHT_M, DRONE_PITCH_DEG
+            self._drone_note = ""
+        else:
+            _vendor_path()
+            from streetseg.sources import C270_DIAGONAL_FOV
+
+            fov, height, pitch = C270_DIAGONAL_FOV, WEBCAM_HEIGHT_M, WEBCAM_PITCH_DEG
+            self._body_note = note
+        name = str(getattr(reader, "name", "") or "")
+        with self._lock:
+            self._live = view
+            self._fov = fov
+            self._height = height
+            self._pitch = pitch
+            self._painted = False
+        self._camera_name = name
+        self._set_state("live")
+        self.log(f"camera: {name}", "info")
+
+    def _open_webcam(self):
+        cap = self._open_camera()
+        return _CapReader(cap, self._camera_name)
 
     def _open_camera(self):
         requested = (getattr(self.args, "camera", None) or "").strip() or None
@@ -392,22 +639,12 @@ class Demo:
                 errors.append(f"{name}: {exc}")
                 continue
             self._camera_name = name
-            self._cap = cap
             return cap
         detail = "; ".join(errors) if errors else "no camera listed"
         raise RuntimeError(detail)
 
     def _run(self) -> None:
-        try:
-            self._open_camera()
-        except Exception as exc:
-            self._set_state("offline")
-            self.log(f"camera did not open: {exc}", "error")
-            self.closed.set()
-            return
-        self._set_state("live")
-        self.log(f"camera: {self._camera_name}", "info")
-        self._grabber = threading.Thread(target=self._grab, name="webcam", daemon=True)
+        self._grabber = threading.Thread(target=self._grab, name="video", daemon=True)
         self._grabber.start()
         if not self._load_models():
             while not self._stop.wait(0.2):
@@ -418,11 +655,11 @@ class Demo:
             return
         _vendor_path()
         from streetseg.camera import Pose
-        from streetseg.sources import C270_DIAGONAL_FOV
 
-        pose = Pose(WEBCAM_HEIGHT_M, WEBCAM_PITCH_DEG)
+        pose = Pose(self._height, self._pitch)
         camera = None
         mode = None
+        geom = None
         while not self._stop.is_set():
             frame = self._take_latest()
             if frame is None:
@@ -430,6 +667,7 @@ class Demo:
                 continue
             with self._lock:
                 seg, yolo = self._seg_on, self._yolo_on
+                live, fov, height, pitch = self._live, self._fov, self._height, self._pitch
             seg = seg and self._seg_state == "ready"
             if (seg, yolo) != mode:
                 mode = (seg, yolo)
@@ -442,8 +680,11 @@ class Demo:
                 with self._lock:
                     self._painted = False  # raw camera until something runs
                 continue
-            if camera is None or camera.cx != frame.shape[1] / 2.0:
-                camera = camera_for(frame.shape, C270_DIAGONAL_FOV)
+            shape = (live, frame.shape[1], frame.shape[0], fov)
+            if camera is None or geom != shape:
+                camera = camera_for(frame.shape, fov)
+                pose = Pose(height, pitch)
+                geom = shape
             try:
                 events = self._perception.process(frame, camera, pose)
             except Exception as exc:
@@ -452,7 +693,7 @@ class Demo:
             now = time.monotonic()
             self.snap.det_fps = self._rate(self._seg_times, now)
             if self._perception.image is not None:
-                self._publish(self._perception.image, True)
+                self._publish(self._perception.image, True, live)
             shown = console_lines(events)
             if shown and shown != self._said:
                 self._said = shown
@@ -478,7 +719,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python run/demo.py", description="kite window with YOLO26n and SegFormer-B0 on the webcam")
     parser.add_argument("--seg", action="store_true", help="start with segmentation on (both models always load at start)")
     parser.add_argument("--no-yolo", action="store_true", help="start with YOLO obstacle guidance off")
-    parser.add_argument("--camera", default="", help="DirectShow name to open (default: the Logitech C270 if it is connected)")
+    parser.add_argument("--camera", default="", help="DirectShow name for the webcam fallback (default: the Logitech C270 if it is connected)")
+    parser.add_argument("--board", default="", help="Arduino address HOST[:PORT] for the body camera (default: 10.31.226.210, then discovery)")
     parser.add_argument("--device", default="", help="torch device for the models (default: cpu)")
     return parser
 
@@ -494,7 +736,7 @@ def main(argv: list[str] | None = None) -> int:
         lambda log: Demo(args, log),
         title="kite",
         opening="starting: opening the camera and loading YOLO and segmentation ...",
-        hint="yolo · seg · status · quit",
+        hint="bodycam · drone · yolo · seg · status · quit",
         close_note="closing the camera ...",
         shutdown_note="closing the camera ...",
     )

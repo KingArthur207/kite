@@ -201,13 +201,29 @@ def test_pattern(n: int, width: int = 640, height: int = 480, label: str = "NO C
 
 # -------------------------------------------------------------------------------------------- camera
 
+_CODEC = re.compile(r"venus|codec|encoder|decoder", re.I)
+
+
+def _is_uvc(node_dir: str) -> bool:
+    """True for a USB camera node. The driver link is uvcvideo when the kernel exposes it. On the UNO Q
+    the Logitech C270 still shows up as "UVC Camera (046d:0825)" with that link missing, so the name counts
+    too. The Qualcomm codec nodes (qcom-venus-decoder / encoder) never count."""
+    driver = os.path.join(node_dir, "device", "driver")
+    if os.path.basename(os.path.realpath(driver)) == "uvcvideo":
+        return True
+    name = (_read(os.path.join(node_dir, "name")) or "").strip()
+    if not name or _CODEC.search(name):
+        return False
+    low = name.lower()
+    return low.startswith("uvc") or "webcam" in low
+
+
 def usb_cameras(sys_root: str = "/") -> list[str]:
     """/dev/videoN nodes that belong to a USB (UVC) camera, lowest first. The UNO Q's Qualcomm chip has
     its own video nodes (hardware codecs), so "any /dev/video*" would pick the wrong one."""
     found = []
     for d in glob.glob(os.path.join(sys_root, "sys/class/video4linux/video*")):
-        driver = os.path.join(d, "device", "driver")
-        if os.path.basename(os.path.realpath(driver)) == "uvcvideo":
+        if _is_uvc(d):
             found.append(os.path.basename(d))
     found.sort(key=lambda v: int(re.sub(r"\D", "", v) or 0))
     return [f"/dev/{v}" for v in found]
@@ -255,6 +271,19 @@ class OpenCVCamera:
 
     def close(self) -> None:
         self.cap.release()
+
+
+def camera_opener(choice: str, width: int, height: int, fps: float, sys_root: str = "/"):
+    """Retry opening a camera that was not ready at startup (the USB port is switched to host mode, then the
+    Logitech appears a few seconds later). A requested test pattern is never replaced."""
+    if choice == "synthetic":
+        return None
+    selected = choice
+
+    def opener():
+        return open_camera(selected, width, height, fps, sys_root)
+
+    return opener
 
 
 def open_camera(choice: str, width: int, height: int, fps: float, sys_root: str = "/"):
@@ -497,10 +526,7 @@ class Board:
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue] = []
         camera, reason = open_camera(cfg.camera, cfg.width, cfg.height, cfg.fps, cfg.sys_root)
-        opener = None
-        if (cfg.camera or "auto") == "auto":      # hot-plug: a camera plugged in after start is picked up
-            def opener():
-                return open_camera("auto", cfg.width, cfg.height, cfg.fps, cfg.sys_root)
+        opener = camera_opener(cfg.camera or "auto", cfg.width, cfg.height, cfg.fps, cfg.sys_root)
         self.hub = FrameHub(camera, reason, cfg.fps, opener=opener)
         self.cloud = Spacetime(cfg.st_host, cfg.st_db) if cfg.cloud else None
         self.stop = threading.Event()

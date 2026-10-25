@@ -2,7 +2,7 @@
 
 import math
 
-from run.map_pane import latlng_from_world, meters_per_pixel, tile_url, tile_xy, world_px
+from run.map_pane import latlng_from_world, meters_per_pixel, route_view, tile_url, tile_xy, world_px
 
 
 def test_tile_xy_origin():
@@ -47,6 +47,39 @@ def test_tile_url_is_mapbox_streets_and_needs_a_token():
     assert url.startswith("https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/16/10512/25344?")
     assert "access_token=pk.test" in url
     assert "openstreetmap.org" not in url
+
+
+def test_a_destination_zooms_in_on_a_short_walk():
+    start = (37.8700, -122.2600)
+    end = (37.8703, -122.2596)
+    center, zoom = route_view((start, end), 800, 600)
+    assert zoom == 18
+    expect = _bounds_center((start, end), zoom)
+    assert abs(center[0] - expect[0]) < 1e-9
+    assert abs(center[1] - expect[1]) < 1e-9
+
+
+def test_a_long_walk_zooms_in_on_the_destination():
+    start = (37.8670, -122.2580)
+    middle = (37.8720, -122.2575)
+    dest = (37.8800, -122.2500)
+    center, zoom = route_view((start, middle, dest), 640, 480)
+    assert zoom == 18
+    assert center == dest
+
+
+def test_route_view_needs_a_pane_and_a_place():
+    assert route_view((), 800, 600) is None
+    assert route_view(((37.87, -122.26),), 40, 40) is None
+    center, zoom = route_view(((37.87, -122.26),), 800, 600)
+    assert zoom == 18
+    assert abs(center[0] - 37.87) < 1e-9
+    assert abs(center[1] + 122.26) < 1e-9
+
+
+def _bounds_center(points, zoom):
+    xs, ys = zip(*(world_px(lat, lng, zoom) for lat, lng in points))
+    return latlng_from_world((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0, zoom)
 
 
 def test_meters_per_pixel_equator_zoom_zero():

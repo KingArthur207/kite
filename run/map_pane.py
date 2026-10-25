@@ -30,6 +30,11 @@ from PIL import Image, ImageDraw, ImageTk
 _TILE = 256
 _MIN_ZOOM = 13
 _MAX_ZOOM = 18
+# Follow the walker here. A destination flies closer than this, onto the place they named.
+_FOLLOW_ZOOM = 16
+_DEST_ZOOM = 18
+_ROUTE_PAD = 36
+_FLIGHT_S = 0.45
 _EARTH_RADIUS_M = 6378137.0
 _EARTH_CIRCUMFERENCE_M = 2.0 * math.pi * _EARTH_RADIUS_M
 _MAX_LAT = math.degrees(math.atan(math.sinh(math.pi)))
@@ -93,6 +98,38 @@ def _clamp_index(index: float, n: int) -> int:
     if not math.isfinite(index):
         return 0 if index < 0 else n - 1
     return min(n - 1, max(0, int(math.floor(index))))
+
+
+def _bounds_center(points, zoom: int) -> tuple[float, float]:
+    xs, ys = zip(*(world_px(lat, lng, zoom) for lat, lng in points))
+    return latlng_from_world((min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0, zoom)
+
+
+def _span_fits(points, width: int, height: int, zoom: int, pad: int) -> bool:
+    xs, ys = zip(*(world_px(lat, lng, zoom) for lat, lng in points))
+    return (max(xs) - min(xs)) <= width - 2 * pad and (max(ys) - min(ys)) <= height - 2 * pad
+
+
+def route_view(points, width: int, height: int, pad: int = _ROUTE_PAD):
+    """(center, zoom) after a destination is set, or None when there is nothing to frame.
+
+    The camera zooms in to ``_DEST_ZOOM``. A short walk stays entirely in the pane, centered
+    on the route. A longer one is framed on the destination, the last point, so the place
+    they named is what fills the map.
+    """
+    if not points or width < pad * 2 + 8 or height < pad * 2 + 8:
+        return None
+    zoom = min(_MAX_ZOOM, max(_MIN_ZOOM, _DEST_ZOOM))
+    if _span_fits(points, width, height, zoom, pad):
+        return _bounds_center(points, zoom), zoom
+    return points[-1], zoom
+
+
+def _same_place(a, b) -> bool:
+    """True when two coordinates are the same street corner. A reroute of one destination is not a new one."""
+    if a is None or b is None:
+        return False
+    return abs(a[0] - b[0]) < 1e-4 and abs(a[1] - b[1]) < 1e-4
 
 
 def meters_per_pixel(lat: float, zoom: int) -> float:
@@ -195,9 +232,12 @@ class MapPane(tk.Frame):
         self._alive = True
         self._token = mapbox_token()
         self._ui_thread = threading.get_ident()
-        self._zoom = 16
+        self._zoom = _FOLLOW_ZOOM
         self._center: tuple[float, float] | None = None
         self._user_panned = False
+        self._dest_view = False
+        self._flight: dict | None = None
+        self._flight_i = 0
         self._fix: tuple[float, float] | None = None
         self._accuracy: float | None = None
         self._age_s: float | None = None
@@ -245,7 +285,11 @@ class MapPane(tk.Frame):
         self._post(("fix", lat_f, lng_f, _opt_float(accuracy), _opt_float(age_s)))
 
     def set_route(self, points) -> None:
-        """Draw the walking route, a list of (lat, lng), or None to clear it. Any thread."""
+        """Draw the walking route, a list of (lat, lng), or None to clear it. Any thread.
+
+        A new destination zooms the map in on that place. A reroute to the same place does not
+        move the camera again.
+        """
         if points is None:
             copied = None
         else:
@@ -311,8 +355,16 @@ class MapPane(tk.Frame):
             if not self._user_panned:
                 self._center = (lat, lng)
         elif kind == "route":
+            previous = self._route[-1] if self._route else None
             self._route = message[1]
+            end = self._route[-1] if self._route else None
+            if end is not None and not _same_place(previous, end):
+                self._dest_view = True
+            elif end is None:
+                self._cancel_flight()
         elif kind == "recenter":
+            self._cancel_flight()
+            self._dest_view = False
             self._user_panned = False
             self._drag = None
             self._dragging = False
@@ -456,6 +508,7 @@ class MapPane(tk.Frame):
         return (px, py)
 
     def _zoom_by(self, steps: int, anchor: tuple[float, float] | None) -> None:
+        self._cancel_flight()
         new = min(_MAX_ZOOM, max(_MIN_ZOOM, self._zoom + steps))
         if new == self._zoom:
             return
@@ -504,6 +557,7 @@ class MapPane(tk.Frame):
         if not self._dragging and abs(dx) < _DRAG_PX and abs(dy) < _DRAG_PX:
             return
         self._dragging = True
+        self._cancel_flight()
         self._user_panned = True
         self.canvas.configure(cursor="fleur")
         self._center = latlng_from_world(wx - dx, wy - dy, self._zoom)
@@ -563,6 +617,7 @@ class MapPane(tk.Frame):
         except tk.TclError:
             self._alive = False
             return
+        self._frame_destination()
         c.delete("all")
         self._recenter_box = None
         self._visible = set()
@@ -624,6 +679,9 @@ class MapPane(tk.Frame):
                                 joinstyle=tk.ROUND, tags="route")
         self.canvas.create_line(*coords, fill=_ROUTE, width=_ROUTE_WIDTH, capstyle=tk.ROUND,
                                 joinstyle=tk.ROUND, tags="route")
+        ex, ey = coords[-2], coords[-1]
+        self.canvas.create_oval(ex - 8, ey - 8, ex + 8, ey + 8, fill="#ffffff", outline="#ffffff", tags="route")
+        self.canvas.create_oval(ex - 5, ey - 5, ex + 5, ey + 5, fill=_ROUTE, outline=_ROUTE, tags="route")
 
     def _draw_fix(self, origin_x: float, origin_y: float) -> None:
         if self._fix is None:
@@ -676,6 +734,65 @@ class MapPane(tk.Frame):
             cached = tkfont.Font(self, font=font)
             self._fonts[font] = cached
         return cached.measure(text), cached.metrics("linespace")
+
+    def _frame_destination(self) -> None:
+        """Start the zoom onto a new destination once the pane has a size. A flight already running is left alone."""
+        if not self._dest_view or not self._route or self._flight is not None:
+            return
+        try:
+            width, height = self.canvas.winfo_width(), self.canvas.winfo_height()
+        except tk.TclError:
+            self._alive = False
+            return
+        view = route_view(self._route, width, height)
+        if view is None:
+            return
+        self._dest_view = False
+        center, zoom = view
+        self._fly_to(center, zoom)
+
+    def _fly_to(self, center: tuple[float, float], zoom: int) -> None:
+        """Glide from the current view to ``center`` at ``zoom``. The walker stops pulling the camera until Re-center."""
+        self._flight_i += 1
+        token = self._flight_i
+        self._flight = {
+            "t0": time.monotonic(),
+            "start": self._center or center,
+            "start_z": self._zoom,
+            "end": center,
+            "end_z": zoom,
+        }
+        self._user_panned = True
+        try:
+            self.after(16, lambda t=token: self._tick_flight(t))
+        except tk.TclError:
+            self._alive = False
+
+    def _tick_flight(self, token: int) -> None:
+        flight = self._flight
+        if not self._alive or token != self._flight_i or flight is None:
+            return
+        u = min(1.0, (time.monotonic() - flight["t0"]) / _FLIGHT_S)
+        eased = u * u * (3.0 - 2.0 * u)
+        start, end = flight["start"], flight["end"]
+        self._center = (start[0] + (end[0] - start[0]) * eased, start[1] + (end[1] - start[1]) * eased)
+        zoom = int(round(flight["start_z"] + (flight["end_z"] - flight["start_z"]) * eased))
+        self._zoom = min(_MAX_ZOOM, max(_MIN_ZOOM, zoom))
+        if u >= 1.0:
+            self._center = end
+            self._zoom = flight["end_z"]
+            self._flight = None
+        self._redraw()
+        if self._flight is None or token != self._flight_i:
+            return
+        try:
+            self.after(32, lambda t=token: self._tick_flight(t))
+        except tk.TclError:
+            self._alive = False
+
+    def _cancel_flight(self) -> None:
+        self._flight = None
+        self._flight_i += 1
 
     def _trim(self, visible: set[tuple[int, int, int]]) -> None:
         if len(self._tiles) <= _CACHE_MAX:

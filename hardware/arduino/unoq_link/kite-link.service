@@ -6,8 +6,9 @@ After=network-online.target
 [Service]
 # install.sh fills in __USER__ and __DIR__
 # The UNO Q's USB-C port can boot in device mode, so a USB camera on a hub is never seen (a known UNO Q
-# quirk). Force host mode before starting; harmless where the file doesn't exist. Runs as root ("+").
-ExecStartPre=+/bin/sh -c 'mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug 2>/dev/null; f=/sys/kernel/debug/usb/4e00000.usb/mode; if [ -w "$$f" ]; then echo host > "$$f"; sleep 2; fi; true'
+# quirk). The mode file appears a few seconds after boot, so wait for it, then force host mode. Runs as
+# root ("+"). Never fails the start.
+ExecStartPre=+/bin/sh -c 'mountpoint -q /sys/kernel/debug || mount -t debugfs none /sys/kernel/debug 2>/dev/null; f=/sys/kernel/debug/usb/4e00000.usb/mode; i=0; while [ ! -w "$$f" ] && [ "$$i" -lt 15 ]; do i=$$((i+1)); sleep 1; done; if [ -w "$$f" ]; then echo host > "$$f"; sleep 2; fi; true'
 ExecStart=/usr/bin/python3 __DIR__/board.py
 User=__USER__
 SupplementaryGroups=video

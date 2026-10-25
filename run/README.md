@@ -9,10 +9,14 @@ python run/app.py                        # fly
 python run/demo.py                       # same window, webcam, YOLO26n obstacles (add --seg for SegFormer-B0)
 ```
 
-## demo.py: the same window, on a webcam
+## demo.py: the same window, body camera or drone
 
-`python run/demo.py` opens the kite window and guides the walker from the webcam with two switches, the
-**YOLO** and **Segmentation** buttons on the camera pane (or `yolo` and `seg`, with `on`/`off`, typed in the console):
+`python run/demo.py` opens the kite window and guides the walker from the camera with four buttons on the
+camera pane. **BODYCAM** and **DRONE VIEW** pick the stream (`bodycam` and `drone` in the console do the same).
+BODYCAM is the Logitech or Lenovo on the Arduino UNO Q, the MJPEG stream `kite_link.py watch` opens. If that
+board cannot be reached, or it is showing its test pattern, the pane uses this computer's webcam and the button
+says so. DRONE VIEW opens the Tello's video and does not fly it. **YOLO** and **Segmentation** are the other
+two (`yolo` and `seg`, with `on`/`off`):
 
 | On | Runs | Says |
 |---|---|---|
@@ -25,7 +29,9 @@ clearest. With YOLO on, every detected object (every person too: the chest camer
 an object that covers less than 12 % of a lane is walked past rather than steered around. With segmentation off
 the ground is taken as walkable except under a box. Both models load at start, one after the other, before any frame is
 guided; the buttons only choose which are used (`--seg` turns segmentation on at launch, `--no-yolo` starts with YOLO
-off). With both off the pane shows the plain camera. A connected Logitech C270 is chosen over the built-in camera. The checkpoints are in `third_party/videotesting/weights/` and come down with a pull. `python run/app.py` is unchanged and still talks only to the drone.
+off). With both off the pane shows the plain camera. The webcam fallback prefers a connected Logitech C270 over the
+built-in camera. `--board HOST` names the Arduino; the default tries `10.31.226.210` and then the usual discovery.
+The checkpoints are in `third_party/videotesting/weights/` and come down with a pull. `python run/app.py` still flies the drone.
 
 ## app.py: take off, lock onto the person in front, follow them
 

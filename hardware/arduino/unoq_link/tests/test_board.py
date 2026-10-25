@@ -222,6 +222,21 @@ def test_usb_camera_detection_skips_the_chip_codec_nodes(tmp_path):
     assert isinstance(cam, board.SyntheticCamera) and reason == "no USB camera found"
 
 
+def test_a_uvc_name_counts_when_the_driver_link_is_missing(tmp_path):
+    """The UNO Q's C270 is "UVC Camera (046d:0825)" on video2 and the uvcvideo symlink is not there."""
+    root = tmp_path / "sys/class/video4linux"
+    for node, name in (
+        ("video0", "qcom-venus-decoder"),
+        ("video1", "qcom-venus-encoder"),
+        ("video2", "UVC Camera (046d:0825)"),
+        ("video3", "UVC Camera (046d:0825)"),
+    ):
+        d = root / node
+        d.mkdir(parents=True)
+        (d / "name").write_text(name + "\n")
+    assert board.usb_cameras(str(tmp_path)) == ["/dev/video2", "/dev/video3"]
+
+
 def test_a_camera_that_cannot_open_falls_back_to_the_pattern(monkeypatch):
     def broken(*a, **k):
         raise OSError("can't open /dev/video9")
@@ -372,6 +387,11 @@ def test_a_camera_plugged_in_after_start_is_picked_up(monkeypatch):
 def test_no_rescan_when_a_camera_was_chosen_explicitly():
     hub = board.FrameHub(board.SyntheticCamera(64, 48, "NO CAMERA"), "synthetic by request", 20, opener=None)
     assert hub.opener is None
+
+
+def test_a_device_that_was_not_ready_is_retried_and_a_test_pattern_is_not():
+    assert board.camera_opener("synthetic", 64, 48, 10) is None
+    assert board.camera_opener("/dev/video2", 64, 48, 10) is not None
 
 
 def test_the_service_forces_usb_host_mode_before_starting():
