@@ -13,7 +13,8 @@ What this website collects, and what the Kite earpiece does with camera frames, 
 
 ## The Kite earpiece
 
-- **Camera frames** are processed on the walker's laptop. A single frame is sent to Anthropic's Claude API only when the walker asks "what's in front of me?" or "read this", or when scene descriptions are turned on. Frames and video are never sent to the dashboard.
+- **Camera frames** are processed on the walker's laptop. The body camera's video goes straight from the Arduino UNO Q to that laptop behind a token, and is never stored or sent to SpacetimeDB. A single frame is sent to Anthropic's Claude API only when the walker asks "what's in front of me?" or "read this", or when scene descriptions are turned on. The dashboard never shows video.
+- **Location:** the phone app sends its GPS position to the Kite receiver (the UNO Q or the laptop) over Bluetooth or Wi-Fi. The newest position is kept in SpacetimeDB, so walking directions and the live map can use it.
 - **Voice:** after an AirPod press (or the optional wake word), the walker's speech is streamed to Cartesia to be transcribed, and Kite's replies are sent to Cartesia as text to be spoken. Questions that need an answer go to Claude as text.
 - **Memories** such as "remember this place as the bench" are stored in the walker's Moss index and in a local file on the laptop.
 - **Dashboard sharing** is off unless it is turned on for the demo. When it is on, the walker's position, the hazards Kite reports, what Kite says and the text of what the walker says are shared through SpacetimeDB so the walk can be followed on a map. Video is never shared. "Clear run" on the dashboard deletes the walk's events.
@@ -21,7 +22,7 @@ What this website collects, and what the Kite earpiece does with camera frames, 
 
 ## Questions
 
-Ask through [Contact](https://trykite.pages.dev/contact). Kite is a hackathon prototype; if it ever becomes a product, this page will change before any new data is collected.
+Ask through [Contact](https://trykite.pages.dev/contact). As Kite grows, this page will change before any new data is collected.
 
 ---
 

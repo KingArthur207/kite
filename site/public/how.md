@@ -24,7 +24,7 @@ how soon
 
 ### Getting closer
 
-Beeps start about three and a half seconds before you'd meet, then speed up and rise in pitch. At the last second Kite says "Stop."
+Beeps start about three and a half seconds before you'd meet, then speed up and rise in pitch. At the last second Kite says "Stop." The body camera ranks what's straight ahead into three tones: high and fast under 2 m, middle from 2 to 5 m, low and slow beyond.
 
 which way
 

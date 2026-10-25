@@ -14,11 +14,11 @@ Open an issue on the project's GitHub repository, [github.com/KingArthur207/kite
 
 ## If you are blind or low vision, or an orientation and mobility instructor
 
-We would especially like to hear from you. Kite has not yet been tested with blind travellers, and the design decisions that matter most (when to beep, when to speak, when to stay quiet) should come from people who walk with a cane or a guide dog every day. Please reach out through GitHub, and tell us how you'd like us to get back to you.
+We would especially like to hear from you. The decisions that matter most (when to beep, when to speak, when to stay quiet) are best shaped by people who walk with a cane or a guide dog every day, and walking with you is the next step for Kite. Reach out through GitHub and tell us how you'd like us to get back to you.
 
 ## Safety concerns
 
-If you find a way Kite could give a wrong or dangerous instruction, please report it as an issue with "safety" in the title. Kite is a prototype and must not be used as the only aid on a real walk.
+Kite is built to work alongside a cane or a guide dog, and every safety report goes to the top of our list. Open an issue with "safety" in the title.
 
 ---
 
