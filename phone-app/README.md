@@ -1,8 +1,14 @@
 # Kite phone app
 
-The walker's iPhone app. It finds the Kite computer over Bluetooth LE (`python -m phone.ble`), connects, and sends a GPS fix twice a second, including when the screen is locked. Open it with `kite://start` from the Action button and it starts on its own. It speaks every change and gives a haptic for each one.
+The walker's iPhone app. Tap the screen (or open `kite://start` from the Action button) and it sends a GPS fix to
+Kite's SpacetimeDB about once a second over the phone's own internet, including when the screen is locked. Any
+computer reads it from there: `python -m phone.cloud` forwards it to the earpiece, and the live dashboard shows it on
+the map. No Bluetooth and no pairing. It speaks every change and gives a haptic for each one.
 
-Fixes go to characteristic `4b495445-0001-…` as one JSON line each, `{"t","lat","lng","acc","alt","speed","course"}`. Unknown values are `null`. Each write is cut to fit the MTU.
+Each fix is one HTTPS call to the `push` reducer (`cloud.ts`), a `position` event with source `phone`:
+`{"type":"position","source":"phone","lat","lng","fix_t","accuracy","speed","course"}`, unknown values left out.
+While standing still it sends the newest fix again every 2 s, so Kite knows the phone is still there. After two
+failed calls in a row it says "Lost connection. Reconnecting." and keeps retrying, waiting up to 5 s between tries.
 
 ## Install on an iPhone
 
@@ -22,7 +28,7 @@ You need a Mac with Xcode, Node 22, a free or paid Apple ID added in Xcode (Sett
    ```
    Pick the phone when prompted. Use `npx expo run:ios --device` for a Debug build that reloads from Metro, with the phone and Mac on the same Wi-Fi.
 5. The first time, the phone refuses to open the app. Go to Settings > General > VPN & Device Management, tap your Apple ID, and tap Trust.
-6. Open Kite and tap the screen. Allow Bluetooth and location. Choose "Allow While Using App", then "Change to Always Allow" when iOS asks later.
+6. Open Kite and tap the screen. Allow location. Choose "Allow While Using App", then "Change to Always Allow" when iOS asks later.
 
 ## Action button
 
@@ -35,8 +41,8 @@ Pressing the button then opens Kite and starts it straight away. A `kite://stop`
 
 ```sh
 npm run typecheck
-npm test            # bun test: framing and chunking
-npx expo run:ios    # simulator. There is no Bluetooth there, so it stays on "Looking for Kite"
+npm test            # bun test: the fix format and the SpacetimeDB link (fake fetch, no network)
+npx expo run:ios    # simulator: set a location in Features > Location and it sends it to SpacetimeDB
 xcrun simctl openurl booted kite://start   # the simulator asks "Open in Kite?"; press Return
 ```
 

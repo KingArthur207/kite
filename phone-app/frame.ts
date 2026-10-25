@@ -1,4 +1,6 @@
-// The wire format the computer expects (phone/fix.py): one compact JSON fix per line, chunked to fit a BLE write.
+// What the app sends: each GPS fix as an earpiece `position` event (earpiece/earpiece/events.py), the payload of one
+// SpacetimeDB `push` call. fix_t (the fix's own time, ms) marks it as the app's: the laptop forwards only rows that
+// carry it (phone/cloud.py), never the earpiece's copy of a position it was already given.
 
 export interface Fix {
   t: number; // ms epoch of the GPS fix
@@ -24,8 +26,16 @@ export interface RawLocation {
   };
 }
 
-const DEFAULT_WRITE = 20; // ATT default MTU 23 minus the 3-byte header
-const MAX_WRITE = 512; // ATT attribute value limit
+export interface Position {
+  type: 'position';
+  source: string;
+  lat: number;
+  lng: number;
+  fix_t: number;
+  accuracy?: number;
+  speed?: number;
+  course?: number;
+}
 
 const round = (v: number, places: number): number => Number(v.toFixed(places));
 
@@ -48,18 +58,11 @@ export function toFix(loc: RawLocation): Fix {
   };
 }
 
-export function frameFix(fix: Fix): string {
-  return JSON.stringify(fix) + '\n';
-}
-
-// Bytes per write for a negotiated MTU; ble-plx reports the MTU, the payload is 3 bytes less.
-export function writeSize(mtu: number | null | undefined): number {
-  return mtu && mtu > 23 ? Math.min(mtu - 3, MAX_WRITE) : DEFAULT_WRITE;
-}
-
-// The line is ASCII (JSON of numbers), so string length equals byte length.
-export function chunk(line: string, size: number): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < line.length; i += size) out.push(line.slice(i, i + size));
-  return out;
+// Unknown values are left out: the earpiece and the dashboard read a missing field as "unknown".
+export function toPosition(fix: Fix, source = 'phone'): Position {
+  const p: Position = { type: 'position', source, lat: fix.lat, lng: fix.lng, fix_t: fix.t };
+  if (fix.acc != null) p.accuracy = fix.acc;
+  if (fix.speed != null) p.speed = Math.min(fix.speed, 100); // events.py caps speed at 100 m/s
+  if (fix.course != null) p.course = fix.course;
+  return p;
 }

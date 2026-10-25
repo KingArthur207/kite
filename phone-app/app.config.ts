@@ -15,19 +15,11 @@ const config: ExpoConfig = {
     bundleIdentifier,
     supportsTablet: false,
     infoPlist: {
-      // the plugins below add these too; spelled out so the background modes are visible here
-      UIBackgroundModes: ['location', 'bluetooth-central'],
+      // expo-location adds this too; spelled out so the background mode is visible here
+      UIBackgroundModes: ['location'],
     },
   },
   plugins: [
-    [
-      'react-native-ble-plx',
-      {
-        modes: ['central'],
-        bluetoothAlwaysPermission:
-          'Kite sends your location over Bluetooth to the Kite computer that flies your guide drone.',
-      },
-    ],
     [
       'expo-location',
       {

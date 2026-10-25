@@ -1,12 +1,11 @@
-// Kite: one full-screen button. kite://start (the Action button Shortcut) or a tap starts sending GPS to the Kite
-// computer over Bluetooth; kite://stop or another tap stops. Every state change is spoken and felt.
+// Kite: one full-screen button. kite://start (the Action button Shortcut) or a tap starts sending GPS to Kite through
+// SpacetimeDB over the phone's own internet; kite://stop or another tap stops. Every state change is spoken and felt.
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Image, Easing, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
-import { type LinkState, startLink } from './ble';
-import { frameFix } from './frame';
+import { type LinkState, startLink } from './cloud';
 import { startLocation, stopStaleLocation } from './location';
 
 type Mode = 'idle' | LinkState;
@@ -18,12 +17,12 @@ const C = {
 
 const SPOKEN: Record<Mode, string> = {
   idle: 'Stopped.',
-  searching: 'Looking for Kite.',
+  searching: 'Connecting to Kite.',
   connected: 'Connected. Sending your location.',
   lost: 'Lost connection. Reconnecting.',
 };
 
-const WORD: Record<LinkState, string> = { searching: 'Searching', connected: 'Connected', lost: 'Reconnecting' };
+const WORD: Record<LinkState, string> = { searching: 'Connecting', connected: 'Connected', lost: 'Reconnecting' };
 
 function say(text: string): void {
   Speech.stop();
@@ -50,7 +49,6 @@ export default function App() {
   const [sent, setSent] = useState(0);
   const modeRef = useRef<Mode>('idle');
   const stops = useRef<(() => void)[] | null>(null);
-  const line = useRef<string | null>(null);
 
   const go = useCallback((next: Mode, prefix = '') => {
     if (stops.current === null && next !== 'idle') return; // a late event after stop
@@ -63,7 +61,6 @@ export default function App() {
     if (!stops.current) return;
     stops.current.forEach((fn) => fn());
     stops.current = null;
-    line.current = null;
     setAcc(null);
     setStopped(true);
     go('idle');
@@ -76,9 +73,10 @@ export default function App() {
       stops.current = list;
       setSent(0);
       go('searching', prefix);
-      list.push(startLink({ nextLine: () => line.current, onState: (s) => go(s), onSent: setSent }));
+      const link = startLink({ onState: (s) => go(s), onSent: setSent });
+      list.push(link.stop);
       startLocation((fix) => {
-        line.current = frameFix(fix);
+        link.send(fix);
         setAcc(fix.acc);
       })
         .then((stopLoc) => (stops.current === list ? list.push(stopLoc) : stopLoc()))
@@ -151,7 +149,7 @@ export default function App() {
 const SUB: Record<Mode | 'stopped', string> = {
   idle: 'Tap anywhere to begin',
   stopped: 'Tap anywhere to start again',
-  searching: 'Looking for the Kite computer',
+  searching: 'Reaching Kite over the internet',
   connected: 'Sending your location',
   lost: 'Trying to reach Kite again',
 };
