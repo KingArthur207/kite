@@ -3,12 +3,12 @@
 
   <!-- three lines: pink = what you hear, clay = Claude and directions, navy = SpacetimeDB -->
   <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="12">
-    <path d="M960 450 V230 L1040 150 H1700" stroke="#D97757"/>
-    <path d="M960 450 V620 L1040 700 H1620" stroke="#1D2B6B"/>
-    <path d="M140 800 H1060 L1160 700" stroke="#1D2B6B"/>
-    <path d="M140 260 H420 L610 450" stroke="#E2448F"/>
-    <path d="M140 640 H420 L610 450" stroke="#E2448F"/>
-    <path d="M610 450 H1620" stroke="#E2448F"/>
+    <path d="M960 450 V260 Q960 230 981 209 L1019 171 Q1040 150 1070 150 H1700" stroke="#D97757"/>
+    <path d="M960 450 V590 Q960 620 981 641 L1019 679 Q1040 700 1070 700 H1620" stroke="#1D2B6B"/>
+    <path d="M140 800 H1030 Q1060 800 1081 779 L1160 700" stroke="#1D2B6B"/>
+    <path d="M140 260 H390 Q420 260 441 281 L589 429 Q610 450 640 450" stroke="#E2448F"/>
+    <path d="M140 640 H390 Q420 640 441 619 L589 471 Q610 450 640 450" stroke="#E2448F"/>
+    <path d="M640 450 H1620" stroke="#E2448F"/>
   </g>
 
   <g font-size="21" font-weight="500" text-anchor="middle">
