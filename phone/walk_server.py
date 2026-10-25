@@ -19,7 +19,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import phone  # puts the earpiece package on sys.path
+import phone  # noqa: F401  (puts the earpiece package on sys.path)
 from earpiece.route import (
     NoKey,
     RouteDenied,
@@ -249,7 +249,7 @@ class WalkSession:
         else:
             remaining = route_remaining
         body = {
-            "ok": ok and not (self.route is None),
+            "ok": ok and self.route is not None,
             "navigating": self.route is not None and not self.arrived,
             "label": self.label,
             "guidance": self.guidance,
