@@ -76,15 +76,14 @@ export function Timeline({ moments, walkStart, walkEnd, focusId, onPick }: {
   }, [focusId]);
 
   const stops = moments.filter(m => m.kind === 'stop').length;
-  const helps = moments.filter(m => m.kind === 'help').length;
   const t0 = walkStart ?? moments[0]?.t ?? 0;
   const t1 = Math.max(walkEnd ?? 0, moments[moments.length - 1]?.t ?? 0, t0 + 1000);
   const frac = (t: number) => Math.min(100, Math.max(0, ((t - t0) / (t1 - t0)) * 100));
-  // Label stops and help requests on the ribbon, skipping a label that would overlap the previous one.
+  // Label stops on the ribbon, skipping a label that would overlap the previous one.
   const labelled = new Set<string>();
   let lastLabel = -Infinity;
   for (const m of moments) {
-    if ((m.kind === 'stop' || m.kind === 'help') && frac(m.t) - lastLabel >= 7) { labelled.add(m.id); lastLabel = frac(m.t); }
+    if (m.kind === 'stop' && frac(m.t) - lastLabel >= 7) { labelled.add(m.id); lastLabel = frac(m.t); }
   }
 
   return (
@@ -94,7 +93,6 @@ export function Timeline({ moments, walkStart, walkEnd, focusId, onPick }: {
         {moments.length > 0 && (
           <span className="tally">
             <b className={stops ? 'stop-text' : ''}>{plural(stops, 'stop')}</b>
-            {helps > 0 && <> · <b className="stop-text">{plural(helps, 'help request')}</b></>}
             {' · '}{plural(moments.length, 'key moment')}{walkStart != null && <> over {offset(t1, t0).slice(1)}</>}
           </span>
         )}
@@ -111,7 +109,7 @@ export function Timeline({ moments, walkStart, walkEnd, focusId, onPick }: {
               <button key={m.id} type="button" tabIndex={-1} title={`${KIND_LABEL[m.kind]}: ${m.text}`}
                 className={`tick k-${m.kind} w-${m.who} ${m.id === focusId ? 'on' : ''}`} style={{ left: `${frac(m.t)}%` }}
                 onClick={() => onPick(m.id === focusId ? undefined : m.id)}>
-                {labelled.has(m.id) && <span className="tick-label">{m.kind === 'stop' ? 'Stop' : 'Help'}</span>}
+                {labelled.has(m.id) && <span className="tick-label">Stop</span>}
               </button>
             ))}
             <span className="ribbon-end start">+0:00</span>
