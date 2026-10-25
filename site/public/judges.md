@@ -32,6 +32,7 @@ Each track's judging criteria in its own words, then how Kite answers them.
 - [People-First Social Impact](https://trykite.pages.dev/judges#people)
 - [Hardware](https://trykite.pages.dev/judges#hardware)
 - [Technically Complex](https://trykite.pages.dev/judges#complex)
+- [Most Creative](https://trykite.pages.dev/judges#creative)
 - [Overall](https://trykite.pages.dev/judges#overall)
 - [Commit Fellowship](https://trykite.pages.dev/judges#commit)
 
@@ -278,6 +279,30 @@ Cartesia, Claude, Moss, SpacetimeDB and Grok each run off the audio thread, so a
 _drone view, YOLO boxes_
 
 _chest view, same street_
+
+Most Creative Hack
+
+## A guide dog that flies.
+
+judged on
+
+- Creativity: a fresh idea that creatively tackles a real problem
+- The thought process behind it
+**A second point of view, above your head**
+
+A guide dog looks ahead for its handler. Kite's drone does the same from 20 cm above and behind the walker's head, where it sees the crossing and the crowd without ever getting between them and the street.
+
+**The street, turned into sound**
+
+Beeps come from where things are, and three tones carry how urgent they are, so a walker hears the street instead of being read a list.
+
+**Streets an image model imagined**
+
+The moments Kite exists for can't be staged safely, so Grok Imagine generates them, and Kite's real detector and earpiece are tested on them.
+
+**A fruit fly's steering circuit**
+
+A 1,446-neuron pursuit circuit from the fruit-fly connectome can steer the drone's yaw to keep it pointed at the walker.
 
 First Overall · Hacker's Choice
 
