@@ -109,7 +109,7 @@ The phone and the UNO Q both ride on the walker, so Bluetooth range stops matter
 receiver and forwards every position over Wi-Fi to the main computer's earpiece (UDP 5010).
 
 ```
-phone/unoq/install.sh <main-computer-ip>                  # from the repo root; ssh's to arduino@kite-unoq.local
+phone/unoq/install.sh                                     # on the main computer, from the repo root: uses its own IP
 phone/unoq/install.sh <main-computer-ip> arduino@<board-ip>
 ```
 
