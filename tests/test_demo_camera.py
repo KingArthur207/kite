@@ -92,18 +92,21 @@ def test_the_window_opens_with_yolo_only():
     assert [(t["key"], t["on"]) for t in demo_.toggles()] == [("yolo", False), ("seg", True)]
 
 
-def test_segmentation_loads_once_in_the_background(monkeypatch):
+def test_segmentation_loads_once_on_the_frame_thread(monkeypatch):
     calls = []
     monkeypatch.setattr(demo, "load_segmentation", lambda device="": calls.append(device) or ("seg", "lights"))
     logs = []
     demo_ = _demo(logs)
     demo_.send("seg")
-    demo_._loader.join(timeout=5)
+    assert calls == []  # nothing loads on the caller's (window) thread
+    assert demo_.toggles()[1]["note"] == "loading"
+    demo_._load_segmentation()
     assert calls == [""]
     assert demo_._seg_models == ("seg", "lights")
     assert demo_.toggles()[1] == {"key": "seg", "label": "Segmentation", "on": True, "note": ""}
     demo_.toggle("seg")
     demo_.toggle("seg")
+    demo_._load_segmentation()
     assert calls == [""]
     assert ("info", "segmentation on") in logs
 
@@ -116,7 +119,7 @@ def test_a_failed_load_shows_on_the_button(monkeypatch):
     logs = []
     demo_ = _demo(logs)
     demo_.toggle("seg", True)
-    demo_._loader.join(timeout=5)
+    demo_._load_segmentation()
     assert demo_.toggles()[1]["note"] == "unavailable"
     assert ("error", "segmentation unavailable: no weights") in logs
 
@@ -158,3 +161,19 @@ def test_the_chest_webcam_goes_around_a_person_close_in_front(monkeypatch):
     assert perception.cue.reason == "obstacle"
     assert perception.cue.speech in ("Bear left to go around the person.", "Bear right to go around the person.")
     assert any(e.kind == "say" for e in events)
+
+
+def test_a_failed_import_logs_the_error_underneath(monkeypatch):
+    def wrapped(device=""):
+        try:
+            raise ImportError("cannot import name 'dispatch_model'")
+        except ImportError as exc:
+            raise RuntimeError("Could not import module 'SegformerForSemanticSegmentation'") from exc
+
+    monkeypatch.setattr(demo, "load_segmentation", wrapped)
+    logs = []
+    demo_ = _demo(logs)
+    demo_.toggle("seg", True)
+    demo_._load_segmentation()
+    assert ("error", "segmentation unavailable: Could not import module 'SegformerForSemanticSegmentation' "
+            "(ImportError: cannot import name 'dispatch_model')") in logs

@@ -219,7 +219,6 @@ class Demo:
         self._yolo_on = not getattr(args, "no_yolo", False)
         self._seg_state = "off"  # off, loading, ready, failed
         self._seg_models = None
-        self._loader: threading.Thread | None = None
         self._said: tuple[str, ...] = ()
         self._camera_name = ""
         self._size = ""
@@ -280,25 +279,29 @@ class Demo:
         name = "segmentation" if key == "seg" else "YOLO"
         self.log(f"{name} {'on' if now else 'off'}", "info")
         if seg and self._seg_state in ("off", "failed"):
-            self._load_segmentation()
+            self._seg_state = "loading"  # the frame loop loads it before its next frame
         if not (seg or yolo):
             self.log("guidance off: camera only", "info")
 
     def _load_segmentation(self) -> None:
-        with self._lock:
-            if self._loader is not None and self._loader.is_alive():
-                return
-            self._seg_state = "loading"
-            self._loader = threading.Thread(target=self._load_seg_models, name="seg-load", daemon=True)
-        self._loader.start()
+        """Load SegFormer-B0 on the frame loop's thread, between frames.
 
-    def _load_seg_models(self) -> None:
-        self.log("loading SegFormer-B0 ...", "info")
+        Never on a thread of its own: importing transformers while YOLO runs on another thread can leave
+        half-imported modules behind ("partially initialized module"), and then it fails for the whole run.
+        YOLO pauses while this loads.
+        """
+        if not (self._seg_on and self._seg_state == "loading"):
+            return
+        self.log("loading SegFormer-B0 (YOLO pauses) ...", "info")
         try:
             models = load_segmentation(getattr(self.args, "device", "") or "")
         except Exception as exc:
             self._seg_state = "failed"
-            self.log(f"segmentation unavailable: {exc}", "error")
+            root = exc
+            while root.__cause__ is not None or root.__context__ is not None:
+                root = root.__cause__ or root.__context__
+            detail = "" if root is exc else f" ({type(root).__name__}: {root})"
+            self.log(f"segmentation unavailable: {exc}{detail}", "error")
             return
         self._seg_models = models
         self._seg_state = "ready"
@@ -419,7 +422,7 @@ class Demo:
             return
         self.log("YOLO ready", "info")
         if self._seg_on:
-            self._load_segmentation()
+            self._seg_state = "loading"
         _vendor_path()
         from streetseg.camera import Pose
         from streetseg.sources import C270_DIAGONAL_FOV
@@ -432,6 +435,7 @@ class Demo:
             if frame is None:
                 self._stop.wait(0.01)
                 continue
+            self._load_segmentation()
             with self._lock:
                 seg, yolo = self._seg_on, self._yolo_on
             if self._seg_models is not None and self._perception.segmenter is None:
