@@ -3,7 +3,7 @@ import { KIND_LABEL, WHO_LABEL, type Moment, type SourceStat, type Who } from '.
 import { FRESH_LABEL, STALE_S, ago, freshOf } from './view';
 
 // The pieces judges look at during the reveal: the walk timeline, who-acted badges, the latest stop
-// and the shared-state panel. Colours live in App.css (--kite, --claude, --stop).
+// and the shared-state panel. Colours live in App.css (--kite, --claude, --caregiver, --stop).
 
 export const isLive = (s: SourceStat) => s.ageS < STALE_S;
 const reducedMotion = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -15,6 +15,7 @@ export function Badge({ who }: { who: Who }) {
 const WHO_ROLE: Record<Who, string> = {
   kite: 'safety and route code, no AI',
   claude: 'judgment, answers, scene',
+  caregiver: 'messages from this screen',
 };
 
 /** Who acted on this walk, with counts: the legend and the tally in one line. */
@@ -22,7 +23,7 @@ export function WhoActed({ moments }: { moments: Moment[] }) {
   const count = (who: Who) => moments.filter(m => m.who === who).length;
   return (
     <ul className="who-acted" aria-label="Who acted on this walk">
-      {(['kite', 'claude'] as Who[]).map(who => (
+      {(['kite', 'claude', 'caregiver'] as Who[]).map(who => (
         <li key={who}><Badge who={who} /> <b>{count(who)}</b> <span className="muted">{WHO_ROLE[who]}</span></li>
       ))}
     </ul>
@@ -75,14 +76,15 @@ export function Timeline({ moments, walkStart, walkEnd, focusId, onPick }: {
   }, [focusId]);
 
   const stops = moments.filter(m => m.kind === 'stop').length;
+  const helps = moments.filter(m => m.kind === 'help').length;
   const t0 = walkStart ?? moments[0]?.t ?? 0;
   const t1 = Math.max(walkEnd ?? 0, moments[moments.length - 1]?.t ?? 0, t0 + 1000);
   const frac = (t: number) => Math.min(100, Math.max(0, ((t - t0) / (t1 - t0)) * 100));
-  // Label stops on the ribbon, skipping a label that would overlap the previous one.
+  // Label stops and help requests on the ribbon, skipping a label that would overlap the previous one.
   const labelled = new Set<string>();
   let lastLabel = -Infinity;
   for (const m of moments) {
-    if (m.kind === 'stop' && frac(m.t) - lastLabel >= 7) { labelled.add(m.id); lastLabel = frac(m.t); }
+    if ((m.kind === 'stop' || m.kind === 'help') && frac(m.t) - lastLabel >= 7) { labelled.add(m.id); lastLabel = frac(m.t); }
   }
 
   return (
@@ -92,13 +94,14 @@ export function Timeline({ moments, walkStart, walkEnd, focusId, onPick }: {
         {moments.length > 0 && (
           <span className="tally">
             <b className={stops ? 'stop-text' : ''}>{plural(stops, 'stop')}</b>
+            {helps > 0 && <> · <b className="stop-text">{plural(helps, 'help request')}</b></>}
             {' · '}{plural(moments.length, 'key moment')}{walkStart != null && <> over {offset(t1, t0).slice(1)}</>}
           </span>
         )}
         {moments.length > 0 && <WhoActed moments={moments} />}
       </div>
       {moments.length === 0 ? (
-        <p className="muted timeline-empty">No key moments yet. Stops, hazards and Claude's calls show up here as the walk happens.</p>
+        <p className="muted timeline-empty">No key moments yet. Stops, hazards, Claude's calls and dashboard messages show up here as the walk happens.</p>
       ) : (
         <>
           {/* The whole walk at a glance; the cards below are the keyboard and screen reader route. */}
@@ -108,7 +111,7 @@ export function Timeline({ moments, walkStart, walkEnd, focusId, onPick }: {
               <button key={m.id} type="button" tabIndex={-1} title={`${KIND_LABEL[m.kind]}: ${m.text}`}
                 className={`tick k-${m.kind} w-${m.who} ${m.id === focusId ? 'on' : ''}`} style={{ left: `${frac(m.t)}%` }}
                 onClick={() => onPick(m.id === focusId ? undefined : m.id)}>
-                {labelled.has(m.id) && <span className="tick-label">Stop</span>}
+                {labelled.has(m.id) && <span className="tick-label">{m.kind === 'stop' ? 'Stop' : 'Help'}</span>}
               </button>
             ))}
             <span className="ribbon-end start">+0:00</span>

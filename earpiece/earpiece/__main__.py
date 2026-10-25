@@ -76,10 +76,12 @@ def cmd_run(a) -> int:
 
     app.speaker.on_spoken = on_spoken
     if a.spacetime or cfg.net.spacetime_enabled:
-        from .spacetime import SpacetimeBridge
+        from .spacetime import CaregiverInbox, SpacetimeBridge
         app.bridges.append(SpacetimeBridge(cfg.net.spacetime_host, cfg.net.spacetime_db,
                                            source="earpiece", log=_log))
     app.start(prewarm=not a.no_prewarm)
+    if a.spacetime or cfg.net.spacetime_enabled:
+        CaregiverInbox(app.handle, cfg.net.spacetime_host, cfg.net.spacetime_db, log=_log)
     if not a.no_stem:
         app.gestures.enable_stem()
 
@@ -213,7 +215,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--udp-port", type=int, default=5010)
     r.add_argument("--ws-port", type=int, default=5011)
     r.add_argument("--no-judgment", action="store_true", help="turn off the Claude judgment layer (also KITE_JUDGMENT=0)")
-    r.add_argument("--spacetime", action="store_true", help="mirror events to SpacetimeDB (SPACETIME_HOST)")
+    r.add_argument("--spacetime", action="store_true", help="mirror events to SpacetimeDB (SPACETIME_HOST) and speak messages typed on the dashboard")
     r.add_argument("--no-prewarm", action="store_true", help="skip the phrase and cue warm-up (test runs: "
                    "no Cartesia calls for phrases that are not cached yet)")
     rr = sub.add_parser("render", help="render a scenario or a JSONL timeline to a WAV file")
