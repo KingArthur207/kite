@@ -102,6 +102,51 @@ def _cb_write_requests(self, peripheral_manager, requests):
     peripheral_manager.respondToRequest_withResult_(requests[0], 0)     # 0 = CBATTErrorSuccess
 
 
+def _patch_winrt() -> None:
+    """Two bless WinRT bugs that stop the receiver before it can advertise.
+
+    bless opens the radio's device node on every server, only so it can rename the adapter when
+    name_overwrite is True. This computer's adapter is not that node, so the open fails. Kite leaves
+    the radio's name alone, so skip the open.
+
+    bless then waits forever for advertising to reach Started. When Windows aborts it, the receiver
+    sits there with no line of output. Wait a few seconds and raise instead."""
+    import bless.backends.winrt.server as winrt
+    from winrt.windows.devices.bluetooth.genericattributeprofile import (
+        GattServiceProviderAdvertisingParameters,
+    )
+
+    class _UnusedAdapter:
+        def set_local_name(self, _name: str) -> None:
+            return None
+
+    winrt.BLEAdapter = lambda: _UnusedAdapter()
+
+    async def start(self, **_kwargs):
+        if self._name_overwrite:
+            self._adapter.set_local_name(self.name)
+        adv = GattServiceProviderAdvertisingParameters()
+        adv.is_discoverable = True
+        adv.is_connectable = True
+        for service in self.services.values():
+            provider = service.service_provider
+            if provider is None:
+                raise RuntimeError("Bluetooth service was not created")
+            provider.start_advertising(adv)
+        self._advertising = True
+        if self._advertising_started.wait(3):
+            return
+        status = next(
+            (service.service_provider.advertisement_status
+             for service in self.services.values() if service.service_provider is not None),
+            None)
+        raise RuntimeError(
+            f"Windows aborted Bluetooth advertising (status {getattr(status, 'name', status)}). "
+            "The phone can be paired and still not see Kite: this radio will not publish the service.")
+
+    winrt.BlessServerWinRT.start = start
+
+
 def _patch_corebluetooth(server, handlers: GattHandlers) -> None:
     """Swap in _cb_write_requests (PyObjC replaces the Objective-C method on assignment) and route the delegate's
     writes straight to handlers.write with the central. Contained here; other backends are untouched.
@@ -119,6 +164,8 @@ async def build_server(handlers: GattHandlers, name: str = ADVERTISED_NAME, serv
     """A bless server with Kite's service, not yet started. server_cls is injectable for tests."""
     if server_cls is None:
         from bless import BlessServer as server_cls
+        if sys.platform == "win32":
+            _patch_winrt()
     from bless import GATTAttributePermissions, GATTCharacteristicProperties
 
     server = server_cls(name=name, loop=asyncio.get_running_loop())
@@ -180,8 +227,12 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
         advertising = await server.is_advertising()
     except Exception as e:
         printer.log(f"[phone] could not start the Bluetooth peripheral: {type(e).__name__}: {e}")
-        printer.log("        macOS: allow Bluetooth for this terminal app in System Settings > Privacy & Security > "
-                    "Bluetooth, and check that Bluetooth is on.")
+        if sys.platform == "win32":
+            printer.log("        Windows: Bluetooth is on, but advertising the Kite service was aborted. "
+                        "Pairing the phone in Settings does not send GPS.")
+        else:
+            printer.log("        macOS: allow Bluetooth for this terminal app in System Settings > Privacy & Security > "
+                        "Bluetooth, and check that Bluetooth is on.")
         return 1
     printer.log(f"[phone] {'advertising' if advertising else 'started (advertising not confirmed)'} {args.name!r}, "
                 f"service {SERVICE_UUID}")

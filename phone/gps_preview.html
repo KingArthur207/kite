@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phone GPS</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    body { margin: 0; font: 16px/1.45 system-ui, sans-serif; background: #f7f6f3; color: #1c1917; }
+    main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 1.4rem; font-weight: 600; margin: 0 0 8px; }
+    p.lead { margin: 0 0 20px; max-width: 62ch; }
+    .status { font-weight: 600; margin: 0 0 16px; }
+    .status.live { color: #0a7a32; }
+    .status.stale { color: #9a3412; }
+    .status.wait { color: #555; }
+    dl { display: grid; grid-template-columns: 9rem 1fr; gap: 6px 12px; margin: 0 0 20px; }
+    dt { color: #57534e; }
+    dd { color: #1c1917; }
+    dd { margin: 0; font-variant-numeric: tabular-nums; }
+    #map { height: 420px; border: 1px solid #ccc; }
+    pre { overflow: auto; padding: 12px; background: #fff; color: #1c1917; font-size: 13px; border: 1px solid #e7e5e4; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Phone GPS</h1>
+    <p class="lead">Eddy’s phone sends its location over Bluetooth to the UNO Q. The board writes that fix to SpacetimeDB. This page reads that row over the internet, once a second.</p>
+    <p id="status" class="status wait">Loading the latest row…</p>
+    <dl>
+      <dt>Source</dt><dd id="source">—</dd>
+      <dt>Latitude</dt><dd id="lat">—</dd>
+      <dt>Longitude</dt><dd id="lng">—</dd>
+      <dt>Accuracy</dt><dd id="acc">—</dd>
+      <dt>Age</dt><dd id="age">—</dd>
+    </dl>
+    <div id="map" role="region" aria-label="Map of the newest phone position"></div>
+    <h2>Latest row</h2>
+    <pre id="raw">—</pre>
+  </main>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const HOST = "https://maincloud.spacetimedb.com";
+    const DB = "kite-sync-pl6rp";
+    const QUERY = "SELECT * FROM latest WHERE type = 'position'";
+    const map = L.map("map").setView([37.87, -122.26], 14);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+    let marker = null;
+
+    function ageOf(micros) {
+      const sec = (Array.isArray(micros) ? micros[0] : micros) / 1e6;
+      return (Date.now() / 1000) - sec;
+    }
+    function fmtAge(s) {
+      if (!Number.isFinite(s)) return "—";
+      if (s < 90) return Math.max(0, s).toFixed(0) + " s ago";
+      if (s < 3600) return Math.round(s / 60) + " min ago";
+      return (s / 3600).toFixed(1) + " h ago";
+    }
+    function setStatus(text, kind) {
+      const el = document.getElementById("status");
+      el.textContent = text;
+      el.className = "status " + kind;
+    }
+    async function tick() {
+      let body;
+      try {
+        const res = await fetch(HOST + "/v1/database/" + DB + "/sql", { method: "POST", body: QUERY });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        body = await res.json();
+      } catch (e) {
+        setStatus("Could not reach SpacetimeDB. " + e.message, "stale");
+        return;
+      }
+      const names = body[0].schema.elements.map(e => e.name.some);
+      const rows = body[0].rows
+        .map(row => Object.fromEntries(names.map((n, i) => [n, row[i]])))
+        .filter(d => String(d.source || "").startsWith("phone"));
+      if (!rows.length) {
+        setStatus("No phone position in the database yet.", "wait");
+        document.getElementById("raw").textContent = "no phone row";
+        return;
+      }
+      rows.sort((a, b) => ageOf(a.t) - ageOf(b.t));
+      const row = rows[0];
+      const fix = JSON.parse(row.payload);
+      const age = ageOf(row.t);
+      const live = age < 20;
+      setStatus(live ? "Live. A fix arrived in the last 20 seconds." : "Stored, but not live. Last fix is old.", live ? "live" : "stale");
+      document.getElementById("source").textContent = row.source;
+      document.getElementById("lat").textContent = Number(fix.lat).toFixed(6);
+      document.getElementById("lng").textContent = Number(fix.lng).toFixed(6);
+      document.getElementById("acc").textContent = fix.accuracy == null ? "—" : "±" + Number(fix.accuracy).toFixed(1) + " m";
+      document.getElementById("age").textContent = fmtAge(age);
+      document.getElementById("raw").textContent = JSON.stringify({ key: row.key, type: row.type, source: row.source, t: row.t, payload: fix }, null, 2);
+      const at = [fix.lat, fix.lng];
+      if (!marker) {
+        marker = L.circleMarker(at, { radius: 9, color: "#0a7a32", weight: 2, fillOpacity: 0.85 }).addTo(map);
+        map.setView(at, 17);
+      } else {
+        marker.setLatLng(at);
+      }
+    }
+    tick();
+    setInterval(tick, 2000);
+  </script>
+</body>
+</html>
