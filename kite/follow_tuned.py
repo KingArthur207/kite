@@ -507,6 +507,29 @@ def load_model(path: str | Path, **overrides) -> TunedCfg:
     return cfg
 
 
+def model_names() -> list[str]:
+    """The model files in MODEL_DIR (kite/fly/data/behind), by name."""
+    return sorted(q.stem for q in MODEL_DIR.glob("*.json"))
+
+
+def resolve_model(name: str | Path) -> Path:
+    """A model by name in MODEL_DIR ("v3b-joint", with or without .json) or a path to a model file."""
+    p = Path(name)
+    for cand in (p, MODEL_DIR / p.name, MODEL_DIR / f"{p.name}.json"):
+        if cand.is_file():
+            return cand
+    raise FileNotFoundError(f"no follow model {str(name)!r}: one of {', '.join(model_names()) or 'none'} "
+                            f"({MODEL_DIR}), or a path to a model file")
+
+
+def app_follow_cfg(model: str | Path, **app) -> TunedCfg:
+    """run/app.py --model: the model's follow settings with the app's own geometry and safety settings applied last
+    (distance_m, altitude_m, person_height_m, the altitude band, orbit_gain, video_lag_s), checked."""
+    cfg = load_model(resolve_model(model), **app)
+    cfg.check()
+    return cfg
+
+
 def model_governor(path: str | Path) -> dict:
     """A model file's governor requirement ({} when it has none): "needs_max_rc", the SafetyCfg.max_rc it needs to
     fly as trained (required_max_rc), and "trained_max_rc", the governor's max_rc in training."""
