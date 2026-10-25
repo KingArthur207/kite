@@ -2,7 +2,6 @@
 
     python run/epic.py                 # take off and follow; YOLO obstacle overlay on the picture
     python run/epic.py --dry-run --seg # on the table, with segmentation on as well
-    python run/epic.py --voice         # also take commands by voice: "kite take off" (run/voice.py)
 
 Takeoff, follow, land and e are run/app.py. The drone camera, the person lock and the yaw steering are the
 pilot's, and nothing in the camera processing writes them. BODYCAM, DRONE VIEW, YOLO and Segmentation are the
@@ -296,11 +295,6 @@ def build_parser():
     parser.add_argument("--no-yolo", action="store_true",
                         help="start with the pane's YOLO obstacle overlay off")
     parser.add_argument("--device", default="", help="torch device for the pane's models (default: cpu)")
-    parser.add_argument("--voice", action="store_true", help="voice commands from the AirPods microphone through "
-                        "Cartesia Ink: 'kite take off', 'kite land', 'kite take me to ...' are typed into the console "
-                        "once the drone is ready (run/voice.py). Off by default")
-    parser.add_argument("--voice-mic", default="airpods", help="with --voice: microphone name to look for "
-                        "(default: airpods; python run/voice.py --list shows them)")
     return parser
 
 
@@ -326,15 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     window.log(f"{'DRY RUN: nothing reaches the motors. ' if args.dry_run else ''}follow at {args.height:.2f} m, "
                f"{args.behind:.1f} m behind, steering: {args.yaw}", "info")
     window.log("camera processing is the picture only: it does not steer", "info")
-    if not args.voice:
-        return window.run()
-    from voice import attach
-
-    voice = attach(window, args.voice_mic)
-    try:
-        return window.run()
-    finally:
-        voice.stop()
+    return window.run()
 
 
 if __name__ == "__main__":
