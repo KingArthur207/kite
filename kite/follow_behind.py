@@ -18,8 +18,9 @@ Perception, every new frame (YOLO pose: people + 17 COCO keypoints):
     SimpleTracker   track ids across frames: IoU >= 0.2, or a centre jump < 15 % of the diagonal between consecutive
                     frames with a similar size
     TargetLock      ONE person: the largest; confirmed by 3 hits in the detector's last 5 runs; never jumps to another
-                    person while the locked one is tracked; lost after 1.5 s unseen (then prefers someone near where
-                    they were), released after 4.5 s (then anyone can be locked)
+                    person while the locked one is tracked, nor during a missed frame or two (only a box practically
+                    where they were); lost after 1.5 s unseen (then someone near where they were), released after 4.5 s
+                    (then the largest person is locked again)
     PersonEstimator range (horizontal distance), cues fused by their expected errors in log space:
                       full_height  whole body in frame: height prior
                       head_elev    top of the head visible and the altitude known: (altitude - person height) /
@@ -40,8 +41,10 @@ FollowBehind, every fresh frame with the locked person:
              away at their speed right away
     up/down  holds altitude_m (above their head)
     lateral  orbits around them when they turn (facing_deg != 0), so the drone ends up behind them
-Not seen: keep the last command 0.35 s, hold until 1 s, turn toward where they were last seen until 20 s, hover. Lost
-while close (they walk under the camera): back off to the side away from them and climb, up to 2.5 s.
+Not seen: keep the last command 0.35 s (a missed frame or two changes nothing); until 1.5 s (missing for a moment:
+a dropped detection) keep turning the way it was turning and creep forward at 0.1 m/s if they were at or beyond the
+follow distance; then turn toward where they were last seen until 20 s, hover. Lost while close (they walk under the
+camera), after those 0.35 s: back off to the side away from them and climb, up to 2.5 s.
 
 rc signs as everywhere in kite: +lr right, +fb forward, +ud up, +yaw clockwise. Every command goes through the
 SafetyGovernor.
@@ -99,6 +102,11 @@ class BehindCfg:
     min_range_m: float = 0.55  # the most conservative distance cue below this: back off (and never approach)
     max_box_width_frac: float = 0.75  # person box wider than this fraction of the frame: back off
     search_yaw_rc: int = 20  # yaw speed when the person is lost
+    # a person missing for a moment (a dropped detection, a missed frame): until missing_s, keep turning the way the
+    # drone was turning to keep them centred (at most search_yaw_rc) and creep forward at creep_rc so a drone that is
+    # falling behind does not lose them; the creep only when they were at or beyond the follow distance and not close
+    missing_s: float = 1.5  # = lost_after_s: after this the lock counts them as lost and the search turn starts
+    creep_rc: int = 10  # ~0.1 m/s
     # who decides the yaw stick while the person is in view: "fly" (the fruit fly connectome controller below, as
     # flown) or "pid" (yaw_gain / yaw_deadband_deg above). Distance, altitude, orbit and safety are unchanged.
     steering: str = "fly"
@@ -467,6 +475,18 @@ class TargetLock:
         return self.select(repeated or cands)
 
     @staticmethod
+    def _dist(d: PersonDet, last: PersonDet) -> float:
+        return math.hypot(d.cx - last.cx, d.cy - last.cy)
+
+    @staticmethod
+    def _same_box(d: PersonDet, last: PersonDet) -> bool:
+        """Practically where the locked person just was (the tracker gave them a new id): overlapping, or a close
+        centre with a similar size. A neighbour standing beside them is not."""
+        small = max(min(last.w, last.h), 1.0)
+        ratio = min(d.area, last.area) / max(d.area, last.area, 1e-9)
+        return iou(d.bbox, last.bbox) >= 0.2 or (TargetLock._dist(d, last) < 0.5 * small and ratio > 0.5)
+
+    @staticmethod
     def _jumped(a: PersonDet, b: PersonDet) -> bool:
         size = max(a.w, a.h, 1.0)
         return math.hypot(b.cx - a.cx, b.cy - a.cy) > 2.0 * size
@@ -488,9 +508,19 @@ class TargetLock:
         cands = [d for d in detections if d.cls == self.cls]
         det = None
         if s.track_id is not None and not self._confirmed:
-            # not committed yet: pick again every frame, so a one-frame false blob cannot block the real target
-            # (tracks with repeated hits win over single sightings)
-            if cands:
+            if cands and self._needs_hits and s.last_det is not None:
+                # re-confirming the person we had (back under a new track id): stay with them, never switch to
+                # whoever is largest meanwhile
+                diag = math.hypot(*image_size)
+                mine = [d for d in cands if d.track_id == s.track_id] or [
+                    d for d in cands if self._same_box(d, s.last_det)
+                    or (s.lost and self._dist(d, s.last_det) < self.relock_radius_frac * diag)]
+                if mine:
+                    det = min(mine, key=lambda d: self._dist(d, s.last_det))
+                    s.track_id = det.track_id
+            elif cands:
+                # not committed yet: pick again every frame, so a one-frame false blob cannot block the real target
+                # (tracks with repeated hits win over single sightings)
                 det = self._pick(cands)
                 if det.track_id != s.track_id:
                     s.track_id = det.track_id
@@ -503,23 +533,27 @@ class TargetLock:
                 expired = tr is None
                 brief = tr is None or len(tr.seen_frames) < self.confirm_hits
                 repeated = [d for d in cands if self._hits_ok(d.track_id)]
-                size = max(s.last_det.w, s.last_det.h, 1.0)
                 diag = math.hypot(*image_size)
 
                 def dist(d):
-                    return math.hypot(d.cx - s.last_det.cx, d.cy - s.last_det.cy)
+                    return self._dist(d, s.last_det)
 
-                # re-attach quickly only very close by; after a real loss, anywhere near where it was
-                radius = self.relock_radius_frac * diag if s.lost else 3.0 * size
-                near = [d for d in cands if dist(d) < radius]
+                # a missed frame or two (not lost yet, our track still alive): never another person, only a box
+                # practically where they were. After a real loss, or once our track is gone: someone near where
+                # they were (relock_radius_frac of the diagonal), never anyone further; after 3 x lost_after_s the
+                # lock is released below and the largest person is picked again
+                if s.lost or expired:
+                    near = [d for d in cands if dist(d) < self.relock_radius_frac * diag]
+                else:
+                    near = [d for d in cands if self._same_box(d, s.last_det)]
                 if brief and repeated:
                     # we had committed to something seen only briefly (a one-frame blob) while another candidate
                     # keeps being detected: take that one
                     det = self._pick(repeated)
-                elif near or expired:
-                    # back under a new track id near where we lost it, or our track is gone: take the nearest
-                    # candidate, and confirm it again with REPEATED hits (not one confident frame)
-                    det = min(near or cands, key=dist)
+                elif near:
+                    # back under a new track id where we lost it: take the nearest candidate, and confirm it again
+                    # with REPEATED hits (not one confident frame)
+                    det = min(near, key=dist)
                     self._confirmed, self._needs_hits = False, True
                 if det is not None:
                     s.track_id = det.track_id
@@ -911,6 +945,8 @@ class FollowBehind:
         self.cmd = (0, 0, 0, 0)
         self.last_seen_t: float | None = None
         self.last_bearing = 0.0
+        self.last_range: float | None = None  # the filtered range and its conservative bound when last seen
+        self.last_range_lo: float | None = None
 
     def start(self, ctx: Ctx) -> None:
         self.ranges.clear()
@@ -920,6 +956,7 @@ class FollowBehind:
         self.last_close = False
         self.cmd = (0, 0, 0, 0)
         self.last_seen_t = None
+        self.last_range = self.last_range_lo = None
         self.fly = None if self.yaw_source is not None else FlyYaw.for_behavior(self.c, "follow", self.c.distance_m,
                                                                                 self.warn)
         if self.yaw_source is not None:
@@ -1039,12 +1076,13 @@ class FollowBehind:
             lo = "?" if r_lo is None else f"{r_lo:.1f}"
             face = "?" if p.facing_deg is None else f"{p.facing_deg:+.0f}"
             self.status = f"person {rng} m (lo {lo}) bearing {p.bearing_deg:+.0f} facing {face}"
+            self.last_range, self.last_range_lo = r, r_lo
             ctx.drone.rc(*self.cmd)
             return RUNNING
         unseen = math.inf if self.last_seen_t is None else ctx.now - self.last_seen_t
-        if self.last_close and 0.2 < unseen < 2.5:
-            # lost while close: they are walking under the camera's view. Back off, step out of their path (away from
-            # the side they were on) and climb; never hover in their way
+        if self.last_close and 0.35 < unseen < 2.5:
+            # lost while close (longer than a missed frame or two): they are walking under the camera's view. Back
+            # off, step out of their path (away from the side they were on) and climb; never hover in their way
             side = -1 if self.last_bearing >= 0 else 1
             self.cmd = (side * c.max_rc_backoff, -c.max_rc_backoff, self._climb_rc(ctx), 0)
             ctx.drone.rc(*self.cmd)
@@ -1053,9 +1091,16 @@ class FollowBehind:
             yaw = self.cmd[3] if self.fly is None else int(clamp(self.fly.yaw(ctx.now, fallback=self.cmd[3]),
                                                                  c.max_rc_yaw))
             ctx.drone.rc(*self.cmd[:2], ud, yaw)
-        elif unseen < 1.0:
-            ctx.drone.rc(0, 0, ud, 0)
-            self.status = "person briefly lost: holding"
+        elif unseen < c.missing_s:
+            # missing for a moment: keep looking where they were (the turn the drone had, at most the search speed;
+            # the fly while it still predicts them) and creep forward in case the drone is falling behind
+            yaw = clamp(self.cmd[3], c.search_yaw_rc)
+            if self.fly is not None and self.fly.target_valid:
+                yaw = clamp(self.fly.yaw(ctx.now, fallback=yaw), c.max_rc_yaw)
+            creep = (self.last_range is not None and self.last_range >= c.distance_m - c.dist_deadband_m
+                     and self.last_range_lo is not None and self.last_range_lo > c.min_range_m + 0.25)
+            ctx.drone.rc(0, c.creep_rc if creep else 0, ud, int(yaw))
+            self.status = "person missing: looking where they were" + (", creeping forward" if creep else "")
         elif unseen < 20.0 or self.last_seen_t is None:
             direction = 1 if self.last_bearing >= 0 else -1
             ctx.drone.rc(0, 0, ud, direction * c.search_yaw_rc)

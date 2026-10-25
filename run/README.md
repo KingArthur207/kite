@@ -33,8 +33,10 @@ capped at 35, orbit off (`--orbit` turns it on).
 2. **Follow.** It locks onto the largest person in view (you) and holds `--behind` behind you: it turns toward you,
    moves toward you only when every distance cue says it is safe, and backs off when you come closer. It holds its
    height above the floor the whole time: the downward sensor while it agrees with the takeoff height, else that.
-3. **Lost.** It holds, then turns toward where it last saw you. After 20 s it drops to just below head height and turns
-   30° at a time to find you; not found after a full turn, it says so and hovers until you type `follow`.
+3. **Lost.** Missing for a moment (a dropped detection), it keeps looking where you were, creeping forward slowly
+   in case it is falling behind, and never switches to someone else. Then it turns toward where it last saw you.
+   After 20 s it drops to just below head height and turns 30° at a time to find you; not found after a full turn,
+   it says so and hovers until you type `follow`.
 
 What the drone says ("Ready.", "Landing.", "I can't see you. ...") shows in the console; `--speak` also says it out
 loud.
