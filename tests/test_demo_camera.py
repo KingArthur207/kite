@@ -8,7 +8,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "run"))
 
-from demo import Demo, camera_order, choose_camera, console_lines, dshow_video_names  # noqa: E402
+import demo  # noqa: E402
+from demo import Demo, camera_order, choose_camera, console_lines, dshow_video_names, meter_for, switch_word  # noqa: E402
 
 LISTING = """
 [dshow @ 0000019289f56080] "USB2.0 FHD UVC WebCam" (video)
@@ -64,3 +65,67 @@ def test_flight_words_do_not_leave_the_camera_window():
     assert demo.snap.state == "emergency"
     assert ("info", "this window is the camera") in logs
     assert not hasattr(demo, "drone") or demo.drone is None
+
+
+def _demo(logs, **flags):
+    args = type("A", (), {"camera": "", "device": "", **flags})()
+    return Demo(args, lambda text, kind="info": logs.append((kind, text)))
+
+
+def test_switch_words():
+    assert switch_word("seg") == ("seg", None)
+    assert switch_word("segmentation off") == ("seg", False)
+    assert switch_word("yolo on") == ("yolo", True)
+    assert switch_word("yolo maybe") is None
+    assert switch_word("status") is None
+    assert meter_for(True, True) == "seg+yolo"
+    assert meter_for(False, True) == "yolo"
+    assert meter_for(True, False) == "seg"
+
+
+def test_the_window_opens_with_yolo_only():
+    demo_ = _demo([])
+    assert [(t["key"], t["on"]) for t in demo_.toggles()] == [("yolo", True), ("seg", False)]
+    demo_ = _demo([], seg=True, no_yolo=True)
+    assert [(t["key"], t["on"]) for t in demo_.toggles()] == [("yolo", False), ("seg", True)]
+
+
+def test_segmentation_loads_once_in_the_background(monkeypatch):
+    calls = []
+    monkeypatch.setattr(demo, "load_segmentation", lambda device="": calls.append(device) or ("seg", "lights"))
+    logs = []
+    demo_ = _demo(logs)
+    demo_.send("seg")
+    demo_._loader.join(timeout=5)
+    assert calls == [""]
+    assert demo_._seg_models == ("seg", "lights")
+    assert demo_.toggles()[1] == {"key": "seg", "label": "Segmentation", "on": True, "note": ""}
+    demo_.toggle("seg")
+    demo_.toggle("seg")
+    assert calls == [""]
+    assert ("info", "segmentation on") in logs
+
+
+def test_a_failed_load_shows_on_the_button(monkeypatch):
+    def broken(device=""):
+        raise FileNotFoundError("no weights")
+
+    monkeypatch.setattr(demo, "load_segmentation", broken)
+    logs = []
+    demo_ = _demo(logs)
+    demo_.toggle("seg", True)
+    demo_._loader.join(timeout=5)
+    assert demo_.toggles()[1]["note"] == "unavailable"
+    assert ("error", "segmentation unavailable: no weights") in logs
+
+
+def test_raw_frames_come_back_when_guidance_is_off():
+    demo_ = _demo([])
+    demo_._publish("painted", True)
+    demo_._publish("raw", False)
+    assert demo_.last_frame.image == "painted"
+    demo_.send("yolo off")
+    demo_._publish("raw", False)
+    assert demo_.last_frame.image == "raw"
+    demo_._publish("late paint", True)
+    assert demo_.last_frame.image == "raw"

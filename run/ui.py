@@ -73,6 +73,13 @@ def draw_people(img, seen, follow) -> None:
         cv2.putText(img, label, (x1 + 6, y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (24, 24, 26), 1, cv2.LINE_AA)
 
 
+def toggle_view(t: dict) -> tuple[str, bool]:
+    """A pilot toggle dict as (button text, on): "Segmentation (loading)", True."""
+    label = str(t.get("label") or t.get("key") or "")
+    note = str(t.get("note") or "").strip()
+    return (f"{label} ({note})" if note else label), bool(t.get("on"))
+
+
 def _dpi_aware() -> None:
     """Windows: sharp text with display scaling (must run before the Tk window exists)."""
     if sys.platform == "win32":
@@ -113,6 +120,8 @@ class App:
         self.hint_text = hint or "destination: place  ·  find me …  ·  takeoff · land · e"
         self.close_note = close_note
         self.shutdown_note = shutdown_note
+        self._toggle_row = None  # the pilot's feature buttons, made on the first refresh that finds toggles()
+        self._toggle_btns: dict[str, tk.Label] = {}
         self._build()
         self.pilot = pilot_factory(self.log)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -137,6 +146,7 @@ class App:
 
         cam_panel, cam_head = self._panel(top, "camera")
         cam_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        self._cam_head = cam_head
 
         map_panel, _ = self._panel(top, "map")
         map_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
@@ -274,12 +284,48 @@ class App:
         if s.link_error:
             bits.append("WI-FI DOWN")
         self.status.configure(text="   ".join(bits), fg=ERROR if s.link_error else FAINT)
+        self._show_toggles(p)
         self._show_gps()
         self._show_route()
         f = p.last_frame
         if f is not None and f.seq != self._shown_seq:  # redraw only when a new frame arrived
             self._shown_seq = f.seq
             self._show_frame(f.image)
+
+    def _show_toggles(self, p):
+        """Pills in the camera header for a pilot with toggles() (the webcam demo); the drone pilot has none."""
+        fn = getattr(p, "toggles", None)
+        if not callable(fn):
+            return
+        try:
+            items = list(fn())
+        except Exception:  # quiet: try again next refresh
+            return
+        for t in items:
+            key = str(t.get("key") or "")
+            if not key:
+                continue
+            text, on = toggle_view(t)
+            btn = self._toggle_btns.get(key)
+            if btn is None:
+                if self._toggle_row is None:
+                    self._toggle_row = tk.Frame(self._cam_head, bg=PANEL)
+                    self._toggle_row.pack(side="left", padx=(12, 0))
+                btn = tk.Label(self._toggle_row, text=text, bg=PANEL, fg=FAINT, font=(self.ui_font, 10),
+                               padx=8, pady=1, cursor="hand2", highlightthickness=1, highlightbackground=BORDER)
+                btn.pack(side="left", padx=(0, 6))
+                btn.bind("<Button-1>", lambda e, k=key: self._click_toggle(k))
+                self._toggle_btns[key] = btn
+            look = (dict(bg=ACCENT, fg=BG, highlightbackground=ACCENT) if on
+                    else dict(bg=PANEL, fg=MUTED, highlightbackground=BORDER))
+            if btn.cget("text") != text or btn.cget("bg") != look["bg"]:
+                btn.configure(text=text, **look)
+
+    def _click_toggle(self, key: str):
+        try:
+            self.pilot.toggle(key)
+        except Exception as e:
+            self.log(f"toggle {key}: {e}", "error")
 
     def _show_frame(self, image):
         w, h = self.cam.winfo_width(), self.cam.winfo_height()

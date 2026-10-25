@@ -45,6 +45,8 @@ class ColumnScore:
     score: float
     adjusted: float
     selectable: bool
+    obstacle: float = 0.0
+    obstacle_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,8 @@ class Cue:
     hazards: tuple[str, ...] = ()
     columns: tuple[ColumnScore, ColumnScore, ColumnScore] | None = None
     wearer_excluded: bool = False
+    obstacle: str = ""
+    ground: bool = True
 
     @property
     def stop(self) -> bool:
@@ -76,6 +80,7 @@ class Cue:
                     "vehicles": col.vehicles,
                     "score": round(col.score, 3),
                     "selectable": col.selectable,
+                    "obstacle": round(col.obstacle, 3),
                 }
         return {
             "direction": self.direction,
@@ -87,6 +92,8 @@ class Cue:
             "hazards": list(self.hazards),
             "stop": self.stop,
             "wearer_excluded": self.wearer_excluded,
+            "obstacle": self.obstacle,
+            "ground": self.ground,
             "columns": columns,
         }
 

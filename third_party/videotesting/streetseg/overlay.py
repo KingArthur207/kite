@@ -13,25 +13,45 @@ _BANNER = 64
 
 def draw_overlay(
     bgr: np.ndarray,
-    labels: np.ndarray,
+    labels: np.ndarray | None,
     names: dict[int, str],
     boxes: list[Box],
     cue: Cue,
     role: str = "",
 ) -> np.ndarray:
+    """``labels=None`` (detector only) draws the plain frame, boxes and banner."""
     if bgr.ndim != 3 or bgr.shape[2] != 3:
         raise ValueError("expected a BGR frame")
     frame = bgr
-    if labels.shape[:2] != frame.shape[:2]:
-        labels = nearest_labels(labels, frame.shape[:2])
-    color = _colorize(labels, names)
-    out = frame.astype(np.float32) * 0.55 + color.astype(np.float32) * 0.45
-    out = np.clip(out, 0, 255).astype(np.uint8)
+    if labels is None:
+        out = frame.copy()
+    else:
+        if labels.shape[:2] != frame.shape[:2]:
+            labels = nearest_labels(labels, frame.shape[:2])
+        color = _colorize(labels, names)
+        out = frame.astype(np.float32) * 0.55 + color.astype(np.float32) * 0.45
+        out = np.clip(out, 0, 255).astype(np.uint8)
+    around = _gone_around(boxes, cue, frame.shape[1])
     for box in boxes:
-        _rectangle(out, box)
+        if box is around:
+            _rectangle(out, box, (0, 140, 255), 5)
+        else:
+            _rectangle(out, box)
     _banner(out, cue, role)
-    _legend(out, names)
+    if labels is not None:
+        _legend(out, names)
     return out
+
+
+def _gone_around(boxes: list[Box], cue: Cue, width: int) -> Box | None:
+    """The biggest center box with the label the cue steers around."""
+    if cue.reason != "obstacle" or not cue.obstacle:
+        return None
+    found = [
+        box for box in boxes
+        if box.label == cue.obstacle and box.xyxy[0] < 2 * width / 3 and box.xyxy[2] > width / 3
+    ]
+    return max(found, key=lambda box: box.area) if found else None
 
 
 def draw_chest(bgr: np.ndarray, boxes: list[Box], speech: str, stop: bool) -> np.ndarray:
@@ -83,15 +103,14 @@ def _colorize_loop(labels: np.ndarray, names: dict[int, str]) -> np.ndarray:
     return color
 
 
-def _rectangle(image: np.ndarray, box: Box) -> None:
+def _rectangle(image: np.ndarray, box: Box, color=None, t: int = 2) -> None:
     height, width = image.shape[:2]
     x1, y1, x2, y2 = (int(round(v)) for v in box.xyxy)
     x1, y1 = max(0, x1), max(_BANNER, y1)
     x2, y2 = min(width - 1, x2), min(height - 1, y2)
     if x2 <= x1 or y2 <= y1:
         return
-    color = _box_color(box)
-    t = 2
+    color = color or _box_color(box)
     image[y1:y1 + t, x1:x2] = color
     image[max(y1, y2 - t):y2, x1:x2] = color
     image[y1:y2, x1:x1 + t] = color

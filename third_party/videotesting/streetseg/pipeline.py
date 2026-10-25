@@ -5,6 +5,11 @@ at the size the source produced. It is not cropped and not stretched, and
 ``fx`` / ``fy`` are pixels in that frame. ``camera.role`` is ``drone`` or
 ``sim`` for the street view, and ``chest`` for close obstacles.
 
+The forward view has two switches. ``segment`` runs the segmenter (and the
+light reader) and steers by the ground it finds. ``obstacles`` makes every
+detector box something to go around. With ``segment`` off the detector runs
+alone and the ground is taken as walkable except where a box stands.
+
 Stops (blocked ground, a red or yellow light, a stop sign, something large
 and close) are said on the frame they appear. A new left, right, or straight
 has to hold for a few frames. A person cut off by the bottom edge is the
@@ -76,6 +81,8 @@ class Perception:
         hold_frames: int = 3,
         depth_stride: int = 4,
         parallel: bool = False,
+        segment: bool = True,
+        obstacles: bool = False,
     ):
         self.segmenter = segmenter
         self.detector = detector
@@ -96,6 +103,18 @@ class Perception:
         self.events: tuple[Event, ...] = ()
         self.cue = None
         self.boxes: list[Box] = []
+        self.segment = segment
+        self.obstacles = obstacles
+
+    def set_modes(self, segment: bool, obstacles: bool) -> None:
+        """Change what the forward view runs. A new mode starts its direction afresh."""
+        if (segment, obstacles) == (self.segment, self.obstacles):
+            return
+        self.segment = segment
+        self.obstacles = obstacles
+        self.hold = DirectionHold(self.hold.frames)
+        self._last = None
+        self._said = None
 
     def process(self, frame: np.ndarray, camera: Camera, pose: Pose) -> tuple[Event, ...]:
         if camera.role not in ("drone", "sim", "chest"):
@@ -114,10 +133,14 @@ class Perception:
             self._pool = None
 
     def _forward(self, frame: np.ndarray, camera: Camera, pose: Pose) -> list[Event]:
-        labels, detected, reading = self._views(frame)
-        if labels.shape[:2] != frame.shape[:2]:
-            raise ValueError("segmenter returned a different frame size")
-        names = _names(self.segmenter)
+        if self.segment and self.segmenter is not None:
+            labels, detected, reading = self._views(frame)
+            if labels.shape[:2] != frame.shape[:2]:
+                raise ValueError("segmenter returned a different frame size")
+            names = _names(self.segmenter)
+        else:
+            labels, names, reading = None, {}, None
+            detected = self.detector.predict(frame)
         boxes = [paint_signal(box, frame) for box in detected]
         if self.sign_detector is not None and not self.parallel:
             boxes.extend(paint_signal(box, frame) for box in self.sign_detector.predict(frame))
@@ -130,7 +153,9 @@ class Perception:
             boxes,
             cfg=replace(self.cfg, near_frac=frac),
             pedestrian=pedestrian,
-            crosswalk_pixels=crosswalk_in_band(labels, names, y0),
+            crosswalk_pixels=labels is not None and crosswalk_in_band(labels, names, y0),
+            obstacles=self.obstacles,
+            shape=frame.shape[:2],
         )
         held = self.hold.update(raw.direction)
         if held != raw.direction and self._last is not None and self._last.direction == held:

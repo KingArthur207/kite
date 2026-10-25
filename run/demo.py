@@ -1,6 +1,11 @@
-"""The kite window, with SegFormer-B0 on the webcam.
+"""The kite window, with YOLO26n and SegFormer-B0 on the webcam.
 
-    python run/demo.py
+    python run/demo.py              # YOLO obstacles only (fast)
+    python run/demo.py --seg        # segmentation on as well
+
+Two switches, the buttons on the camera pane or ``yolo`` and ``seg`` typed in the console:
+YOLO makes every detected object something to go around, and segmentation steers by the ground.
+Both on, the guidance reads both. Segmentation loads the first time it is turned on.
 
 The camera pane shows that overlay. The map and the console are the same window as
 ``python run/app.py``. This script does not open the drone, and ``run/app.py`` is unchanged.
@@ -83,23 +88,48 @@ def _vendor_path() -> None:
 
 
 def load_perception(device: str = ""):
-    """SegFormer-B0 (Mapillary) plus the detector and light reader the overlay draws."""
+    """YOLO26n on its own. ``load_segmentation`` adds SegFormer-B0 when it is turned on."""
     _vendor_path()
-    from streetseg.__main__ import _models
+    from streetseg.models import YoloDetector
+    from streetseg.pipeline import Perception, parallel_for_device
 
-    args = type("SegmentArgs", (), {})()
-    args.segmenter = "mapillary"
-    args.seg_weights = "segmentation/SegFormer_b0_Mapillary.pth"
-    args.sem_weights = "yolo26n-sem.pt"
-    args.det_weights = "yolo26n.pt"
-    args.no_lights = False
-    args.light_weights = "traffic_light_classification/resnet18-best.pth"
-    args.signs = False
-    args.sign_weights = ""
-    args.depth = False
-    args.device = device
-    args.imgsz = 640
-    return _models(args)
+    detector = YoloDetector("yolo26n.pt", imgsz=640, device=device or None, track=True)
+    detector.load()
+    return Perception(None, detector, parallel=parallel_for_device(device), segment=False, obstacles=True)
+
+
+def load_segmentation(device: str = ""):
+    """SegFormer-B0 (Mapillary) and the traffic-light reader the overlay draws."""
+    _vendor_path()
+    from streetseg.lights import TrafficLightClassifier, TrafficLightReader
+    from streetseg.mapillary_seg import MapillarySegFormer
+
+    segmenter = MapillarySegFormer("segmentation/SegFormer_b0_Mapillary.pth", device=device or None)
+    segmenter.load()
+    lights = TrafficLightReader(TrafficLightClassifier("traffic_light_classification/resnet18-best.pth", device=device or None))
+    lights.load()
+    return segmenter, lights
+
+
+def meter_for(seg: bool, yolo: bool) -> str:
+    """What the second fps number counts."""
+    if seg and yolo:
+        return "seg+yolo"
+    return "seg" if seg else "yolo"
+
+
+def switch_word(cmd: str) -> tuple[str, bool | None] | None:
+    """``seg``, ``yolo on``, ``segmentation off`` ... as (key, on); on is None for a flip."""
+    words = cmd.split()
+    if not words or len(words) > 2:
+        return None
+    key = {"seg": "seg", "segment": "seg", "segmentation": "seg", "yolo": "yolo", "detect": "yolo"}.get(words[0])
+    if key is None:
+        return None
+    if len(words) == 1:
+        return key, None
+    on = {"on": True, "off": False}.get(words[1])
+    return None if on is None else (key, on)
 
 
 def console_lines(events) -> tuple[str, ...]:
@@ -162,11 +192,11 @@ class Snapshot:
         self.link_error = None
         self.follow = ""
         self.yaw = ""
-        self.meter = "seg"
+        self.meter = "yolo"
 
 
 class Demo:
-    """Webcam in, segmentation overlay out. Quacks like the drone pilot the window already drives."""
+    """Webcam in, guidance overlay out. Quacks like the drone pilot the window already drives."""
 
     def __init__(self, args, log):
         self.args = args
@@ -181,7 +211,12 @@ class Demo:
         self._lock = threading.Lock()
         self._latest = None
         self._seq = 0
-        self._segmented = False
+        self._painted = False
+        self._seg_on = bool(getattr(args, "seg", False))
+        self._yolo_on = not getattr(args, "no_yolo", False)
+        self._seg_state = "off"  # off, loading, ready, failed
+        self._seg_models = None
+        self._loader: threading.Thread | None = None
         self._said: tuple[str, ...] = ()
         self._camera_name = ""
         self._size = ""
@@ -201,7 +236,11 @@ class Demo:
         if not cmd:
             return
         self.log(text.strip(), "sent")
-        if cmd in ("e", "emergency"):
+        switch = switch_word(cmd)
+        if switch is not None:
+            key, on = switch
+            self.toggle(key, on)
+        elif cmd in ("e", "emergency"):
             self._set_state("emergency")
             self.log("closing the camera", "warn")
             self._stop.set()
@@ -212,7 +251,55 @@ class Demo:
         elif cmd in ("takeoff", "land", "follow", "follow me", "hold", "resume", "stop", "come back", "cancel"):
             self.log("this window is the camera", "info")
         else:
-            self.log("status, or quit", "warn")
+            self.log("yolo, seg, status, or quit", "warn")
+
+    def toggles(self) -> list[dict]:
+        """The camera pane's buttons."""
+        notes = {"loading": "loading", "failed": "unavailable"}
+        return [
+            {"key": "yolo", "label": "YOLO", "on": self._yolo_on, "note": ""},
+            {"key": "seg", "label": "Segmentation", "on": self._seg_on, "note": notes.get(self._seg_state, "") if self._seg_on else ""},
+        ]
+
+    def toggle(self, key: str, on: bool | None = None) -> None:
+        """Turn YOLO or segmentation on or off (None flips). The frame loop picks it up."""
+        if key not in ("seg", "yolo"):
+            return
+        with self._lock:
+            now = not (self._seg_on if key == "seg" else self._yolo_on) if on is None else on
+            if key == "seg":
+                self._seg_on = now
+            else:
+                self._yolo_on = now
+            seg, yolo = self._seg_on, self._yolo_on
+            if not (seg or yolo):
+                self._painted = False
+        name = "segmentation" if key == "seg" else "YOLO"
+        self.log(f"{name} {'on' if now else 'off'}", "info")
+        if seg and self._seg_state in ("off", "failed"):
+            self._load_segmentation()
+        if not (seg or yolo):
+            self.log("guidance off: camera only", "info")
+
+    def _load_segmentation(self) -> None:
+        with self._lock:
+            if self._loader is not None and self._loader.is_alive():
+                return
+            self._seg_state = "loading"
+            self._loader = threading.Thread(target=self._load_seg_models, name="seg-load", daemon=True)
+        self._loader.start()
+
+    def _load_seg_models(self) -> None:
+        self.log("loading SegFormer-B0 ...", "info")
+        try:
+            models = load_segmentation(getattr(self.args, "device", "") or "")
+        except Exception as exc:
+            self._seg_state = "failed"
+            self.log(f"segmentation unavailable: {exc}", "error")
+            return
+        self._seg_models = models
+        self._seg_state = "ready"
+        self.log("segmentation ready", "info")
 
     def request_land(self) -> None:
         return None
@@ -234,7 +321,9 @@ class Demo:
         if self._size:
             bits.append(self._size)
         bits.append(f"video {self.snap.video_fps:.0f} fps")
-        bits.append(f"seg {self.snap.det_fps:.0f} fps")
+        bits.append(f"{meter_for(self._seg_on, self._yolo_on)} {self.snap.det_fps:.0f} fps")
+        bits.append(f"yolo {'on' if self._yolo_on else 'off'}")
+        bits.append(f"seg {self._seg_state if self._seg_on else 'off'}")
         return "  ".join(bits)
 
     def _rate(self, bucket: deque[float], now: float) -> float:
@@ -244,11 +333,14 @@ class Demo:
         bucket.append(now)
         return float(len(bucket))
 
-    def _publish(self, image, segmented: bool) -> None:
+    def _publish(self, image, painted: bool) -> None:
+        """A painted frame replaces the raw ones until guidance is turned off."""
         with self._lock:
-            if segmented:
-                self._segmented = True
-            elif self._segmented:
+            if painted:
+                if not (self._seg_on or self._yolo_on):
+                    return
+                self._painted = True
+            elif self._painted:
                 return
             self._seq += 1
             self.last_frame = Shown(image, self._seq)
@@ -312,36 +404,53 @@ class Demo:
         self._grabber = threading.Thread(target=self._grab, name="webcam", daemon=True)
         self._grabber.start()
         try:
-            self.log("loading SegFormer-B0 ...", "info")
+            self.log("loading YOLO26n ...", "info")
             self._perception = load_perception(getattr(self.args, "device", "") or "")
         except Exception as exc:
-            self.log(f"segmentation unavailable: {exc}", "error")
+            self.log(f"YOLO unavailable: {exc}", "error")
             while not self._stop.wait(0.2):
                 pass
             return
         if self._stop.is_set():
-            close = getattr(self._perception, "close", None)
-            if close is not None:
-                close()
+            self._close_perception()
             return
-        self.log("segmentation ready", "info")
+        self.log("YOLO ready", "info")
+        if self._seg_on:
+            self._load_segmentation()
         _vendor_path()
         from streetseg.camera import Pose
         from streetseg.sources import C270_DIAGONAL_FOV
 
         pose = Pose(WEBCAM_HEIGHT_M, WEBCAM_PITCH_DEG)
         camera = None
+        mode = None
         while not self._stop.is_set():
             frame = self._take_latest()
             if frame is None:
                 self._stop.wait(0.01)
+                continue
+            with self._lock:
+                seg, yolo = self._seg_on, self._yolo_on
+            if self._seg_models is not None and self._perception.segmenter is None:
+                self._perception.segmenter, self._perception.lights = self._seg_models
+            seg = seg and self._perception.segmenter is not None
+            if (seg, yolo) != mode:
+                mode = (seg, yolo)
+                self._perception.set_modes(seg, yolo)
+                self.snap.meter = meter_for(seg, yolo)
+                self._seg_times.clear()
+                self.snap.det_fps = 0.0
+                self._said = ()
+            if not (seg or yolo):
+                with self._lock:
+                    self._painted = False  # raw camera until something runs
                 continue
             if camera is None or camera.cx != frame.shape[1] / 2.0:
                 camera = camera_for(frame.shape, C270_DIAGONAL_FOV)
             try:
                 events = self._perception.process(frame, camera, pose)
             except Exception as exc:
-                self.log(f"segmentation frame failed: {exc}", "warn")
+                self.log(f"guidance frame failed: {exc}", "warn")
                 continue
             now = time.monotonic()
             self.snap.det_fps = self._rate(self._seg_times, now)
@@ -352,13 +461,18 @@ class Demo:
                 self._said = shown
                 for text in shown:
                     self.log(text, "info")
+        self._close_perception()
+
+    def _close_perception(self) -> None:
         close = getattr(self._perception, "close", None)
         if close is not None:
             close()
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python run/demo.py", description="kite window with SegFormer-B0 on the webcam")
+    parser = argparse.ArgumentParser(prog="python run/demo.py", description="kite window with YOLO26n and SegFormer-B0 on the webcam")
+    parser.add_argument("--seg", action="store_true", help="start with segmentation on (it loads in the background)")
+    parser.add_argument("--no-yolo", action="store_true", help="start with YOLO obstacle guidance off")
     parser.add_argument("--camera", default="", help="DirectShow name to open (default: the Logitech C270 if it is connected)")
     parser.add_argument("--device", default="", help="torch device for the models (default: cpu)")
     return parser
@@ -374,8 +488,8 @@ def main(argv: list[str] | None = None) -> int:
     app = App(
         lambda log: Demo(args, log),
         title="kite",
-        opening="starting: opening the camera and loading segmentation ...",
-        hint="status · quit",
+        opening="starting: opening the camera and loading YOLO ...",
+        hint="yolo · seg · status · quit",
         close_note="closing the camera ...",
         shutdown_note="closing the camera ...",
     )

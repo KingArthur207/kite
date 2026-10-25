@@ -19,6 +19,7 @@ from .camera import metric_distance
 from .labels import (
     SUDDEN_LABELS,
     is_crosswalk,
+    is_light,
     is_person,
     is_stop_sign,
     is_vehicle,
@@ -49,6 +50,8 @@ class FuseConfig:
     depth_larger_is_closer: bool = True
     sudden_height: float = 0.38
     sudden_depth_percentile: float = 72.0
+    obstacle_cover: float = 0.12
+    obstacle_sliver_penalty: float = 0.1
 
 
 @dataclass(frozen=True)
@@ -64,7 +67,7 @@ class Obstacle:
 
 
 def assess(
-    labels: np.ndarray,
+    labels: np.ndarray | None,
     names: dict[int, str],
     boxes: list[Box],
     body_boxes: list[Box] | None = None,
@@ -74,12 +77,26 @@ def assess(
     camera=None,
     pedestrian: str | None = None,
     crosswalk_pixels: bool = False,
+    obstacles: bool = False,
+    shape: tuple[int, int] | None = None,
 ) -> Cue:
+    """One walking decision.
+
+    ``obstacles`` turns detector boxes into ground the walker goes around.
+    ``labels=None`` (detector only) needs ``shape``; the ground is then unknown
+    and taken as walkable except under obstacle boxes.
+    """
     cfg = cfg or FuseConfig()
-    if labels.ndim != 2:
-        raise ValueError("labels must be an HxW class map")
-    height, width = labels.shape
-    columns, wearer = _score_columns(labels, names, boxes, cfg)
+    ground = labels is not None
+    if ground:
+        if labels.ndim != 2:
+            raise ValueError("labels must be an HxW class map")
+        height, width = labels.shape
+    else:
+        if shape is None:
+            raise ValueError("labels=None needs shape=(height, width)")
+        height, width = int(shape[0]), int(shape[1])
+    columns, wearer = _score_columns(labels, names, boxes, cfg, obstacles, (height, width))
     pick, diverted = _pick(columns, cfg)
     crosswalk = any(is_crosswalk(box.label) for box in boxes) or crosswalk_pixels
     if pedestrian == "pedestrian-green":
@@ -132,9 +149,21 @@ def assess(
         shown = _column_named(columns, "center" if direction == "straight" else direction)
         crowd = _crowd(shown)
 
+    obstacle = ""
+    center = columns[1]
+    # Only after every stop rule above, so signals, signs, sudden and the
+    # pedestrian light keep priority.
+    if obstacles and center.obstacle >= cfg.obstacle_cover:
+        if direction in ("left", "right") and reason in ("clear", "crowd"):
+            reason = "obstacle"
+            obstacle = center.obstacle_label
+        elif direction == "stop" and reason == "blocked":
+            reason = "obstacle"
+            obstacle = center.obstacle_label
+
     speech = _speech(
         direction, reason, crowd, signal, crosswalk, sudden_label, sudden_side,
-        pedestrian=pedestrian,
+        pedestrian=pedestrian, obstacle=obstacle,
     )
     shown_signal = signal if signal in ("red", "yellow", "green", "none") else signal
     return Cue(
@@ -147,6 +176,8 @@ def assess(
         hazards=tuple(hazards),
         columns=columns,
         wearer_excluded=wearer is not None,
+        obstacle=obstacle,
+        ground=ground,
     )
 
 
@@ -173,22 +204,26 @@ def chest_view(boxes, depth, shape, camera, cfg: FuseConfig | None = None) -> Ob
     )
 
 
-def _score_columns(labels, names, boxes, cfg: FuseConfig):
-    height, width = labels.shape
+def _score_columns(labels, names, boxes, cfg: FuseConfig, obstacles: bool = False, shape=None):
+    height, width = labels.shape if labels is not None else shape
     y0 = int(height * cfg.near_frac)
     y0 = min(max(y0, 0), height - 1)
-    table = np.zeros(int(labels.max()) + 1, dtype=np.uint8)
-    for idx, name in names.items():
-        if idx < 0 or idx >= table.size:
-            continue
-        kind = ground_kind(name)
-        if kind == "walk":
-            table[idx] = _WALK
-        elif kind == "person":
-            table[idx] = _PERSON
-        elif kind == "block":
-            table[idx] = _BLOCK
-    cats = table[np.clip(labels, 0, table.size - 1)]
+    if labels is None:
+        # No class map: unknown ground counts as walkable.
+        cats = np.full((height, width), _WALK, dtype=np.uint8)
+    else:
+        table = np.zeros(int(labels.max()) + 1, dtype=np.uint8)
+        for idx, name in names.items():
+            if idx < 0 or idx >= table.size:
+                continue
+            kind = ground_kind(name)
+            if kind == "walk":
+                table[idx] = _WALK
+            elif kind == "person":
+                table[idx] = _PERSON
+            elif kind == "block":
+                table[idx] = _BLOCK
+        cats = table[np.clip(labels, 0, table.size - 1)]
     wearer = _wearer(boxes, width, height) if cfg.exclude_wearer else None
     if wearer is not None:
         x1, y1, x2, y2 = _clip_box(wearer, width, height)
@@ -197,8 +232,26 @@ def _score_columns(labels, names, boxes, cfg: FuseConfig):
         region = cats[y1:y2, x1:x2]
         region[region == _PERSON] = _WALK
 
-    near = cats[y0:]
+    found = [box for box in boxes if _is_obstacle(box, wearer)] if obstacles else []
+    mask = np.zeros((height, width), dtype=bool)
+    for box in found:
+        x1, y1, x2, y2 = _clip_box(box, width, height)
+        mask[max(y0, y1):y2, x1:x2] = True
     edges = (0, width // 3, (2 * width) // 3, width)
+    near_mask = mask[y0:]
+    lane_cover = [
+        float(np.count_nonzero(near_mask[:, x0:x1]) / max(1, near_mask[:, x0:x1].size))
+        for x0, x1 in zip(edges[:-1], edges[1:])
+    ]
+    # A lane with only a sliver of obstacle is walked past, not steered around.
+    # The sliver still tips a tie toward the side away from it.
+    for (x0, x1), lane in zip(zip(edges[:-1], edges[1:]), lane_cover):
+        if lane < cfg.obstacle_cover:
+            mask[y0:, x0:x1] = False
+    # Obstacle pixels are blocked, never also walk or person.
+    cats[mask] = _BLOCK
+
+    near = cats[y0:]
     columns: list[ColumnScore] = []
     for name, x0, x1 in zip(COLUMNS, edges[:-1], edges[1:]):
         slab = near[:, x0:x1]
@@ -213,6 +266,9 @@ def _score_columns(labels, names, boxes, cfg: FuseConfig):
         score = walkable * (1.0 - min(1.0, blocked))
         score -= cfg.person_count_penalty * people
         score -= cfg.person_pixel_penalty * people_pixels
+        sliver = lane_cover[len(columns)]
+        if sliver < cfg.obstacle_cover:
+            score -= cfg.obstacle_sliver_penalty * sliver
         selectable = (
             not hard
             and walkable >= cfg.min_walkable
@@ -225,8 +281,30 @@ def _score_columns(labels, names, boxes, cfg: FuseConfig):
         columns.append(ColumnScore(
             name, walkable, blocked, people_pixels, people, vehicles,
             score, adjusted, selectable,
+            lane_cover[len(columns)],
+            _dominant(found, height, y0, x0, x1),
         ))
     return tuple(columns), wearer
+
+
+def _is_obstacle(box: Box, wearer: Box | None) -> bool:
+    """Anything in the way, except the walker and signals or signs."""
+    if box is wearer or box.signal:
+        return False
+    label = box.label
+    return not (is_light(label) or is_stop_sign(label) or is_crosswalk(label))
+
+
+def _dominant(found: list[Box], height: int, y0: int, x0: int, x1: int) -> str:
+    """Label of the obstacle with the most area in this column's near band."""
+    best, label = 0.0, ""
+    for box in found:
+        bx1, by1, bx2, by2 = box.xyxy
+        w = min(x1, bx2) - max(x0, bx1)
+        h = min(height, by2) - max(y0, by1)
+        if w > 0 and h > 0 and w * h > best:
+            best, label = w * h, box.label
+    return label
 
 
 def _pick(columns: tuple[ColumnScore, ...], cfg: FuseConfig):
@@ -421,6 +499,7 @@ def _column_named(columns, name: str) -> ColumnScore:
 
 def _speech(
     direction, reason, crowd, signal, crosswalk, sudden_label, sudden_side, pedestrian: str | None = None,
+    obstacle: str = "",
 ) -> str:
     if reason == "sudden" and sudden_label:
         where = "in front of you" if sudden_side in (None, "center") else f"on your {sudden_side}"
@@ -432,19 +511,25 @@ def _speech(
         return f"Stop. The light looks {color}."
     if reason == "stop-sign":
         return "Stop. There is a stop sign ahead."
+    if reason == "obstacle" and direction == "stop":
+        thing = _article(obstacle or "obstacle")
+        return f"Stop. {thing[0].upper()}{thing[1:]} is blocking the way."
     if reason == "blocked" or direction == "stop":
         return "Stop. The path ahead looks blocked."
 
     way = {"left": "Bear left.", "right": "Bear right.", "straight": "Continue straight."}[direction]
-    if reason == "crowd":
-        clause = "Fewer people that way."
-    elif crowd == "clear":
-        clause = "The way looks clear."
-    elif crowd == "light":
-        clause = "A few people are that way."
+    if reason == "obstacle":
+        sentence = f"Bear {direction} to go around the {obstacle or 'obstacle'}."
     else:
-        clause = "That way is crowded. It is still the clearest path."
-    sentence = f"{way} {clause}"
+        if reason == "crowd":
+            clause = "Fewer people that way."
+        elif crowd == "clear":
+            clause = "The way looks clear."
+        elif crowd == "light":
+            clause = "A few people are that way."
+        else:
+            clause = "That way is crowded. It is still the clearest path."
+        sentence = f"{way} {clause}"
     if signal == "green" and crosswalk:
         sentence += " The crossing light looks green."
     elif signal == "green":
@@ -452,3 +537,7 @@ def _speech(
     elif crosswalk:
         sentence += " Crosswalk ahead. I can't see the signal."
     return sentence
+
+
+def _article(label: str) -> str:
+    return f"an {label}" if label[:1].lower() in "aeiou" else f"a {label}"

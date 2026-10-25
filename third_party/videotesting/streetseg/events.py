@@ -51,9 +51,16 @@ def scene_text(cue: Cue) -> str:
     if not cue.columns:
         return "Street ahead."
     bits = []
-    walkable = [col.name for col in cue.columns if col.selectable]
-    if walkable:
-        bits.append("walkable " + " and ".join(walkable))
+    if cue.ground:
+        walkable = [col.name for col in cue.columns if col.selectable]
+        if walkable:
+            bits.append("walkable " + " and ".join(walkable))
+    else:
+        # Detector only: the ground was never seen, so name what is in the way.
+        for col in cue.columns:
+            if col.obstacle_label:
+                where = "ahead in the center" if col.name == "center" else f"on the {col.name}"
+                bits.append(f"{col.obstacle_label} {where}")
     people = sum(col.people for col in cue.columns)
     vehicles = sum(col.vehicles for col in cue.columns)
     if people:
@@ -65,7 +72,7 @@ def scene_text(cue: Cue) -> str:
     if cue.crosswalk:
         bits.append("crossing")
     if not bits:
-        return "No walkable ground ahead."
+        return "No walkable ground ahead." if cue.ground else "Way ahead looks clear."
     text = ", ".join(bits)
     return text[0].upper() + text[1:] + "."
 
@@ -80,12 +87,15 @@ def _columns(cue: Cue) -> dict:
                 "people": col.people,
                 "vehicles": col.vehicles,
                 "selectable": col.selectable,
+                "obstacle": round(col.obstacle, 3),
             }
     return {
         "signal": cue.signal,
         "crosswalk": cue.crosswalk,
         "crowd": cue.crowd,
         "wearer_excluded": cue.wearer_excluded,
+        "ground": cue.ground,
+        "obstacle": cue.obstacle,
         "columns": columns,
     }
 
