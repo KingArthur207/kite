@@ -12,8 +12,8 @@ import { startLocation, stopStaleLocation } from './location';
 type Mode = 'idle' | LinkState;
 
 const C = {
-  bg: '#F5F2EC', // the logo's cream, navy and pink
-  text: '#1D2B6B',
+  bg: '#000000',
+  text: '#F2F2F7',
 };
 
 const SPOKEN: Record<Mode, string> = {
@@ -121,7 +121,7 @@ export default function App() {
     >
       {({ pressed }) => (
         <>
-          <StatusBar style="dark" />
+          <StatusBar style="light" />
           <View style={styles.brandRow} accessible={false}>
             <Image source={require('./assets/icon.png')} style={styles.mark} accessibilityIgnoresInvertColors />
             <Text style={styles.brand} maxFontSizeMultiplier={1.3}>
@@ -156,7 +156,7 @@ const SUB: Record<Mode | 'stopped', string> = {
   lost: 'Trying to reach Kite again',
 };
 
-const TINT: Record<Mode, string> = { idle: '#B9B6C9', searching: '#1D2B6B', connected: '#34C759', lost: '#E8A33D' };
+const TINT: Record<Mode, string> = { idle: '#636366', searching: '#FFFFFF', connected: '#30D158', lost: '#FF9F0A' };
 
 function Stat({ value, label }: { value: string; label: string }) {
   return (
@@ -199,7 +199,7 @@ function Beacon({ mode }: { mode: Mode }) {
 
   return (
     <View style={styles.beacon}>
-      <View style={[styles.ring, { borderColor: mode === 'idle' ? '#E4DFD6' : `${tint}33` }]} />
+      <View style={[styles.ring, { borderColor: mode === 'idle' ? '#2C2C2E' : `${tint}33` }]} />
       {moving && <Animated.View style={[styles.ripple, { borderColor: tint }, ripple(0)]} />}
       {moving && <Animated.View style={[styles.ripple, { borderColor: tint }, ripple(0.5)]} />}
       {mode === 'connected' && <View style={[styles.glow, { backgroundColor: `${tint}26` }]} />}
@@ -233,11 +233,11 @@ const styles = StyleSheet.create({
   glow: { position: 'absolute', width: 120, height: 120, borderRadius: 60 },
   core: { width: 32, height: 32, borderRadius: 16 },
   word: { color: C.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.6, textAlign: 'center' },
-  sub: { color: 'rgba(29, 43, 107, 0.6)', fontSize: 17, marginTop: 8, textAlign: 'center' },
-  card: { flexDirection: 'row', backgroundColor: '#FFFFFF', borderRadius: 24, paddingVertical: 18, shadowColor: '#1D2B6B', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 4 } },
+  sub: { color: 'rgba(235, 235, 245, 0.6)', fontSize: 17, marginTop: 8, textAlign: 'center' },
+  card: { flexDirection: 'row', backgroundColor: '#1C1C1E', borderRadius: 20, paddingVertical: 18 },
   cardOff: { opacity: 0.5 },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { color: C.text, fontSize: 22, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  statLabel: { color: 'rgba(29, 43, 107, 0.45)', fontSize: 12, fontWeight: '600', letterSpacing: 0.8, marginTop: 4 },
-  divider: { width: StyleSheet.hairlineWidth, backgroundColor: 'rgba(29, 43, 107, 0.15)', marginVertical: 4 },
+  statLabel: { color: 'rgba(235, 235, 245, 0.45)', fontSize: 12, fontWeight: '600', letterSpacing: 0.8, marginTop: 4 },
+  divider: { width: StyleSheet.hairlineWidth, backgroundColor: '#3A3A3C', marginVertical: 4 },
 });
