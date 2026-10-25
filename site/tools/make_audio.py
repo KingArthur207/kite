@@ -74,6 +74,24 @@ def cues() -> None:
     m4a("approach", pad(np.concatenate(out)))
 
 
+def priorities() -> None:
+    """The body camera's three priorities, as the real sonar plays a ranked object (perception/near sends them):
+    P1 under 2 m or about to touch, P2 2 to 5 m, P3 farther. Each has its own pitch and rate."""
+    canon = {1: (1.3, 1.2), 2: (3.0, 1.2), 3: (4.0, 1.2)}        # perception/near/output.py CANONICAL
+    for pr, (d, cs) in canon.items():
+        e = Engine(RATE, master_gain=0.95)
+        s = Sonar(e, Cfg().sonar)
+        out, t, fr = [], 0.0, 0
+        while t < 3.2:
+            if t * 10 >= fr:
+                fr += 1
+                s.update_frame("near", [Obstacle("a", "obstacle", 0.0, d, cs, 1.0, pr)], seq=fr, now=t)
+            s.tick(now=t)
+            out.append(e.render(1024))
+            t += 1024 / RATE
+        m4a(f"prio-{pr}", pad(np.concatenate(out)))
+
+
 def site_walk():
     """The demo walk, ordered for a listener: route first, then Moss's remembered curb,
     then a pedestrian, a pole, the crosswalk, the turn."""
@@ -145,6 +163,9 @@ def walk() -> dict:
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
+    priorities()
+    if "--priorities" in sys.argv:         # only the three priority clips; the walk and cues stay as they are
+        sys.exit(0)
     cues()
     info = walk()
     (ROOT / "site" / "public" / "assets" / "walk.json").write_text(json.dumps(info))

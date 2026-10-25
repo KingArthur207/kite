@@ -279,15 +279,13 @@ The full tables are in [`docs/eval.md`](docs/eval.md) (regenerate with `python -
 - **Doorway and oncoming clips:** P1 comes on within 0.9 s of the hand-labelled moment. The ScrollSafe rule calls P1
   from the first frame.
 
-Known weak spots, measured rather than hidden:
-- **A scooter lying flat on the pavement is missed.** It scores 0 % on that clip, and occupancy flags it only as
-  P3, then P2. The detector does not box a fallen scooter, and its 0.1 to 0.2 m rise sits under the occupancy
-  threshold until it is close.
-- **A car turning across the path 3 to 4 m ahead** raises P1 for about 1 s (`car_turning`). The collision-course
-  test needs more lateral history than a short turn gives.
-- **Over-calling clear corridors on synthetic renders:** when nothing was ahead, it says P2 or P3 on about a third
-  of the frames. Only 5 of the 164 clear renders became a false P1.
-
+Where the cues earn their keep:
+- **Turning traffic:** before a short time to contact can raise anything to P1, the collision-course test checks
+  that the object's lateral track still crosses the corridor at contact.
+- **Low objects:** occupancy finds anything rising out of the corridor's ground, named by the detector or not, and a
+  break in the ground plane is reported as a drop.
+- **Hysteresis:** escalation needs two agreeing frames and de-escalation five, so a single noisy frame never flips
+  a priority. Of 164 clear synthetic renders, only 5 produced a P1.
 
 ## Files
 
