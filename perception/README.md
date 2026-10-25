@@ -296,7 +296,7 @@ the time on the walks, catches every P1 frame and raises a false P1 on 3 % of fr
 | `bytetrack_open.yaml` | ByteTrack with a 0.15 start threshold, since rare street objects score low |
 | `near/` | camera-only priorities P1 / P2 / P3 for the corridor ahead, beeps, calibration ([near/README.md](near/README.md)) |
 | `calibrate_camera.py` | ChArUco / chessboard calibration of the chest webcam into a profile `near/` loads |
-| `tests/` | 45 tests with fake models (no download): geometry, ground fit, overhead and stairs, corridor rises and drops, NMS, hazard gating, every event parsed by `earpiece.events.parse`, the CLI's guards (no overlay from a live camera) and the review overlay. `-m slow` adds a real-model test |
+| `tests/` | 188 tests with fake models (no download): near-field cues, fusion, priorities, beeps and calibration; depth sources, floor anchoring, motion stereo and fusion; geometry, ground fit, overhead and stairs, corridor rises and drops, NMS, hazard gating, every event parsed by `earpiece.events.parse`, the CLI's guards (no overlay from a live camera) and the review overlay. `-m slow` adds a real-model test |
 
 ```bash
 uv run --no-project --python 3.12 --with numpy --with scipy --with pytest python -m pytest perception/tests   # no torch needed
