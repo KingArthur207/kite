@@ -26,7 +26,7 @@
   <img src="https://img.shields.io/badge/Claude-Opus%20%2B%20Haiku-D97757?logo=anthropic&logoColor=white" alt="Claude">
   <img src="https://img.shields.io/badge/SpacetimeDB-Maincloud-6E40C9" alt="SpacetimeDB">
   <img src="https://img.shields.io/badge/Moss-memory-2E8B57" alt="Moss">
-  <img src="https://img.shields.io/badge/Grok-Voice%20%2B%20Imagine-000000?logo=x&logoColor=white" alt="Grok">
+  <img src="https://img.shields.io/badge/Grok-Imagine-000000?logo=x&logoColor=white" alt="Grok">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 
@@ -51,7 +51,7 @@ Each track below has its own section further down. The same answers, laid out ag
 | **Anthropic** | Named community, a judgment layer boxed in by code, scene description from camera frames, a voice brain with allow-listed tools, and [where it could go wrong](#where-claude-could-go-wrong-and-what-we-did-about-it) | [`judgment.py`](earpiece/earpiece/judgment.py), [`brain.py`](earpiece/earpiece/brain.py), [`test_judgment.py`](earpiece/tests/test_judgment.py), [`test_speech_brain.py`](earpiece/tests/test_speech_brain.py) |
 | **SpacetimeDB** | `event` and `latest` tables, validated `push` and `clear` reducers, an earpiece bridge that mirrors every event, a dashboard that reads only from Spacetime | [`index.ts`](dashboard/spacetimedb/src/index.ts), [`spacetime.py`](earpiece/earpiece/spacetime.py), [`App.tsx`](dashboard/src/App.tsx), [`test_replay_bridge.py`](earpiece/tests/test_replay_bridge.py) |
 | **Best Use of Moss** | A real-time voice agent's memory: personal places and hazards in `kite-memory`, 3–12 ms local lookups on every utterance, place resolution before routing, memories in every Claude question, hazard warnings on arrival, saved by voice, offline mirror. [Details](#-moss-kites-memory-of-the-wearers-world) | [`memory.py`](earpiece/earpiece/memory.py), [`memory_seed.json`](earpiece/earpiece/memory_seed.json), [`brain.py`](earpiece/earpiece/brain.py), [`test_memory.py`](earpiece/tests/test_memory.py) |
-| **SpaceXAI: Make it Legendary** | Grok Voice is the hands-free voice line into the live walk (tools read SpacetimeDB and send the walker a message). Grok Imagine generates the street scenes we can't film (a car turning in, a cyclist cutting across, someone stepping out of a doorway). Kite's detector is benchmarked on them, the earpiece plays them, and Claude's prompt-injection tests paint fake signs onto them. Built in Cursor, planned with Grok. [Details](#-spacexai-grok-voice-and-grok-imagine) | [`imagine_scenes.py`](scripts/imagine_scenes.py), [`data/imagined/`](data/imagined/), [`bench_labels.json`](perception/bench_labels.json), [`run_live.py`](earpiece/evals/run_live.py), [`test_imagine_scenes.py`](tests/test_imagine_scenes.py) |
+| **SpaceXAI: Make it Legendary** | Grok Imagine generates the street scenes we can't film (a car turning in, a cyclist cutting across, someone stepping out of a doorway). Kite's detector is benchmarked on them, the earpiece plays them, and Claude's prompt-injection tests paint fake signs onto them. Built in Cursor, planned with Grok. [Details](#-spacexai-grok-imagine-is-kites-test-street) | [`imagine_scenes.py`](scripts/imagine_scenes.py), [`data/imagined/`](data/imagined/), [`bench_labels.json`](perception/bench_labels.json), [`run_live.py`](earpiece/evals/run_live.py), [`test_imagine_scenes.py`](tests/test_imagine_scenes.py) |
 | **Best Hardware Hack** | Tello above and behind the head, chest camera for the near field, AirPods as a managed output with stem-press controls, a real-time Rust audio engine | [`native/src/`](earpiece/native/src/), [`controls.py`](earpiece/earpiece/controls.py), [`devices.py`](earpiece/earpiece/devices.py), [`tests/drone_test.py`](tests/drone_test.py), [`sim/`](sim/) |
 | **Best People-First Social Impact Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; urgency as three tones, not numbers; no video on the dashboard | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
 | **Most Technically Complex** | Lock-free Rust audio engine with a Python twin, binaural rendering from a head model, time-to-contact sonar, a time-aware speech scheduler, four cloud services kept off the safety path | [`native/src/lib.rs`](earpiece/native/src/lib.rs), [`native/src/mixer.rs`](earpiece/native/src/mixer.rs), [`spatial.py`](earpiece/earpiece/spatial.py), [`sonar.py`](earpiece/earpiece/sonar.py), [`scripts/check.sh`](scripts/check.sh) |
@@ -352,13 +352,9 @@ Kite's earpiece is a real-time voice agent, and Moss is its memory. Without it, 
 
 **Setup.** Put `MOSS_PROJECT_ID` and `MOSS_PROJECT_KEY` in `.env` and install the `memory` extra. Without them, Kite uses the local mirror only.
 
-## 🚀 SpaceXAI: Grok Voice and Grok Imagine
+## 🚀 SpaceXAI: Grok Imagine is Kite's test street
 
-Grok does two jobs in Kite that nothing else in it does: it is the voice line into the live walk, and it is the street Kite is tested on.
-
-**Grok Voice is the hands-free line into the walk.** `python -m earpiece caregiver` opens a realtime speech-to-speech session with Grok's Voice Agent API for anyone following the walk. Grok has three tools over the live SpacetimeDB state, all checked in code: `walk_status` answers "how's the walk going?" with where the walker is, the route, recent hazards and what Kite last said, marked stale when it is old; `message_walker` turns "tell her I'm five minutes late" into a line the walker hears in Cartesia's voice; and `recent_alerts` reads out the walker's own requests for help, announced the moment they arrive. The code clamps every argument and refuses to relay a go-ahead to cross ([`caregiver_voice.py`](earpiece/earpiece/caregiver_voice.py)).
-
-**Grok Imagine is Kite's test street.** The moments Kite exists for are the ones nobody can stage safely, so Grok Imagine generates them and Kite's own code is tested against them.
+The moments Kite exists for are the ones nobody can stage safely, so Grok Imagine generates them and Kite's own code is tested against them.
 
 **Grok Imagine is the street we can't film.** A cyclist cutting across a crosswalk, a car turning into it, someone stepping out of a doorway: those are the moments Kite exists for, and we can't stage them safely. [`scripts/imagine_scenes.py`](scripts/imagine_scenes.py) generates each one as a still from the walker's chest height (`grok-imagine-image`), animates it into a 6-second clip (`grok-imagine-video-1.5-lite`), and rehearses it through Kite's own detector and earpiece. The stills, prompts and results are in [`data/imagined/`](data/imagined/). On the doorway and oncoming clips Kite says "Person, ahead."; none of the 6-second clips gets close enough for a "Stop.", and the scooter lying on the ground isn't recognised by the stand-in detector. `scripts/demo.sh live data/imagined/<scene>.mp4` plays a clip into the earpiece so a judge can hear it.
 
@@ -466,7 +462,7 @@ Status as of this commit. **Core** is in the main path and tested. **On by defau
 
 ## 🚀 Quick start on one laptop
 
-You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.19 or later, and the [SpacetimeDB CLI](https://spacetimedb.com/install) for the offline fallback. Put the Cartesia, Anthropic, Moss, SpacetimeDB, Google Maps and xAI keys in `.env` (see `.env.example`) for the full Kite: Cartesia's voice and ears, Claude's judgment, Moss's memory, the live SpacetimeDB world, Grok Voice and Grok Imagine.
+You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.19 or later, and the [SpacetimeDB CLI](https://spacetimedb.com/install) for the offline fallback. Put the Cartesia, Anthropic, Moss, SpacetimeDB, Google Maps and xAI keys in `.env` (see `.env.example`) for the full Kite: Cartesia's voice and ears, Claude's judgment, Moss's memory, the live SpacetimeDB world and Grok Imagine.
 
 Install once (the demo script tells you if any of these is missing):
 
