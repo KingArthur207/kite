@@ -64,6 +64,15 @@ Nothing else changes: the heartbeat then carries the Tailscale IP, and `kite_lin
 | `token mismatch` / `401` | On the board `cat /etc/kite/token`; here `python kite_link.py token <it>`. |
 | `WARN camera: no camera` | Plug the camera in through the powered hub; `sudo systemctl restart kite-link`. |
 | `none signed with your token` | Same as token mismatch. |
+| Nobody knows the board's password | `python unoq_rescue.py` (below). |
+
+**Board password lost?** Plug the board into the computer with a USB-C data cable, close App Lab, and run
+`python unoq_rescue.py` (or download it: `curl -fsSLO https://trykite.pages.dev/unoq/unoq_rescue.py`). It logs in
+over USB with `adb` (no password needed after the first setup; it downloads adb if it's missing), saves the
+board's token here, checks the camera, and asks for a new password. To set it, it uses the first of: adb as root,
+passwordless sudo, the factory password `arduino`, or App Lab's Docker (a container that mounts the board's disk
+runs the board's own `chpasswd`). The new password goes over in a file only `arduino` can read, deleted at once;
+it is never on a command line. Nothing is erased. `--check` only reports; `--restart` also restarts `kite-link`.
 
 Board log: `journalctl -u kite-link -f`. Change Wi-Fi: `sudo nmcli dev wifi connect "<name>" password "<pw>"`.
 Rejoin eduroam: `curl -fsSL https://trykite.pages.dev/unoq/install.sh | sh -s -- --eduroam`.
@@ -73,6 +82,7 @@ Video size and rate: `KITE_VIDEO_SIZE` and `KITE_VIDEO_FPS` in `/etc/systemd/sys
 ## Files
 
 - `board.py`: the board service (standard library; OpenCV from apt only for a real camera).
+- `unoq_rescue.py`: over USB, sets a new board password without the old one and saves the token here.
 - `kite_link.py`: the computer client. `kite_common.py`: SpacetimeDB calls and signing, used by both.
 - `install.sh`, `kite-link.service`: the installer and the service. `publish.py` writes the installer's
   SHA-256 list and copies these files to `site/public/unoq/`; run it after any change, then deploy the site.

@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SITE = HERE.parents[2] / "site" / "public" / "unoq"
 BOARD_FILES = ["board.py", "kite_common.py", "kite-link.service"]        # what install.sh downloads
-PUBLISHED = BOARD_FILES + ["install.sh", "kite_link.py"]                   # kite_link.py: for the computer
+PUBLISHED = BOARD_FILES + ["install.sh", "kite_link.py", "unoq_rescue.py"]  # the last two: for the computer
 BLOCK = re.compile(r"(# --- hashes: written by publish.py, do not edit by hand ---\nHASHES='\n)(.*?)('\n# --- end hashes ---)",
                    re.S)
 
