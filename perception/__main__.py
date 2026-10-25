@@ -47,6 +47,8 @@ def parse_args(argv=None):
     ap.add_argument("--imgsz", type=int, default=640)
     ap.add_argument("--depth", choices=("outdoor", "indoor", "off"), default="outdoor",
                     help="metric depth model (Depth Anything V2 Small); off = flat-ground ranges only")
+    ap.add_argument("--depth-backend", help="any perception/depth_zoo.py source instead of --depth, e.g. "
+                                            "da2-metric-outdoor-s+anchor or fused (perception/docs/depth_shootout.md)")
     ap.add_argument("--auto-pitch", choices=("on", "off"), help="fit the camera pitch to the ground in the depth "
                                                              "map every frame (default on; off for sim:, whose "
                                                              "cameras are level). Off still fits the depth scale")
@@ -78,7 +80,7 @@ def build(a, cams):
     from .pipeline import Pipeline
     device = a.device or ("mps" if torch.backends.mps.is_available() else "cpu")
     vocab = V.load(a.vocab, a.prompt)
-    depth = None if a.depth == "off" else models.MetricDepth(a.depth, device)
+    depth = None if a.depth == "off" or a.depth_backend else models.MetricDepth(a.depth, device)
     pipes = {}
     for c in cams:                          # one detector pair per camera: each keeps its own tracks
         coco = models.CocoDetector(device, a.coco_conf, a.imgsz)
@@ -86,6 +88,10 @@ def build(a, cams):
                                                              weights=a.open_model or models.OPEN_MODEL)
         det = models.HybridDetector(coco, ov, a.open_every)
         kw = {} if a.stop_m is None else {"stop_m": a.stop_m}
+        if a.depth_backend:                 # per camera: video backends (motion stereo, fused) keep state
+            from . import depth_zoo
+            depth = depth_zoo.PipelineDepth(depth_zoo.get(a.depth_backend, device,
+                                                          cam_h=a.cam_height or DEFAULT_HEIGHT[c]))
         pipes[c] = Pipeline(c, det, depth, cam_h=a.cam_height or DEFAULT_HEIGHT[c], pitch=a.pitch,
                             auto_pitch=a.auto_pitch == "on", ignore_bottom=a.ignore_bottom or 0.0, **kw)
     return pipes, device
@@ -134,6 +140,8 @@ def main(argv=None) -> None:
         seg = seg_standin.Segmenter(device=device)
     for p in pipes.values():
         p.fx = fx
+        if hasattr(p.depth, "fx"):
+            p.depth.fx = fx
     ear = None
     if not a.no_send:
         from earpiece.client import EarpieceClient

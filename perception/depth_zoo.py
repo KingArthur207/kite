@@ -1189,15 +1189,18 @@ class Fused(DepthBackend):
 # ------------------------------------------------------------------ for perception/pipeline.py
 class PipelineDepth:
     """Adapter with models.MetricDepth's call signature (img -> metric z at DEPTH_SIZE), so any backend can be
-    dropped into Pipeline(depth=...). fx is unknown here, so the C270-like 60 degree default is used unless set."""
+    dropped into Pipeline(depth=...) (`python -m perception --depth-backend NAME`). `fx` is the focal length in
+    pixels at 960 wide, as the CLI uses it; unset, a C270-like 60 degree diagonal field of view is assumed."""
 
-    def __init__(self, backend: DepthBackend, size=(448, 252), diag_fov_deg: float = 60.0):
-        self.backend, self.size, self.fov = backend, size, diag_fov_deg
+    def __init__(self, backend: DepthBackend, size=(448, 252), diag_fov_deg: float = 60.0, fx: float | None = None):
+        self.backend, self.size, self.fov, self.fx = backend, size, diag_fov_deg, fx
 
     def __call__(self, img: np.ndarray) -> np.ndarray:
         import cv2
         h, w = img.shape[:2]
-        r = self.backend.estimate(img, Intrinsics.from_fov(w, h, self.fov))
+        K = Intrinsics.from_fov(w, h, self.fov) if not self.fx else \
+            Intrinsics(self.fx * w / 960, self.fx * w / 960, w / 2, h / 2, w, h)
+        r = self.backend.estimate(img, K)
         return cv2.resize(r.depth_m, self.size, interpolation=cv2.INTER_LINEAR)
 
 
