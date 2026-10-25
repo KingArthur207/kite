@@ -11,7 +11,9 @@ python run/app.py                        # fly
 ## app.py: take off, lock onto the person in front, follow them
 
 A dark window opens: the map (placeholder) on the left, the camera with YOLO's person boxes on the right, and a
-console underneath that lists every command sent and every reply received.
+console underneath that lists every command sent and every reply received. The same picture is saved while the
+window is open: `recordings/<YYYYmmdd_HHMMSS>_app/video.mkv` and one JPEG per frame in that folder's `frames/`.
+The console prints the folder when recording starts and the frame count when the window closes.
 
 | Command | Does |
 |---|---|

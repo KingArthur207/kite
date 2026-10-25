@@ -4,6 +4,10 @@
     python run/app.py --dry-run       # on the table: video, YOLO and commands, nothing reaches the motors
     python run/app.py --yaw law       # steer yaw by bearing instead of the fruit fly brain
 
+Each run also writes recordings/<time>_app/video.mkv and recordings/<time>_app/frames/NNNNNN.jpg (the camera
+with the person boxes). Saving runs on its own thread and drops frames if the disk falls behind; it does not
+change takeoff.
+
 Console commands (type in the window, Enter):
     takeoff   take off, climb to --height, then follow the person in front of the drone
     land      stop following and land

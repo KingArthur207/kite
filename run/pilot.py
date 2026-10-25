@@ -99,6 +99,8 @@ class Pilot:
         self._pending = None  # discrete command we wait on: "takeoff" | "land"
         self._ready_line = ""
         self.last_frame = None  # newest kite Frame (BGR), for the UI
+        self._capture = None  # run.capture.SessionCapture: video + JPEGs, off the flight path
+        self._capture_warned = False
         self._fps_n, self._fps_t = 0, time.time()
         self._det_n, self._det_seq = 0, None
         self.closed = threading.Event()
@@ -238,6 +240,10 @@ class Pilot:
         self._ready_line = (f"ready: video ({cfg.drone.video_backend} reader), person detector on "
                             f"{self.seen._detect.device}, camera fx {cam.fx:.0f}. Stand about 2 m in front of the "
                             "drone facing away, then type takeoff")
+        from capture import SessionCapture
+
+        self._capture = SessionCapture(Path(__file__).resolve().parent.parent / "recordings").start()
+        self.log(f"recording video and frames to {self._capture.dir}", "info")
         self.log("waiting for the first video frame ...", "info")
         return True
 
@@ -268,6 +274,7 @@ class Pilot:
                 except Exception:
                     pass
         finally:
+            self._stop_capture()
             self.closed.set()
 
     def _read_frame(self):
@@ -345,6 +352,8 @@ class Pilot:
         d, m = self.drone, self.follow
         f = self._read_frame()
         m.sense(f, time.time())  # perception on every NEW frame, flying or not (the overlay shows the lock)
+        if m.ctx.new_frame:
+            self._capture_frame(f)
         res = m.ctx.res
         if res is not None and res.seq != self._det_seq:
             self._det_seq, self._det_n = res.seq, self._det_n + 1
@@ -383,6 +392,31 @@ class Pilot:
         if m.state in STATES and d.flying and not self._stop.is_set():
             m.step()  # the sticks every tick (also the keep-alive), or one discrete command it waits on
             self._set(STATES.get(m.state, self.state))
+
+    def _capture_frame(self, frame) -> None:
+        """Hand the frame to the writer. A disk problem is logged once and never changes takeoff."""
+        cap = self._capture
+        if cap is None or frame is None:
+            return
+        try:
+            cap.offer(frame.image, frame.seq, self.seen, self.follow)
+        except Exception as e:
+            if not self._capture_warned:
+                self._capture_warned = True
+                self.log(f"recording paused: {e}", "warn")
+
+    def _stop_capture(self) -> None:
+        cap, self._capture = self._capture, None
+        if cap is None:
+            return
+        try:
+            summary = cap.close()
+        except Exception as e:
+            self.log(f"recording failed to close: {e}", "warn")
+            return
+        extra = f", {summary.dropped} dropped" if summary.dropped else ""
+        err = f" ({summary.error})" if summary.error else ""
+        self.log(f"saved {summary.written} frames{extra} to {summary.directory}{err}", "info")
 
     def _close(self) -> None:
         if self.drone is not None:
