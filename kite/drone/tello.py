@@ -1,10 +1,9 @@
 """DJI Tello adapter: djitellopy for commands + state, TelloVideoSource for video (DroneCfg.video_backend picks the
 reader: pyav by default, opencv, or kite's raw UDP reader; "auto" = raw on macOS).
 
-jerkgt13's reachglass/drone/tello.py (github.com/nathanwuzhao/jerkgt13). kite's changes, each from a failure found
-in tests or on the drone: Wi-Fi drops never raise (link_error), emergency() reports a packet it could not send,
-close() lands a takeoff still in progress, set_speed() changes nothing while busy, intervals use time.monotonic(),
-and the drone's address is a setting (host).
+Each of these comes from a failure found in tests or on the drone: Wi-Fi drops never raise (link_error), emergency()
+reports a packet it could not send, close() lands a takeoff still in progress, set_speed() changes nothing while busy,
+intervals use time.monotonic(), and the drone's address is a setting (host).
 
 Discrete commands are NON-BLOCKING: the command is sent, and busy() polls djitellopy's reply list
 (filled by its UDP receiver thread) with a per-command timeout. After stop() the late reply of the

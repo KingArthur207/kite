@@ -1,6 +1,6 @@
 """Frame sources: file replay, read-only frames, and the Tello readers on a real H.264 stream over local UDP.
 
-Ported from vigil's tests/test_sources.py and test_review_fixes_1_3.py. The slow tests use ffmpeg as a stand-in
+The slow tests use ffmpeg as a stand-in
 Tello (raw H.264 at 960x720, 30 fps, to a UDP port) and run each reader with djitellopy imported first, as in
 the real app: OpenCV and PyAV each bundle their own FFmpeg.
 """

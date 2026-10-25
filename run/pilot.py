@@ -8,9 +8,10 @@ SafetyGovernor.check(), then the sticks (every tick: also the rc keep-alive), ex
     any --land--> landing --> landed (idle)
     e (emergency()) cuts the motors at once from the caller's thread; the app then quits.
 
-Locking: kite.follow's tracker acquires the person right in front (a box cut off by the bottom edge, nearest the
-centre) once it has seen them a few frames; FollowMode.start() then locks onto that track and the follow controller
-(steered by the retrained kite.fly yaw source, or the follow law) holds the drone behind them at --height.
+Locking: kite.follow_behind locks the largest person in view (the one right in front) once YOLO has seen them in 3 of
+its last 5 runs; BehindMode.start() then starts following: hold --height above the floor (also while locking and
+while the person is lost), turn toward them, and hold --behind behind them, moving toward them only when every range
+cue says it is safe. Lost: hold, turn toward where they were, hover; it re-locks by itself.
 """
 
 from __future__ import annotations
@@ -138,7 +139,8 @@ class Pilot:
         from kite.camera import load_camera
         from kite.config import Config, resolve_video_backend
         from kite.drone import SafetyGovernor, make_tello
-        from kite.follow import FollowCfg, FollowMode, YoloPersonDetector, build_yaw_source, detector_available
+        from kite.follow import FollowCfg, YoloPersonDetector, build_yaw_source, detector_available
+        from kite.follow_behind import BehindCfg, BehindMode
 
         a = self.args
         why = detector_available(a.weights)
@@ -148,7 +150,8 @@ class Pilot:
         cfg = Config()
         if a.video_backend:
             cfg.drone.video_backend = resolve_video_backend(a.video_backend)
-        fcfg = FollowCfg(height_m=a.height, video_lag_s=cfg.drone.video_lag_s, behind_m=a.behind)
+        fcfg = FollowCfg(height_m=a.height, video_lag_s=cfg.drone.video_lag_s, behind_m=a.behind)  # yaw sources
+        bcfg = BehindCfg(distance_m=a.behind, altitude_m=a.height, person_height_m=a.walker_height)
         try:
             yaw_source, line = build_yaw_source(a.yaw, fcfg)
         except Exception as e:
@@ -175,8 +178,8 @@ class Pilot:
         except Exception as e:
             self.log(f"person detector failed to load: {e}", "error")
             return False
-        self.follow = FollowMode(self.frames, lambda: self.seen, fcfg, load_camera(), max_rc=cfg.safety.max_rc,
-                                 yaw_source=yaw_source, log=self._follow_log).start_tracker()
+        self.follow = BehindMode(self.frames, lambda: self.seen, bcfg, load_camera(), log=self._follow_log,
+                                 yaw_source=yaw_source).start_tracker()
         self.log(f"ready: video ({cfg.drone.video_backend} reader), person detector on {self.seen._detect.device}. "
                  "Stand in front of the drone, then type takeoff", "info")
         return True
@@ -317,7 +320,12 @@ class Pilot:
             self._set("locking")  # lost or cancelled by a safety action: re-lock by itself
             self._lock_t0 = self._lock_said = time.monotonic()
         if d.flying and not busy:
-            vals = f.tick(d, action, busy) if (self.state == "following" and f.active) else (0, 0, 0, 0)
+            if self.state == "following" and f.active:
+                vals = f.tick(d, action, busy)
+            elif self.state == "locking" and action == "ok":
+                vals = f.hold_rc(d)  # climb to the follow height while looking for the person
+            else:
+                vals = (0, 0, 0, 0)
             d.rc(*vals)  # every tick: the follow sticks, or hover; also the keep-alive against the 15 s auto-land
 
     def _close(self) -> None:

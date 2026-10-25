@@ -48,7 +48,7 @@ Assumed physical numbers (TelloPhysics; sources: kite-notes-02.md, the team spec
   tilt                      nose-down 8 deg per m/s + 3 deg per m/s^2 forward, same for roll; reported pitch is
                             + = nose UP (pose.PITCH_SIGN = +1, ASSUMED), roll + = right side down
   signs                     yaw grows with cw (DroneCfg.yaw_sign = +1, ASSUMED), vgx is NEGATIVE flying forward
-                            (vigil's lag log, Telemetry.vx docstring), vgy + right, vgz + up (ASSUMED), body frame
+                            (flight lag logs, Telemetry.vx docstring), vgy + right, vgz + up (ASSUMED), body frame
   units                     vg* in dm/s, h / tof in cm (tof >= 10 on the ground, 6553 beyond 8 m), baro m, time s
 Protocol behaviour (ASSUMED where marked):
   replies                   "ok"; "error" (takeoff while flying / flat battery / overheated, land on the ground, a

@@ -98,7 +98,7 @@ def test_telemetry_is_converted_to_si_units_with_kites_signs(tello_emulator):
     raw = rig.drone.tello.get_current_state()
     assert tel.vx == pytest.approx(raw["vgx"] * 0.1)  # dm/s -> m/s
     assert abs(tel.vx) == pytest.approx(rig.emu.snapshot().v_fwd, abs=0.11)
-    assert tel.vx < 0  # the emulator follows vigil's log: forward reads as NEGATIVE vgx
+    assert tel.vx < 0  # the emulator follows the flight logs: forward reads as NEGATIVE vgx
     assert tel.pitch_deg < 0  # nose down while flying forward (reported pitch + = nose up)
 
 

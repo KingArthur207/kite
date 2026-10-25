@@ -1,4 +1,4 @@
-"""Shared data types: the drone and video parts of jerkgt13's reachglass/types.py (github.com/nathanwuzhao/jerkgt13).
+"""Shared data types for the drone and video parts.
 
 Conventions used by every module
 --------------------------------
@@ -45,7 +45,7 @@ class Telemetry:
     roll_deg: float | None = None
     height_m: float | None = None  # 'h': height above the takeoff point
     tof_m: float | None = None  # 'tof': downward range to whatever is below
-    vx: float | None = None  # state-stream speeds, m/s (frame as reported by the drone; vigil's lag log read forward as NEGATIVE vgx)
+    vx: float | None = None  # state-stream speeds, m/s (frame as reported by the drone; flight lag logs read forward as NEGATIVE vgx)
     vy: float | None = None
     vz: float | None = None
     battery_pct: float | None = None

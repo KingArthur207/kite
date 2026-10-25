@@ -1,7 +1,6 @@
 """Tello adapter (against a fake djitellopy) and the safety governor (against a fake drone).
 
-Ported from vigil's tests/test_drone.py and test_review_fixes_9_12.py; the governor tests ran on vigil's
-simulator there and use FakeDrone here.
+The governor tests use FakeDrone.
 """
 
 import socket

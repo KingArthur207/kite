@@ -1,5 +1,5 @@
-"""Configuration: nested dataclasses with defaults. The drone and safety sections are jerkgt13's reachglass/config.py
-(github.com/nathanwuzhao/jerkgt13); kite additions are marked "kite:".
+"""Configuration: nested dataclasses with defaults. kite additions to the drone and safety sections are marked
+"kite:".
 
     cfg = Config()
     cfg = Config(drone=DroneCfg(kind="dry_run"), safety=SafetyCfg(max_rc=70))
@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass, field
 
 # kite: the Tello H.264 reader is a setting (every drone command's --video-backend choices come from here).
-#   pyav    FFmpeg's udp:// + h264 demuxer, djitellopy's decoder (jerkgt13's default; works on Windows)
+#   pyav    FFmpeg's udp:// + h264 demuxer, djitellopy's decoder (the default; works on Windows)
 #   opencv  the team's OpenCV VideoStream (tests/drone_test.py's original reader)
 #   raw     kite's own UDP socket + PyAV's bare H.264 decoder (kite/sources/tello_raw.py)
 #   auto    raw on macOS, pyav elsewhere

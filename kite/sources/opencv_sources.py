@@ -1,6 +1,6 @@
 """OpenCV-backed frame sources: the Tello UDP stream, a webcam, and a video file.
 
-jerkgt13's reachglass/sources/opencv_sources.py (github.com/nathanwuzhao/jerkgt13); kite additions are marked "kite:".
+kite additions are marked "kite:".
 """
 
 from __future__ import annotations
