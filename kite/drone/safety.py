@@ -200,8 +200,10 @@ class SafetyGovernor(Drone):
         lr, fb, ud, yaw = (clamp_rc(_finite(v), m) for v in (lr, fb, ud, yaw))
         tel = self.inner.telemetry()
         high, clear = tel.floor_altitude_m(), tel.altitude_m()  # above the floor / above what is below
-        high = None if high is None or not math.isfinite(high) else high
-        clear = None if clear is None or not math.isfinite(clear) else clear
+        # NaN is unknown (no limit applies); +-inf is a reading, and the cautious one: +inf is above the
+        # ceiling (cut the climb, push down), -inf is below the floor (no descent)
+        high = None if high is None or math.isnan(high) else high
+        clear = None if clear is None or math.isnan(clear) else clear
         if self.inner.flying:
             hi, lo, band = self.cfg.max_altitude_m, self.cfg.min_altitude_m, SOFT_BAND_M
             if high is not None:
