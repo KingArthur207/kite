@@ -131,6 +131,9 @@ class TerminalKeys:
     is ESC [ A..D, and its last letter would otherwise fly the drone (Up -> 'a' = left, Left -> 'd' = right). Ctrl+Z
     (suspend), Ctrl+\\ (quit without landing) and Ctrl+S (output freeze, which blocks print() and so the rc keep-alive)
     are disabled while the keys are active.
+
+    Windows has no termios. There the console is read with msvcrt: one key at a time, Ctrl+C still interrupts, and an
+    arrow key (a scan-code prefix, or the same ESC sequence) is dropped so it cannot fly the drone.
     """
 
     ESC_TIMEOUT_S = 0.1  # an unfinished sequence older than this (a lone Escape key) does not swallow the next key
@@ -140,8 +143,13 @@ class TerminalKeys:
         self._dec = codecs.getincrementaldecoder("utf-8")(errors="ignore")
         self._esc = ""  # "" | "esc" (after ESC) | "csi" (after ESC [) | "ss3" (after ESC O)
         self._esc_t = 0.0
+        self._win = False
+        self._win_ext = False  # the next console char is the scan code after a Windows arrow/function prefix
 
     def __enter__(self) -> TerminalKeys:
+        if sys.platform == "win32" and self._fd is None:
+            self._win = True
+            return self
         import termios
         import tty
 
@@ -159,29 +167,56 @@ class TerminalKeys:
         termios.tcsetattr(self._fd, termios.TCSANOW, a)
         return self
 
+    def _accept(self, ch: str, now: float) -> str:
+        """One decoded character. A printable key is returned; an escape sequence and any control char are dropped."""
+        if self._esc and now - self._esc_t > self.ESC_TIMEOUT_S:
+            self._esc = ""  # the Escape key on its own: a terminal sends a whole sequence at once
+        if ch == "\x1b":
+            self._esc, self._esc_t = "esc", now
+        elif self._esc == "esc":
+            self._esc = {"[": "csi", "O": "ss3"}.get(ch, "")  # anything else: Meta/Option+key, dropped
+        elif self._esc == "csi":
+            if "\x40" <= ch <= "\x7e":
+                self._esc = ""  # final byte of ESC [ ... (A-D arrows, ~ for F5/PgUp/...)
+        elif self._esc == "ss3":
+            self._esc = ""  # ESC O A..D (application-mode arrows), ESC O P (F1)
+        elif " " <= ch <= "~":
+            return ch
+        return ""
+
+    def _read_win(self) -> str:
+        import msvcrt
+
+        out, now = [], time.monotonic()
+        while msvcrt.kbhit():
+            ch = msvcrt.getwch()
+            if self._win_ext:
+                self._win_ext = False  # scan code of an arrow or function key; its letter must not fly the drone
+                continue
+            if ch in ("\x00", "\xe0"):
+                if msvcrt.kbhit():
+                    msvcrt.getwch()
+                else:
+                    self._win_ext = True
+                continue
+            kept = self._accept(ch, now)
+            if kept:
+                out.append(kept)
+        return "".join(out)
+
     def read(self) -> str:
+        if self._win:
+            return self._read_win()
         import select
 
         if not select.select([self._fd], [], [], 0)[0]:
             return ""
-        out, now = [], time.monotonic()
-        for ch in self._dec.decode(os.read(self._fd, 64)):
-            if self._esc and now - self._esc_t > self.ESC_TIMEOUT_S:
-                self._esc = ""  # the Escape key on its own: a terminal sends a whole sequence at once
-            if ch == "\x1b":
-                self._esc, self._esc_t = "esc", now
-            elif self._esc == "esc":
-                self._esc = {"[": "csi", "O": "ss3"}.get(ch, "")  # anything else: Meta/Option+key, dropped
-            elif self._esc == "csi":
-                if "\x40" <= ch <= "\x7e":
-                    self._esc = ""  # final byte of ESC [ ... (A-D arrows, ~ for F5/PgUp/...)
-            elif self._esc == "ss3":
-                self._esc = ""  # ESC O A..D (application-mode arrows), ESC O P (F1)
-            elif " " <= ch <= "~":
-                out.append(ch)
-        return "".join(out)
+        now = time.monotonic()
+        return "".join(self._accept(ch, now) for ch in self._dec.decode(os.read(self._fd, 64)))
 
     def __exit__(self, *exc) -> None:
+        if self._win:
+            return None
         import termios
 
         termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old)

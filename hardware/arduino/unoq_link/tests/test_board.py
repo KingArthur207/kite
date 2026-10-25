@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
 import os
@@ -378,3 +379,33 @@ def test_the_service_forces_usb_host_mode_before_starting():
     pre = [line for line in unit.splitlines() if line.startswith("ExecStartPre=+")]
     assert pre and "/sys/kernel/debug/usb/4e00000.usb/mode" in pre[0] and "echo host" in pre[0]
     assert "$$f" in pre[0] and pre[0].rstrip().endswith("true'")   # systemd-escaped and never fails the start
+
+
+def _listen_py():
+    path = Path(__file__).resolve().parents[2] / "unoq_wifi" / "listen.py"
+    spec = importlib.util.spec_from_file_location("unoq_wifi_listen", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_heartbeat_is_the_line_listen_py_prints(make_board, token, capsys):
+    """kite-link replaced kite-hello, but unoq_wifi/listen.py still prints the same hello line."""
+    live = make_board(token, None).board
+    live.n = 4
+    payload = json.dumps(live.heartbeat())
+    m = json.loads(payload)
+    _listen_py().show(f"{m.get('msg')} {m.get('n')} from {m.get('host')}", "via internet")
+    line = capsys.readouterr().out
+    assert "via internet" in line
+    assert line.strip().endswith(f"hello 4 from {live.host}")
+
+
+def test_view_stream_frames_change(make_board, token):
+    b = make_board(token, None)
+    code, page, _ = get(b.port, "/view", token)
+    assert code == 200 and b"<img" in page and b"/video.mjpg?token=" in page
+    frames = read_stream(b.port, token, 0.5)
+    assert len(frames) >= 2
+    assert frames[0][1] != frames[-1][1]
+    assert decode_jpeg(frames[0][1]).size == (640, 480)
