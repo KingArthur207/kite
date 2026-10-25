@@ -152,7 +152,7 @@ def test_cached_phrase_plays_without_synthesis(spk):
 def make_brain(ctx=None):
     said, acts = [], []
     a = Actions(navigate=lambda d: (acts.append(("nav", d)), f"Okay, finding a route to {d}.")[1],
-                control=lambda x: (acts.append(x), x)[1], alert_caregiver=lambda m: (acts.append(("help", m)), "sent")[1],
+                control=lambda x: (acts.append(x), x)[1],
                 stop_speaking=lambda: acts.append("stop"), ear_check=lambda: acts.append("ears"))
     b = Brain(ctx or (lambda: {}), a, lambda t, p, **k: said.append(t), None, log=lambda *_: None)
     return b, said, acts
@@ -203,7 +203,6 @@ def test_tool_validation():
     assert b._run_tool("control", {"action": "self_destruct"})[1] is True
     assert b._run_tool("navigate_to", {"destination": ""})[1] is True
     assert b._run_tool("navigate_to", "oops")[1] is True
-    assert b._run_tool("alert_caregiver", {"message": "I'm lost"}) == ("sent", False)
     assert b._run_tool("nope", {})[1] is True
 
 

@@ -112,11 +112,9 @@ def test_paused_guidance_is_silent_but_critical_is_not(app):
     assert "Turn left now." not in spoken(app)
 
 
-def test_caregiver_alert_and_state_are_serialisable(app):
-    app.alert_caregiver("I'm lost")
+def test_state_is_serialisable(app):
     s = json.dumps(app.state(), default=str)
     assert "context" in s
-    assert any(e["type"] == "caregiver_alert" for e in app.events)
 
 
 def test_ear_check_is_spatial(app):
@@ -242,7 +240,7 @@ def test_arriving_somewhere_with_a_saved_hazard_warns_once(app):
     assert sum(t.startswith("Heads up") for t in spoken(app)) == 1
 
 
-def test_caregiver_can_add_memories_over_the_wire(app):
+def test_memories_can_be_added_over_the_wire(app):
     c = client(app, "dashboard")
     c.send({"type": "memory", "kind": "hazard", "text": "Broken paving outside the library on Union"})
     assert wait_for(lambda: any("library" in m.text for m in app.memory.docs.values()), 2)

@@ -11,9 +11,6 @@ with him.
 
 | Feature | Files | Why it stays |
 |---|---|---|
-| Grok Voice line into the live walk (`python -m earpiece caregiver`) | `earpiece/earpiece/caregiver_voice.py` and its tests | SpaceXAI ("uses the Grok Imagine or Voice API"), SpacetimeDB (an agent reading and writing live state) |
-| Dashboard "Message the walker" and the walker's inbox | `dashboard/src/App.tsx`, `CaregiverInbox` in `earpiece/earpiece/spacetime.py` | SpacetimeDB ("instant sync between users, agents and systems"), People-First Social Impact |
-| Claude's `alert_caregiver` tool and `caregiver_alert` events | `earpiece/earpiece/brain.py`, `app.py`, `events.py`, `transport.py`, `dashboard/spacetimedb/src/index.ts` | Anthropic (tool use with checks in code), People-First Social Impact |
 | Grok Imagine scenes and the benchmarks and evals that run on them | `scripts/imagine_scenes.py`, `perception/bench*`, `earpiece/evals/run_live.py` | SpaceXAI |
 | Cartesia Sonic and Ink, the Sonic phrase cache | `earpiece/earpiece/speech.py`, `listen.py` | Cartesia |
 | Moss memory | `earpiece/earpiece/memory.py` | Moss |
@@ -23,6 +20,13 @@ with him.
 
 Renaming user-facing words is fine. "Live dashboard", "walk view" and `?view=walk` are all welcome, as long as the
 feature underneath keeps working.
+
+## Removed features: never restore them
+
+Eddy removed every caregiver feature on Oct 24: the Grok Voice caregiver line (`python -m earpiece caregiver`),
+the dashboard "Message the walker" box and the earpiece's `CaregiverInbox`, and Claude's `alert_caregiver` tool
+with its `caregiver_alert` events. Don't bring them back, in code, the README or the site, even from an older
+branch. The phone GPS stays, shown on the dashboard map for the demo.
 
 ## The tracks
 

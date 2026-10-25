@@ -99,7 +99,7 @@ class EarpieceClient:
         self.send({"type": "control", "action": action})
 
 
-def requests(url: str = "ws://127.0.0.1:5011", kinds=("voice_request", "caregiver_alert")):
+def requests(url: str = "ws://127.0.0.1:5011", kinds=("voice_request",)):
     """Blocking generator of outbound events (e.g. {'type':'voice_request','intent':'navigate',
     'destination':'Crissy Field'}). Reconnects if the earpiece restarts."""
     import time

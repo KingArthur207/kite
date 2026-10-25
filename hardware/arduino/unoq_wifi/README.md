@@ -6,7 +6,7 @@
 The UNO Q's Linux side sends `hello 1`, `hello 2`, ... once a second **through the internet**: it pushes each
 hello to Kite's SpacetimeDB database, and `listen.py` on any computer with internet prints it. That works on
 eduroam, venue Wi-Fi or a phone hotspot, because campus Wi-Fi usually stops devices from reaching each other
-directly but not from reaching the internet. The board also appears as a live device (`unoq`) on the caregiver
+directly but not from reaching the internet. The board also appears as a live device (`unoq`) on the demo
 dashboard. No Arduino IDE, no sketch, no extra libraries: it starts by itself whenever the board powers on and
 keeps retrying until it has internet.
 

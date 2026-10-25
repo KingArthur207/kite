@@ -90,10 +90,6 @@ The drone laptop, the earpiece and the dashboard share one SpacetimeDB module, a
 
 The dashboard shows the walker on a live map from the phone's GPS, the last thing Kite said and every stop, all read from SpacetimeDB through a subscription.
 
-**Both ways, between people and agents**
-
-A message typed on the dashboard, or spoken to Grok Voice, becomes a row in SpacetimeDB and reaches the walker's AirPods seconds later in Cartesia's voice.
-
 **The phone and the board, on any network**
 
 The walker's phone sends its GPS to the Kite receiver on the Arduino UNO Q or the laptop, which writes the newest position to SpacetimeDB, so routing and the dashboard read it from anywhere. The UNO Q posts a signed heartbeat there too, which is how the laptop finds the body camera on campus Wi-Fi with no IP to type.
@@ -150,17 +146,13 @@ Every walk starts from zero, and "my usual" means nothing.
 
 SpaceXAI · Make it Legendary
 
-## Grok is Kite's voice line and its test street.
+## Grok Imagine is Kite's test street.
 
 judged on
 
 - Built with Cursor
 - Uses the Grok Imagine or Voice API
 - Bonus: Grok Bot for planning and teamwork
-**Grok Voice: the line into the live walk**
-
-Run `python -m earpiece caregiver` and just talk. "How's the walk going?" makes Grok read the live walk from SpacetimeDB and answer out loud; "tell her I'm five minutes late" becomes a line the walker hears in their AirPods. Grok's three tools are checked in code, and it can never relay a go-ahead to cross.
-
 **Grok Imagine: the street we can't film**
 
 A cyclist cutting across, a car turning into the crosswalk, someone stepping out of a doorway: Grok Imagine generates each one from the walker's chest height, and Kite's real detector and earpiece play it. On the doorway and oncoming clips Kite says "Person, ahead."

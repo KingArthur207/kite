@@ -464,7 +464,7 @@ def llm_brain(parts, delay=0.05, recall=None):
         recalls.append(q)
         return (recall or (lambda q: [{"kind": "place", "text": "Home: 3601 Lyon St", "score": 0.9}]))(q)
 
-    a = Actions(navigate=lambda d: "ok", control=lambda x: x, alert_caregiver=lambda m: "sent",
+    a = Actions(navigate=lambda d: "ok", control=lambda x: x,
                 stop_speaking=lambda: None, ear_check=lambda: None, recall=rec)
     b = Brain(lambda: {}, a, lambda t, p, **k: said.append(t), None, log=lambda *_: None)
     b._client = FakeClaude(parts, delay)

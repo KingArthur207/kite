@@ -60,7 +60,7 @@ phone is back." when it returns. `--no-announce` turns that off.
 
 Any number of phones can connect at once. Each one gets its own source, `phone-<id>`, where `<id>` is the first 4
 hex digits of a SHA-1 of the phone's CoreBluetooth central UUID (the same for a given phone on a given Mac), e.g.
-`phone-3fa2`. Every phone's position goes to the earpiece and on to SpacetimeDB, so the caregiver map shows all of
+`phone-3fa2`. Every phone's position goes to the earpiece and on to SpacetimeDB, so the dashboard map shows all of
 them. Each `position` carries `accuracy` (m), `speed` (m/s), `course` (deg, GPS direction of travel, null when
 standing) and `walker` (true or false).
 
