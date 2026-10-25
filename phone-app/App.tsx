@@ -156,7 +156,7 @@ const SUB: Record<Mode | 'stopped', string> = {
   lost: 'Trying to reach Kite again',
 };
 
-const TINT: Record<Mode, string> = { idle: '#B9B6C9', searching: '#1D2B6B', connected: '#E2448F', lost: '#E8A33D' };
+const TINT: Record<Mode, string> = { idle: '#B9B6C9', searching: '#1D2B6B', connected: '#34C759', lost: '#E8A33D' };
 
 function Stat({ value, label }: { value: string; label: string }) {
   return (
