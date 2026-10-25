@@ -40,11 +40,11 @@ earpiece_venv() {
   fi
 }
 
-pytest_earpiece() {  # pytest_earpiece <engine>: 4 workers, then failures once more on their own
+pytest_earpiece() {  # pytest_earpiece <engine>: 4 workers (KITE_PYTEST_WORKERS), then failures once more on their own
   # a few tests measure wall-clock timing and can lose under load; a real failure fails twice.
   # `slow` tests are benchmarks (latency budgets): they run alone in step_earpiece, never in parallel.
   local env="KITE_AUDIO_ENGINE=$1"
-  bash -c "cd '$EAR' && $env '$PY' -m pytest -q -n 4 -m 'not slow'" && return 0
+  bash -c "cd '$EAR' && $env '$PY' -m pytest -q -n ${KITE_PYTEST_WORKERS:-4} -m 'not slow'" && return 0
   echo "-- rerunning the failures serially (wall-clock tests can lose under parallel load)"
   bash -c "cd '$EAR' && $env '$PY' -m pytest -q --lf -m 'not slow'"
 }
@@ -76,7 +76,8 @@ step_drone() {
   # a few drone tests measure wall-clock timing; rerun failures once before calling them real
   run "drone tests" bash -c "cd '$ROOT' && { '$DRONE_VENV/bin/python' -m pytest -q -m 'not slow' || '$DRONE_VENV/bin/python' -m pytest -q -m 'not slow' --lf; }"
   earpiece_venv
-  run "sim scene-describe tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q sim/test_scene_describe.py"
+  # scene descriptions, and depth ground removal, obstacle memory and the drone's frame (synthetic depth, no model)
+  run "sim tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q sim/test_scene_describe.py sim/test_world_frame.py"
   # geometry, depth fusion, hazards and event contract with fake models; `-m slow` adds the real models
   run "perception tests" bash -c "cd '$ROOT' && '$PY' -m pytest -q perception/tests"
   # the phone's Bluetooth link with no radio: fix parsing, chunk reassembly, GATT writes, server build (bless)
