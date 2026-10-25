@@ -36,9 +36,10 @@ Fellowship. Kite no longer enters Microsoft or Meta.
 
 ## Writing the README and the site (`site/src`, then `python3 site/tools/build_pages.py`)
 
-- **Only strengths.** Every sponsor is core to Kite and meets its criteria, and goes beyond them. No "known
-  limitations", "weak spots", TODOs, "stand-in", "not yet tested" or "has not flown". Write what's next as
-  "What's next".
+- **Lead with strengths.** Every sponsor is core to Kite and meets its criteria, and goes beyond them. No TODOs
+  or "weak spots" wording. Write future work as "What's next".
+- **Keep the Cartesia "Known limitations" list.** Cartesia's track requires a README that lists the Cartesia
+  features used and their known limitations, so that section stays in the README's Cartesia part.
 - **Keep every claim true.** Frame each fact at full strength, but never invent a number or a capability.
 - **Don't delete docs that are linked.** Before deleting a doc, check that nothing links to it (`git grep`).
 
