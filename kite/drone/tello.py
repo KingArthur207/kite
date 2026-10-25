@@ -101,6 +101,21 @@ def video_packets_arrive(port: int, timeout_s: float) -> bool:
             return False
 
 
+def body_sticks(lr: float, fb: float, right_sign: int = 1, forward_sign: int = 1) -> tuple[float, float]:
+    """kite: rc lr / fb as the drone must receive them (DroneCfg.right_sign / forward_sign; +1 = unchanged)."""
+    return lr * (1 if right_sign >= 0 else -1), fb * (1 if forward_sign >= 0 else -1)
+
+
+_OPPOSITE = {"forward": "back", "back": "forward", "left": "right", "right": "left"}
+
+
+def body_direction(direction: str, right_sign: int = 1, forward_sign: int = 1) -> str:
+    """kite: a discrete move's direction as the drone must receive it, with the same signs as body_sticks()."""
+    if (direction in ("forward", "back") and forward_sign < 0) or (direction in ("left", "right") and right_sign < 0):
+        return _OPPOSITE[direction]
+    return direction
+
+
 @dataclass
 class _Pending:
     cmd: str
@@ -115,8 +130,10 @@ class TelloDrone(Drone):
     def __init__(self, tello=None, video: bool = True, dry_run: bool = False, move_speed_cm_s: int = 50,
                  yaw_sign: int = 1, velocity_scale: float = 0.1, video_fps: int = 60, video_backend: str | None = None, host: str = "192.168.10.1",
                  video_bitrate: str | None = None, video_resolution: str | None = None,
-                 video_stream_fps: str | None = None, rc_hold_s: float | None = RC_HOLD_S):
+                 video_stream_fps: str | None = None, rc_hold_s: float | None = RC_HOLD_S,
+                 forward_sign: int = 1, right_sign: int = 1):
         """tello: an existing djitellopy.Tello (or a test double); created on connect() if None.
+        forward_sign / right_sign (DroneCfg): +1 = the SDK as documented; -1 reverses that axis for rc AND moves.
         velocity_scale: state vgx/vgy/vgz -> m/s (the Tello reports dm/s; check with the latency test).
         video_bitrate / video_resolution / video_stream_fps: sent before streamon (None: not sent), see DroneCfg.
         rc_hold_s: the dead-man delay (None: no watchdog)."""
@@ -126,6 +143,7 @@ class TelloDrone(Drone):
         self.dry_run = dry_run
         self.move_speed_cm_s = move_speed_cm_s
         self.yaw_sign = yaw_sign
+        self.forward_sign, self.right_sign = (1 if forward_sign >= 0 else -1), (1 if right_sign >= 0 else -1)
         self.velocity_scale = velocity_scale
         self.video_fps = video_fps
         self.video_backend = resolve_video_backend(video_backend)  # None -> the default, "auto" -> this platform's reader
@@ -292,6 +310,7 @@ class TelloDrone(Drone):
         self._rc_call_t = time.monotonic()
         if self._pending is not None:
             return  # an rc packet would abort the running discrete command
+        lr, fb = body_sticks(lr, fb, self.right_sign, self.forward_sign)
         vals = (clamp_rc(lr), clamp_rc(fb), clamp_rc(ud), clamp_rc(yaw))
         if self.dry_run:
             if any(vals):
@@ -338,6 +357,7 @@ class TelloDrone(Drone):
 
     def move(self, direction: str, cm: int) -> None:
         cm = check_move(direction, cm)
+        direction = body_direction(direction, self.right_sign, self.forward_sign)
         expected = cm / max(self.move_speed_cm_s, 10) + 1.5
         self._start(f"{direction} {cm}", expected + 6.0, expected)
 

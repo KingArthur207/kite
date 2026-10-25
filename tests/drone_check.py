@@ -7,8 +7,10 @@
     python tests/drone_check.py --fly --no-moves # flight test with the stick steps only (~45 s)
 
 Prints a PASS / FAIL line per step and a summary. In the flight test each stick step also checks the drone moved the
-right way in its telemetry (yaw angle, height, pitch / roll tilt). Like tests/drone_test.py (the raw djitellopy
-latency test) but through kite.drone, so it checks the layer the rest of kite flies with.
+right way in its telemetry (yaw angle, height, pitch / roll tilt), and every stick step and move is also judged by
+the drone's own camera (optical flow: the scene expands flying forward, shifts left flying right, down climbing), so
+the verdict does not depend on where the pilot stands; a DIRECTION SUMMARY ends the flight. Like tests/drone_test.py
+(the raw djitellopy latency test) but through kite.drone, so it checks the layer the rest of kite flies with.
 Safety: 3 x 3 m clear space, 2.5 m ceiling, prop guards, a spotter. Ctrl+C lands. Works on macOS, Windows and Linux.
 """
 
@@ -35,6 +37,156 @@ STICK_STEPS = [
 ]
 MOVES = ["forward", "back", "left", "right", "up", "down"]
 
+# ---------------------------------------------------------------------------------------- camera direction check
+# The drone's own evidence of which way it moved, whatever side the pilot stands on: optical flow in its camera.
+# Seen from the camera, a motion shows as:  forward  the scene EXPANDS      back  it contracts
+#                                           right    it shifts LEFT        left  it shifts right
+#                                           up       it shifts DOWN        down  it shifts up
+#                                           yaw right (cw) it also shifts left: steps are judged by their command type.
+CAMERA_WHERE = ("the camera is the drone's front: stand BEHIND the drone, camera facing away from you, to judge "
+                "directions by eye (facing the camera, forward / back and left / right look swapped)")
+CAM_W = 160  # optical flow on small grey frames: cheap, and blind to H.264 block noise
+GRAD_MIN = 4.0  # grey levels per pixel: a pixel with less gradient carries no motion information
+MIN_TEXTURE = 0.004  # fraction of textured pixels a frame pair needs
+CAM_BASELINE_S = 0.5  # hover watched before each step's command: the camera's noise level
+FLOW_LEVELS, FLOW_WIN = 5, 21  # Farneback pyramid depth and window: a fast turn moves the scene ~20 px a frame
+# axis -> (index in (tx, ty, s, w), sign turning it into "+ = the first word", words, smallest total that counts,
+# what the number means). tx / ty: scene shift in px on a CAM_W-wide image; s: scale change (+ = expands).
+AXES = {
+    "fb": (2, +1, ("forward", "back"), 0.015, "scale"),
+    "lr": (0, -1, ("right", "left"), 1.5, "shift"),
+    "ud": (1, +1, ("up", "down"), 1.5, "shift"),
+    "yaw": (0, -1, ("yaw right", "yaw left"), 1.5, "shift"),
+}
+STEP_AXIS = {"forward": ("fb", +1), "back": ("fb", -1), "right": ("lr", +1), "left": ("lr", -1),
+             "up": ("ud", +1), "down": ("ud", -1), "yaw right": ("yaw", +1), "yaw left": ("yaw", -1)}
+TEL_AXIS = {"fb": ("vx", "pitch_deg"), "lr": ("vy", "roll_deg"), "ud": ("vz", None), "yaw": (None, None)}
+
+
+def flow_params(a, b):
+    """Motion between two grey frames: dense Farneback flow, fitted with u = tx + s*dx - w*dy, v = ty + s*dy + w*dx
+    (dx, dy from the image centre; w is a roll about the optical axis, there so a tilt does not read as a move).
+    Each pixel's u counts with its horizontal gradient and v with its vertical one (a flat patch or the length of an
+    edge says nothing). Returns ((tx, ty, s, w) or None when the pair has too little texture, textured fraction)."""
+    import cv2
+    import numpy as np
+
+    flow = cv2.calcOpticalFlowFarneback(a, b, None, 0.5, FLOW_LEVELS, FLOW_WIN, 3, 5, 1.2, 0)
+    gx = np.abs(cv2.Sobel(a, cv2.CV_32F, 1, 0, ksize=3)) / 8.0
+    gy = np.abs(cv2.Sobel(a, cv2.CV_32F, 0, 1, ksize=3)) / 8.0
+    sel = np.hypot(gx, gy) > GRAD_MIN
+    tex = float(sel.mean())
+    if tex < MIN_TEXTURE:
+        return None, tex
+    h, w = a.shape
+    ys, xs = np.nonzero(sel)
+    dx, dy = xs - (w - 1) / 2.0, ys - (h - 1) / 2.0
+    wx, wy = gx[sel], gy[sel]
+    one, zero = np.ones_like(dx), np.zeros_like(dx)
+    rows = np.concatenate([np.stack([one, zero, dx, -dy], 1) * wx[:, None],
+                           np.stack([zero, one, dy, dx], 1) * wy[:, None]])
+    rhs = np.concatenate([flow[..., 0][sel] * wx, flow[..., 1][sel] * wy])
+    p, *_ = np.linalg.lstsq(rows, rhs, rcond=None)
+    return tuple(float(x) for x in p), tex
+
+
+class CameraMotion:
+    """Frames of one step: hover frames (the noise baseline), mark() when the command goes out, then the motion."""
+
+    def __init__(self):
+        self.prev = None
+        self.params: list = []  # (tx, ty, s, w) or None per consecutive frame pair
+        self.start: int | None = None
+
+    def add(self, image) -> None:
+        import cv2
+
+        h, w = image.shape[:2]
+        g = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+        g = cv2.resize(g, (CAM_W, max(1, round(CAM_W * h / w))), interpolation=cv2.INTER_AREA)
+        if self.prev is not None:
+            self.params.append(flow_params(self.prev, g)[0])
+        self.prev = g
+
+    def mark(self) -> None:
+        self.start = len(self.params)
+
+    def verdict(self, axis: str, sign: int) -> dict:
+        """measured: the direction word or None (inconclusive), conf: |motion| / what noise could explain."""
+        import numpy as np
+
+        k, ksign, words, floor, _ = AXES[axis]
+        start = self.start or 0
+        base = [p for p in self.params[:start] if p is not None]
+        step = [p for p in self.params[start:] if p is not None]
+        out = {"axis": axis, "commanded": words[0 if sign > 0 else 1], "measured": None, "conf": 0.0, "value": 0.0}
+        if len(step) < 3 or len(step) < 0.5 * (len(self.params) - start):
+            out["why"] = "too little texture in view" if len(self.params) - start >= 3 else "too few frames"
+            return out
+        total = ksign * float(sum(p[k] for p in step))
+        thr = floor
+        if len(base) >= 3:  # what hovering produced, scaled to the length of the step
+            b = ksign * np.array([p[k] for p in base])
+            thr = max(floor, 4.0 * float(b.std()) * len(step) ** 0.5 + abs(float(b.mean())) * len(step))
+        out.update(value=total, conf=abs(total) / thr)
+        if out["conf"] < 1.0:
+            out["why"] = f"motion only x{out['conf']:.1f} of the noise"
+            return out
+        out["measured"] = words[0] if total > 0 else words[1]
+        return out
+
+
+def describe(v: dict) -> tuple[str, bool]:
+    """'camera: forward (ok ...)' and whether it confidently says opposite."""
+    unit = AXES[v["axis"]][4]
+    amount = f"scale {100 * v['value']:+.1f}%" if unit == "scale" else f"{v['value']:+.1f} px/{CAM_W}"
+    if v["measured"] is None:
+        return f"camera: inconclusive ({v['why']})", False
+    if v["measured"] == v["commanded"]:
+        return f"camera: {v['measured']} (ok, {amount}, x{v['conf']:.1f} noise)", False
+    if v["axis"] == "yaw":  # a fast turn can alias the flow; the yaw telemetry judges turns
+        return f"camera: {v['measured']}? (disagrees, info only: turns are judged by the yaw telemetry; {amount})", False
+    return f"camera: {v['measured'].upper()} - opposite of the command ({amount}, x{v['conf']:.1f} noise)", True
+
+
+def direction_summary(rows: list[dict]) -> tuple[list[str], str]:
+    """Per axis: commanded vs camera-measured directions over all steps, and the one-line verdict."""
+    lines = ["DIRECTION SUMMARY (from the drone's own camera; telemetry peaks shown, their signs not assumed)"]
+    opposite, mixed, unknown = [], [], []
+    for axis in ("fb", "lr", "ud", "yaw"):
+        mine = [r for r in rows if r["axis"] == axis]
+        if not mine:
+            continue
+        ok = sum(r["measured"] == r["commanded"] for r in mine)
+        bad = sum(r["measured"] is not None and r["measured"] != r["commanded"] for r in mine)
+        pairs = ", ".join(f"{r['commanded']}->{r['measured'] or '?'}" for r in mine)
+        lines.append(f"  {axis:<3} {ok}/{len(mine)} as commanded, {bad} opposite, {len(mine) - ok - bad} "
+                     f"inconclusive   ({pairs})")
+        vel, tilt = TEL_AXIS[axis]
+        tel = "; ".join(f"{r['commanded']} {vel} {r['tel'].get(vel, float('nan')):+.2f}" for r in mine
+                        if vel and r["tel"].get(vel) is not None)
+        if tel:
+            lines.append(f"        telemetry {vel} peaks: {tel}")
+        if axis == "yaw":
+            continue
+        if bad > ok:
+            opposite.append(axis)
+        elif bad:
+            mixed.append(axis)
+        elif ok == 0:
+            unknown.append(axis)
+    if opposite:
+        verdict = f"the drone really moves opposite on {', '.join(opposite)}"
+    elif mixed:
+        verdict = f"the camera saw mixed directions on {', '.join(mixed)}: repeat the test, judge from behind the drone"
+    elif unknown:
+        verdict = (f"camera inconclusive on {', '.join(unknown)} (too little texture or motion): judge from behind "
+                   "the drone")
+    else:
+        verdict = "the drone moves as commanded; if it looked reversed, you were facing the camera"
+    lines.append(f"  VERDICT: {verdict}")
+    return lines, verdict
+
 
 class Abort(Exception):
     """Ctrl+C or a safety landing: stop the sequence and land."""
@@ -50,12 +202,18 @@ class Check:
         self.phase = "starting"
         self.last_frame_t: float | None = None
         self.last_seq = -1  # the reader's frame counter: counts frames even between our polls
+        self.cam: CameraMotion | None = None  # frames of the step being watched
+        self.peaks: dict | None = None  # signed telemetry peaks during that step
+        self.directions: list[dict] = []  # one camera verdict per watched step, for the DIRECTION SUMMARY
+        self.direction_verdict: str | None = None
 
     # ------------------------------------------------------------------ helpers
     def frame(self):
         f = self.src.read()
         if f is not None and f.seq != self.last_seq:
             self.last_frame_t, self.last_seq = f.t, f.seq
+            if self.cam is not None:
+                self.cam.add(f.image)
         return f
 
     def wait(self, seconds: float, rc=(0, 0, 0, 0)) -> None:
@@ -65,6 +223,8 @@ class Check:
             if self.abort.is_set():
                 raise Abort("Ctrl+C")
             self.frame()
+            if self.peaks is not None:
+                self.sample_peaks()
             action = self.d.check(time.time(), self.last_frame_t)
             if action == "land":
                 raise Abort("safety governor is landing (battery, flight time or a land request)")
@@ -88,6 +248,37 @@ class Check:
             return self.d.telemetry()
         except Exception:
             return None
+
+    def sample_peaks(self) -> None:
+        t = self.tel()
+        for k in ("vx", "vy", "vz", "pitch_deg", "roll_deg"):
+            v = getattr(t, k, None) if t is not None else None
+            if v is not None and abs(v) > abs(self.peaks.get(k, 0.0)):
+                self.peaks[k] = v
+
+    def watch_begin(self) -> None:
+        """Before a step's command: hover CAM_BASELINE_S with the camera on (its noise level), then watch the step."""
+        if self.args.dry_run:
+            return
+        self.cam = CameraMotion()
+        self.wait(CAM_BASELINE_S)
+        self.cam.mark()
+        self.peaks = {}
+
+    def watch_end(self, step: str) -> tuple[str, bool]:
+        """The camera's verdict on the step ('' in dry run) and whether it confidently says the opposite."""
+        cam, peaks, self.cam, self.peaks = self.cam, self.peaks, None, None
+        if cam is None:
+            return "", False
+        axis, sign = STEP_AXIS[step]
+        v = cam.verdict(axis, sign)
+        v["tel"] = peaks or {}
+        self.directions.append(v)
+        text, opposite = describe(v)
+        p = v["tel"]
+        tel = " ".join(f"{k.split('_')[0]} {p[k]:+.{2 if k[0] == 'v' else 0}f}" for k in
+                       ("vx", "vy", "vz", "pitch_deg", "roll_deg") if k in p)
+        return f" | {text}" + (f" | tel peaks {tel}" if tel else ""), opposite
 
     def record(self, name: str, ok: bool, detail: str = "") -> None:
         self.results.append((name, ok, detail))
@@ -128,6 +319,7 @@ class Check:
 
     def takeoff(self) -> None:
         self.phase = "takeoff"
+        print(f"  NOTE  {CAMERA_WHERE}", flush=True)
         if self.last_frame_t is None or time.time() - self.last_frame_t > 1.0:
             self.record("takeoff", False, "no live video: the safety governor would only hover")
             raise Abort("no video")
@@ -144,6 +336,7 @@ class Check:
         mag, dur = self.args.mag, self.args.dur
         for name, vec, field, sign in STICK_STEPS:
             self.phase = f"stick {name}"
+            self.watch_begin()
             before = self.tel()
             rc = tuple(mag * c for c in vec)
             peak = 0.0
@@ -175,22 +368,26 @@ class Check:
                     detail = f"peak {field} {peak:+.0f} deg, sign as kite expects"
                 else:
                     detail = f"peak {field} {peak:+.0f} deg, sign OPPOSITE to kite's convention: check it moved {name}"
-            self.record(f"rc {name}", ok, detail)
+            cam, opposite = self.watch_end(name)
+            self.record(f"rc {name}", ok and not opposite, detail + cam)
 
     def moves(self) -> None:
         cm = self.args.move_cm
         for direction in MOVES:
             self.phase = f"move {direction} {cm} cm"
+            self.watch_begin()
             self.d.move(direction, cm)
             reply = self.until_done(15.0)
             ok = reply is not None and reply.lower().startswith("ok")
             detail = f"reply {reply!r}"
             if not ok and self.args.dry_run and reply and reply.startswith("error: safety"):
                 ok, detail = True, f"refused by the safety governor, as it should be on the table ({reply})"
-            self.record(f"move {direction} {cm}", ok, detail)
             self.wait(self.args.settle)
+            cam, opposite = self.watch_end(direction)
+            self.record(f"move {direction} {cm}", ok and not opposite, detail + cam)
         for deg in (45, -45):
             self.phase = f"rotate {deg:+d}"
+            self.watch_begin()
             before = self.tel()
             self.d.rotate(deg)
             reply = self.until_done(15.0)
@@ -200,8 +397,10 @@ class Check:
             ok = reply is not None and reply.lower().startswith("ok")
             if delta is not None:
                 ok = ok and delta * deg > 20
-            self.record(f"rotate {deg:+d}", ok, f"reply {reply!r}" + (f", yaw {delta:+.0f} deg" if delta is not None else ""))
             self.wait(self.args.settle)
+            cam, _ = self.watch_end("yaw right" if deg > 0 else "yaw left")
+            self.record(f"rotate {deg:+d}", ok, f"reply {reply!r}" + (f", yaw {delta:+.0f} deg" if delta is not None else "")
+                        + cam)
 
     def land(self) -> bool:
         """Land and wait until it is down (the main thread ignores Ctrl+C meanwhile)."""
@@ -238,6 +437,10 @@ class Check:
             if self.d.flying or self.d.busy():
                 landed = self.land()
                 self.record("land", landed, "down" if landed else "NOT CONFIRMED: it lands itself ~15 s after the last command")
+            self.cam = self.peaks = None
+            if self.directions:
+                lines, self.direction_verdict = direction_summary(self.directions)
+                print("\n" + "\n".join(lines), flush=True)
             self.phase = "done"
 
 

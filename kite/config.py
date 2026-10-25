@@ -88,6 +88,12 @@ class DroneCfg:
     host: str = "192.168.10.1"  # kite: the drone's address (the tests point it at kite.testing's emulator)
     move_speed_cm_s: int = 50  # speed for discrete moves ('speed' command)
     yaw_sign: int = 1  # +1 if telemetry yaw grows with `cw`
+    # kite: the one place movement directions are defined. Every stick and every discrete move goes through
+    # TelloDrone, which applies these, so drone_check, drone_fly, follow, kite.record and run/app.py all follow them.
+    # +1 = the Tello SDK as documented (rc b > 0 and "forward" fly where the camera looks; rc a > 0 and "right" fly to
+    # the camera's right). Flip one ONLY if tests/drone_check.py --fly's camera check proves that axis moves opposite.
+    forward_sign: int = 1
+    right_sign: int = 1
     video_fps: int = 60  # reader retrieve cap: must sit above the ~30 fps stream (equal drops ~40 % of frames)
     video_backend: str = DEFAULT_VIDEO_BACKEND  # kite: see VIDEO_BACKENDS above
     # Tello video link, sent after `command` and before `streamon` (None: not sent, the drone keeps its default).
