@@ -210,3 +210,33 @@ def test_collision_course_ignores_a_car_turning_across():
     head_on = [(0.1 * i, 0.1) for i in range(10)]
     assert collision_course(head_on, CorridorHit(True, False, 0.1, -0.2, 0.4, 0.0), 1.2, 0.5)
     assert collision_course([], hit, None, 0.5)
+
+
+def test_zoo_backend_adapter(monkeypatch):
+    """perception/depth_zoo.py's interface (feat/depth-shootout): get(name).estimate(frame) -> DepthResult."""
+    import sys
+    import types
+    from dataclasses import dataclass, field
+
+    import perception
+
+    @dataclass
+    class Result:
+        depth_m: np.ndarray
+        confidence: np.ndarray
+        latency_ms: float = 1.0
+        meta: dict = field(default_factory=dict)
+
+    class Rel:
+        metric = False
+
+        def estimate(self, frame, intrinsics=None):
+            return Result(np.full((4, 4), 0.5, np.float32), np.ones((4, 4), np.float32), meta={"disparity": True})
+
+    fake = types.ModuleType("perception.depth_zoo")
+    fake.get = lambda name, device="cpu": Rel()
+    monkeypatch.setitem(sys.modules, "perception.depth_zoo", fake)
+    monkeypatch.setattr(perception, "depth_zoo", fake, raising=False)
+    b = D.make_backend("zoo:da2-relative-s", "cpu")
+    z, c = b.estimate(np.zeros((4, 4, 3), np.uint8))
+    assert b.name == "zoo:da2-relative-s" and b.kind == "relative_inverse" and z.shape == c.shape == (4, 4)

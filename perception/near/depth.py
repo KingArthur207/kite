@@ -67,6 +67,28 @@ class ArrayBackend:
         return out if isinstance(out, tuple) else (out, None)
 
 
+class ZooBackend:
+    """Any perception/depth_zoo.py backend (feat/depth-shootout): dz.get(name).estimate(frame) -> DepthResult with
+    depth_m and confidence. A non-metric one is treated as an affine disparity when its meta says so, else as a
+    depth with an unknown scale; either way the ground anchor makes it metric. Its own "+anchor" suffix also works
+    (then the near anchor sees a nearly metric map and fits a scale close to 1)."""
+
+    def __init__(self, name: str, device: str = "cpu"):
+        try:
+            from .. import depth_zoo as dz  # type: ignore[attr-defined]
+        except ImportError as e:
+            raise SystemExit(f"--depth zoo:{name}: perception/depth_zoo.py is not on this branch ({e})")
+        self.name = f"zoo:{name}"
+        self.backend = dz.get(name, device)
+        self.kind = "metric" if getattr(self.backend, "metric", True) else "relative"
+
+    def estimate(self, frame):
+        r = self.backend.estimate(frame)
+        if not getattr(self.backend, "metric", True) and r.meta.get("disparity"):
+            self.kind = "relative_inverse"
+        return r.depth_m, getattr(r, "confidence", None)
+
+
 def make_backend(spec: str, device: str = "cpu") -> DepthBackend | None:
     """--depth value -> backend: outdoor | indoor (DA-V2 metric small) | off | zoo:<name>."""
     if spec in (None, "", "off", "none"):
@@ -74,14 +96,7 @@ def make_backend(spec: str, device: str = "cpu") -> DepthBackend | None:
     if spec in ("outdoor", "indoor"):
         return DAv2Backend(spec, device)
     if spec.startswith("zoo:"):
-        try:
-            from .. import depth_zoo  # type: ignore[attr-defined]
-        except ImportError as e:
-            raise SystemExit(f"--depth {spec}: perception/depth_zoo.py is not on this branch yet ({e})")
-        b = depth_zoo.load(spec[4:], device=device)
-        if not hasattr(b, "kind"):
-            b.kind = "metric"
-        return b
+        return ZooBackend(spec[4:], device)
     raise SystemExit(f"--depth {spec!r}: outdoor, indoor, off or zoo:<backend>")
 
 
