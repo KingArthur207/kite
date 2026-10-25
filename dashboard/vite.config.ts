@@ -14,7 +14,7 @@ function spacetimeOrigins(host: string): string[] {
 // Content-Security-Policy as a <meta> tag in production builds (vite build / vite preview), so it
 // holds on any static host. Row payloads in the public tables are written by anyone, so this is
 // defense in depth behind React's escaping: no injected or third-party scripts, and the page can
-// only talk to SpacetimeDB and fetch OSM tiles. Not applied to `vite` dev, whose React refresh
+// only talk to SpacetimeDB and load images (OSM tiles, LAN camera feeds). Not applied to `vite` dev, whose React refresh
 // preamble is an inline script. 'unsafe-eval' is required: the spacetimedb SDK compiles its BSATN
 // (de)serializers with Function() from the module schema (field names, never row data).
 function csp(): Plugin {
@@ -30,7 +30,8 @@ function csp(): Plugin {
         "default-src 'self'",
         "script-src 'self' 'unsafe-eval'",
         "style-src 'self'",
-        "img-src 'self' data: https://tile.openstreetmap.org",
+        // Camera feeds (MJPEG <img>) come from LAN devices on any host: the UNO Q board, kite.sources.mjpeg.
+        "img-src 'self' data: http: https:",
         "font-src 'self'",
         `connect-src 'self' ${connect}`,
         "object-src 'none'",

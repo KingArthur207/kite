@@ -15,6 +15,28 @@ npm install
 npm run dev        # connects to Maincloud by default
 ```
 
+### Analytics view (the default)
+
+The page opens on the demo display: the map with every phone on the left, and the walker's camera and the drone's camera on the right, with a strip below showing phones live, accuracy, speed, events per minute, the last spoken line and active hazards. Press `P` to present it full screen (`Esc` leaves). The old caregiver dashboard described below is still at `/?view=caregiver`.
+
+The camera panes are MJPEG URLs shown in a plain `<img>`. Set them in the URL or in the Feeds popover in the header, which saves them in this browser:
+
+```
+/?webcam=http://<board-ip>:8765/video.mjpg?token=<token>&drone=http://localhost:8090/video.mjpg
+```
+
+The walker camera comes from the UNO Q board service (`hardware/arduino/unoq_link/board.py`). A pane that has no URL says so, and one that fails retries every 3 s.
+
+For the drone pane, serve any frame source as MJPEG from the repo root:
+
+```bash
+python -m kite.sources.mjpeg --source recordings/<take> --port 8090    # a recorded take, looped
+python -m kite.sources.mjpeg --source out/pov/pov_sim.mp4 --port 8090  # any video file, looped
+python -m kite.sources.mjpeg --source tello --port 8090                # the live Tello, only while run/app.py is NOT running
+```
+
+The Tello's UDP video can only be read by one program, so while `run/app.py` flies the drone it owns the stream. A live drone feed during a flight needs the app to publish its own frames as MJPEG. Ask Arthur.
+
 ![Dashboard](docs/reveal-normal.png)
 
 The page uses the Kite logo's colours: cream paper, navy ink, one pink accent. The map (Leaflet, OpenStreetMap tiles muted toward cream in CSS) shows every client that sends `position` events, one per source (`phone-3fa2`, `phone-9c01`, plain `phone`, or `sim` during a replay). Each gets its own colour, a dot with its accuracy circle, its recent trail and a dashed predicted path 10 s ahead: from `speed` and `course` when the phone sends them and is moving at 0.5 m/s or more, else from its last few fixes, and hidden when it is standing still or its fix is stale. The Phones card lists them with accuracy, speed and how long since each last reported; click one to follow it. The map view buttons are "All phones" (fits every live client), "Follow" and "Whole walk". Hazards and the beacon are placed around the newest client, from their walker-frame `bearing` and `distance` plus that client's compass `heading`. On the right: the walker's status, the phones, the last spoken line with who said it, the latest stop, active hazards (with distance and direction in words, such as "8 m ahead right"), the caregiver message box, the devices and the live feed (collapsed).
