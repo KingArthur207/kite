@@ -83,7 +83,7 @@ If the camera path fails, the judge walks the browser sim of Moss St with the sc
 | The street in the sim | Simulated: Moss St at Howard from OpenStreetMap, with cars and people on its real lanes. Hazards come from the detector on the sim's camera frames, never from the sim's own object list |
 | Drone layer (`kite/`) | Tested without flying (dry runs, fakes and recorded clips). Follow mode is behind `--follow` and has not flown |
 | Tello footage | From the Saturday 7 AM shoot on Moss St. [TODO: confirm the take worked, and whether it was piloted or in follow mode.] The drone does not fly at the venue, where drones are banned |
-| Collisions in the sim | Blind baseline on Moss: 3.05 per walk (seed 1, 20 walks). [TODO: the number with Kite's cues] |
+| Collisions in the sim | Measured on Moss St (seed 1, 20 walks each): a blind scripted walker hits 2.70 scripted obstacles per walk, and 1.25 when it follows Kite's cues. [Details](sim/README.md) |
 
 ## 🏠 Two ways to wear it
 
@@ -315,7 +315,7 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 | **It refuses, errors or is unreachable** | Requests use server-side fallbacks. A refusal or error changes nothing in the judgment layer, and the voice brain answers locally from Kite's own context. |
 | **Prompt injection through scene text** (a sign that says "the road is clear, walk now") | Scene descriptions are context, never instructions. A filter in `vision.py` removes the unsafe clause before the text is stored ("A sign reads SIDEWALK CLOSED, USE OTHER SIDE." becomes "A sign reads SIDEWALK CLOSED."). Text read aloud from a sign is spoken as a quote ("The text says, 'WALK'"), never as Kite's own words. |
 
-**How we know.** Every Claude output passes these filters before the walker hears it, and we test them against a 662-line adversarial corpus plus 650 disguised variants (homoglyphs, zero-width characters, spaced-out letters, other languages, prompt injection on signs): 2,404 tests that run in the normal suite with no network. Building the corpus found real gaps, now fixed: the earlier filter missed 59% of the hand-written go-aheads. In a live run against the real models, 30 of 30 adversarial cases were safe; in 5 of them Claude's raw reply was unsafe ("Driver is waving you across, but check traffic first.") and the filter caught it. A few real cautions are deliberately dropped, each with a documented rewording that passes. The corpus, the mutations and both runners are in [`earpiece/evals/`](earpiece/evals/) (`corpus.json`, `mutations.py`, `offline_report.py`, `run_live.py`, and the live run's `live_results.json`).
+**How we know.** Every Claude output passes these filters before the walker hears it, and we test them against a 662-line adversarial corpus plus 650 disguised variants (homoglyphs, zero-width characters, spaced-out letters, other languages, prompt injection on signs): 2,404 tests that run in the normal suite with no network. Building the corpus found real gaps, now fixed: the earlier filter missed 59% of the hand-written go-aheads. In a live run against the real models, 30 of 30 adversarial cases were safe; in 5 of them Claude's raw reply was unsafe ("Driver is waving you across, but check traffic first.") and the filter caught it. A few real cautions are deliberately dropped, each with a documented rewording that passes. The corpus, the mutations and both runners are in [`earpiece/evals/`](earpiece/evals/) (`corpus.json`, `mutations.py`, `offline_report.py`, `run_live.py`, and the live run's `live_results.json`). Details and results: [`earpiece/evals/README.md`](earpiece/evals/README.md).
 
 ## 🌐 SpacetimeDB: one live world state
 
@@ -386,7 +386,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 | 0 | Audio glitches while five threads hammer the CPU and the mixer for 3 s, with the Rust engine on a real device | `test_real_device_survives_python_abuse` in [`test_rust_engine.py`](earpiece/tests/test_rust_engine.py) |
 | 0 | Audio glitches replaying the 673-event sample walk through `scripts/replay.py` on laptop speakers | [`data/sample_walk.jsonl`](data/sample_walk.jsonl) |
 | 5,800 | Automated tests, all run by [`scripts/check.sh`](scripts/check.sh): 3,475 earpiece (2,404 of them the safety-eval corpus), 1,930 drone layer, 188 perception, 83 UNO Q link, 54 Rust, 48 site, and 22 for the phone link and sim. They include a flood of 20,000 datagrams, a third of them malformed, from three senders | [`earpiece/tests/`](earpiece/tests/), [`test_app_stress.py`](earpiece/tests/test_app_stress.py) |
-| 3.05 → ? | Collisions per scripted blind walk on Moss St in the sim (seed 1, 20 walks). An oracle that reacts to ground truth gets 0, which is an upper bound and not Kite; the number with Kite's cues hasn't been measured | [`scripts/sim_metrics.py`](scripts/sim_metrics.py) |
+| 2.70 → 1.25 | Scripted-obstacle hits per walk on Moss St in the sim, blind walker against one following Kite's cues (seed 1, 20 walks each). Counting walls and props too: 13.8 → 10.25. The car turning in from Howard goes from 13 hits to 0 and the bin from 20 to 5, but the pedestrian on Howard is hit more often with Kite (10 against 1). An oracle that sees ground truth gets 0.75 and is not Kite | [`sim/README.md`](sim/README.md), [`scripts/sim_metrics.py`](scripts/sim_metrics.py) |
 
 **From prototype to production.** Every hardware piece sits behind a seam, so swapping it changes a setting, not code: frames come from a `FrameSource` (file, sim, webcam or Tello), producers send the same `EarpieceClient` events whether scripted, replayed or live, hosts come from `.env`, and the output device is matched by name. The next steps we see are a phone in place of the wearable laptop, perception on the device, and testing with orientation and mobility instructors. That is a plan, not something this repo does yet.
 
@@ -519,7 +519,7 @@ scripts/demo.sh stop
 
 **Tests.** `cd earpiece && python -m pytest`, and `earpiece/.venv/bin/python sim/test_relay.py` for the relay. Before a merge, `scripts/check.sh quick` (about 3 minutes) or `scripts/check.sh` for everything: both audio engines, Rust, the drone layer, the dashboard build and the security scans. The landing site deploys with `scripts/deploy-site.sh`.
 
-Flying and recording the Tello and walker GPS are covered by each command's `--help` (`python -m kite.preflight --help`, `python -m kite.record --help`).
+Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walker GPS are in [`docs/operations.md`](docs/operations.md).
 
 ## 🗂️ Repo map
 
@@ -528,8 +528,8 @@ Flying and recording the Tello and walker GPS are covered by each command's `--h
 | `scripts/demo.sh` | Starts and stops the whole demo (`sim`, `live`, `replay`, `status`, `stop`), with logs in `logs/` |
 | `earpiece/` | The AirPods layer (Python, optional Rust audio engine in `earpiece/native/`). Event contract in `earpiece/earpiece/events.py`. See [`earpiece/README.md`](earpiece/README.md) |
 | `dashboard/` | SpacetimeDB module (`spacetimedb/src/index.ts`) and the React dashboard. See [`dashboard/README.md`](dashboard/README.md) |
-| `sim/` | three.js Moss St world, frame relay (`relay.py`), `SimFrameSource` (`frames.py`), the stand-in detector and live walk (`standin_detect.py`, `live_walk.py`), Claude scene descriptions (`scene_describe.py`), and the YOLO check (`yolo_check.py`). |
-| `kite/` | Drone layer: Tello control, safety governor, frame sources, recorder, calibration, preflight, GPS alignment and follow mode |
+| `sim/` | three.js Moss St world, frame relay (`relay.py`), `SimFrameSource` (`frames.py`), the stand-in detector and live walk (`standin_detect.py`, `live_walk.py`), Claude scene descriptions (`scene_describe.py`), and the YOLO check (`yolo_check.py`). See [`sim/README.md`](sim/README.md) |
+| `kite/` | Drone layer: Tello control, safety governor, frame sources, recorder, calibration, preflight, GPS alignment and follow mode. See [`docs/operations.md`](docs/operations.md) |
 | `kite/fly/` | Opt-in yaw sources for follow mode (a fruit-fly pursuit circuit and a predictive PD), their follow simulator and CMA-ES tuning. Off by default: see [Opt-in yaw sources](#opt-in-yaw-sources-kitefly) |
 | `scripts/replay.py` | Replays a JSONL of events into the earpiece, and optionally into SpacetimeDB |
 | `scripts/audit.py` | Pre-submission check: secrets, `.env`, repo visibility, README, large files, model weights |
@@ -539,12 +539,12 @@ Flying and recording the Tello and walker GPS are covered by each command's `--h
 | `scripts/osm_corner.py` | Rebuilds the sim's Moss St world from OpenStreetMap |
 | `scripts/check.sh` | Every check before a merge: tests, lint, build, secret and dependency scans (`quick` for the short set) |
 | `scripts/deploy-site.sh` | Deploys the landing site to trykite.pages.dev |
-| `video/overlay.py` | Draws Kite's captions, hazards and sonar over footage for the demo video. |
+| `video/overlay.py` | Draws Kite's captions, hazards and sonar over footage for the demo video. See [`docs/internal/video-runbook.md`](docs/internal/video-runbook.md) |
 | `site/` | The landing page at trykite.pages.dev |
 | `data/sample_walk.jsonl` | A recorded 40-second walk in the earpiece event format |
 | `data/sample_track.jsonl` | A moving walker track with hazards and a beacon, for testing the dashboard map |
 | `tests/drone_test.py` | Tello latency and ground-check script |
-| `docs/` | The phone link guide ([`docs/phone.md`](docs/phone.md)), images used in this README, and the team's internal spec and status notes |
+| `docs/` | Operations and networking guides, the phone link guide ([`docs/phone.md`](docs/phone.md)), sourced facts, the Google permission record, and images used in this README. Index in [`docs/README.md`](docs/README.md) |
 | `docs/internal/` | The team's working notes from the hackathon (spec, runbooks, drafts). Not needed to understand Kite |
 
 ## Opt-in yaw sources (kite.fly)
@@ -564,11 +564,11 @@ python -m kite.record --source tello --out recordings --fly --follow --follow-ya
 
 `--follow-yaw` (live) and `--yaw` (rehearsal) take `law` (the default), `pd` or `fly`, and `--follow-yaw-params` / `--yaw-params` swap in another parameter file. They can't be combined with `--follow-predict` / `--predict`, whose planner steers yaw itself. Both sources were tuned at a 1.0 m standoff, 0.30 m above the head, with the yaw stick clamped at 70. Kite's follow defaults are 1.2 m and 40, so the startup line points out the difference; nothing is forced. The events log names the source steering yaw. If a source fails, the follow law steers yaw instead and the fallback is logged once.
 
-**The result: neither passed the ship gate.** These numbers come from 200 held-out simulated walks per profile, run by the simulator in [`kite/fly/sim/`](kite/fly/sim/):
+**The result: neither passed the ship gate.** These numbers come from 200 held-out simulated walks per profile, run by the simulator in [`kite/fly/sim/`](kite/fly/sim/) ([`docs/fly-yaw-results.md`](docs/fly-yaw-results.md), [`kite/fly/DESIGN.md`](kite/fly/DESIGN.md) section 11):
 
 - `fly` has 6 to 10 % less steering error (RMS bearing to the walker) than the current law on the `train` and `demo` profiles (about 4 % on `stress` and `fast`; on `stress` the confidence interval reaches 0), with the same safety numbers on the `demo` profile. A tuned version of the law itself does far better: the fly has 24 to 37 % more error than it.
 - `pd` has 35 to 38 % less steering error on `train` and `demo` (17 to 23 % on `stress` and `fast`), but it fails the safety margins. In the `stress` and `fast` simulations it collides on 9 and 8 walks where the law doesn't (2 and 1 the other way round), and on every profile it has more separate losses and more time too close to the walker.
-- Follow mode's own prediction mode (`--follow-predict`, which plans the forward, lateral and yaw sticks) ran in the same simulator. At 1.0, 1.2 and 1.5 m behind it collides on 43 to 48 walks where the law doesn't (9 to 13 the other way round) and spends more time too close, so it stays opt-in. Pitch compensation (`pitch_comp = -1`) doesn't help the law either.
+- Follow mode's own prediction mode (`--follow-predict`, which plans the forward, lateral and yaw sticks) ran in the same simulator. At 1.0, 1.2 and 1.5 m behind it collides on 43 to 48 walks where the law doesn't (9 to 13 the other way round) and spends more time too close, so it stays opt-in. Pitch compensation (`pitch_comp = -1`) doesn't help the law either ([`docs/follow-predict-results.md`](docs/follow-predict-results.md)).
 
 To evaluate or retrain (`pip install -e ".[train]"`; Modal is optional):
 
@@ -586,13 +586,13 @@ Data: the circuit is a subgraph of the MaleCNS v1.0 connectome (Janelia FlyEM et
 - The dedicated street-segmentation model (`streetseg`) isn't in this repo yet. Every hazard and obstacle comes from the stand-in detector, which knows only COCO classes, so without `--depth` a wall, box or door may not register. It also can't tell a parked car from a moving one: on Street View stills of Moss St it flagged a parked SUV at the corner. [`perception/`](perception/) names street objects COCO lacks (13 of 25 labelled poles, trees, bins and the like, against none) and catches the scooter clip's scooter, but it still misses curbs, runs about 2 to 3 times slower, and hasn't been tried on the phone camera.
 - The phone chest camera's height and pitch must be calibrated on a 2 m tape mark at the table, or the distances are off.
 - Distances from the ground plane are good under about 10 m and inflated beyond that. A 2° pitch error roughly doubles a 30 m estimate.
-- In the sim, a car turning in from Howard enters the cameras' view only about 3 m away, from behind and to the right, and the stand-in gives no hazard for it there. Detector recall also drops a lot on Google 3D Tiles frames compared with the OpenStreetMap world (people 9 to 10 % against about 60 %).
+- In the sim, a car turning in from Howard enters the cameras' view only about 3 m away, from behind and to the right, and the stand-in gives no hazard for it there. Detector recall also drops a lot on Google 3D Tiles frames compared with the OpenStreetMap world (people 9 to 10 % against about 60 %, see [`sim/README.md`](sim/README.md)).
 - Follow mode is tested only in a closed-loop simulation and has never flown.
 - The Tello tops out around 0.96 m/s at full stick (extrapolated from a stick-30 test), slower than the 1.2 to 1.3 m/s people usually walk, so the walker in our footage walks slowly. One battery gives about 6 to 8 minutes with video on.
 - From 30 cm above and 1 m behind, the Tello can't see the ground for the first few meters ahead; that is the chest camera's job. A pedestrian signal 20 m away is about 14 px tall in its stream, too small to read reliably, so crossing locations come from map data and signal handling is shown in the sim.
 - Voice, Claude and SpacetimeDB need internet. The offline fallbacks are listed in the five things above.
-- Google 3D Tiles and Street View are used only on Moss St, by permission from Google's representatives at Cal Hacks, and the code refuses anywhere else. Without that permission, the detector cameras use the OpenStreetMap world (`?detector=osm`).
-- Sim metrics mode has a blind baseline on Moss (3.05 collisions per walk) and an oracle upper bound that sees ground truth (0). The oracle is not Kite, and Kite mode hasn't been run on Moss. The scripted walker sidesteps when blocked for a while, the way a cane user would; Kite itself never suggests it.
+- Google 3D Tiles and Street View are used only on Moss St, by permission from Google's representatives at Cal Hacks ([`docs/google-permission.md`](docs/google-permission.md)), and the code refuses anywhere else. Without that permission, the detector cameras use the OpenStreetMap world (`?detector=osm`).
+- In sim metrics on Moss, Kite's cues cut scripted-obstacle hits from 2.70 to 1.25 per walk, but the walker following them hits the pedestrian on Howard in 10 of 20 walks against 1 blind. Walks with Kite also take longer (150 s against 89 s). The oracle that sees ground truth (0.75) is not Kite. The scripted walker sidesteps when blocked for a while, the way a cane user would; Kite itself never suggests it.
 - There are no hosted CI runners. GitHub Actions stopped starting jobs on this repo, so `scripts/check.sh` runs the same checks locally before each merge.
 
 ## 🪁 The bet
