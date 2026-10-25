@@ -139,6 +139,12 @@ A cane can't feel a mirror or a branch at head height. Kite's chest camera cover
 
 A guide dog that flies. Kite puts a second pair of eyes behind your head, turns the street into sound that comes from where things are, and uses a fruit fly's pursuit circuit to keep the drone pointed at you.
 
+## Run it
+
+```bash
+python run/epic.py --model v3b-joint
+```
+
 ## Built with
 
 AirPods, Anthropic, Arduino, Arduino UNO Q, Cartesia, Claude, Cursor, Depth Anything, DJI Tello, Google Maps, Grok, Mapbox, OpenCV, OpenStreetMap, Python, PyTorch, React, SpacetimeDB, three.js, TypeScript, Vite, WebSockets, YOLO.
