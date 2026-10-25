@@ -1187,8 +1187,17 @@ class EmulatorCamera(FrameSource):
         return self
 
     def _run(self) -> None:
+        # Paced to a fixed schedule: waiting a whole period *after* each render made the rate 1 / (period + render),
+        # ~25 fps instead of 30, and a busy CPU pushed it under the 20 fps that preflight calls a weak link.
         seq = 0
-        while not self._stop.wait(1.0 / self.fps):
+        period = 1.0 / self.fps
+        next_t = time.monotonic()
+        while True:
+            next_t += period
+            if self._stop.wait(max(0.0, next_t - time.monotonic())):
+                return
+            if time.monotonic() - next_t > period:   # a whole frame late (a stalled process): resync, never burst
+                next_t = time.monotonic()
             if self.paused:
                 continue
             img = render_view(self.emu.snapshot(), self.size)
