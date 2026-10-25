@@ -53,6 +53,7 @@ VERSION = 1
 BOUNDARY = "kiteframe"
 MAX_VIEWERS = 4
 IDLE_S = 5.0                 # the camera stops capturing this long after the last viewer leaves
+RESCAN_S = 3.0               # while showing "no camera" to a viewer, look for a newly plugged camera this often
 
 
 def log(msg: str) -> None:
@@ -279,7 +280,8 @@ class FrameHub:
 
     def __init__(self, camera, reason: str, fps: float, opener=None) -> None:
         self.camera, self.reason, self.fps = camera, reason, max(0.5, fps)
-        self.opener = opener                  # re-opens a real camera after it fails
+        self.opener = opener                  # finds a camera plugged in (or switched to host mode) after start
+        self.next_scan = 0.0
         self.cond = threading.Condition()
         self.frame: bytes | None = None
         self.seq = 0
@@ -310,6 +312,15 @@ class FrameHub:
                     self.cond.wait(0.5)
                     next_t = time.monotonic()
                     continue
+            if self.opener and isinstance(self.camera, SyntheticCamera) and time.monotonic() >= self.next_scan:
+                self.next_scan = time.monotonic() + RESCAN_S
+                camera, reason = self.opener()
+                if isinstance(camera, SyntheticCamera):
+                    camera.close()
+                else:
+                    log(f"camera: found {camera.name}; switching from the test pattern")
+                    self.camera.close()
+                    self.camera, self.reason, self.failures = camera, reason, 0
             jpeg = self.camera.read()
             if jpeg is None:
                 self.failures += 1
@@ -486,7 +497,11 @@ class Board:
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue] = []
         camera, reason = open_camera(cfg.camera, cfg.width, cfg.height, cfg.fps, cfg.sys_root)
-        self.hub = FrameHub(camera, reason, cfg.fps)
+        opener = None
+        if (cfg.camera or "auto") == "auto":      # hot-plug: a camera plugged in after start is picked up
+            def opener():
+                return open_camera("auto", cfg.width, cfg.height, cfg.fps, cfg.sys_root)
+        self.hub = FrameHub(camera, reason, cfg.fps, opener=opener)
         self.cloud = Spacetime(cfg.st_host, cfg.st_db) if cfg.cloud else None
         self.stop = threading.Event()
         self._addr_cache: tuple[float, tuple] = (0.0, ([], None))

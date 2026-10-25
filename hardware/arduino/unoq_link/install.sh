@@ -20,9 +20,9 @@ PORT=8765
 
 # --- hashes: written by publish.py, do not edit by hand ---
 HASHES='
-37626ed56d6439292fd0e4089ff19a6ad690155e3b942b77d4ff3f780deffe0b  board.py
+b7ccd91c012c4d18483a5a8882ced8e29d58a0be7e6dc6e731cc62fef66aba19  board.py
 52e5830daf6b605c0fe0f8aa10ae6f056e711eff7bdaf195f3ec5b5476533c1b  kite_common.py
-d44d3fa35b0f3ec54735e1681cec94153c90b75d287701f14449b5da0e770669  kite-link.service
+ae2a6d22541f01b6ba28253078e2b8d5545708a2531899a7e1f8f45ad303a659  kite-link.service
 '
 # --- end hashes ---
 

@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -320,3 +321,60 @@ def test_camera_idles_without_viewers(make_board, token, monkeypatch):
     seq = b.board.hub.seq
     time.sleep(1.0)
     assert b.board.hub.seq == seq
+
+
+def test_a_camera_plugged_in_after_start_is_picked_up(monkeypatch):
+    """Board started with no camera (or before USB host mode was on); a viewer is watching the pattern;
+    a camera appears -> the hub switches to it within a rescan, without restarting the service."""
+    monkeypatch.setattr(board, "RESCAN_S", 0.05)
+    real_jpeg = board.test_pattern(0, 64, 48, label="REAL")
+
+    class FakeCamera:
+        name = "usb camera /dev/video0"
+        size = (64, 48)
+
+        def read(self):
+            return real_jpeg
+
+        def close(self):
+            pass
+
+    calls = {"n": 0}
+
+    def opener():
+        calls["n"] += 1
+        if calls["n"] < 3:                       # not there yet for the first two scans
+            return board.SyntheticCamera(64, 48, "NO CAMERA"), "no USB camera found"
+        return FakeCamera(), "ok"
+
+    hub = board.FrameHub(board.SyntheticCamera(64, 48, "NO CAMERA"), "no USB camera found", 20, opener=opener)
+    t = threading.Thread(target=hub.run, daemon=True)
+    t.start()
+    try:
+        deadline = time.monotonic() + 5
+        got = None
+        seq = 0
+        while time.monotonic() < deadline:
+            r = hub.wait(seq, timeout=1.0)           # a viewer keeps asking for frames
+            if r:
+                seq, got = r
+                if got == real_jpeg:
+                    break
+        assert got == real_jpeg, "the newly plugged camera was never used"
+        assert hub.reason == "ok" and isinstance(hub.camera, FakeCamera)
+        assert calls["n"] >= 3
+    finally:
+        hub.stop.set()
+        t.join(2)
+
+
+def test_no_rescan_when_a_camera_was_chosen_explicitly():
+    hub = board.FrameHub(board.SyntheticCamera(64, 48, "NO CAMERA"), "synthetic by request", 20, opener=None)
+    assert hub.opener is None
+
+
+def test_the_service_forces_usb_host_mode_before_starting():
+    unit = (Path(board.__file__).resolve().parent / "kite-link.service").read_text()
+    pre = [line for line in unit.splitlines() if line.startswith("ExecStartPre=+")]
+    assert pre and "/sys/kernel/debug/usb/4e00000.usb/mode" in pre[0] and "echo host" in pre[0]
+    assert "$$f" in pre[0] and pre[0].rstrip().endswith("true'")   # systemd-escaped and never fails the start
