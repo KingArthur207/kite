@@ -53,7 +53,7 @@ Each track below has its own section further down. The same answers, laid out ag
 | **Best Use of Moss** | A real-time voice agent's memory: personal places and hazards in `kite-memory`, 3–12 ms local lookups on every utterance, place resolution before routing, memories in every Claude question, hazard warnings on arrival, saved by voice, offline mirror. [Details](#-moss-kites-memory-of-the-wearers-world) | [`memory.py`](earpiece/earpiece/memory.py), [`memory_seed.json`](earpiece/earpiece/memory_seed.json), [`brain.py`](earpiece/earpiece/brain.py), [`test_memory.py`](earpiece/tests/test_memory.py) |
 | **SpaceXAI: Make it Legendary** | Grok Imagine generates the street scenes we can't film (a car turning in, a cyclist cutting across, someone stepping out of a doorway). Kite's detector is benchmarked on them, the earpiece plays them, and Claude's prompt-injection tests paint fake signs onto them. Built in Cursor, planned with Grok. [Details](#-spacexai-grok-imagine-is-kites-test-street) | [`imagine_scenes.py`](scripts/imagine_scenes.py), [`data/imagined/`](data/imagined/), [`bench_labels.json`](perception/bench_labels.json), [`run_live.py`](earpiece/evals/run_live.py), [`test_imagine_scenes.py`](tests/test_imagine_scenes.py) |
 | **Best Hardware Hack** | Tello above and behind the head, chest camera for the near field, AirPods as a managed output with stem-press controls, a real-time Rust audio engine | [`native/src/`](earpiece/native/src/), [`controls.py`](earpiece/earpiece/controls.py), [`devices.py`](earpiece/earpiece/devices.py), [`tests/drone_test.py`](tests/drone_test.py), [`sim/`](sim/) |
-| **Best People-First Social Impact Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; urgency as three tones, not numbers; no video on the dashboard | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
+| **Best People-First Social Impact Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; urgency as three tones, not numbers; no video in the shared walk view, and none ever stored in SpacetimeDB | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
 | **Most Technically Complex** | Lock-free Rust audio engine with a Python twin, binaural rendering from a head model, time-to-contact sonar, a time-aware speech scheduler, four cloud services kept off the safety path | [`native/src/lib.rs`](earpiece/native/src/lib.rs), [`native/src/mixer.rs`](earpiece/native/src/mixer.rs), [`spatial.py`](earpiece/earpiece/spatial.py), [`sonar.py`](earpiece/earpiece/sonar.py), [`scripts/check.sh`](scripts/check.sh) |
 | **Most Creative Hack** | A guide dog that flies: a second point of view above the walker's head, the street turned into sound that comes from where things are, three tones for urgency, streets an image model imagined, and a fruit fly's steering circuit on the drone | [`perception/near/`](perception/near/), [`scripts/imagine_scenes.py`](scripts/imagine_scenes.py), [`kite/fly/`](kite/fly/) |
 
@@ -157,7 +157,7 @@ flowchart LR
     direction TB
     airpods(["🎧 AirPods or any<br/>stereo Bluetooth headphones"]):::out
     stdb[("SpacetimeDB<br/>event · latest")]:::ext
-    dash["🖥️ Live dashboard<br/>map · no video"]:::ext
+    dash["🖥️ Live dashboard<br/>map · walk view"]:::ext
     stdb <--> dash
   end
 
@@ -338,7 +338,7 @@ The module in [`dashboard/spacetimedb/src/index.ts`](dashboard/spacetimedb/src/i
 
 **The earpiece bridge** ([`earpiece/earpiece/spacetime.py`](earpiece/earpiece/spacetime.py)) mirrors every event the earpiece receives, plus what it says and hears and voice requests. High-rate frames (`obstacles`, `heartbeat`) are coalesced to two a second per source. Publishing never blocks: events go on a bounded queue that one thread POSTs as plain HTTP reducer calls, so a dead network can't stall the audio. `scripts/replay.py --spacetime` uses the same bridge.
 
-**The dashboard** ([`dashboard/src/App.tsx`](dashboard/src/App.tsx)) reads only from SpacetimeDB through a live subscription: the walker's position and trail (from the phone's GPS in the live demo), active hazards, the last things Kite said, device status and a live feed. It shows no camera video. The hosted database is `kite-sync-pl6rp` on Maincloud; a local `spacetime start` instance with the same module is the offline fallback.
+**The dashboard** ([`dashboard/src/App.tsx`](dashboard/src/App.tsx)) reads Kite's state only from SpacetimeDB through a live subscription: the walker's position and trail (from the phone's GPS in the live demo), active hazards, the last things Kite said, device status and a live feed. The walk view (`?view=walk`) shows no camera video. The live view beside it can show the body camera and the drone as MJPEG streams pulled straight from the UNO Q board and the drone laptop on the local network, so video never passes through SpacetimeDB. The hosted database is `kite-sync-pl6rp` on Maincloud; a local `spacetime start` instance with the same module is the offline fallback.
 
 **Both ways, between people.** Type a message in the dashboard's "Message the walker" box and it becomes a row in SpacetimeDB; the earpiece's inbox picks it up within about a second, runs it through the same go-ahead filter as Claude (nothing on this channel can say "cross" or "go"), and speaks it in Cartesia's voice at info priority, so it never interrupts a warning. The safety corpus checks the filter on 20 everyday messages that must get through and 325 go-ahead phrasings that must not ([`CaregiverInbox`](earpiece/earpiece/spacetime.py), [`corpus.json`](earpiece/evals/corpus.json)).
 
@@ -402,7 +402,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 
 **Responsible design.**
 
-- *Privacy:* the dashboard shows positions and events, never camera video, and frames sent to Claude are not mirrored anywhere. Our rule is that faces in any stored frame are blurred, and no frames are stored during the live demo.
+- *Privacy:* the shared walk view shows positions and events, never camera video; video never goes through SpacetimeDB, and frames sent to Claude are not mirrored anywhere. Our rule is that faces in any stored frame are blurred, and no frames are stored during the live demo.
 - *Local safety path:* obstacle cues travel over localhost UDP, never through the cloud. Claude, Cartesia, Moss and SpacetimeDB can all be down and Kite still beeps and says "Stop."
 - *Hearing:* a limiter caps output at -1 dBFS, and critical warnings can't be muted or paused by any remote command.
 - *Security:* see [`SECURITY.md`](SECURITY.md). Inputs bind to localhost by default, Claude's tools are allow-listed, no API keys are in the repo, and [`scripts/check.sh`](scripts/check.sh) runs gitleaks, pip-audit, bandit, npm audit and cargo audit.
@@ -425,7 +425,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 - **It never says "go" on a guess.** Only code can clear a stop, and "walk" must hold for 0.6 s (see [the five things](#-the-five-things-that-make-it-a-product-not-a-demo) above).
 - **The walker stays in charge.** Guidance can be paused and beeps muted (very close warnings still play).
 - **It remembers the walker's world**, so their own places and hazards come with them.
-- **The dashboard shows the walk, not the walker.** Position, hazards and what Kite said, never camera video.
+- **The walk view shows the walk, not the walker.** Position, hazards and what Kite said, never camera video.
 
 ## ⚙️ Most Technically Complex
 
@@ -437,7 +437,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 - **A depth shoot-out instead of a guess** ([`perception/docs/depth_shootout.md`](perception/docs/depth_shootout.md)). Depth Anything V2 variants, ARCore-style depth from motion, and fused combinations are scored on laser-scanned DIODE frames and rendered walks with exact depth. Anchoring a model's scale to the floor cuts its error 3 to 7 times; fusing it with motion stereo catches every P1 frame on the walks.
 - **Beeps that survive a frozen interpreter.** A dedicated Rust thread (`KITE_SONAR_THREAD=native`) builds and schedules every sonar beep itself, sample-identical to the Python path. When Python froze for 500 ms in a test, the beats due during the freeze still played on time.
 - **A speech scheduler that reasons about time**: priorities, mid-word preemption with re-queueing, per-utterance time-to-live, de-duplication and a phrase cache, on one Cartesia WebSocket.
-- **Five AI and data services at the core, the safety path still instant**: Cartesia, Claude, Moss, SpacetimeDB and Grok each run off the audio thread, so a beep never waits on a network.
+- **Five AI and data services at the core, the safety path still instant**: Cartesia, Claude, Moss and SpacetimeDB each run off the audio thread, so a beep never waits on a network, and Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.
 
 ## 🔬 Anatomy
 

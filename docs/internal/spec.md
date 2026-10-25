@@ -7,7 +7,7 @@ This is the shared contract for all four of us and our Claude sessions. If your 
 
 ## 0. Where we are (Sat Oct 24, 4:15 AM) and what we're aiming for
 
-Detail lives in [STATUS](STATUS.md), [the shoot pack](shoot-day.md), [the pitch](pitch.md) and [the demo runbook](demo-runbook.md).
+Detail lives in [STATUS](STATUS.md). The shoot pack, the pitch and the demo runbook were retired after the shoot; they are in the git history.
 
 **The target at judging (Sun 10:30 AM).**
 - Passive demo (changed Sat 7:45 AM, section 4): the judge wears nothing. They watch a point-of-view video of a walk and hear what the walker hears: the sonar, the beacon and Kite's voice.
@@ -104,7 +104,7 @@ Sources for the picture, in order of preference:
 
 Also at the table:
 - The live phone-camera walk (`scripts/demo.sh live iPhone`) as an optional extra: a teammate walks, and Kite's audio plays on the speakers.
-- The dashboard and the caregiver line (`python -m earpiece caregiver`) on a second screen.
+- The live dashboard on a second screen.
 - The Tello on the table, powered off (drones are banned at the venue).
 
 Pitch order and timing: Arthur and Rex own this; not decided yet.
@@ -248,7 +248,7 @@ These were the kickoff prompts on Friday night. The owner table above is current
 
 ## 8. The shoot (Sat Oct 24, the corner we shot at: Moss St at Howard)
 
-The run sheet for the morning is `docs/internal/shoot-day.md`: the timeline, positions, who records what, props, backups and the commands for after the take.
+The run sheet for the morning was `docs/internal/shoot-day.md` (retired after the shoot, in the git history): the timeline, positions, who records what, props, backups and the commands for after the take.
 
 Location: Moss Street at Howard Street, SoMa (OSM way 8916291). Moss is a one-way alley, 192 m from Folsom to Howard, with sidewalks on both sides. Where Moss meets Howard there is a marked zebra crosswalk across Moss with no signal and tactile paving (OSM node at 37.778352, -122.408768); cars turn into Moss from Howard across it. Howard is three lanes one-way at 25 mph with a protected bike track.
 

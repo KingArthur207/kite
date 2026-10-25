@@ -274,7 +274,7 @@ YOLO runs on the drone's view and the chest camera's. Scored against the browser
 
 **Five AI and data services, the safety path still instant**
 
-Cartesia, Claude, Moss, SpacetimeDB and Grok each run off the audio thread, so a beep never waits on a network and Kite keeps guiding with no connection at all.
+Cartesia, Claude, Moss and SpacetimeDB each run off the audio thread, so a beep never waits on a network and Kite keeps guiding with no connection at all. Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.
 
 _drone view, YOLO boxes_
 
