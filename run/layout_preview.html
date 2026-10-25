@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kite — layout</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root {
+      --bg: #1a1918;
+      --panel: #222120;
+      --video: #121110;
+      --border: #2e2c2a;
+      --text: #e8e6e1;
+      --muted: #8a8782;
+      --faint: #5c5a56;
+      --accent: #d97757;
+      --ok: #7fb28a;
+      --warn: #d6b25e;
+      --error: #e5675e;
+      --sash: #2e2c2a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+      font: 13px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+    .titlebar {
+      height: 36px; display: flex; align-items: center; gap: 10px;
+      padding: 0 14px; background: #161514; border-bottom: 1px solid var(--border);
+      user-select: none;
+    }
+    .titlebar .mark { width: 8px; height: 8px; border-radius: 2px; background: var(--accent); }
+    .titlebar strong { font-weight: 600; letter-spacing: 0.01em; }
+    .titlebar .hint { color: var(--faint); font-size: 12px; }
+    .titlebar .spacer { flex: 1; }
+    .shell { height: calc(100% - 36px); display: flex; flex-direction: column; min-height: 0; }
+    .work { flex: 1; display: flex; min-height: 0; }
+    .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }
+    #camera { flex: none; }
+    #map-pane { flex: 1; }
+    .pane.headless { background: var(--bg); }
+    .head {
+      height: 34px; display: flex; align-items: center; gap: 8px;
+      padding: 0 12px; color: var(--muted); border-bottom: 1px solid var(--border); flex: none;
+    }
+    .head .name { font-size: 12px; }
+    .video {
+      flex: 1; margin: 12px; background: var(--video); color: var(--faint);
+      display: flex; align-items: center; justify-content: center; min-height: 80px;
+      border: 1px solid #1c1b1a;
+    }
+    .switch {
+      display: flex; gap: 6px; margin: 0 12px 12px; flex: none;
+    }
+    .switch button {
+      flex: 1; height: 32px; border: 1px solid var(--border); background: #2a2826; color: var(--muted);
+      border-radius: 4px; font: inherit; cursor: pointer;
+    }
+    .switch button.on { color: var(--text); border-color: var(--accent); background: #322824; }
+    .sash-x, .sash-y { flex: none; background: var(--sash); }
+    .sash-x { width: 5px; cursor: col-resize; }
+    .sash-y { height: 5px; cursor: row-resize; }
+    .sash-x:hover, .sash-y:hover, .sash-x.drag, .sash-y.drag { background: var(--accent); }
+    #map { flex: 1; min-height: 0; background: #d9d3c5; }
+    .leaflet-container { font: inherit; background: #d9d3c5; }
+    .console { display: flex; flex-direction: column; min-height: 96px; background: var(--panel); }
+    .log { flex: 1; overflow: auto; padding: 8px 14px 4px; font: 12.5px/1.45 Consolas, "Cascadia Mono", monospace; }
+    .log .t { color: var(--faint); }
+    .log .info { color: var(--muted); }
+    .log .ok { color: var(--ok); }
+    .log .err { color: var(--error); }
+    .log .warn { color: var(--warn); }
+    .consoles { flex: 1; display: flex; min-height: 0; }
+    .console-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    .entry {
+      display: flex; align-items: center; gap: 8px; margin: 6px 12px 12px;
+      background: #2a2826; border: 1px solid var(--border); border-radius: 2px; padding: 0 10px;
+    }
+    .entry .prompt { color: var(--accent); font: 16px Consolas, monospace; }
+    .entry input {
+      flex: 1; background: transparent; border: 0; outline: 0; color: var(--text);
+      font: 13px Consolas, "Cascadia Mono", monospace; padding: 8px 0;
+    }
+    .entry .keys { color: var(--faint); font-size: 12px; white-space: nowrap; }
+    .gps {
+      width: 14px; height: 14px; border-radius: 50%; background: #4264fb; border: 2px solid #fff;
+      box-shadow: 0 0 0 4px rgba(66, 100, 251, 0.28);
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <span class="mark"></span>
+    <strong>kite</strong>
+    <span class="hint">layout preview</span>
+    <span class="spacer"></span>
+    <span class="hint">dry run</span>
+  </div>
+  <div class="shell">
+    <div class="work" id="work">
+      <section class="pane" id="camera" style="width: 46%">
+        <div class="head"><span class="name" id="cam-title">camera</span></div>
+        <div class="video" id="stage">waiting for video</div>
+        <div class="switch">
+          <button type="button" id="drone" class="on">Drone</button>
+          <button type="button" id="body">Body cam</button>
+        </div>
+      </section>
+      <div class="sash-x" id="sash-x"></div>
+      <section class="pane" id="map-pane">
+        <div class="head">
+          <span class="name">map</span>
+          <span class="spacer" style="flex:1"></span>
+          <span class="hint" id="map-note">sample route</span>
+        </div>
+        <div id="map"></div>
+      </section>
+    </div>
+    <div class="sash-y" id="sash-y"></div>
+    <section class="console" id="console" style="height: 230px">
+      <div class="consoles">
+        <div class="console-pane">
+          <div class="head"><span class="name">drone</span></div>
+          <div class="log" id="log">
+            <div><span class="t">19:32:13  </span><span class="info">DRY RUN: nothing reaches the motors.</span></div>
+            <div><span class="t">19:32:13  </span><span class="info">layout only. voice is not connected.</span></div>
+          </div>
+          <form class="entry" id="form">
+            <span class="prompt">›</span>
+            <input id="cmd" autocomplete="off" spellcheck="false" placeholder="">
+            <span class="keys">takeoff · land · e</span>
+          </form>
+        </div>
+        <div class="sash-x" id="sash-console"></div>
+        <div class="console-pane">
+          <div class="head"><span class="name">earpiece</span><span class="spacer" style="flex:1"></span><span class="hint">arduino</span></div>
+          <div class="log" id="ear-log">
+            <div><span class="t"></span><span class="info">listening for the UNO Q…</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const SAMPLE = [37.86704, -122.25755];
+    const SAMPLE_ROUTE = [
+      [37.86704, -122.25755],
+      [37.86712, -122.25880],
+      [37.86940, -122.25890],
+      [37.87220, -122.25810],
+      [37.87583, -122.25722]
+    ];
+    const map = L.map("map", { zoomControl: true, attributionControl: true }).setView(SAMPLE, 15);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+    const route = L.polyline(SAMPLE_ROUTE, { color: "#4264fb", weight: 5, opacity: 0.9 }).addTo(map);
+    const puckEl = document.createElement("div");
+    puckEl.className = "gps";
+    const puck = L.marker(SAMPLE, { icon: L.divIcon({ className: "", html: puckEl, iconSize: [14, 14], iconAnchor: [7, 7] }) }).addTo(map);
+    map.fitBounds(route.getBounds(), { padding: [28, 28] });
+
+    const stage = document.getElementById("stage");
+    const title = document.getElementById("cam-title");
+    function show(which) {
+      const drone = which === "drone";
+      document.getElementById("drone").classList.toggle("on", drone);
+      document.getElementById("body").classList.toggle("on", !drone);
+      title.textContent = drone ? "camera" : "body cam";
+      stage.textContent = drone ? "waiting for video" : "body cam";
+    }
+    document.getElementById("drone").onclick = () => show("drone");
+    document.getElementById("body").onclick = () => show("body");
+
+    function drag(sash, onMove) {
+      sash.addEventListener("pointerdown", (e) => {
+        sash.setPointerCapture(e.pointerId);
+        sash.classList.add("drag");
+        const move = (ev) => onMove(ev);
+        const up = () => {
+          sash.classList.remove("drag");
+          sash.removeEventListener("pointermove", move);
+          sash.removeEventListener("pointerup", up);
+          map.invalidateSize();
+        };
+        sash.addEventListener("pointermove", move);
+        sash.addEventListener("pointerup", up);
+      });
+    }
+    const camera = document.getElementById("camera");
+    const work = document.getElementById("work");
+    drag(document.getElementById("sash-x"), (e) => {
+      const box = work.getBoundingClientRect();
+      const w = Math.min(box.width - 240, Math.max(240, e.clientX - box.left));
+      camera.style.width = w + "px";
+    });
+    drag(document.getElementById("sash-console"), (e) => {
+      const box = document.querySelector("#console .consoles").getBoundingClientRect();
+      const w = Math.min(box.width - 180, Math.max(180, e.clientX - box.left));
+      document.querySelector("#console .console-pane").style.flex = "none";
+      document.querySelector("#console .console-pane").style.width = w + "px";
+    });
+    const consoleEl = document.getElementById("console");
+    const shell = document.querySelector(".shell");
+    drag(document.getElementById("sash-y"), (e) => {
+      const box = shell.getBoundingClientRect();
+      const h = Math.min(box.height - 180, Math.max(96, box.bottom - e.clientY));
+      consoleEl.style.height = h + "px";
+    });
+
+    document.getElementById("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const input = document.getElementById("cmd");
+      const text = input.value.trim();
+      input.value = "";
+      if (!text) return;
+      const log = document.getElementById("log");
+      const line = document.createElement("div");
+      const now = new Date();
+      const stamp = now.toTimeString().slice(0, 8);
+      line.innerHTML = '<span class="t">' + stamp + "  </span><span class=\"info\">› " + text.replace(/[&<>]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])) + "</span>";
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+    });
+
+    async function poll() {
+      try {
+        const res = await fetch("https://maincloud.spacetimedb.com/v1/database/kite-sync-pl6rp/sql", {
+          method: "POST",
+          body: "SELECT * FROM latest WHERE type = 'position'"
+        });
+        if (!res.ok) return;
+        const body = await res.json();
+        const names = body[0].schema.elements.map((e) => e.name.some);
+        const rows = body[0].rows
+          .map((row) => Object.fromEntries(names.map((n, i) => [n, row[i]])))
+          .filter((d) => String(d.source || "").startsWith("phone"));
+        if (!rows.length) return;
+        const ageOf = (t) => (Date.now() / 1000) - ((Array.isArray(t) ? t[0] : t) / 1e6);
+        rows.sort((a, b) => ageOf(a.t) - ageOf(b.t));
+        const fix = JSON.parse(rows[0].payload);
+        const age = ageOf(rows[0].t);
+        puck.setLatLng([fix.lat, fix.lng]);
+        const note = document.getElementById("map-note");
+        note.textContent = age < 20 ? "live gps · sample route" : "stored gps · sample route";
+      } catch (e) { /* preview still shows the sample point */ }
+    }
+    const earLog = document.getElementById("ear-log");
+    let lastHello = null;
+    function earLine(text, kind) {
+      const line = document.createElement("div");
+      const stamp = new Date().toTimeString().slice(0, 8);
+      line.innerHTML = '<span class="t">' + stamp + "  </span><span class=\"" + kind + "\">" + text + "</span>";
+      earLog.appendChild(line);
+      while (earLog.children.length > 40) earLog.removeChild(earLog.firstChild);
+      earLog.scrollTop = earLog.scrollHeight;
+    }
+    async function pollBoard() {
+      try {
+        const res = await fetch("https://maincloud.spacetimedb.com/v1/database/kite-sync-pl6rp/sql", {
+          method: "POST",
+          body: "SELECT * FROM latest WHERE key = 'heartbeat:unoq'"
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const body = await res.json();
+        const names = body[0].schema.elements.map((e) => e.name.some);
+        const row = body[0].rows[0];
+        if (!row) return;
+        const rec = Object.fromEntries(names.map((n, i) => [n, row[i]]));
+        const payload = JSON.parse(rec.payload);
+        const mark = String(payload.n);
+        if (mark === lastHello) return;
+        lastHello = mark;
+        const text = (payload.msg || "hello") + " " + payload.n + " from " + (payload.host || "unoq");
+        earLine("via internet   " + text, "ok");
+      } catch (e) {
+        if (lastHello !== "err") earLine("can't reach the board. " + e.message, "warn");
+        lastHello = "err";
+      }
+    }
+    poll();
+    pollBoard();
+    setInterval(poll, 2000);
+    setInterval(pollBoard, 2000);
+    window.addEventListener("resize", () => map.invalidateSize());
+  </script>
+</body>
+</html>

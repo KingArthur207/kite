@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1918">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Kite Whereabouts</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/vendor/leaflet.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="map"></div>
+  <form id="bar">
+    <p id="status">Location off</p>
+    <div class="row">
+      <button id="enable" type="button">Enable location</button>
+    </div>
+    <p class="hint">While location is on, each fix is written to SpacetimeDB. Stopping location stops the writes.</p>
+  </form>
+  <script src="/vendor/leaflet.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

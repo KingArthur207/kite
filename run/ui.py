@@ -1,8 +1,9 @@
-"""The app window (Tkinter, dark): map placeholder on the left, camera with the person boxes on the right, and a
+"""The app window (Tkinter, dark): camera with the person boxes on the left, Mapbox on the right, and a
 console underneath that shows every command sent and every reply received and takes the next command.
 
 Tk runs on the main thread (macOS only draws windows there); the pilot's control thread never touches Tk. The UI
-polls the pilot every ~33 ms: new console lines, the newest camera frame, the status line.
+polls the pilot every ~33 ms: new console lines, the newest camera frame, the status line, and the phone's
+newest position from SpacetimeDB.
 """
 
 from __future__ import annotations
@@ -17,6 +18,10 @@ from tkinter import font as tkfont
 
 import cv2
 from PIL import Image, ImageTk
+
+from map_pane import MapPane
+from nav_signal import NavSignal, nav_phrase
+from whereabouts import Whereabouts, format_fix
 
 # palette: dark, quiet, one warm accent
 BG = "#1a1918"  # window
@@ -37,7 +42,7 @@ OTHER_BGR = (130, 128, 125)
 AIRBORNE = ("taking off", "climbing", "following", "searching", "holding", "landing")
 
 STATE_COLOURS = {"following": OK, "climbing": WARN, "searching": WARN, "holding": WARN, "taking off": WARN, "landing": WARN, "emergency": ERROR,
-                 "offline": ERROR}
+                 "offline": ERROR, "live": OK}
 
 
 def _fonts(root):
@@ -80,7 +85,8 @@ def _dpi_aware() -> None:
 
 
 class App:
-    def __init__(self, pilot_factory, title: str = "kite"):
+    def __init__(self, pilot_factory, title: str = "kite", *, opening: str | None = None, hint: str | None = None,
+                 close_note: str | None = None, shutdown_note: str | None = None):
         _dpi_aware()
         self.root = tk.Tk()
         self.root.title(title)
@@ -96,6 +102,17 @@ class App:
         self._photo = None
         self._shown_seq = None
         self._closing = False
+        self.whereabouts = None
+        self.nav = NavSignal()
+        self._route_mark = None
+        self._gps_sig = None
+        self._gps_logged = 0.0
+        self._gps_paint = None
+        self._gps_paint_at = 0.0
+        self.opening = opening
+        self.hint_text = hint or "destination: place  ·  find me …  ·  takeoff · land · e"
+        self.close_note = close_note
+        self.shutdown_note = shutdown_note
         self._build()
         self.pilot = pilot_factory(self.log)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -118,14 +135,13 @@ class App:
         top.columnconfigure(1, weight=1, uniform="pane")
         top.rowconfigure(0, weight=1)
 
-        map_panel, _ = self._panel(top, "map")
-        map_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
-        self.map_canvas = tk.Canvas(map_panel, bg=PANEL, highlightthickness=0)
-        self.map_canvas.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-        self.map_canvas.bind("<Configure>", self._draw_map_placeholder)
-
         cam_panel, cam_head = self._panel(top, "camera")
-        cam_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        cam_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+
+        map_panel, _ = self._panel(top, "map")
+        map_panel.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        self.map_pane = MapPane(map_panel)
+        self.map_pane.pack(fill="both", expand=True, padx=14, pady=(0, 14))
         self.status = tk.Label(cam_head, text="", bg=PANEL, fg=FAINT, font=(self.mono_font, 10))
         self.status.pack(side="right")
         self.state_label = tk.Label(cam_head, text="starting", bg=PANEL, fg=MUTED, font=(self.ui_font, 11, "bold"))
@@ -153,21 +169,10 @@ class App:
         self.entry.bind("<Return>", self._submit)
         self.entry.bind("<Up>", lambda e: self._recall(-1))
         self.entry.bind("<Down>", lambda e: self._recall(+1))
-        tk.Label(row, text="takeoff · land · e = emergency", bg=PANEL, fg=FAINT,
+        tk.Label(row, text=self.hint_text, bg=PANEL, fg=FAINT,
                  font=(self.ui_font, 11)).pack(side="right", padx=(12, 2))
         self.entry.focus_set()
         return console
-
-    def _draw_map_placeholder(self, event=None):
-        c = self.map_canvas
-        c.delete("all")
-        w, h = c.winfo_width(), c.winfo_height()
-        step = 40
-        for x in range(0, w, step):
-            c.create_line(x, 0, x, h, fill="#262423")
-        for y in range(0, h, step):
-            c.create_line(0, y, w, y, fill="#262423")
-        c.create_text(w / 2, h / 2, text="map goes here", fill=FAINT, font=(self.ui_font, 15))
 
     # ------------------------------------------------------------------ console
     def log(self, text: str, kind: str = "info") -> None:
@@ -200,11 +205,30 @@ class App:
         self.history.append(text)
         self.hist_i = len(self.history)
         cmd = text.lower()
+        if self._try_nav(text):
+            return
         self.pilot.send(text)
         if cmd in ("e", "emergency"):
             self.root.after(300, self._after_emergency)
         elif cmd == "quit":
             self._on_close()
+
+    def _try_nav(self, text: str) -> bool:
+        """destination: and find me go to the walking route. A number answers which place. Drone words do not."""
+        choice = text.strip()
+        if self.nav.waiting_for_choice() and choice.isascii() and choice.isdigit() and int(choice) > 0:
+            self.log(text, "sent")
+            self.nav.submit(choice, self.log)
+            return True
+        phrase = nav_phrase(text)
+        if phrase is None:
+            return False
+        self.log(text, "sent")
+        if not phrase:
+            self.log("Where would you like to go?", "error")
+            return True
+        self.nav.submit(phrase, self.log)
+        return True
 
     def _after_emergency(self):
         if self.pilot.state == "emergency":  # sent: motors are off, quit
@@ -244,12 +268,14 @@ class App:
             bits.append(f"h {s.height_m:.2f} m")
         bits.append(f"video {s.video_fps:.0f} fps")
         if s.det_fps:
-            bits.append(f"yolo {s.det_fps:.0f} fps")
+            bits.append(f"{getattr(s, 'meter', None) or 'yolo'} {s.det_fps:.0f} fps")
         if s.yaw:
             bits.append(f"steer {s.yaw}")
         if s.link_error:
             bits.append("WI-FI DOWN")
         self.status.configure(text="   ".join(bits), fg=ERROR if s.link_error else FAINT)
+        self._show_gps()
+        self._show_route()
         f = p.last_frame
         if f is not None and f.seq != self._shown_seq:  # redraw only when a new frame arrived
             self._shown_seq = f.seq
@@ -268,13 +294,52 @@ class App:
         self._photo = ImageTk.PhotoImage(Image.fromarray(rgb))
         self.cam.configure(image=self._photo, text="")
 
+    def _show_gps(self):
+        """The phone's newest SpacetimeDB position. Map and console stay quiet until it changes."""
+        if self.whereabouts is None:
+            return
+        fix = self.whereabouts.latest()
+        if not fix:
+            return
+        now = time.monotonic()
+        paint = (round(fix["lat"], 5), round(fix["lon"], 5), fix.get("accuracy_m"), int(fix.get("age_s") or 0))
+        if paint != self._gps_paint and now - self._gps_paint_at >= 1.0:
+            self._gps_paint = paint
+            self._gps_paint_at = now
+            self.map_pane.set_fix(fix["lat"], fix["lon"], fix.get("accuracy_m"), fix.get("age_s"))
+            self.nav.note_fix(fix["lat"], fix["lon"])
+        sig = (round(fix["lat"], 5), round(fix["lon"], 5), bool(fix.get("accepted")))
+        accepted_now = bool(fix.get("accepted")) and not (self._gps_sig and self._gps_sig[2])
+        if sig != self._gps_sig and (self._gps_sig is None or accepted_now or now - self._gps_logged >= 5.0):
+            self._gps_sig = sig
+            self._gps_logged = now
+            self.log(format_fix(fix), "recv" if fix.get("accepted") else "info")
+
+    def _show_route(self):
+        """Draw a new walking path when a destination or a find-me search resolves."""
+        snap = self.nav.snapshot()
+        route = snap["route"]
+        mark = None if not route else (len(route), route[0], route[-1], snap["say"])
+        if mark == self._route_mark:
+            return
+        self._route_mark = mark
+        self.map_pane.set_route(route)
+
     # ------------------------------------------------------------------ lifecycle
     def run(self) -> int:
-        self.log("starting: connecting to the drone and loading the person detector ...", "info")
+        self.log(self.opening or "starting: connecting to the drone and loading the person detector ...", "info")
         # Ctrl+C in the terminal: land, then close (Tk would otherwise kill the process mid-air on macOS)
         signal.signal(signal.SIGINT, lambda *a: self.root.after(0, self._on_close))
         self._poll_signals()
         self.pilot.start()
+        try:
+            self.whereabouts = Whereabouts(self.log)
+            self.whereabouts.start()
+            self.log("gps: waiting for the phone", "info")
+            self.nav.start()
+        except Exception as exc:
+            self.whereabouts = None
+            self.log(f"gps: listener did not start ({exc})", "error")
         self.root.after(33, self._refresh)
         self.root.mainloop()
         return 0
@@ -287,7 +352,7 @@ class App:
     def _on_close(self):
         if self._closing:
             return
-        self.log("closing: landing first if it is flying ...", "info")
+        self.log(self.close_note or "closing: landing first if it is flying ...", "info")
         self._quit(land=True)
 
     def _quit(self, land: bool):
@@ -313,8 +378,12 @@ class App:
 
     def _finish(self):
         """pilot.shutdown() can block (djitellopy retries an unreachable drone): run it off the UI thread."""
-        self.log("closing the drone link ...", "info")
+        self.log(self.shutdown_note or "closing the drone link ...", "info")
         done = threading.Event()
+
+        if self.whereabouts is not None:
+            self.whereabouts.stop()
+        self.nav.stop()
 
         def work():
             try:

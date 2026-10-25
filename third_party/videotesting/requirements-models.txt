@@ -1,0 +1,12 @@
+# Installed for `python -m streetseg.download` and for a live model run.
+# Perception itself will not download weights while it is running.
+-r requirements.txt
+ultralytics>=8.4.185
+lap>=0.5.12
+torch
+torchvision
+transformers>=4.46
+huggingface_hub
+pillow
+djitellopy>=2.5
+gdown>=5.2

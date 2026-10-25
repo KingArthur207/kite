@@ -6,7 +6,12 @@ The main scripts. Each runs from the repo root, installed or not (`kite` is impo
 pip install -r requirements.txt          # once per laptop
 python run/app.py --dry-run              # on the table: video, YOLO and commands, nothing reaches the motors
 python run/app.py                        # fly
+python run/demo.py                       # same window, webcam, SegFormer-B0 overlay
 ```
+
+## demo.py: the same window, on a webcam
+
+`python run/demo.py` opens the kite window and paints SegFormer-B0 street segmentation on the webcam. A connected Logitech C270 is chosen over the built-in camera. `python run/app.py` is unchanged and still talks only to the drone.
 
 ## app.py: take off, lock onto the person in front, follow them
 
