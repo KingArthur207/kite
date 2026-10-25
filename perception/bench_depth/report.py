@@ -126,12 +126,13 @@ def write(json_path: Path, sheet_path: Path | None, out: Path) -> None:
 
 SHEET_COLS = ["da2-metric-outdoor-s+anchor", "da2-metric-indoor-s+anchor", "da2-relative-s+anchor (shift 0)",
               "da2-metric-outdoor-b+anchor", "unidepth-v2-s+anchor", "metric3d-v2-s+anchor", "depth-pro+anchor",
-              "vda-metric-s+anchor", "motion-stereo", "fused: da2-metric-outdoor-s+anchor + motion stereo"]
+              "vda-metric-s+anchor", "motion-stereo", "fused: da2-metric-indoor-s+anchor + motion stereo"]
 SHORT = {"da2-metric-outdoor-s+anchor": "DA2-S out", "da2-metric-indoor-s+anchor": "DA2-S in",
          "da2-relative-s+anchor (shift 0)": "DA2-S rel", "da2-relative-s+anchor": "DA2-S rel",
          "da2-metric-outdoor-b+anchor": "DA2-B out", "unidepth-v2-s+anchor": "UniDepth2-S",
          "metric3d-v2-s+anchor": "Metric3D2-S", "depth-pro+anchor": "Depth Pro", "vda-metric-s+anchor": "VDA-S",
-         "motion-stereo": "motion stereo", "fused: da2-metric-outdoor-s+anchor + motion stereo": "fused"}
+         "motion-stereo": "motion stereo", "fused: da2-metric-outdoor-s+anchor + motion stereo": "fused",
+         "fused: da2-metric-indoor-s+anchor + motion stereo": "fused"}
 
 
 def contact_sheet(sheet: dict, path: Path) -> None:
@@ -149,8 +150,8 @@ def contact_sheet(sheet: dict, path: Path) -> None:
             key = col if col in m else col.replace(" (shift 0)", "")
             alt = col.replace("+anchor", "") if ds == "synth" and col.startswith("da2-relative") else None
             z = m.get(key) or (m.get(alt) if alt else None)
-            if z is None and ds.startswith("diode") and col.endswith("+anchor"):
-                z = None
+            if z is None and ds.startswith("diode"):   # run_diode keeps the anchored map under the bare model name
+                z = m.get(col.replace(" (shift 0)", "").replace("+anchor", ""))
             if z is None:
                 continue
             tiles.append(_turbo(np.array(z, np.float32), np.array(sheet["gt"][ds], np.float32) > 0))
