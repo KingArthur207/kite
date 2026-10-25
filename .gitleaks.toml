@@ -1,0 +1,9 @@
+# gitleaks config for scripts/check.sh: the default rules, plus test values that are not secrets.
+# Allow a value here only when it is deliberately fake, and say where it is used.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "deliberately wrong bearer token: hardware/arduino/unoq_link/e2e_local.sh checks it gets a 401"
+regexTarget = "match"
+regexes = ['''Bearer wrong-token-wrong-token''']
