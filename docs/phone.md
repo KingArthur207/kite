@@ -102,3 +102,19 @@ earpiece/.venv/bin/python -m pytest -q phone/tests
 - `bad` count rising in the stop summary: the app is sending JSON the parser rejects (see `phone/fix.py` for the
   format).
 - `sent 0` while `phone ok`: the fixes have no `lat`/`lng` yet (the phone has no GPS fix).
+
+## On the Arduino UNO Q (the phone talks to the board on the walker)
+
+The phone and the UNO Q both ride on the walker, so Bluetooth range stops mattering. The board runs the same
+receiver and forwards every position over Wi-Fi to the main computer's earpiece (UDP 5010).
+
+```
+phone/unoq/install.sh <main-computer-ip>                  # from the repo root; ssh's to arduino@kite-unoq.local
+phone/unoq/install.sh <main-computer-ip> arduino@<board-ip>
+```
+
+It copies `phone/` and `earpiece/earpiece/` to `~/kite-phone` on the board, installs BlueZ, numpy, scipy and
+bless, and starts the `kite-phone` service (as root, which BlueZ needs to advertise). On the main computer:
+`python -m earpiece run --bind 0.0.0.0 --spacetime`. Board log: `journalctl -u kite-phone -f`. Turn the Mac's
+receiver off first, or the phone may connect to whichever "Kite" it finds first. On Linux every phone shares
+the source `phone` (only macOS tells phones apart), so use one phone with the board.
