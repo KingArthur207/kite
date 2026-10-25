@@ -6,8 +6,8 @@ import { freshOf, type Fresh } from './view.ts';
 export type Fix = { lat: number; lng: number; t: number; accuracy?: number; heading?: number; speed?: number; course?: number; place?: string };
 export type Client = { source: string; name: string; color: string; fix: Fix; trail: LatLng[]; ahead?: LatLng; ageS: number; fresh: Fresh };
 
-// Kite logo pink and navy, then friendly companions that read on cream. Amber is left out: it means stale.
-export const PALETTE = ['#E2448F', '#1D2B6B', '#1E9E8A', '#7B5CD6', '#2F80ED'];
+// Colours that read on the black map. Green and amber are left out: they mean live and stale.
+export const PALETTE = ['#64D2FF', '#BF5AF2', '#FFFFFF', '#FFD60A', '#FF6FB5'];
 const TRAIL_SIZE = 150;
 const AHEAD_S = 10;          // predict this far ahead
 const MOVING_MPS = 0.5;      // slower than this is standing still: no prediction
