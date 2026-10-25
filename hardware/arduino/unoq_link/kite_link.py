@@ -19,6 +19,7 @@ Video needs 1 or 2. --board HOST[:PORT] skips discovery.
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import secrets
@@ -40,6 +41,10 @@ from kite_common import (  # noqa: E402
 
 TOKEN_FILE = Path.home() / ".kite_unoq_token"
 STALE_S = 30            # a heartbeat older than this means the board is off or offline
+REPLAY_S = 900          # a signed heartbeat whose own time is this far from its row's is an old copy pushed again
+MAX_FRAME = 8 << 20     # a JPEG bigger than this is not from the board: stop reading the stream
+MAX_LINE = 4096         # longest boundary or part-header line read from a stream
+TAILSCALE_NETS = (ipaddress.ip_network("100.64.0.0/10"), ipaddress.ip_network("fd7a:115c:a1e0::/48"))
 CLOUD_WAIT_S = 20
 ISOLATION = ("eduroam blocks device-to-device here (or the two are on different networks). "
              "Set up Tailscale on both (README, plan B) or put both on a phone hotspot. "
@@ -114,11 +119,41 @@ def tcp_ok(host: str, port: int, timeout: float = 2.0) -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
+def is_tailscale(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    return any(addr in net for net in TAILSCALE_NETS if addr.version == net.version)
+
+
+def tailscale_ip(name: str, port: int) -> tuple[str | None, str]:
+    """(address, why) for the board's MagicDNS name, or (None, why) when it isn't a Tailscale address.
+
+    A bare name like kite-unoq is also looked up on the local network (DHCP-registered DNS names, and
+    LLMNR/NetBIOS on Windows), where any machine can answer for it. The token is only sent to an address in
+    Tailscale's ranges, and to that address, not the name, so a second lookup can't send it somewhere else."""
+    try:
+        ips = sorted({info[4][0] for info in socket.getaddrinfo(name, port, type=socket.SOCK_STREAM)})
+    except OSError as e:
+        return None, f"{type(e).__name__}: {e}"
+    ts = [ip for ip in ips if is_tailscale(ip)]
+    if not ts:
+        return None, f"{name} is {', '.join(ips) or 'nothing'}, not a Tailscale address: not sent the token"
+    return ts[0], "ok"
+
+
 def reach(cands: list[tuple[str, str, int]], timeout: float = 2.0) -> list[tuple[str, str, int, bool, str]]:
     """Try every candidate at once (name lookups can hang); results in the candidates' order."""
     results: list = [None] * len(cands)
 
     def one(i: int, c: tuple[str, str, int]) -> None:
+        if c[0] == "tailscale name":          # the token goes only to an address Tailscale gave out
+            ip, why = tailscale_ip(c[1], c[2])
+            if ip is None:
+                results[i] = (*c, False, why)
+                return
+            c = (c[0], ip, c[2])
         results[i] = (*c, *tcp_ok(c[1], c[2], timeout))
 
     threads = [threading.Thread(target=one, args=(i, c), daemon=True) for i, c in enumerate(cands)]
@@ -154,16 +189,24 @@ def find_heartbeat(cloud: Spacetime, source: str, token: str, now: float | None 
             return None
         return d if isinstance(d, dict) else None
 
+    def ours(d, row) -> bool:
+        """Signed with our token, and pushed when it was made: the table is public, so anyone can push a copy
+        of an old heartbeat (with addresses the board no longer has) as the newest row."""
+        if d is None or not verify(token, d):
+            return False
+        ts, t = d.get("ts"), row_time(row.get("t"))
+        return not isinstance(ts, bool) and isinstance(ts, int) and t is not None and abs(ts / 1000 - t) <= REPLAY_S
+
     row = cloud.latest("heartbeat", source)
     d = parsed(row) if row else None
-    if d is not None and verify(token, d):
+    if ours(d, row):
         return {"found": True, "valid": True, "hb": d, "age_s": max(0.0, now - (row_time(row.get("t")) or 0)), "unsigned": 0}
     # the newest row isn't ours (or isn't signed): look back through the log for the newest that is
     rows = cloud.rows("heartbeat", source)
     unsigned = 0
     for r in reversed(rows):
         d = parsed(r)
-        if d is not None and verify(token, d):
+        if ours(d, r):
             return {"found": True, "valid": True, "hb": d, "age_s": max(0.0, now - (row_time(r.get("t")) or 0)),
                     "unsigned": unsigned}
         unsigned += 1
@@ -278,32 +321,38 @@ class Link:
 # ---------------------------------------------------------------------------------------- streams
 
 def iter_mjpeg(stream, boundary: str = "kiteframe"):
-    """JPEG frames from a multipart/x-mixed-replace stream (file-like with readline/read)."""
+    """JPEG frames from a multipart/x-mixed-replace stream (file-like with readline/read).
+    Every size is capped (MAX_LINE, MAX_FRAME): a bad or hostile server ends the stream, it can't fill memory."""
     marker = b"--" + boundary.encode()
     while True:
-        line = stream.readline()
+        line = stream.readline(MAX_LINE)
         if not line:
             return
         if line.strip() != marker:
             continue
         length = None
         while True:
-            h = stream.readline()
+            h = stream.readline(MAX_LINE)
             if not h:
                 return
             if h in (b"\r\n", b"\n"):
                 break
             k, _, v = h.decode("latin-1").partition(":")
             if k.strip().lower() == "content-length":
-                length = int(v.strip())
+                try:
+                    length = int(v.strip())
+                except ValueError:
+                    return
+                if not 0 <= length <= MAX_FRAME:
+                    return
         if length is None:                 # no length: read up to the JPEG end marker
-            buf = b""
+            buf = bytearray()
             while not buf.endswith(b"\xff\xd9"):
                 ch = stream.read(1)
-                if not ch:
+                if not ch or len(buf) >= MAX_FRAME:
                     return
                 buf += ch
-            yield buf
+            yield bytes(buf)
             continue
         data = stream.read(length)
         if len(data) < length:
@@ -541,7 +590,8 @@ def cmd_doctor(link: Link, a) -> int:
         elif not info["valid"]:
             r("FAIL", "heartbeat", f"{info['unsigned']} heartbeats, none signed with your token",
               "token mismatch (or another board uses this source name): save the token again from "
-              "the board's /etc/kite/token")
+              "the board's /etc/kite/token. If the token is right, the board's clock may be more than "
+              f"{REPLAY_S // 60} minutes off (on the board: timedatectl), so its heartbeats look like old copies")
         else:
             hb, age = info["hb"], info["age_s"]
             where = f"{hb.get('host')} at {', '.join(hb.get('ips') or []) or 'no LAN IP'} port {hb.get('port')}" + \
