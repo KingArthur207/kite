@@ -16,7 +16,7 @@ There is no automatic deploy: the repo has no hosted CI runners, so deploy by ha
 
 ## Evidence images
 
-Evidence images in `public/assets/evidence/` are copies of real artifacts from this repo, resized with `sips`: `live-dashboard.jpg` is `dashboard/docs/reveal-normal.png` (a replayed test walk), and `yolo-drone-view.jpg` and `yolo-chest-view.jpg` are `sim/docs/yolo_drone.jpg` and `sim/docs/yolo_chest.jpg` (YOLO on the browser simulation, scored in `sim/README.md`). Only add an image to a card when a real artifact proves the claim.
+Evidence images in `public/assets/evidence/` are copies of real artifacts from this repo, resized with `sips`: `live-dashboard.jpg` is `dashboard/docs/reveal-normal.png` cropped to the map and live panels (a replayed test walk), and `yolo-drone-view.jpg` and `yolo-chest-view.jpg` are `sim/docs/yolo_drone.jpg` and `sim/docs/yolo_chest.jpg` (YOLO on the browser simulation, scored in `sim/README.md`). Only add an image to a card when a real artifact proves the claim.
 
 ## Sponsor logos
 
