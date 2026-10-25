@@ -670,3 +670,26 @@ def test_garbled_state_values_read_as_unknown():
     tel = d.telemetry()
     assert (tel.yaw_deg, tel.pitch_deg, tel.height_m, tel.tof_m, tel.battery_pct) == (None,) * 5
     assert tel.vx == pytest.approx(0.3)
+
+
+@pytest.mark.parametrize("fwd, right, sticks, sent, moves", [
+    (1, 1, (10, 20), (10, 20), {"forward": "forward", "back": "back", "left": "left", "right": "right"}),
+    (-1, 1, (10, 20), (10, -20), {"forward": "back", "back": "forward", "left": "left", "right": "right"}),
+    (1, -1, (10, 20), (-10, 20), {"forward": "forward", "back": "back", "left": "right", "right": "left"}),
+    (-1, -1, (10, 20), (-10, -20), {"forward": "back", "back": "forward", "left": "right", "right": "left"}),
+])
+def test_movement_signs_apply_to_rc_and_moves_in_one_place(fwd, right, sticks, sent, moves):
+    from kite.drone.tello import body_direction, body_sticks
+
+    assert body_sticks(*sticks, right_sign=right, forward_sign=fwd) == sent
+    for want, got in moves.items():
+        assert body_direction(want, right_sign=right, forward_sign=fwd) == got
+    assert body_direction("up", right, fwd) == "up" and body_direction("down", right, fwd) == "down"
+
+
+def test_make_tello_passes_the_movement_signs():
+    cfg = Config()
+    cfg.drone.forward_sign, cfg.drone.right_sign = -1, -1
+    d = make_tello(cfg, dry_run=True)
+    assert (d.forward_sign, d.right_sign) == (-1, -1)
+    assert (make_tello(Config(), dry_run=True).forward_sign, make_tello(Config(), dry_run=True).right_sign) == (1, 1)
