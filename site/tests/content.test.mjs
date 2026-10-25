@@ -34,7 +34,7 @@ test("the kite/drone flip is CSS-only, about 1.8 s a side, with a still fallback
 });
 
 const judges = read("judges.html");
-const SPONSOR = ["cartesia", "spacetime", "anthropic", "moss", "meta", "spacexai"];
+const SPONSOR = ["cartesia", "spacetime", "anthropic", "moss", "spacexai"];
 const CALHACKS = ["people", "hardware", "complex", "overall", "commit"];
 const card = (id) => judges.match(new RegExp(`<article class="card track" id="${id}">[\\s\\S]*?</article>`))[0];
 
@@ -63,21 +63,20 @@ test("every sponsor card carries its official logo: local, small, with alt text"
 
 test("evidence images are real local files, at most 900 px wide, each with alt text", () => {
   const imgs = [...judges.matchAll(/<img src="(\/assets\/evidence\/[^"]+)" alt="([^"]{40,})" width="(\d+)" height="\d+" loading="lazy" \/>/g)];
-  assert.deepEqual(imgs.map((m) => m[1]).sort(), ["/assets/evidence/caregiver-dashboard.jpg", "/assets/evidence/yolo-chest-view.jpg", "/assets/evidence/yolo-drone-view.jpg"]);
+  assert.deepEqual(imgs.map((m) => m[1]).sort(), ["/assets/evidence/live-dashboard.jpg", "/assets/evidence/yolo-chest-view.jpg", "/assets/evidence/yolo-drone-view.jpg"]);
   for (const [, src, , w] of imgs) {
     assert.ok(Number(w) <= 900, src);
     assert.ok(existsSync(join(PUBLIC, src)), src);
     assert.ok(statSync(join(PUBLIC, src)).size < 200 * 1024, src);
   }
-  assert.match(card("spacetime"), /caregiver-dashboard\.jpg/);
+  assert.match(card("spacetime"), /live-dashboard\.jpg/);
   assert.match(card("complex"), /yolo-drone-view\.jpg/);
   assert.match(card("cartesia"), /href="\/#hear"/, "Cartesia links to the walk instead of copying it");
 });
 
-test("the SpaceXAI card names Cursor, Grok Bot, Grok Voice and Grok Imagine", () => {
+test("the SpaceXAI card names Cursor, Grok Bot and Grok Imagine", () => {
   const c = card("spacexai");
   assert.match(c, /built Kite in Cursor and used Grok Bot for research, planning and team collaboration/);
-  assert.match(c, /Grok Voice/);
   assert.match(c, /Grok Imagine/);
   assert.equal((c.match(/\/assets\/imagined\//g) || []).length, 3);
 });
