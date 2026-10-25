@@ -1,6 +1,6 @@
 # Kite sync and dashboard
 
-Real-time shared state for Kite, built on [SpacetimeDB](https://spacetimedb.com). The drone laptop, the wearable laptop and the caregiver dashboard all read and write the same database, so they stay in sync even though the two cameras are on different WiFi networks.
+Real-time shared state for Kite, built on [SpacetimeDB](https://spacetimedb.com). The drone laptop, the wearable laptop and the demo dashboard all read and write the same database, so they stay in sync even though the two cameras are on different WiFi networks.
 
 - `spacetimedb/src/index.ts`: the server module (tables and reducers)
 - `src/`: the React dashboard, which subscribes to tables and re-renders live
@@ -17,7 +17,7 @@ npm run dev        # connects to Maincloud by default
 
 ### Analytics view (the default)
 
-The page opens on the demo display: the map with every phone on the left, and the walker's camera and the drone's camera on the right, with a strip below showing phones live, accuracy, speed, events per minute, the last spoken line and active hazards. Press `P` to present it full screen (`Esc` leaves). The old caregiver dashboard described below is still at `/?view=caregiver`.
+The page opens on the demo display: the map with every phone on the left, and the walker's camera and the drone's camera on the right, with a strip below showing phones live, accuracy, speed, events per minute, the last spoken line and active hazards. Press `P` to present it full screen (`Esc` leaves). The walk view described below (map, walk timeline and shared state) is at `/?view=walk`.
 
 The camera panes are MJPEG URLs shown in a plain `<img>`. Set them in the URL or in the Feeds popover in the header, which saves them in this browser:
 
@@ -39,23 +39,23 @@ The Tello's UDP video can only be read by one program, so while `run/app.py` fli
 
 ![Dashboard](docs/reveal-normal.png)
 
-The page uses the Kite logo's colours: cream paper, navy ink, one pink accent. The map (Leaflet, OpenStreetMap tiles muted toward cream in CSS) shows every client that sends `position` events, one per source (`phone-3fa2`, `phone-9c01`, plain `phone`, or `sim` during a replay). Each gets its own colour, a dot with its accuracy circle, its recent trail and a dashed predicted path 10 s ahead: from `speed` and `course` when the phone sends them and is moving at 0.5 m/s or more, else from its last few fixes, and hidden when it is standing still or its fix is stale. The Phones card lists them with accuracy, speed and how long since each last reported; click one to follow it. The map view buttons are "All phones" (fits every live client), "Follow" and "Whole walk". Hazards and the beacon are placed around the newest client, from their walker-frame `bearing` and `distance` plus that client's compass `heading`. On the right: the walker's status, the phones, the last spoken line with who said it, the latest stop, active hazards (with distance and direction in words, such as "8 m ahead right"), the caregiver message box, the devices and the live feed (collapsed).
+The page uses the Kite logo's colours: cream paper, navy ink, one pink accent. The map (Leaflet, OpenStreetMap tiles muted toward cream in CSS) shows every client that sends `position` events, one per source (`phone-3fa2`, `phone-9c01`, plain `phone`, or `sim` during a replay). Each gets its own colour, a dot with its accuracy circle, its recent trail and a dashed predicted path 10 s ahead: from `speed` and `course` when the phone sends them and is moving at 0.5 m/s or more, else from its last few fixes, and hidden when it is standing still or its fix is stale. The Phones card lists them with accuracy, speed and how long since each last reported; click one to follow it. The map view buttons are "All phones" (fits every live client), "Follow" and "Whole walk". Hazards and the beacon are placed around the newest client, from their walker-frame `bearing` and `distance` plus that client's compass `heading`. On the right: the walker's status, the phones, the last spoken line with who said it, the latest stop, active hazards (with distance and direction in words, such as "8 m ahead right"), the devices and the live feed (collapsed).
 
 To see several phones without real ones, run `npm run dev` and open `/?fixture=two-phones`: two fake phones walk circles near Sproul Plaza and a third went quiet 40 s ago. They are drawn in this page only and never written to SpacetimeDB (dev builds only).
 
-Under the map, the walk timeline lists the last walk's key moments in order: stops (spoken "Stop." lines and critical hazards, merged into one stop worded as the walker heard it), help requests (`caregiver_alert`), hazards, Claude's judgments, answers and scene text, caregiver messages and route guidance. A walk is everything after the last 45 s gap in the event table. A ribbon above the cards shows the whole walk at a glance, with stops marked in red. Each card has a badge for who acted: Kite (deterministic code, no AI), Claude, or Caregiver, and the header counts each. Click a card or a ribbon mark to fly the map to where the walker was at that moment; stops stay marked on the map. Times come from the producer's own `t` when it is an epoch time, so a burst delivered late by a busy bridge still spreads out correctly.
+Under the map, the walk timeline lists the last walk's key moments in order: stops (spoken "Stop." lines and critical hazards, merged into one stop worded as the walker heard it), hazards, Claude's judgments, answers and scene text, and route guidance. A walk is everything after the last 45 s gap in the event table. A ribbon above the cards shows the whole walk at a glance, with stops marked in red. Each card has a badge for who acted, Kite (deterministic code, no AI) or Claude, and the header counts each. Click a card or a ribbon mark to fly the map to where the walker was at that moment; stops stay marked on the map. Times come from the producer's own `t` when it is an epoch time, so a burst delivered late by a busy bridge still spreads out correctly.
 
 "Devices" counts sources that wrote in the last 15 s and events in the last minute, with a sparkline per source, all from the `event` and `latest` tables. Each source is green under 5 s since its last write, amber under 15 s, red ("silent") after. The event table keeps only the newest 500 rows, so when every row falls inside the last minute the rate shows as a lower bound (≥).
 
-When the walker asks Kite to tell their caregiver (a `caregiver_alert` row), a red banner shows the request until the caregiver presses "Got it". The header always says whether the page is live, connecting, reconnecting (the SDK reconnects by itself; the last data stays on screen) or offline, and a banner says so when no device has written for 30 s.
+The header always says whether the page is live, connecting, reconnecting (the SDK reconnects by itself; the last data stays on screen) or offline, and a banner says so when no device has written for 30 s.
 
-Press `P` (or the Present button) for presentation mode at the reveal; `Esc` leaves it. It hides the raw feed, the message box, the walker panel and the Clear button, frames the whole walk on the map, and makes the timeline, the last spoken line ("Kite just said") and the latest stop bigger. `#present` in the URL opens it that way.
+Press `P` (or the Present button) for presentation mode at the reveal; `Esc` leaves it. It hides the raw feed, the walker panel and the Clear button, frames the whole walk on the map, and makes the timeline, the last spoken line ("Kite just said") and the latest stop bigger. `#present` in the URL opens it that way.
 
-Accessibility: every control works from the keyboard with a visible focus ring, section titles are real headings, the timeline cards are buttons, and text colours meet WCAG AA contrast (checked with axe-core). New spoken lines are announced politely to screen readers; stops and help requests are announced assertively. Only changes after the page loads are announced, never the backlog. Motion is reduced when the system asks for it, and `prefers-contrast: more` brightens the secondary text. Payloads are untrusted: they are parsed defensively, clipped, and rendered as text, never as HTML.
+Accessibility: every control works from the keyboard with a visible focus ring, section titles are real headings, the timeline cards are buttons, and text colours meet WCAG AA contrast (checked with axe-core). New spoken lines are announced politely to screen readers; stops are announced assertively. Only changes after the page loads are announced, never the backlog. Motion is reduced when the system asks for it, and `prefers-contrast: more` brightens the secondary text. Payloads are untrusted: they are parsed defensively, clipped, and rendered as text, never as HTML.
 
 ![Presentation mode](docs/reveal-presentation.png)
 
-The pure logic (timeline, payload parsing, freshness, distances, message delivery and the blocked-word mirror) has self-checks with no extra dependencies: `npm run check` (Node 22+).
+The pure logic (timeline, payload parsing, freshness and distances) has self-checks with no extra dependencies: `npm run check` (Node 22+).
 
 To see it move without hardware, from the repo root:
 
@@ -77,22 +77,7 @@ npm run spacetime:generate   # refresh src/module_bindings
 - `event`: every Kite event, newest 500 kept. Columns are `id`, `type`, `source`, `priority`, `payload` (the full event as a JSON string, same shapes as `earpiece/earpiece/events.py`) and `t` (server timestamp).
 - `latest`: the newest event per type and source, keyed `"type:source"` (for example `"position:sim"`), so a dashboard that joins late sees current state right away.
 
-Reducers: `push(type, source, priority, payload)` writes to both tables, and `clear()` wipes them before a new run. The dashboard reads both tables. It calls `clear` from its "Clear run" button and `push` from "Message the walker".
-
-## Caregiver messages
-
-"Message the walker" sends free text (trimmed, 200 characters max, with a counter) or one of the quick replies as a `say` event, source `caregiver`, priority `info`, payload `{"type":"say","source":"caregiver","priority":"info","text":"...","key":"caregiver-<ms>"}`. The last three sent show under the box with their state: sending, sent and waiting for the earpiece, "Heard by the walker" once the earpiece logs a `spoken` row with the same words after "Message from your caregiver:", or a hint to check the earpiece if nothing was spoken after 20 s. They also appear in the live feed (in blue).
-
-The box mirrors the earpiece's permission filter (`earpiece/earpiece/judgment.py`): a message with a word like "go", "cross", "clear" or "you can" would never be spoken, so the dashboard explains why and doesn't send it. The earpiece stays the authority.
-
-An earpiece run with `--spacetime` polls for these about once a second and reads them aloud, prefixed "Message from your caregiver:". It uses the HTTP SQL endpoint:
-
-```bash
-curl -X POST $HOST/v1/database/kite-sync-pl6rp/sql -H "Authorization: Bearer $TOKEN" \
-  -d "SELECT * FROM event WHERE source = 'caregiver'"
-```
-
-The earpiece clamps them to `info`, ignores anything other than `say`, skips rows that were already there when it started, and doesn't mirror them back into Spacetime.
+Reducers: `push(type, source, priority, payload)` writes to both tables, and `clear()` wipes them before a new run. The dashboard reads both tables. It calls `clear` from its "Clear run" button; the producers call `push`.
 
 ## Write from Python (drone or vision laptop)
 
@@ -115,16 +100,3 @@ npm run spacetime:publish:local
 printf 'VITE_SPACETIMEDB_HOST=ws://localhost:3000\n' > .env.local
 npm run dev
 ```
-
-## Caregiver message signing
-
-The `event` table is public and `push` takes calls from any identity, so the earpiece checks caregiver
-messages itself. Put one random value in the repo `.env` as `KITE_CAREGIVER_TOKEN` and the same value in
-`dashboard/.env.local` as `VITE_KITE_CAREGIVER_TOKEN`. The dashboard then adds `ts` and `sig`
-(HMAC-SHA256 of `ts:text`) to each message, and the earpiece speaks only signed messages under 2 minutes
-old. The value ends up in the page's JS, so serve the dashboard only on the demo laptop. If neither side
-sets a token, messages are still accepted.
-
-Either way, the earpiece drops any message that could be heard as permission to move ("go", "cross",
-"you can", "clear" and so on), always speaks at priority `info`, and ignores the row's `key` and `ttl`.
-The module is unchanged, so there is nothing to republish.

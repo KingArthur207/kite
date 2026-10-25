@@ -25,7 +25,7 @@ the wearer's frame (0 ahead, +90 right, -90 left); distances are metres.
     heartbeat  {"type":"heartbeat","source":"webcam"}
     scene_image  a camera frame for Claude to describe (WebSocket only: too big for UDP)
                {"type":"scene_image","camera":"drone","jpeg":"<base64 JPEG, <= 180 KB>"}
-    memory     a place / hazard / note for Kite to remember (caregiver dashboard, teammates)
+    memory     a place / hazard / note for Kite to remember (teammates' tools, over the wire)
                {"type":"memory","kind":"place","text":"Blue Bottle Coffee on Chestnut","lat":37.8,"lng":-122.44}
     control    {"type":"control","action":"mute_cues"|"unmute_cues"|"pause"|"resume"
                 |"volume_up"|"volume_down"|"repeat"|"beacon_on"|"beacon_off"}

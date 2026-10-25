@@ -128,7 +128,7 @@ class NetCfg:
     # browser origins allowed on the WebSocket besides pages served from this machine
     # (no-Origin clients such as Python senders are always allowed); see transport.py
     allow_origins: tuple[str, ...] = ()
-    # SpacetimeDB mirror + caregiver inbox: OFF unless `run --spacetime` or KITE_SPACETIME=1,
+    # SpacetimeDB mirror: OFF unless `run --spacetime` or KITE_SPACETIME=1,
     # because every call spends Maincloud credits.
     spacetime_host: str = field(default_factory=lambda: os.environ.get("SPACETIME_HOST")
                                 or "https://maincloud.spacetimedb.com")

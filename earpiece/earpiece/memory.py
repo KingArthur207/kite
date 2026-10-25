@@ -3,7 +3,7 @@
 What it holds:
   place   "my usual coffee shop: Blue Bottle on Chestnut Street"   (with lat/lng when known)
   hazard  "the curb at Lyon and Bay is very tall"
-  note    anything else the wearer or their caregiver wants Kite to know
+  note    anything else the wearer wants Kite to know
 
 How it is used:
   * "take me to my coffee shop" -> the personal place is resolved before routing, and
@@ -15,8 +15,8 @@ How it is used:
     more softly the older it is ("from 3 months ago: ...");
   * by voice: "remember this place as the bench", "remember that ...", "forget the bench",
     "rename the bench to the reading bench". Saving the same place or the same note twice
-    updates the one memory instead of piling up copies. The caregiver dashboard can add
-    memories too.
+    updates the one memory instead of piling up copies. A `memory` event over the wire
+    adds one too.
 
 Matching: words are folded to a common form (plurals, "cafe" = "coffee", "fell" =
 "tripped"), rare words count for more than common ones, and the head of a phrase counts

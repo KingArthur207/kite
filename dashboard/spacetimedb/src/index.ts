@@ -48,13 +48,13 @@ const SWEEP_SLACK = 50n;
 // caller could grow the table (and every dashboard's copy of it) without bound.
 const MAX_LATEST = 200n;
 // `push` and `clear` are open to any identity (the dashboard connects anonymously), so this is
-// what stops a stranger from keeping the caregiver's view permanently empty.
+// what stops a stranger from keeping the dashboard permanently empty.
 const CLEAR_COOLDOWN_US = 60_000_000n;
 const MAX_PAYLOAD = 16 * 1024;
 const TYPES = new Set([
   'obstacles', 'hazard', 'guidance', 'beacon', 'position', 'status', 'scene', 'say',
-  'heartbeat', 'control', 'memory', 'spoken', 'heard', 'voice_request', 'caregiver_alert',
-  'gesture', 'output',
+  'heartbeat', 'control', 'memory', 'spoken', 'heard', 'voice_request', 'gesture',
+  'output',
 ]);
 const PRIORITIES = new Set(['critical', 'hazard', 'nav', 'answer', 'info', 'system', '']);
 const IDENT = /^[\w.:-]{1,64}$/;

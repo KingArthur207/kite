@@ -9,7 +9,7 @@ all drive the same object:
 
 Loss is announced with a `say` event (priority "system", a stable key so it is never queued twice), not a `status`:
 the earpiece treats every `status` as the drone's (app.py _status), so a phone status would overwrite the drone's
-state on the caregiver dashboard.
+state on the demo dashboard.
 """
 
 from __future__ import annotations
@@ -157,7 +157,7 @@ def short_id(central) -> str:
 
 class PhoneHub:
     """Several phones at once. Each central gets its own PhoneLink (own reassembly buffer, own staleness) and the
-    source "phone-<id>"; every phone's position goes to the earpiece (and so to the caregiver map), but only the
+    source "phone-<id>"; every phone's position goes to the earpiece (and so to the dashboard map), but only the
     walker's phone has walker=true and may speak. The walker is the first phone to connect (or `prefer`), and the
     next live phone once it goes quiet.
 

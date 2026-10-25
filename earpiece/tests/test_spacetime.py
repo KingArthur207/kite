@@ -2,7 +2,7 @@
 
 The fake is a real HTTP server (the bridge's keep-alive client talks to it over a socket)
 that implements /v1/identity and /call/push with the module's own checks, including its
-530 replies when the reducer throws. Caregiver inbox tests live in test_caregiver_inbox.py.
+530 replies when the reducer throws.
 """
 
 import json
@@ -227,8 +227,6 @@ def test_defaults_are_frugal_and_env_tunes_them(monkeypatch):
     assert b.throttle_s == 0.5 and b.max_calls_per_s == 3.0
     monkeypatch.setenv("KITE_SPACETIME_HZ", "nonsense")
     assert SpacetimeBridge("http://127.0.0.1:9", DB, start=False).throttle_s == 1.0
-    assert spacetime.CaregiverInbox(print, "http://127.0.0.1:9", DB, interval=0.01,
-                                    start=False).interval == spacetime.MIN_POLL_S   # <= 2 Hz
 
 
 # ------------------------------------------------------------------ payload cap
@@ -255,22 +253,6 @@ def test_a_payload_with_nothing_to_halve_falls_back_to_a_summary():
     huge = {"type": "say", "source": "x" * 20000, **{f"k{i}": "y" * 1500 for i in range(30)}}
     s = encode_payload(huge)
     assert len(s) <= MAX_PAYLOAD and json.loads(s)["source"] == "x" * 64
-
-
-@pytest.mark.parametrize("v,want", [
-    ([[1_700_000_000_000_000]], 1_700_000_000.0), ({"__timestamp_micros_since_unix_epoch__": 2_000_000}, 2.0),
-    (3_000_000, 3.0), ("4000000", 4.0), (None, None), ([], None), ("soon", None), ({}, None), ([[None]], None),
-])
-def test_row_time_reads_every_timestamp_shape_and_rejects_junk(v, want):
-    assert spacetime.row_time(v) == want
-
-
-def test_sql_rows_maps_columns_and_keeps_rows_from_every_statement():
-    reply = [{"schema": {"elements": [{"name": {"some": "id"}}, {"name": {"some": "type"}}]},
-              "rows": [[1, "say"], [2, "hazard"]]},
-             {"schema": {"elements": [{"name": {"some": "id"}}]}, "rows": []}]
-    assert spacetime.sql_rows(reply) == [{"id": 1, "type": "say"}, {"id": 2, "type": "hazard"}]
-    assert spacetime.sql_rows([]) == []
 
 
 @pytest.mark.parametrize("v,want", [("drone", "drone"), ("chest cam", "chest_cam"), ("a/b\\c", "a_b_c"),
