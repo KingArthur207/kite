@@ -98,11 +98,19 @@ class MapillarySegFormer:
 
 
 def convert_mmseg_state(src: dict, hf: dict) -> dict:
-    """Rename an mmseg SegFormer-B0 checkpoint onto the Hugging Face module."""
+    """Rename an mmseg SegFormer-B0 checkpoint onto the Hugging Face module.
+
+    ``_rename`` writes the older ``segformer.stages`` names. transformers 4.56
+    calls that backbone ``segformer.encoder`` and renames several children, so
+    those destinations are rewritten when the live module uses the new names.
+    """
     out: dict = {}
     used: set[str] = set()
+    encoder = any(key.startswith("segformer.encoder.") for key in hf)
 
     def put(dest: str, tensor) -> None:
+        if encoder:
+            dest = _to_encoder(dest)
         if dest not in hf:
             raise KeyError(dest)
         if tuple(hf[dest].shape) != tuple(tensor.shape):
@@ -112,7 +120,8 @@ def convert_mmseg_state(src: dict, hf: dict) -> dict:
     for key, tensor in src.items():
         if key.endswith("num_batches_tracked"):
             dest = _rename(key)
-            if dest in hf:
+            written = _to_encoder(dest) if dest is not None and encoder else dest
+            if written is not None and written in hf:
                 put(dest, tensor)
             used.add(key)
             continue
@@ -143,6 +152,53 @@ def convert_mmseg_state(src: dict, hf: dict) -> dict:
     if unused:
         raise RuntimeError("SegFormer checkpoint has unused keys " + ", ".join(unused[:8]))
     return out
+
+
+def _to_encoder(dest: str) -> str:
+    """``segformer.stages`` name to the transformers 4.56 ``segformer.encoder`` name."""
+    for pattern, repl in _ENCODER_REWRITES:
+        match = pattern.fullmatch(dest)
+        if match:
+            return match.expand(repl)
+    return dest
+
+
+_ENCODER_REWRITES = (
+    (re.compile(r"segformer\.stages\.(\d+)\.patch_embeddings\.proj\.(weight|bias)"),
+     r"segformer.encoder.patch_embeddings.\1.proj.\2"),
+    (re.compile(r"segformer\.stages\.(\d+)\.patch_embeddings\.layer_norm\.(weight|bias)"),
+     r"segformer.encoder.patch_embeddings.\1.layer_norm.\2"),
+    (re.compile(r"segformer\.stages\.(\d+)\.layer_norm\.(weight|bias)"),
+     r"segformer.encoder.layer_norm.\1.\2"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.layernorm_before\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.layer_norm_1.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.layernorm_after\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.layer_norm_2.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.attention\.q_proj\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.attention.self.query.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.attention\.k_proj\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.attention.self.key.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.attention\.v_proj\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.attention.self.value.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.attention\.o_proj\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.attention.output.dense.\3"),
+    (re.compile(
+        r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.attention"
+        r"\.sequence_reduction\.sequence_reduction\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.attention.self.sr.\3"),
+    (re.compile(
+        r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.attention"
+        r"\.sequence_reduction\.layer_norm\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.attention.self.layer_norm.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.mlp\.fc1\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.mlp.dense1.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.mlp\.fc2\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.mlp.dense2.\3"),
+    (re.compile(r"segformer\.stages\.(\d+)\.blocks\.(\d+)\.mlp\.dwconv\.dwconv\.(weight|bias)"),
+     r"segformer.encoder.block.\1.\2.mlp.dwconv.dwconv.\3"),
+    (re.compile(r"decode_head\.linear_projections\.(\d+)\.proj\.(weight|bias)"),
+     r"decode_head.linear_c.\1.proj.\2"),
+)
 
 
 def _kv(key: str) -> tuple[str, str] | None:
