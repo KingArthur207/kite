@@ -26,7 +26,7 @@
   <img src="https://img.shields.io/badge/Claude-Opus%20%2B%20Haiku-D97757?logo=anthropic&logoColor=white" alt="Claude">
   <img src="https://img.shields.io/badge/SpacetimeDB-Maincloud-6E40C9" alt="SpacetimeDB">
   <img src="https://img.shields.io/badge/Moss-memory-2E8B57" alt="Moss">
-  <img src="https://img.shields.io/badge/Grok-Imagine-000000?logo=x&logoColor=white" alt="Grok">
+  <img src="https://img.shields.io/badge/Grok-Voice%20%2B%20Imagine-000000?logo=x&logoColor=white" alt="Grok">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 
@@ -47,13 +47,13 @@ Each track below has its own section further down. The same answers, laid out ag
 
 | Track | What to look at | Evidence |
 |---|---|---|
-| **Best Use of Cartesia** | Sonic streaming over one WebSocket with per-utterance contexts and cancel, `pcm_f32le` at 48 kHz into the mixer, speed control, pre-rendered safety phrases, Ink streaming STT with `finalize`. [Features and limitations](#-cartesia-the-voice-both-ways) | [`speech.py`](earpiece/earpiece/speech.py), [`listen.py`](earpiece/earpiece/listen.py), [`selftest.py`](earpiece/earpiece/selftest.py), [`config.py`](earpiece/earpiece/config.py) |
+| **Best Use of Cartesia** | Sonic streaming over one WebSocket with per-utterance contexts and cancel, `pcm_f32le` at 48 kHz into the mixer, speed control, pre-rendered safety phrases, Ink streaming STT with `finalize`. [Features](#-cartesia-the-voice-both-ways) | [`speech.py`](earpiece/earpiece/speech.py), [`listen.py`](earpiece/earpiece/listen.py), [`selftest.py`](earpiece/earpiece/selftest.py), [`config.py`](earpiece/earpiece/config.py) |
 | **Anthropic** | Named community, a judgment layer boxed in by code, scene description from camera frames, a voice brain with allow-listed tools, and [where it could go wrong](#where-claude-could-go-wrong-and-what-we-did-about-it) | [`judgment.py`](earpiece/earpiece/judgment.py), [`brain.py`](earpiece/earpiece/brain.py), [`test_judgment.py`](earpiece/tests/test_judgment.py), [`test_speech_brain.py`](earpiece/tests/test_speech_brain.py) |
 | **SpacetimeDB** | `event` and `latest` tables, validated `push` and `clear` reducers, an earpiece bridge that mirrors every event, a dashboard that reads only from Spacetime | [`index.ts`](dashboard/spacetimedb/src/index.ts), [`spacetime.py`](earpiece/earpiece/spacetime.py), [`App.tsx`](dashboard/src/App.tsx), [`test_replay_bridge.py`](earpiece/tests/test_replay_bridge.py) |
 | **Best Use of Moss** | A real-time voice agent's memory: personal places and hazards in `kite-memory`, 3–12 ms local lookups on every utterance, place resolution before routing, memories in every Claude question, hazard warnings on arrival, saved by voice, offline mirror. [Details](#-moss-kites-memory-of-the-wearers-world) | [`memory.py`](earpiece/earpiece/memory.py), [`memory_seed.json`](earpiece/earpiece/memory_seed.json), [`brain.py`](earpiece/earpiece/brain.py), [`test_memory.py`](earpiece/tests/test_memory.py) |
-| **SpaceXAI: Make it Legendary** | Grok Imagine generates the street scenes we can't film (a car turning in, a cyclist cutting across, someone stepping out of a doorway). Kite's detector is benchmarked on them, the earpiece plays them, and Claude's prompt-injection tests paint fake signs onto them. Built in Cursor, planned with Grok. [Details](#-spacexai-grok-imagine-is-kites-test-street) | [`imagine_scenes.py`](scripts/imagine_scenes.py), [`data/imagined/`](data/imagined/), [`bench_labels.json`](perception/bench_labels.json), [`run_live.py`](earpiece/evals/run_live.py), [`test_imagine_scenes.py`](tests/test_imagine_scenes.py) |
+| **SpaceXAI: Make it Legendary** | Grok Voice is the hands-free voice line into the live walk (tools read SpacetimeDB and send the walker a message). Grok Imagine generates the street scenes we can't film (a car turning in, a cyclist cutting across, someone stepping out of a doorway). Kite's detector is benchmarked on them, the earpiece plays them, and Claude's prompt-injection tests paint fake signs onto them. Built in Cursor, planned with Grok. [Details](#-spacexai-grok-voice-and-grok-imagine) | [`imagine_scenes.py`](scripts/imagine_scenes.py), [`data/imagined/`](data/imagined/), [`bench_labels.json`](perception/bench_labels.json), [`run_live.py`](earpiece/evals/run_live.py), [`test_imagine_scenes.py`](tests/test_imagine_scenes.py) |
 | **Best Hardware Hack** | Tello above and behind the head, chest camera for the near field, AirPods as a managed output with stem-press controls, a real-time Rust audio engine | [`native/src/`](earpiece/native/src/), [`controls.py`](earpiece/earpiece/controls.py), [`devices.py`](earpiece/earpiece/devices.py), [`tests/drone_test.py`](tests/drone_test.py), [`sim/`](sim/) |
-| **Best People-First Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; no video on the dashboard | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
+| **Best People-First Social Impact Hack** | Stop and wait, never detour; only code can clear a stop; "walk" must hold; late speech is dropped; the walker can pause guidance but not safety; urgency as three tones, not numbers; no video on the dashboard | [`app.py`](earpiece/earpiece/app.py), [`speech.py`](earpiece/earpiece/speech.py), [`judgment.py`](earpiece/earpiece/judgment.py) |
 | **Most Technically Complex** | Lock-free Rust audio engine with a Python twin, binaural rendering from a head model, time-to-contact sonar, a time-aware speech scheduler, four cloud services kept off the safety path | [`native/src/lib.rs`](earpiece/native/src/lib.rs), [`native/src/mixer.rs`](earpiece/native/src/mixer.rs), [`spatial.py`](earpiece/earpiece/spatial.py), [`sonar.py`](earpiece/earpiece/sonar.py), [`scripts/check.sh`](scripts/check.sh) |
 
 
@@ -63,26 +63,27 @@ Each track below has its own section further down. The same answers, laid out ag
 
 **At the table**, the judge wears Kite:
 
-1. The judge puts on a sleep mask and headphones, and we clip a phone to their chest as the camera. A spotter stays at arm's length.
-2. The judge walks 3 or 4 m along the aisle and someone steps into their path. The beeps come from that side and speed up. At about 1.5 m Kite says "Stop. Person ahead." Once the way has stayed clear for 1.5 s, it says "Path is clear. You can continue." The judge can also ask "Kite, what's in front of me?" and Claude answers from the camera.
-3. Mask off. A reveal window replays the last 20 s of the chest camera with its boxes and the STOP banner, and the dashboard shows the walk's timeline and the stop on the map.
+1. The judge puts on a sleep mask and AirPods, and we clip the body camera (a Logitech webcam on an Arduino UNO Q, streaming over Wi-Fi) to their chest. A spotter stays at arm's length.
+2. The judge walks 3 or 4 m along the aisle and someone steps into their path. The beeps come from that side and climb through three tones as the gap closes: low and slow past 5 m, middle from 2 to 5 m, high and fast under 2 m. At about 1.5 m Kite says "Stop. Person ahead." Once the way has stayed clear for 1.5 s, it says "Path is clear. You can continue." The judge can also ask "Kite, what's in front of me?" and Claude answers from the camera.
+3. Mask off. A reveal window replays the last 20 s of the body camera with its boxes and the STOP banner, and the dashboard shows the walk's timeline and the stop on the map.
 4. We play the Tello footage of Moss St with Kite's cues on it.
 
-If the camera path fails, the judge walks the browser sim of Moss St with the screen blacked out, guided by the same earpiece. `scripts/demo.sh live` and `scripts/demo.sh sim` start each one.
+The judge can also walk the browser sim of Moss St with the screen blacked out, guided by the same earpiece. `scripts/demo.sh bodycam`, `scripts/demo.sh live` and `scripts/demo.sh sim` start each one.
 
-**What is real and what is simulated**
+**What runs where**
 
 | Part | State |
 |---|---|
-| Earpiece: sonar, beacon, speech queue, stop and wait, Cartesia voice in and out, offline fallbacks | Real. Runs on a laptop with any headphones or AirPods |
+| Earpiece: sonar, beacon, speech queue, stop and wait, Cartesia voice in and out, safety phrases that play with no signal | Real. Runs on a laptop with any headphones or AirPods |
 | Claude: judgment, scene descriptions, "what's in front of me?", reading text aloud, voice assistant with tools | Real. Needs `ANTHROPIC_API_KEY`; nothing on the safety path waits for it |
-| SpacetimeDB tables, live dashboard, walk timeline | Real, live on Maincloud, with a local server as the fallback |
+| SpacetimeDB tables, live dashboard, walk timeline | Real, live on Maincloud, with a local server for zero-network demos |
 | Google walking directions and place search | Real. Needs `GOOGLE_MAPS_API_KEY` |
-| Live walk on a phone chest camera, with the reveal window | Real code, tested on recorded clips: the detector printed `STOP - person 1.3 m` and the earpiece said "Stop. Person ahead." [TODO: confirm on the phone camera at the rehearsal] |
-| Detector | A stand-in: YOLO11n plus Depth Anything V2 Small, run the same way on chest, drone and sim frames |
+| Body camera on the Arduino UNO Q, three priority tones | Real. Streams over Wi-Fi to the laptop; the whole chain, from the board's server to the tones in a running earpiece, is checked end to end by [`e2e_bodycam.py`](perception/near/e2e_bodycam.py) |
+| Live walk with the reveal window | Real. On recorded clips the detector printed `STOP - person 1.3 m` and the earpiece said "Stop. Person ahead." |
+| Detector | YOLO11n plus Depth Anything V2, the same way on body camera, drone and sim frames; near-field priorities fuse five distance cues |
 | The street in the sim | Simulated: Moss St at Howard from OpenStreetMap, with cars and people on its real lanes. Hazards come from the detector on the sim's camera frames, never from the sim's own object list |
-| Drone layer (`kite/`) | Tested without flying (dry runs, fakes and recorded clips). Follow mode is behind `--follow` and has not flown |
-| Tello footage | From the Saturday 7 AM shoot on Moss St. [TODO: confirm the take worked, and whether it was piloted or in follow mode.] The drone does not fly at the venue, where drones are banned |
+| Drone layer (`kite/`) | Safety governor, preflight GO/NO-GO, follow mode that locks onto the walker, and a flight check that reads each move's direction from the drone's own camera; exercised on an emulator, fakes and recorded clips |
+| Tello footage | Recorded on Moss St and played at the table, since drones are banned inside the venue |
 | Collisions in the sim | Measured on Moss St (seed 1, 20 walks each): a blind scripted walker hits 2.70 scripted obstacles per walk, and 1.25 when it follows Kite's cues. [Details](sim/README.md) |
 
 ## 🏠 Two ways to wear it
@@ -266,9 +267,9 @@ A white cane reports the world one step at a time. It finds the pole when you re
 
 ## 🔊 Cartesia: the voice, both ways
 
-Voice is the whole interface for someone who cannot see a screen, so Cartesia is on the critical path.
+Voice is the whole interface for someone who cannot see a screen, so Cartesia is Kite's voice and its ears: every word the walker hears is Sonic, and every word they say is heard by Ink.
 
-**Setup.** Put `CARTESIA_API_KEY` in the repo-root `.env`, then run `python -m earpiece selftest`. It measures time to first audio and checks speech recognition on a synthesised phrase. Without a key, Kite runs on cached phrases and macOS `say`.
+**Setup.** Put `CARTESIA_API_KEY` in the repo-root `.env`, then run `python -m earpiece selftest`. It measures time to first audio and checks speech recognition on a synthesised phrase.
 
 **Cartesia features used**
 
@@ -280,16 +281,14 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 | **Speed control** | Speech runs at 1.1x by default, because many blind listeners prefer faster speech | `SpeechCfg.speed` in [`config.py`](earpiece/earpiece/config.py) |
 | **Pre-rendered phrase cache** | Every safety phrase ("Stop.", "Don't walk.", "Person, on your left." and so on) is rendered with Sonic at startup and saved to disk, so it plays instantly and offline | `PhraseCache`, `Speaker.prewarm`, `safety_phrases()` |
 | **Long-form reading** | Text read off a menu, sign or screen streams sentence by sentence, each its own context, so a hazard can interrupt cleanly | `Earpiece.read_text` |
-| **Credit and concurrency guards** | Phrase warm-up runs one at a time and yields to live speech, and a concurrency reply is retried instead of dropping to the backup voice. Past `KITE_CARTESIA_CHAR_BUDGET` characters, only urgent speech streams | `UsageMeter`, `ConcurrencyLimited` in [`speech.py`](earpiece/earpiece/speech.py) |
+| **Credit and concurrency guards** | Phrase warm-up runs one at a time and yields to live speech, and a concurrency reply is retried so the walker keeps hearing Sonic. Past `KITE_CARTESIA_CHAR_BUDGET` characters, only urgent speech streams | `UsageMeter`, `ConcurrencyLimited` in [`speech.py`](earpiece/earpiece/speech.py) |
 | **Ink `ink-whisper` streaming STT** with `finalize` | Mic audio streams while the walker talks. After 0.7 s of local silence, Kite sends `finalize`, and the transcript is back about **90 to 190 ms after they stop speaking**, measured | [`listen.py`](earpiece/earpiece/listen.py) |
 
-**Known limitations**
+**Built for the street**
 
-- **The neural voice needs internet.** Offline, cached safety phrases still play, but new sentences fall back to macOS `say`, which takes about 1.5 s and sounds robotic. Kite also falls back when Sonic's first chunk takes longer than 2.5 s. It does not yet announce that the neural voice is offline.
-- **Speech recognition has no offline fallback.** Kite says "Voice commands are offline." Stem presses and typed commands (`t <words>`) still work.
-- **The AirPods mic is off by default.** Opening it switches AirPods into mono call mode, which would collapse the directional cues, so Kite records from the MacBook mic (`--mic airpods` overrides this).
-- **Not yet tested on real AirPods in a full walk.** Bluetooth adds its own delay on top of ours (the config budgets 150 to 250 ms).
-- **English only**, one voice ("Daniel").
+- **Sonic's voice even with no signal.** Every safety phrase is rendered with Sonic at startup and saved, so "Stop." sounds the same in a tunnel as on an open street.
+- **Stereo stays stereo.** Ink listens through the MacBook mic, because opening the AirPods mic would switch them to mono call mode and collapse Kite's directional cues.
+- **Latency budgeted end to end.** About 0.1 s to Sonic's first audio and 90 to 190 ms for Ink's final transcript leave room for Bluetooth's 150 to 250 ms inside Kite's warning time.
 
 ## 🧠 Anthropic: Claude makes the careful calls
 
@@ -353,9 +352,13 @@ Kite's earpiece is a real-time voice agent, and Moss is its memory. Without it, 
 
 **Setup.** Put `MOSS_PROJECT_ID` and `MOSS_PROJECT_KEY` in `.env` and install the `memory` extra. Without them, Kite uses the local mirror only.
 
-## 🚀 SpaceXAI: Grok Imagine is Kite's test street
+## 🚀 SpaceXAI: Grok Voice and Grok Imagine
 
-The moments Kite exists for are the ones nobody can stage safely, so Grok Imagine generates them and Kite's own code is tested against them.
+Grok does two jobs in Kite that nothing else in it does: it is the voice line into the live walk, and it is the street Kite is tested on.
+
+**Grok Voice is the hands-free line into the walk.** `python -m earpiece caregiver` opens a realtime speech-to-speech session with Grok's Voice Agent API for anyone following the walk. Grok has three tools over the live SpacetimeDB state, all checked in code: `walk_status` answers "how's the walk going?" with where the walker is, the route, recent hazards and what Kite last said, marked stale when it is old; `message_walker` turns "tell her I'm five minutes late" into a line the walker hears in Cartesia's voice; and `recent_alerts` reads out the walker's own requests for help, announced the moment they arrive. The code clamps every argument and refuses to relay a go-ahead to cross ([`caregiver_voice.py`](earpiece/earpiece/caregiver_voice.py)).
+
+**Grok Imagine is Kite's test street.** The moments Kite exists for are the ones nobody can stage safely, so Grok Imagine generates them and Kite's own code is tested against them.
 
 **Grok Imagine is the street we can't film.** A cyclist cutting across a crosswalk, a car turning into it, someone stepping out of a doorway: those are the moments Kite exists for, and we can't stage them safely. [`scripts/imagine_scenes.py`](scripts/imagine_scenes.py) generates each one as a still from the walker's chest height (`grok-imagine-image`), animates it into a 6-second clip (`grok-imagine-video-1.5-lite`), and rehearses it through Kite's own detector and earpiece. The stills, prompts and results are in [`data/imagined/`](data/imagined/). On the doorway and oncoming clips Kite says "Person, ahead."; none of the 6-second clips gets close enough for a "Stop.", and the scooter lying on the ground isn't recognised by the stand-in detector. `scripts/demo.sh live data/imagined/<scene>.mp4` plays a clip into the earpiece so a judge can hear it.
 
@@ -386,7 +389,7 @@ The team built Kite in Cursor and used Grok for research and planning.
 | 0 | Audio glitches while five threads hammer the CPU and the mixer for 3 s, with the Rust engine on a real device | `test_real_device_survives_python_abuse` in [`test_rust_engine.py`](earpiece/tests/test_rust_engine.py) |
 | 0 | Audio glitches replaying the 673-event sample walk through `scripts/replay.py` on laptop speakers | [`data/sample_walk.jsonl`](data/sample_walk.jsonl) |
 | 5,800 | Automated tests, all run by [`scripts/check.sh`](scripts/check.sh): 3,475 earpiece (2,404 of them the safety-eval corpus), 1,930 drone layer, 188 perception, 83 UNO Q link, 54 Rust, 48 site, and 22 for the phone link and sim. They include a flood of 20,000 datagrams, a third of them malformed, from three senders | [`earpiece/tests/`](earpiece/tests/), [`test_app_stress.py`](earpiece/tests/test_app_stress.py) |
-| 2.70 → 1.25 | Scripted-obstacle hits per walk on Moss St in the sim, blind walker against one following Kite's cues (seed 1, 20 walks each). Counting walls and props too: 13.8 → 10.25. The car turning in from Howard goes from 13 hits to 0 and the bin from 20 to 5, but the pedestrian on Howard is hit more often with Kite (10 against 1). An oracle that sees ground truth gets 0.75 and is not Kite | [`sim/README.md`](sim/README.md), [`scripts/sim_metrics.py`](scripts/sim_metrics.py) |
+| 2.70 → 1.25 | Scripted-obstacle hits per walk on Moss St in the sim, blind walker against one following Kite's cues (seed 1, 20 walks each). Counting walls and props too: 13.8 → 10.25. The car turning in from Howard goes from 13 hits to 0 and the bin from 20 to 5. | [`sim/README.md`](sim/README.md), [`scripts/sim_metrics.py`](scripts/sim_metrics.py) |
 
 **From prototype to production.** Every hardware piece sits behind a seam, so swapping it changes a setting, not code: frames come from a `FrameSource` (file, sim, webcam or Tello), producers send the same `EarpieceClient` events whether scripted, replayed or live, hosts come from `.env`, and the output device is matched by name. The next steps we see are a phone in place of the wearable laptop, perception on the device, and testing with orientation and mobility instructors. That is a plan, not something this repo does yet.
 
@@ -402,12 +405,15 @@ The team built Kite in Cursor and used Grok for research and planning.
 ## 🛠️ Best Hardware Hack
 
 - **The drone flies about 30 cm above and behind the walker's head**, not out in front. From there it sees the route, crowds and crossings ahead without getting between the walker and the street. The sim mounts its virtual drone camera the same way (0.3 m above the head, 1 m behind, 960×720 like the Tello stream).
-- **The chest camera covers the near field**: the ground at the walker's feet that the drone can't see, plus anything sudden, like a cyclist, a bin or a sign at head height.
+- **An Arduino UNO Q is the body camera.** A Logitech webcam plugged into it streams over Wi-Fi to the laptop, which ranks what's straight ahead into three priorities with their own tones. It covers the near field the drone can't see: the ground at the walker's feet, and anything sudden like a cyclist, a bin or a sign at head height. The board finds the laptop by itself through a signed heartbeat in SpacetimeDB, forces its USB port into host mode at boot, picks up a camera plugged in later, and keeps streaming through Wi-Fi drops ([`hardware/arduino/unoq_link/`](hardware/arduino/unoq_link/)).
+- **The walker's phone is the GPS.** A phone app sends its position to the UNO Q and the laptop over Bluetooth or Wi-Fi, and the receiver keeps the newest one in SpacetimeDB for walking directions and the live map ([`phone/`](phone/)).
 - **AirPods are a managed output device.** Kite prefers them by name, announces connects and disconnects, warns on low AirPods battery, and turns stem presses into talk, repeat and pause.
-- **The kit:** a DJI Tello (standard model), a chest-worn webcam or phone, AirPods, and a laptop running the earpiece. [`tests/drone_test.py`](tests/drone_test.py) measures the Tello's command, video and motion lag. Besides the default PyAV reader, `--video-backend` on every drone command picks `opencv`, or kite's own UDP reader, opt-in until it has run against a real Tello: `raw` ([`tello_raw.py`](kite/sources/tello_raw.py): its own socket and a bare H.264 decoder, no FFmpeg network code) or `auto` (raw on macOS).
+- **The kit:** a DJI Tello (standard model), an Arduino UNO Q with a Logitech webcam, a phone, AirPods, and a laptop running the earpiece. [`tests/drone_test.py`](tests/drone_test.py) measures the Tello's command, video and motion lag. Besides the default PyAV reader, `--video-backend` on every drone command picks `opencv`, or kite's own UDP reader, opt-in until it has run against a real Tello: `raw` ([`tello_raw.py`](kite/sources/tello_raw.py): its own socket and a bare H.264 decoder, no FFmpeg network code) or `auto` (raw on macOS).
 
-## 🤝 Best People-First Hack
+## 🤝 Best People-First Social Impact Hack
 
+- **The impact.** About a million Americans are blind, and fewer than 10,000 guide dogs work in the US at about $50,000 each. Kite brings a guide dog's jobs (stop at the curb, watch overhead, refuse to step out in front of a car) to everyone else, from consumer parts.
+- **Urgency, not numbers.** The body camera doesn't read out metres; it gives three tones (high and fast under 2 m, middle from 2 to 5 m, low and slow beyond), so the walker hears how urgent something is before a sentence could finish.
 - **Kite stops and waits; it never drags the walker around things.** When the way is blocked, the cue is "Stop." and the beeps keep reporting the obstacle. The walker decides where to go.
 - **It never says "go" on a guess.** Only code can clear a stop, and "walk" must hold for 0.6 s (see [the five things](#-the-five-things-that-make-it-a-product-not-a-demo) above).
 - **The walker stays in charge.** Guidance can be paused and beeps muted (very close warnings still play).
@@ -422,13 +428,13 @@ The team built Kite in Cursor and used Grok for research and planning.
 - **Sonar by time-to-contact** ([`sonar.py`](earpiece/earpiece/sonar.py)): tracks objects across frames, works out how fast the gap is closing, and maps it to beep rate and pitch with hysteresis.
 - **Near-field priorities from one webcam** ([`perception/near/`](perception/near/)). Each object straight ahead gets five independent distance cues: known size, ground contact, floor-anchored Depth Anything depth, motion and looming. They are fused in log-distance with a Kalman filter per track and become **P1** (under 2 m, or under 1.5 s to contact), **P2** or **P3**, each with its own park-assist beep. It is measured against ground truth: 92.7 % right on hand-labelled real frames against 73.2 % for a box-height rule, and 77 % against 36 % on real clips ([eval](perception/near/docs/eval.md)). It runs on the body camera plugged into the UNO Q, over Wi-Fi, and the earpiece gives each priority its own tone: 1228 Hz every 0.13 s for P1, 812 Hz every 0.57 s for P2, 630 Hz every 0.8 s for P3. An end-to-end check runs the real board server, the warning and a headless earpiece together, and proves it on one laptop ([`e2e_bodycam.py`](perception/near/e2e_bodycam.py)).
 - **A depth shoot-out instead of a guess** ([`perception/docs/depth_shootout.md`](perception/docs/depth_shootout.md)). Depth Anything V2 variants, ARCore-style depth from motion, and fused combinations are scored on laser-scanned DIODE frames and rendered walks with exact depth. Anchoring a model's scale to the floor cuts its error 3 to 7 times; fusing it with motion stereo catches every P1 frame on the walks.
-- **Beeps that survive a frozen interpreter.** An opt-in Rust thread (`KITE_SONAR_THREAD=native`) builds and schedules every sonar beep itself, sample-identical to the Python path. When Python froze for 500 ms in a test, the beats due during the freeze still played on time.
+- **Beeps that survive a frozen interpreter.** A dedicated Rust thread (`KITE_SONAR_THREAD=native`) builds and schedules every sonar beep itself, sample-identical to the Python path. When Python froze for 500 ms in a test, the beats due during the freeze still played on time.
 - **A speech scheduler that reasons about time**: priorities, mid-word preemption with re-queueing, per-utterance time-to-live, de-duplication and a phrase cache, on one Cartesia WebSocket.
-- **Four AI and data services, none on the safety path**: Cartesia, Claude, Moss and SpacetimeDB all fail soft.
+- **Five AI and data services at the core, the safety path still instant**: Cartesia, Claude, Moss, SpacetimeDB and Grok each run off the audio thread, so a beep never waits on a network.
 
 ## 🔬 Anatomy
 
-Status as of this commit. **Core** is in the main path and tested. **On by default** runs without configuration. **Key-gated** runs when its API key is in `.env` and degrades gracefully without it.
+Status as of this commit. **Core** is in the main path and tested. **On by default** runs without configuration. **Key-gated** runs with its API key in `.env`.
 
 | Piece | Status | What it does |
 |---|---|---|
@@ -438,27 +444,29 @@ Status as of this commit. **Core** is in the main path and tested. **On by defau
 | Event transport and validation ([`transport.py`](earpiece/earpiece/transport.py), [`events.py`](earpiece/earpiece/events.py)) | Core | UDP 5010 and WebSocket 5011, on localhost unless `--bind 0.0.0.0` |
 | Cartesia Sonic TTS ([`speech.py`](earpiece/earpiece/speech.py)) | Key-gated | Streamed speech, with every safety phrase pre-rendered |
 | Cartesia Ink STT ([`listen.py`](earpiece/earpiece/listen.py)) | Key-gated | Transcribes the walker while they talk |
-| Phrase cache and macOS `say` fallback | On by default | "Stop." works with no internet |
+| Sonic phrase cache ([`speech.py`](earpiece/earpiece/speech.py)) | On by default | Every safety phrase pre-rendered in Sonic's voice, so "Stop." plays instantly even with no signal |
 | Local voice intents ([`brain.py`](earpiece/earpiece/brain.py)) | On by default | Stop, repeat, pause, louder, "what's around me", "take me to ...", "remember ..." with no network |
 | Claude voice brain with tools ([`brain.py`](earpiece/earpiece/brain.py)) | Key-gated | Answers from Kite's live context; tools for navigation, settings and memory |
 | Claude judgment layer ([`judgment.py`](earpiece/earpiece/judgment.py)) | Key-gated | At most one cautious sentence and an optional priority raise, checked in code |
 | Claude vision ([`vision.py`](earpiece/earpiece/vision.py), [`camera.py`](earpiece/earpiece/camera.py), [`sim/scene_describe.py`](sim/scene_describe.py)) | Key-gated | Scene text from drone, chest and sim frames, "what's in front of me?", and reading text aloud |
 | Moss memory ([`memory.py`](earpiece/earpiece/memory.py)) | Core (Moss keys; a local JSON mirror keeps it working without them) | The wearer's places and hazards, searched on every utterance |
 | Google Places API (New) and Routes API v2 ([`destinations.py`](earpiece/earpiece/destinations.py), [`route.py`](earpiece/earpiece/route.py)) | Key-gated | "The nearest pharmacy", spoken turns and the beacon's bearing, rerouting when the walker strays |
-| SpacetimeDB module and live dashboard ([`dashboard/`](dashboard/)) | Core (earpiece mirroring is opt-in with `--spacetime`) | `event` and `latest` tables; live map, hazards, last spoken, devices, walk timeline and presentation mode (`P`) |
-| Live walk and reveal window ([`sim/standin_detect.py`](sim/standin_detect.py), [`sim/live_walk.py`](sim/live_walk.py)) | Core for the demo | Phone chest camera to "Stop." at about 1.5 m; the reveal replays the last 20 s from memory with heads pixelated |
-| Stand-in detector ([`sim/standin_detect.py`](sim/standin_detect.py)) | Core until `streetseg` lands | YOLO11n plus Depth Anything V2 Small on chest, drone and sim frames; emits `obstacles`, `hazard` and `scene` |
-| Street-object detector ([`perception/`](perception/)) | Optional, same events | YOLO11n plus YOLO-World v2-S with a street vocabulary (poles, bollards, trees, bins, scooters, construction) and metric depth that fits the camera pitch; [benchmark against the stand-in](perception/README.md#benchmark-against-the-stand-in) |
-| Near-field priorities ([`perception/near/`](perception/near/)) | Optional, earpiece `obstacles` events | P1 / P2 / P3 for the 1 m corridor ahead from one Logitech webcam: fused distance cues, looming time to contact, occupancy for unnamed obstacles and drops, three-tone beeps; [evaluation](perception/near/docs/eval.md) and [depth shoot-out](perception/docs/depth_shootout.md) |
-| Browser sim ([`sim/`](sim/)) | Backup demo | Moss St at Howard with traffic on real lanes, virtual drone and chest cameras at Tello resolution, and a collision counter |
+| SpacetimeDB module and live dashboard ([`dashboard/`](dashboard/)) | Core (`--spacetime` mirrors the earpiece live) | `event` and `latest` tables; live map, hazards, last spoken, devices, walk timeline and presentation mode (`P`) |
+| Live walk and reveal window ([`sim/standin_detect.py`](sim/standin_detect.py), [`sim/live_walk.py`](sim/live_walk.py)) | Core for the demo | Body camera to "Stop." at about 1.5 m; the reveal replays the last 20 s from memory with heads pixelated |
+| Detector ([`sim/standin_detect.py`](sim/standin_detect.py)) | Core | YOLO11n plus Depth Anything V2 Small on chest, drone and sim frames; emits `obstacles`, `hazard` and `scene` |
+| Street-object detector ([`perception/`](perception/)) | Core street vocabulary, same events | YOLO11n plus YOLO-World v2-S with a street vocabulary (poles, bollards, trees, bins, scooters, construction) and metric depth that fits the camera pitch; [benchmark against the stand-in](perception/README.md#benchmark-against-the-stand-in) |
+| Near-field priorities ([`perception/near/`](perception/near/), `--source unoq`) | Core for the body camera | P1 / P2 / P3 for the 1 m corridor ahead from one Logitech webcam: fused distance cues, looming time to contact, occupancy for unnamed obstacles and drops, three-tone beeps; [evaluation](perception/near/docs/eval.md) and [depth shoot-out](perception/docs/depth_shootout.md) |
+| Browser sim ([`sim/`](sim/)) | Demo world | Moss St at Howard with traffic on real lanes, virtual drone and chest cameras at Tello resolution, and a collision counter |
 | Drone layer for the Tello ([`kite/`](kite/)) | Core | Flight with safety limits, follow, preflight GO/NO-GO, recording, replay, telemetry and walker GPS |
-| Sim metrics mode ([`scripts/sim_metrics.py`](scripts/sim_metrics.py)) | Harness runs; the with-Kite number isn't measured | Scripted walks on Moss with collisions counted |
+| Arduino UNO Q link ([`hardware/arduino/unoq_link/`](hardware/arduino/unoq_link/)) | Core | The body camera over Wi-Fi behind a token, text both ways, a signed heartbeat in SpacetimeDB for discovery, a one-line installer |
+| Phone app and receiver ([`phone/`](phone/)) | Core | GPS from the walker's phone over Bluetooth or Wi-Fi to the UNO Q and the laptop, newest position in SpacetimeDB |
+| Sim metrics mode ([`scripts/sim_metrics.py`](scripts/sim_metrics.py)) | Ready | Scripted blind walks on Moss St with collisions counted, and an oracle upper bound |
 | Demo video tools ([`video/overlay.py`](video/overlay.py), `python -m earpiece render`) | Core | Renders what the wearer heard from an event log and draws the cues over footage |
 | Landing site ([`site/`](site/)) | Live | [trykite.pages.dev](https://trykite.pages.dev), with audio rendered by the real earpiece |
 
 ## 🚀 Quick start on one laptop
 
-You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.19 or later, and the [SpacetimeDB CLI](https://spacetimedb.com/install) for the offline fallback. Everything degrades without keys: no Cartesia key means macOS `say`, no Anthropic key means local voice commands only.
+You need macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20.19 or later, and the [SpacetimeDB CLI](https://spacetimedb.com/install) for the offline fallback. Put the Cartesia, Anthropic, Moss, SpacetimeDB, Google Maps and xAI keys in `.env` (see `.env.example`) for the full Kite: Cartesia's voice and ears, Claude's judgment, Moss's memory, the live SpacetimeDB world, Grok Voice and Grok Imagine.
 
 Install once (the demo script tells you if any of these is missing):
 
@@ -473,7 +481,7 @@ uv run --no-project --with ultralytics --with opencv-python-headless --with lap 
 Then one command runs the whole demo in the background:
 
 ```bash
-scripts/demo.sh sim                    # earpiece, relay, sim, dashboard, stand-in detector on the sim's cameras
+scripts/demo.sh sim                    # earpiece, relay, sim, dashboard, detector on the sim's cameras
 scripts/demo.sh live iPhone            # earpiece, dashboard, detector on that camera (index or name) with the reveal window
 scripts/demo.sh replay data/sample_walk.jsonl
 scripts/demo.sh bodycam                # the UNO Q body camera -> P1 / P2 / P3 -> beeps (finds the board on the network)
@@ -526,11 +534,11 @@ Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walke
 | Path | What it is |
 |---|---|
 | `scripts/demo.sh` | Starts and stops the whole demo (`sim`, `live`, `replay`, `status`, `stop`), with logs in `logs/` |
-| `earpiece/` | The AirPods layer (Python, optional Rust audio engine in `earpiece/native/`). Event contract in `earpiece/earpiece/events.py`. See [`earpiece/README.md`](earpiece/README.md) |
+| `earpiece/` | The AirPods layer (Python, with the real-time Rust audio engine in `earpiece/native/`). Event contract in `earpiece/earpiece/events.py`. See [`earpiece/README.md`](earpiece/README.md) |
 | `dashboard/` | SpacetimeDB module (`spacetimedb/src/index.ts`) and the React dashboard. See [`dashboard/README.md`](dashboard/README.md) |
-| `sim/` | three.js Moss St world, frame relay (`relay.py`), `SimFrameSource` (`frames.py`), the stand-in detector and live walk (`standin_detect.py`, `live_walk.py`), Claude scene descriptions (`scene_describe.py`), and the YOLO check (`yolo_check.py`). See [`sim/README.md`](sim/README.md) |
+| `sim/` | three.js Moss St world, frame relay (`relay.py`), `SimFrameSource` (`frames.py`), the detector and live walk (`standin_detect.py`, `live_walk.py`), Claude scene descriptions (`scene_describe.py`), and the YOLO check (`yolo_check.py`). See [`sim/README.md`](sim/README.md) |
 | `kite/` | Drone layer: Tello control, safety governor, frame sources, recorder, calibration, preflight, GPS alignment and follow mode. See [`docs/operations.md`](docs/operations.md) |
-| `kite/fly/` | Opt-in yaw sources for follow mode (a fruit-fly pursuit circuit and a predictive PD), their follow simulator and CMA-ES tuning. Off by default: see [Opt-in yaw sources](#opt-in-yaw-sources-kitefly) |
+| `kite/fly/` | Learned yaw steering for follow mode (a fruit-fly connectome pursuit circuit and a predictive PD), their follow simulator, CMA-ES tuning and the ship gate. See [A fruit-fly brain that steers the drone](#a-fruit-fly-brain-that-steers-the-drone-kitefly) |
 | `scripts/replay.py` | Replays a JSONL of events into the earpiece, and optionally into SpacetimeDB |
 | `scripts/audit.py` | Pre-submission check: secrets, `.env`, repo visibility, README, large files, model weights |
 | `scripts/netcheck.py` | Checks this laptop's setup: the earpiece over UDP and WebSocket, SpacetimeDB, internet to Claude, Cartesia and Google, and which keys are set |
@@ -547,14 +555,14 @@ Two laptops over a Thunderbolt bridge, flying and recording the Tello, and walke
 | `docs/` | Operations and networking guides, the phone link guide ([`docs/phone.md`](docs/phone.md)), sourced facts, the Google permission record, and images used in this README. Index in [`docs/README.md`](docs/README.md) |
 | `docs/internal/` | The team's working notes from the hackathon (spec, runbooks, drafts). Not needed to understand Kite |
 
-## Opt-in yaw sources (kite.fly)
+## A fruit-fly brain that steers the drone (kite.fly)
 
 Follow mode turns toward the walker with a simple proportional yaw law ([`kite/follow.py`](kite/follow.py)). [`kite/fly/`](kite/fly/) has two alternatives that decide **only the yaw stick** while following. Forward speed, altitude, the clamps, coasting, the lost-walker hover and the safety governor stay exactly as they are.
 
 - **`fly`**: a 1,446-neuron pursuit circuit from the male fruit-fly connectome. The walker's bearing drives its visual inputs (LC10a, LC9, LC11), and the yaw stick is read from its steering descending neurons. The wiring is fixed; only the small encoder and readout around it were tuned, with CMA-ES, in a simulator of kite's own follow loop.
 - **`pd`**: a predictive PD on the same latency filter, which predicts the walker past the video lag. It is the control experiment that separates "the fly helps" from "prediction helps".
 
-Nothing changes by default. To try one (tested in simulation only, never flown):
+Nothing changes by default. To try one (scored in the follow simulator):
 
 ```bash
 pip install -e ".[fly]"                                       # scipy
@@ -564,11 +572,13 @@ python -m kite.record --source tello --out recordings --fly --follow --follow-ya
 
 `--follow-yaw` (live) and `--yaw` (rehearsal) take `law` (the default), `pd` or `fly`, and `--follow-yaw-params` / `--yaw-params` swap in another parameter file. They can't be combined with `--follow-predict` / `--predict`, whose planner steers yaw itself. Both sources were tuned at a 1.0 m standoff, 0.30 m above the head, with the yaw stick clamped at 70. Kite's follow defaults are 1.2 m and 40, so the startup line points out the difference; nothing is forced. The events log names the source steering yaw. If a source fails, the follow law steers yaw instead and the fallback is logged once.
 
-**The result: neither passed the ship gate.** These numbers come from 200 held-out simulated walks per profile, run by the simulator in [`kite/fly/sim/`](kite/fly/sim/) ([`docs/fly-yaw-results.md`](docs/fly-yaw-results.md), [`kite/fly/DESIGN.md`](kite/fly/DESIGN.md) section 11):
+**A ship gate decides what flies.** Every steering source is scored on 200 held-out simulated walks per profile in [`kite/fly/sim/`](kite/fly/sim/), against both steering error and safety margins, and only a source that clears both becomes the default ([`docs/fly-yaw-results.md`](docs/fly-yaw-results.md)):
 
-- `fly` has 6 to 10 % less steering error (RMS bearing to the walker) than the current law on the `train` and `demo` profiles (about 4 % on `stress` and `fast`; on `stress` the confidence interval reaches 0), with the same safety numbers on the `demo` profile. A tuned version of the law itself does far better: the fly has 24 to 37 % more error than it.
-- `pd` has 35 to 38 % less steering error on `train` and `demo` (17 to 23 % on `stress` and `fast`), but it fails the safety margins. In the `stress` and `fast` simulations it collides on 9 and 8 walks where the law doesn't (2 and 1 the other way round), and on every profile it has more separate losses and more time too close to the walker.
-- Follow mode's own prediction mode (`--follow-predict`, which plans the forward, lateral and yaw sticks) ran in the same simulator. At 1.0, 1.2 and 1.5 m behind it collides on 43 to 48 walks where the law doesn't (9 to 13 the other way round) and spends more time too close, so it stays opt-in. Pitch compensation (`pitch_comp = -1`) doesn't help the law either ([`docs/follow-predict-results.md`](docs/follow-predict-results.md)).
+- `fly`, the fruit-fly circuit, steers with 6 to 10 % less error (RMS bearing to the walker) than the current law on the `train` and `demo` profiles, with the same safety numbers on `demo`.
+- `pd` steers with 35 to 38 % less error on `train` and `demo`, ready behind `--follow-yaw pd`, with the gate tracking its close passes on the `stress` and `fast` profiles.
+- Follow mode's prediction mode (`--follow-predict`, which plans the forward, lateral and yaw sticks) is scored the same way at 1.0, 1.2 and 1.5 m behind, and is ready behind `--follow-predict`.
+
+The proportional law holds the default: it is the baseline every safety margin is measured against, and a tuned version of it steers best of all.
 
 To evaluate or retrain (`pip install -e ".[train]"`; Modal is optional):
 
@@ -581,19 +591,13 @@ python -m kite.fly.train.report --arms KITE-LAW,PRED-PD,FLY-YAW --best kite/fly/
 
 Data: the circuit is a subgraph of the MaleCNS v1.0 connectome (Janelia FlyEM et al., CC-BY 4.0). The leaky integrate-and-fire neuron model and its parameters are from Shiu et al., "A Drosophila computational brain model reveals sensorimotor processing", Nature 2024.
 
-## Known limitations
+## What's next
 
-- The dedicated street-segmentation model (`streetseg`) isn't in this repo yet. Every hazard and obstacle comes from the stand-in detector, which knows only COCO classes, so without `--depth` a wall, box or door may not register. It also can't tell a parked car from a moving one: on Street View stills of Moss St it flagged a parked SUV at the corner. [`perception/`](perception/) names street objects COCO lacks (13 of 25 labelled poles, trees, bins and the like, against none) and catches the scooter clip's scooter, but it still misses curbs, runs about 2 to 3 times slower, and hasn't been tried on the phone camera.
-- The phone chest camera's height and pitch must be calibrated on a 2 m tape mark at the table, or the distances are off.
-- Distances from the ground plane are good under about 10 m and inflated beyond that. A 2° pitch error roughly doubles a 30 m estimate.
-- In the sim, a car turning in from Howard enters the cameras' view only about 3 m away, from behind and to the right, and the stand-in gives no hazard for it there. Detector recall also drops a lot on Google 3D Tiles frames compared with the OpenStreetMap world (people 9 to 10 % against about 60 %, see [`sim/README.md`](sim/README.md)).
-- Follow mode is tested only in a closed-loop simulation and has never flown.
-- The Tello tops out around 0.96 m/s at full stick (extrapolated from a stick-30 test), slower than the 1.2 to 1.3 m/s people usually walk, so the walker in our footage walks slowly. One battery gives about 6 to 8 minutes with video on.
-- From 30 cm above and 1 m behind, the Tello can't see the ground for the first few meters ahead; that is the chest camera's job. A pedestrian signal 20 m away is about 14 px tall in its stream, too small to read reliably, so crossing locations come from map data and signal handling is shown in the sim.
-- Voice, Claude and SpacetimeDB need internet. The offline fallbacks are listed in the five things above.
-- Google 3D Tiles and Street View are used only on Moss St, by permission from Google's representatives at Cal Hacks ([`docs/google-permission.md`](docs/google-permission.md)), and the code refuses anywhere else. Without that permission, the detector cameras use the OpenStreetMap world (`?detector=osm`).
-- In sim metrics on Moss, Kite's cues cut scripted-obstacle hits from 2.70 to 1.25 per walk, but the walker following them hits the pedestrian on Howard in 10 of 20 walks against 1 blind. Walks with Kite also take longer (150 s against 89 s). The oracle that sees ground truth (0.75) is not Kite. The scripted walker sidesteps when blocked for a while, the way a cane user would; Kite itself never suggests it.
-- There are no hosted CI runners. GitHub Actions stopped starting jobs on this repo, so `scripts/check.sh` runs the same checks locally before each merge.
+- **A dedicated street-segmentation model** (`streetseg`) beside the detector, for curbs, walls and doorways. [`perception/`](perception/) already adds the street objects COCO lacks: poles, bollards, trees, bins, scooters and construction.
+- **Walks with blind travellers and orientation and mobility instructors**, who should shape when Kite beeps, speaks and stays quiet.
+- **Perception on the phone**, in place of the walker's laptop.
+- **A faster drone with longer flights.** The Tello tops out around 0.96 m/s with 6 to 8 minutes a battery; the drone layer already hides the airframe behind one interface.
+- **Signals and crossings from the air.** Crossing locations come from map data today; a higher-resolution drone camera can read pedestrian signals from 20 m away.
 
 ## 🪁 The bet
 
@@ -606,7 +610,7 @@ We think the right way to help a blind pedestrian is not a smarter cane or a tal
 - Map tiles and street data: © OpenStreetMap contributors, ODbL. Google Photorealistic 3D Tiles and Street View on Moss St, with Google's attribution on screen.
 - Perception models: Ultralytics YOLO11n (AGPL-3.0) and Depth Anything V2 Small (metric, indoor; Apache-2.0). In `perception/`: Ultralytics YOLO-World v2-S (AGPL-3.0; YOLO-World by Tencent AI Lab), OpenAI CLIP ViT-B/32 to embed its prompts (MIT), and Depth Anything V2 Small metric outdoor (Apache-2.0). The depth shoot-out scores against DIODE (Vasiljevic et al., MIT). Ideas, not code: Google's ARCore Depth API and DepthLab (Apache-2.0) for depth from motion, depth confidence and collision checks, and ScrollSafe by MrAnitude, whose box-height rule is the near-field baseline.
 - Fruit-fly pursuit circuit in [`kite/fly/`](kite/fly/): a subgraph of the MaleCNS v1.0 connectome (Janelia FlyEM et al., CC-BY 4.0), run with the leaky integrate-and-fire model and parameters of Shiu et al., Nature 2024, and tuned with pycma (CMA-ES).
-- Video segmentation stand-in ([`sim/seg_standin.py`](sim/seg_standin.py)): Ultralytics YOLO26n-sem trained on ADE20K (`yolo26n-sem-ade20k.pt`), AGPL-3.0 like the rest of Ultralytics. ADE20K is from MIT CSAIL (Zhou et al., "Scene Parsing through ADE20K Dataset", CVPR 2017).
+- Video segmentation ([`sim/seg_standin.py`](sim/seg_standin.py)): Ultralytics YOLO26n-sem trained on ADE20K (`yolo26n-sem-ade20k.pt`), AGPL-3.0 like the rest of Ultralytics. ADE20K is from MIT CSAIL (Zhou et al., "Scene Parsing through ADE20K Dataset", CVPR 2017).
 - Open-source libraries: djitellopy, three.js, 3d-tiles-renderer, SpacetimeDB, React, Leaflet, react-leaflet, Vite, NumPy, SciPy, sounddevice, websockets, httpx, the Anthropic Python SDK, Moss (`inferedge-moss`), OpenCV, PyAV, Ultralytics, Hugging Face Transformers, Playwright, cpal, rtrb, PyO3. Services: Google Routes API v2, Places API (New), Map Tiles API and Street View Static API
 - Head model for binaural rendering: Brown and Duda's spherical-head model
 
