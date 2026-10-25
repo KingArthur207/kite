@@ -49,6 +49,7 @@ SafetyGovernor.
 
 from __future__ import annotations
 
+import logging
 import math
 import statistics
 from collections import deque
@@ -66,7 +67,10 @@ POSE_WEIGHTS = ROOT / "data" / "models" / "yolo11n-pose.pt"
 POSE_URL = "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-pose.pt"
 POSE_HINT = f"one time, on normal internet: mkdir -p data/models && curl -L -o data/models/yolo11n-pose.pt {POSE_URL}"
 
+FLY_PARAMS = Path(__file__).resolve().parent / "flybrain" / "data" / "brains" / "trained" / "FLY-YAW_smooth2_best.json"
+
 RUNNING, SUCCESS, FAILURE = "running", "success", "failure"
+log = logging.getLogger("kite.follow_behind")
 
 
 # ------------------------------------------------------------------ settings
@@ -95,6 +99,20 @@ class BehindCfg:
     min_range_m: float = 0.55  # the most conservative distance cue below this: back off (and never approach)
     max_box_width_frac: float = 0.75  # person box wider than this fraction of the frame: back off
     search_yaw_rc: int = 20  # yaw speed when the person is lost
+    # who decides the yaw stick while the person is in view: "fly" (the fruit fly connectome controller below, as
+    # flown) or "pid" (yaw_gain / yaw_deadband_deg above). Distance, altitude, orbit and safety are unchanged.
+    steering: str = "fly"
+    # fruit fly steering (kite.flybrain FlySteer: a 1,446-neuron pursuit circuit from the fruit fly connectome)
+    fly_params_path: str = str(FLY_PARAMS)  # trainer best.json: trained, then fine-tuned for a smooth stick
+    fly_brain_path: str = ""  # pursuit subgraph .npz; "" = the one named in the params file
+    fly_latency_s: float | None = None  # capture -> frame arrival its latency filter predicts across; None = video_lag_s
+    video_lag_s: float = 0.25  # DroneCfg.video_lag_s
+    fly_max_rc_yaw: int = 40  # clamp on the fly's yaw stick (max_rc_yaw also applies; safety.max_rc last)
+    fly_smoothing_ms: float = 0.0  # stick low-pass time constant (ms); 0 = off
+    fly_deadband: float = 4.0  # subtracted from |yaw| (stick units)
+    fly_slew: float = 300.0  # max stick change per second (0 = off)
+    fly_hysteresis: float = 3.0  # the stick only moves when the new value differs by more than this
+    fly_forward: bool = False  # the fly also drives forward/back: off (these weights have no trained forward readout)
     # person
     person_height_m: float = 1.70  # SET THIS to the wearer's real height WITH SHOES, to +-2 cm (it sets the distance)
     person_height_sd_m: float = 0.02  # 0.02 once person_height_m is measured (0.05 for an unknown person)
@@ -787,11 +805,102 @@ class Ctx:
         return None if self.tel is None else self.tel.floor_altitude_m()
 
 
+_FLY_SHARED: dict = {}  # one FlySteer per settings per process: the brain loads once
+_FLY_WARNED: set = set()
+
+
+def _fly_warn_once(key: str, msg: str, warn: Callable[[str], None] | None) -> None:
+    if key not in _FLY_WARNED:
+        _FLY_WARNED.add(key)
+        (warn or log.warning)(msg)
+
+
+class FlyYaw:
+    """Per-behaviour handle on the shared FlySteer. Angles in degrees here (+ = right). The fly decides ONLY the yaw
+    stick; if it cannot load or raises, it warns once and the behaviour uses its own yaw law instead."""
+
+    def __init__(self, steer, max_rc_yaw: int, fwd_enabled: bool = False, warn: Callable[[str], None] | None = None):
+        self.steer = steer
+        self.max_rc_yaw = max_rc_yaw
+        self.fwd_enabled = fwd_enabled
+        self.failed = False
+        self.warn = warn
+
+    @staticmethod
+    def load(cfg: BehindCfg):
+        """The shared FlySteer for these settings (loads the brain the first time)."""
+        latency = cfg.video_lag_s if cfg.fly_latency_s is None else cfg.fly_latency_s
+        key = (cfg.fly_params_path, cfg.fly_brain_path, latency, cfg.fly_smoothing_ms, cfg.fly_deadband, cfg.fly_slew,
+               cfg.fly_hysteresis)
+        steer = _FLY_SHARED.get(key)
+        if steer is None:
+            from .flybrain.flyfollow.steer import FlySteer
+
+            steer = FlySteer(params_path=cfg.fly_params_path or None, brain_path=cfg.fly_brain_path or None,
+                             max_yaw=cfg.fly_max_rc_yaw, latency_s=latency, viz=False,
+                             smoothing_ms=cfg.fly_smoothing_ms, deadband=cfg.fly_deadband, slew=cfg.fly_slew,
+                             hysteresis=cfg.fly_hysteresis)
+            _FLY_SHARED[key] = steer
+            log.info("fly steering loaded: %s", steer.stats)
+        return steer
+
+    @classmethod
+    def for_behavior(cls, cfg: BehindCfg, kind: str, z_ref_m: float,
+                     warn: Callable[[str], None] | None = None) -> FlyYaw | None:
+        """A reset FlyYaw if cfg.steering is "fly" and the fly loads, else None (use the yaw law)."""
+        if cfg.steering != "fly":
+            return None
+        try:
+            steer = cls.load(cfg)
+            steer.reset(z_ref_m=z_ref_m, kind=kind)  # fresh brain state + 1 s warmup (~35 ms)
+        except Exception as e:  # any failure: keep flying on the yaw law
+            _fly_warn_once(f"load{cfg.fly_params_path}", f"fly steering unavailable ({type(e).__name__}: {e}); "
+                           "using the yaw law", warn)
+            return None
+        return cls(steer, cfg.fly_max_rc_yaw, fwd_enabled=(kind == "follow" and cfg.fly_forward), warn=warn)
+
+    @property
+    def target_valid(self) -> bool:
+        """The fly still has a target (a detection in the last 0.5 s)."""
+        return (not self.failed) and bool(self.steer.target_valid)
+
+    def yaw(self, now: float, bearing_deg: float | None = None, range_m: float | None = None,
+            frame_t: float | None = None, fallback: float = 0.0) -> float:
+        """Yaw stick (+ = clockwise). Pass the bearing only for a detection on a NEW frame; call with no bearing on
+        other loops so the brain keeps ticking. Returns `fallback` if the fly has failed. range_m sets the size the
+        fly sees (z_ref / range); None = its standoff size, which follow uses."""
+        if self.failed:
+            return fallback
+        try:
+            b = None if bearing_deg is None else math.radians(bearing_deg)
+            y = self.steer.yaw(now, b, range_m=range_m, t_frame=frame_t)
+            return float(max(-self.max_rc_yaw, min(self.max_rc_yaw, y)))
+        except Exception as e:
+            self.failed = True
+            _fly_warn_once(f"run{id(self)}", f"fly steering failed ({type(e).__name__}: {e}); back to the yaw law",
+                           self.warn)
+            return fallback
+
+    def forward(self, fallback: float = 0.0) -> float:
+        """The fly's forward/back stick from the last brain tick (fly_forward only; the caller clamps and gates it)."""
+        if self.failed or not self.fwd_enabled:
+            return fallback
+        try:
+            return float(self.steer.forward)
+        except Exception as e:
+            self.failed = True
+            _fly_warn_once(f"run{id(self)}", f"fly forward failed ({type(e).__name__}: {e}); back to the laws",
+                           self.warn)
+            return fallback
+
+
 class FollowBehind:
     status = ""
+    fly: FlyYaw | None = None  # the fruit fly yaw (steering "fly"), set in start(); None = the yaw law
 
-    def __init__(self, cfg: BehindCfg, yaw_source=None):
+    def __init__(self, cfg: BehindCfg, yaw_source=None, warn: Callable[[str], None] | None = None):
         self.c = cfg
+        self.warn = warn
         self.yaw_source = yaw_source  # opt in: a kite.fly yaw source replaces only the yaw while the person is seen
         self.yaw_source_error: str | None = None
         self.ranges: deque = deque(maxlen=5)  # (t, range): only recent ones count, never stale values
@@ -811,6 +920,8 @@ class FollowBehind:
         self.last_close = False
         self.cmd = (0, 0, 0, 0)
         self.last_seen_t = None
+        self.fly = None if self.yaw_source is not None else FlyYaw.for_behavior(self.c, "follow", self.c.distance_m,
+                                                                                self.warn)
         if self.yaw_source is not None:
             try:
                 self.yaw_source.reset()
@@ -870,7 +981,12 @@ class FollowBehind:
                 self.range_hist.append((ctx.now, r))
             r_lo = min(v for v in (p.range_lo_m, r) if v is not None) if (p.range_lo_m or r) else None
             yaw = clamp(deadband(p.bearing_deg, c.yaw_deadband_deg) * c.yaw_gain, c.max_rc_yaw)
-            yaw = clamp(self._source_yaw(ctx, p.bearing_deg, r, yaw), c.max_rc_yaw)
+            if self.fly is not None:  # fly steering: replaces only this yaw value (no range: it steers at size s = 1,
+                # unless fly_forward is on: then the fly needs the true size to judge distance)
+                rng = r if self.fly.fwd_enabled else None
+                yaw = clamp(self.fly.yaw(ctx.now, p.bearing_deg, rng, ctx.frame.t, fallback=yaw), c.max_rc_yaw)
+            else:
+                yaw = clamp(self._source_yaw(ctx, p.bearing_deg, r, yaw), c.max_rc_yaw)
             fwd, approaching = 0.0, False
             width, height = ctx.res.image_size
             too_big = p.det.w > c.max_box_width_frac * width
@@ -891,6 +1007,16 @@ class FollowBehind:
                     approaching = closing < -c.approach_rate_mps
                     if approaching:
                         fwd = min(fwd, clamp(100.0 * closing - 10, c.max_rc_backoff))
+            if self.fly is not None and self.fly.fwd_enabled:
+                # full fly following: the fly's forward stick replaces the distance law, under the same gates:
+                # approach only when the most conservative range cue says it is safe, keep the feed-forward back-away,
+                # and the too-close override below still wins
+                f = self.fly.forward(fallback=fwd)
+                if f > 0 and not (r_lo is not None and r_lo > c.min_range_m and not too_big):
+                    f = 0.0
+                if approaching:
+                    f = min(f, fwd)
+                fwd = max(-float(c.max_rc_backoff), min(float(c.max_rc_forward), f))
             if (r_lo is not None and r_lo < c.min_range_m) or too_big:
                 fwd = -c.max_rc_backoff  # too close: back off fast and gain a little height
                 ud = max(ud, self._climb_rc(ctx) // 2)
@@ -923,8 +1049,10 @@ class FollowBehind:
             self.cmd = (side * c.max_rc_backoff, -c.max_rc_backoff, self._climb_rc(ctx), 0)
             ctx.drone.rc(*self.cmd)
             self.status = "person close and out of view: backing off to the side"
-        elif unseen < 0.35:  # between frames: keep the last command
-            ctx.drone.rc(*self.cmd[:2], ud, self.cmd[3])
+        elif unseen < 0.35:  # between frames: keep the last command (the fly keeps ticking)
+            yaw = self.cmd[3] if self.fly is None else int(clamp(self.fly.yaw(ctx.now, fallback=self.cmd[3]),
+                                                                 c.max_rc_yaw))
+            ctx.drone.rc(*self.cmd[:2], ud, yaw)
         elif unseen < 1.0:
             ctx.drone.rc(0, 0, ud, 0)
             self.status = "person briefly lost: holding"
@@ -1059,7 +1187,7 @@ class FollowMission:
             child.start(self.ctx)
 
     def _follow(self, why: str) -> None:
-        self._go("FOLLOW", why, FollowBehind(self.cfg, self.yaw_source))
+        self._go("FOLLOW", why, FollowBehind(self.cfg, self.yaw_source, warn=lambda m: self.log(m, "warn")))
 
     def begin(self) -> None:
         """Airborne: climb to the follow altitude, then follow."""

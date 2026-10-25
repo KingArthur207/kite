@@ -39,8 +39,11 @@ capped at 35, orbit off (`--orbit` turns it on).
 What the drone says ("Ready.", "Landing.", "I can't see you. ...") shows in the console; `--speak` also says it out
 loud.
 
-Steering (`--yaw`): `law` turns toward the person (default); `fly`, the retrained kite.fly brain, has only been tested
-in simulation. Keep a hand on `e` and a spotter next to the walker.
+Steering (`--yaw`): `fly` (default) is the fruit fly brain it flew with: a 1,446-neuron pursuit circuit from the
+fruit fly connectome, trained then fine-tuned for a smooth stick (`kite/flybrain`, `FLY-YAW_smooth2_best.json`). It
+decides only the yaw stick; distance, height and safety stay as above. `law` turns toward the person by bearing;
+`retrained` and `pd` are kite.fly's own yaw sources (simulation-tested only). Keep a hand on `e` and a spotter next
+to the walker.
 
 Needs the YOLO pose weights once (`data/models/yolo11n-pose.pt`):
 

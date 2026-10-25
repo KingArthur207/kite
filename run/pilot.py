@@ -24,6 +24,7 @@ import queue
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 TICK_S = 0.05  # 20 Hz control loop
 
@@ -165,7 +166,8 @@ class Pilot:
         from kite.config import Config, resolve_video_backend
         from kite.drone import SafetyGovernor, make_tello
         from kite.follow import FollowCfg, build_yaw_source
-        from kite.follow_behind import BehindCfg, CameraModel, FollowMission, Perception, PoseDetector, pose_available
+        from kite.follow_behind import (BehindCfg, CameraModel, FlyYaw, FollowMission, Perception, PoseDetector,
+                                        pose_available)
 
         a = self.args
         why = pose_available(a.weights)
@@ -177,21 +179,30 @@ class Pilot:
             cfg.drone.video_backend = resolve_video_backend(a.video_backend)
         bcfg = BehindCfg(distance_m=a.behind, altitude_m=a.height, person_height_m=a.walker_height,
                          min_altitude_m=cfg.safety.min_altitude_m, max_altitude_m=cfg.safety.max_altitude_m,
-                         orbit_gain=0.5 if a.orbit else 0.0)
+                         orbit_gain=0.5 if a.orbit else 0.0, video_lag_s=cfg.drone.video_lag_s,
+                         steering="fly" if a.yaw == "fly" else "pid")
         try:
             bcfg.check()
         except ValueError as e:
             self.log(f"follow settings: {e}", "error")
             return False
         yaw_source = None
-        if a.yaw != "law":
+        if a.yaw in ("retrained", "pd"):  # kite.fly's own yaw sources (simulation-tested)
             try:
-                yaw_source, line = build_yaw_source(a.yaw, FollowCfg(behind_m=a.behind,
-                                                                     video_lag_s=cfg.drone.video_lag_s))
+                yaw_source, line = build_yaw_source("fly" if a.yaw == "retrained" else "pd",
+                                                    FollowCfg(behind_m=a.behind, video_lag_s=cfg.drone.video_lag_s))
                 self.log(line, "info")
             except Exception as e:
-                self.log(f"steering '{a.yaw}' unavailable ({e}); using the follow law", "warn")
-        self.snap.yaw = a.yaw if yaw_source is not None else "law"
+                self.log(f"steering '{a.yaw}' unavailable ({e}); using the yaw law", "warn")
+        elif a.yaw == "fly":  # the fruit fly brain it flew with: load it now, not on the first follow in the air
+            try:
+                steer = FlyYaw.load(bcfg)
+                self.log(f"steering: fruit fly brain ({steer.stats['arm']}, {Path(bcfg.fly_params_path).name})",
+                         "info")
+            except Exception as e:
+                bcfg.steering = "pid"
+                self.log(f"fly steering unavailable ({type(e).__name__}: {e}); using the yaw law", "warn")
+        self.snap.yaw = a.yaw if (yaw_source is not None or bcfg.steering == "fly") else "law"
         self.drone = SafetyGovernor(make_tello(cfg, dry_run=a.dry_run), cfg.safety)
         self.log(f"connecting to the Tello ({'DRY RUN: nothing reaches the motors' if a.dry_run else 'LIVE'}) ...",
                  "info")

@@ -2,7 +2,7 @@
 
     python run/app.py                 # live: drone on, laptop on its Wi-Fi
     python run/app.py --dry-run       # on the table: video, YOLO and commands, nothing reaches the motors
-    python run/app.py --yaw fly       # steer yaw with the retrained kite.fly brain (simulation-tested only)
+    python run/app.py --yaw law       # steer yaw by bearing instead of the fruit fly brain
 
 Console commands (type in the window, Enter):
     takeoff   take off, climb to --height, then follow the person in front of the drone
@@ -57,9 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python run/app.py", description="kite: take off, lock onto the person in front, "
                                 "follow them.")
     p.add_argument("--dry-run", action="store_true", help="video, YOLO and commands work, nothing reaches the motors")
-    p.add_argument("--yaw", choices=("law", "fly", "pd"), default="law",
-                   help="what steers yaw while following: law (turn toward the person, default), fly (the retrained "
-                        "kite.fly brain, simulation-tested only) or pd")
+    p.add_argument("--yaw", choices=("fly", "law", "retrained", "pd"), default="fly",
+                   help="what steers yaw while following: fly (the fruit fly brain it flew with, FLY-YAW smooth2, "
+                        "default), law (turn toward the person by bearing), retrained (kite.fly's retrained brain, "
+                        "simulation-tested only) or pd")
     p.add_argument("--walker-height", type=float, default=1.7, help="the walker's real height WITH SHOES in m, to "
                    "+-2 cm (default 1.7): the follow distance is read from it, 5 cm off is 10-20 %% distance error")
     p.add_argument("--height", type=float, default=None, help="follow altitude above the floor, m (default: walker "
