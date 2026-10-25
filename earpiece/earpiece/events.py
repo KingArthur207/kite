@@ -19,6 +19,8 @@ the wearer's frame (0 ahead, +90 right, -90 left); distances are metres.
     say        free text to speak   {"type":"say","text":"...","priority":"info"}
     scene      context for questions, not spoken  {"type":"scene","text":"Wide sidewalk..."}
     position   {"type":"position","lat":37.80,"lng":-122.45,"heading":270,"place":"Lyon St"}
+               optional: accuracy (m), speed (m/s), course (deg, GPS direction of travel), walker (bool).
+               walker:false = another phone (source "phone-<id>"): mirrored to the dashboard, never guides
     status     {"type":"status","source":"drone","battery":34,"state":"following"}
     heartbeat  {"type":"heartbeat","source":"webcam"}
     scene_image  a camera frame for Claude to describe (WebSocket only: too big for UDP)
@@ -226,9 +228,12 @@ def parse(raw: bytes | str | dict) -> Msg:
         return Msg("scene", src, seq, text=_text(d, required=True))
     if t == "position":
         data = {"lat": _coord(d, "lat", 90.0), "lng": _coord(d, "lng", 180.0),
-                "heading": _num(d, "heading"), "accuracy": _num(d, "accuracy", lo=0.0, hi=1e5)}
-        if data["heading"] is not None:
-            data["heading"] = data["heading"] % 360.0
+                "heading": _num(d, "heading"), "accuracy": _num(d, "accuracy", lo=0.0, hi=1e5),
+                "speed": _num(d, "speed", lo=0.0, hi=100.0), "course": _num(d, "course"),
+                "walker": d["walker"] if isinstance(d.get("walker"), bool) else None}
+        for k in ("heading", "course"):
+            if data[k] is not None:
+                data[k] = data[k] % 360.0
         data["place"] = _text(d, "place")
         return Msg("position", src, seq, data=data)
     if t == "status":

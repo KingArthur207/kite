@@ -315,7 +315,11 @@ class Earpiece:
         elif t == "scene_image":
             self._scene_image(msg, now)
         elif t == "position":
-            self.position = {k: v for k, v in msg.data.items() if v is not None}
+            # a phone that is not the walker's (phone/link.py PhoneHub) only reaches the caregiver map, which
+            # it already did in _mirror() above: guidance follows exactly one phone
+            if msg.data.get("walker") is False:
+                return
+            self.position = {k: v for k, v in msg.data.items() if v is not None and k != "walker"}
             self.route.position(self.position, now)
             place = self.position.get("place")
             # one lookup thread at a time: a sender cycling place names must not spawn a thread

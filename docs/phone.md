@@ -25,6 +25,7 @@ earpiece\.venv\Scripts\python -m phone.ble --no-send      # Windows
 python -m phone.ble                                        # also forward to the earpiece (KITE_EARPIECE_HOST, default 127.0.0.1)
 python -m phone.ble --ear-host 192.168.137.2               # earpiece on another computer: start it with --bind 0.0.0.0
 python -m phone.ble --no-send --seconds 15                 # quick check that advertising starts
+python -m phone.ble --walker 3fa2                          # this phone guides; the others only show on the map
 ```
 
 A good start looks like this:
@@ -54,6 +55,28 @@ WebSocket answers. A heading column shows up only if the app sends a compass hea
 
 When the phone goes quiet for 5 s the earpiece says "Kite has lost the phone. Directions are paused.", and "The
 phone is back." when it returns. `--no-announce` turns that off.
+
+## Several phones
+
+Any number of phones can connect at once. Each one gets its own source, `phone-<id>`, where `<id>` is the first 4
+hex digits of a SHA-1 of the phone's CoreBluetooth central UUID (the same for a given phone on a given Mac), e.g.
+`phone-3fa2`. Every phone's position goes to the earpiece and on to SpacetimeDB, so the caregiver map shows all of
+them. Each `position` carries `accuracy` (m), `speed` (m/s), `course` (deg, GPS direction of travel, null when
+standing) and `walker` (true or false).
+
+Only one phone guides. The walker is the first phone to connect, or the one named with `--walker 3fa2`. If it goes
+quiet for 5 s while another phone is still writing, that phone takes over without a word. The earpiece drops
+`walker:false` positions from routing, and only the walker's phone says "Kite has lost the phone" or "The phone is
+back". The log names the phone on every line:
+
+```
+16:58:02 [phone] walker is now phone-3fa2
+16:58:02 phone-3fa2 (walker) #57 37.866012, -122.258310  +/-5 m  |  1.2 m/s toward N  |  ...
+16:58:02 phone-91c0 #12 37.866101, -122.258402  +/-8 m  |  - m/s  |  ...
+```
+
+On Windows, bless's WinRT backend doesn't pass the central through, so all phones share one link and the source
+`phone`. Use one phone there.
 
 ## Testing without the phone
 

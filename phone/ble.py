@@ -28,7 +28,7 @@ import time
 
 from . import FIX_CHAR_UUID, SERVICE_UUID, STATUS_CHAR_UUID
 from .fix import format_line
-from .link import FORWARD_HZ, GPS_STALE_S, LINK_STALE_S, PhoneLink
+from .link import FORWARD_HZ, GPS_STALE_S, LINK_STALE_S, PhoneHub
 
 ADVERTISED_NAME = "Kite"      # <= 10 characters, so macOS fits the 128-bit service UUID in the advertisement too
 STATUS_EVERY_S = 1.0
@@ -42,18 +42,20 @@ def _norm(uuid) -> str:
 class GattHandlers:
     """The read / write callbacks bless calls (from CoreBluetooth's queue, not the asyncio loop)."""
 
-    def __init__(self, link: PhoneLink, status=None):
-        self.link = link
+    def __init__(self, hub: PhoneHub, status=None):
+        self.hub = hub
         self.status = status or (lambda: {})
         self.writes = 0
         self.ignored = 0
 
-    def write(self, characteristic, value, **_kw) -> None:
+    def write(self, characteristic, value, central=None, **_kw) -> None:
+        """central: the writing phone's id (CoreBluetooth's per-central UUID); None on backends that hide it,
+        which then share one link, source "phone"."""
         if _norm(getattr(characteristic, "uuid", "")) != FIX_CHAR_UUID:
             self.ignored += 1
             return
         self.writes += 1
-        self.link.on_chunk(bytes(value or b""))
+        self.hub.on_chunk(bytes(value or b""), central)
 
     def status_bytes(self) -> bytes:
         return json.dumps(self.status(), separators=(",", ":")).encode()
@@ -91,6 +93,28 @@ class LinePrinter:
         self.stream.flush()
 
 
+def _cb_write_requests(self, peripheral_manager, requests):
+    """bless's CoreBluetooth write handler (bless 0.2, peripheral_manager_delegate.py), plus the central's UUID:
+    bless drops it, and two phones writing at once must not share one reassembly buffer."""
+    for r in requests:
+        self.write_request_func(r.characteristic().UUID().UUIDString(), r.value(),
+                                central=r.central().identifier().UUIDString())
+    peripheral_manager.respondToRequest_withResult_(requests[0], 0)     # 0 = CBATTErrorSuccess
+
+
+def _patch_corebluetooth(server, handlers: GattHandlers) -> None:
+    """Swap in _cb_write_requests (PyObjC replaces the Objective-C method on assignment) and route the delegate's
+    writes straight to handlers.write with the central. Contained here; other backends are untouched.
+    Windows (WinRT) would need a copy of bless's whole write_characteristic to reach args.session, so it is not
+    patched: every phone there shares one link, source "phone"."""
+    delegate = getattr(server, "peripheral_manager_delegate", None)
+    if delegate is None:
+        return
+    type(delegate).peripheralManager_didReceiveWriteRequests_ = _cb_write_requests
+    delegate.write_request_func = lambda uuid, value, central=None: handlers.write(
+        server.get_characteristic(uuid), value, central=central)
+
+
 async def build_server(handlers: GattHandlers, name: str = ADVERTISED_NAME, server_cls=None):
     """A bless server with Kite's service, not yet started. server_cls is injectable for tests."""
     if server_cls is None:
@@ -100,6 +124,8 @@ async def build_server(handlers: GattHandlers, name: str = ADVERTISED_NAME, serv
     server = server_cls(name=name, loop=asyncio.get_running_loop())
     server.read_request_func = handlers.read
     server.write_request_func = handlers.write
+    if sys.platform == "darwin":
+        _patch_corebluetooth(server, handlers)
     await server.add_new_service(SERVICE_UUID)
     await server.add_new_characteristic(
         SERVICE_UUID, FIX_CHAR_UUID,
@@ -123,8 +149,8 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
         if not args.no_watch:
             from .earpiece_watch import EarpieceWatch
             watch = EarpieceWatch(f"ws://{host}:{args.ear_ws_port}").start()
-    link = PhoneLink(send=send, link_stale_s=args.stale, forward_hz=args.rate, announce=not args.no_announce,
-                     log=printer.log)
+    hub = PhoneHub(send=send, walker=args.walker, log=printer.log, link_stale_s=args.stale, forward_hz=args.rate,
+                   announce=not args.no_announce)
     from .netinfo import on_tello_wifi
     tello = {"w": False, "t": -1e9}
 
@@ -132,10 +158,11 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
         now = time.monotonic()
         if now - tello["t"] > 5:
             tello.update(w=on_tello_wifi(), t=now)
-        return {"ok": int(link.link_ok), "n": link.stats["messages"], "e": int(bool(watch and watch.up)),
-                "w": int(tello["w"])}
+        walker = hub.walker_link()
+        return {"ok": int(bool(walker and walker.link_ok)), "n": sum(x.stats["messages"] for x in hub.links.values()),
+                "e": int(bool(watch and watch.up)), "w": int(tello["w"])}
 
-    handlers = GattHandlers(link, status)
+    handlers = GattHandlers(hub, status)
     try:
         server = await build_server(handlers, args.name, server_cls)
         await server.start()
@@ -153,21 +180,26 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
     stop = stop or asyncio.Event()
     t_end = time.monotonic() + args.seconds if args.seconds else None
     last_status = 0.0
-    seen = 0
+    seen: dict[str, int] = {}
     try:
         while not stop.is_set():
             now = time.monotonic()
-            link.tick(now)
+            hub.tick(now)
             ear = "" if watch is None else ("earpiece up" if watch.up else "earpiece DOWN")
-            text = format_line(link.fix, link.fix_age(now), link.link_age(now), link.link_ok,
-                               link.stats["forwarded"], ear)
-            n = link.stats["messages"]
-            if not args.each:
-                printer.line(text, now)
-            elif n != seen:
-                printer.log(f"#{n} {text}")      # one line per message from the phone; no live line, which
-                                                 # wraps on narrow terminals and garbles the log
-            seen = n
+            for pid, link in list(hub.links.items()):
+                tag = link.source + (" (walker)" if pid == hub.walker else "")
+                text = format_line(link.fix, link.fix_age(now), link.link_age(now), link.link_ok,
+                                   link.stats["forwarded"], ear)
+                n = link.stats["messages"]
+                if not args.each:
+                    if pid == hub.walker:
+                        printer.line(f"{tag} {text}", now)
+                elif n != seen.get(pid):
+                    printer.log(f"{tag} #{n} {text}")   # one line per message from each phone; no live line,
+                                                        # which wraps on narrow terminals and garbles the log
+                seen[pid] = n
+            if not hub.links and not args.each:
+                printer.line(format_line(None, None, None, False, 0, ear), now)
             if now - last_status >= STATUS_EVERY_S:
                 last_status = now
                 try:
@@ -188,8 +220,11 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
             pass
         if watch is not None:
             watch.stop()
-        printer.log(f"[phone] stopped: {link.stats['messages']} messages, {link.stats['forwarded']} positions sent, "
-                    f"{link.stats['bad']} bad")
+        for link in hub.links.values():
+            printer.log(f"[{link.source}] stopped: {link.stats['messages']} messages, "
+                        f"{link.stats['forwarded']} positions sent, {link.stats['bad']} bad")
+        if not hub.links:
+            printer.log("[phone] stopped: no phone connected")
     return 0
 
 
@@ -201,7 +236,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--ear-ws-port", type=int, default=5011, help="earpiece WebSocket port (status only)")
     p.add_argument("--rate", type=float, default=FORWARD_HZ, help="positions per second to the earpiece (default 2)")
     p.add_argument("--stale", type=float, default=LINK_STALE_S, help="seconds of silence before the phone is lost")
-    p.add_argument("--no-send", action="store_true", help="print only, send nothing to the earpiece")
+    p.add_argument("--walker", metavar="ID",
+                   help="the phone that guides (e.g. 3fa2 or phone-3fa2); default: the first to connect")
+    p.add_argument("--no-send",action="store_true", help="print only, send nothing to the earpiece")
     p.add_argument("--no-announce", action="store_true", help="do not ask the earpiece to say the phone was lost")
     p.add_argument("--no-watch", action="store_true", help="do not watch the earpiece's WebSocket for status")
     p.add_argument("--quiet", dest="each", action="store_false",
