@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="860" viewBox="0 0 1800 860" font-family="Avenir Next, Helvetica Neue, Arial, sans-serif">
+  <rect width="1800" height="860" fill="#FFFFFF"/>
+
+  <!-- three lines: pink = what you hear, clay = Claude and directions, navy = SpacetimeDB -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="12">
+    <path d="M960 450 V230 L1040 150 H1700" stroke="#D97757"/>
+    <path d="M960 450 V620 L1040 700 H1620" stroke="#1D2B6B"/>
+    <path d="M140 800 H1060 L1160 700" stroke="#1D2B6B"/>
+    <path d="M140 260 H420 L610 450" stroke="#E2448F"/>
+    <path d="M140 640 H420 L610 450" stroke="#E2448F"/>
+    <path d="M610 450 H1620" stroke="#E2448F"/>
+  </g>
+
+  <g font-size="21" font-weight="500" text-anchor="middle">
+    <rect x="245" y="243" width="90" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="290" y="267" fill="#D63B83">H.264</text>
+    <rect x="183" y="623" width="214" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="290" y="647" fill="#D63B83">MJPEG over Wi-Fi</text>
+    <rect x="785" y="433" width="76" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="823" y="457" fill="#D63B83">UDP</text>
+    <rect x="1040" y="433" width="76" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="1078" y="457" fill="#D63B83">text</text>
+    <rect x="1237" y="433" width="136" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="1305" y="457" fill="#D63B83">WebSocket</text>
+    <rect x="1454" y="433" width="134" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="1521" y="457" fill="#D63B83">Bluetooth</text>
+    <rect x="875" y="523" width="170" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="960" y="547" fill="#1D2B6B">reducer calls</text>
+    <rect x="512" y="783" width="176" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="600" y="807" fill="#1D2B6B">Bluetooth LE</text>
+    <rect x="1355" y="683" width="70" height="34" rx="17" fill="#FFFFFF"/>
+    <text x="1390" y="707" fill="#1D2B6B">live</text>
+  </g>
+
+  <g fill="#FFFFFF">
+    <circle cx="690" cy="450" r="15" stroke="#E2448F" stroke-width="7"/>
+    <circle cx="1420" cy="450" r="15" stroke="#E2448F" stroke-width="7"/>
+    <circle cx="960" cy="450" r="22" stroke="#233136" stroke-width="7"/>
+    <circle cx="1190" cy="450" r="22" stroke="#E2448F" stroke-width="8"/>
+    <circle cx="1190" cy="450" r="7" fill="#E2448F"/>
+    <circle cx="1160" cy="700" r="22" stroke="#1D2B6B" stroke-width="8"/>
+    <circle cx="1160" cy="700" r="7" fill="#1D2B6B"/>
+    <circle cx="1110" cy="150" r="15" stroke="#D97757" stroke-width="7"/>
+    <circle cx="1370" cy="150" r="15" stroke="#D97757" stroke-width="7"/>
+    <circle cx="1630" cy="150" r="15" stroke="#D97757" stroke-width="7"/>
+  </g>
+
+  <g fill="#FFFFFF" stroke-width="7">
+    <circle cx="100" cy="260" r="40" stroke="#E2448F"/>
+    <circle cx="100" cy="640" r="40" stroke="#E2448F"/>
+    <circle cx="1660" cy="450" r="40" stroke="#E2448F"/>
+    <circle cx="100" cy="800" r="40" stroke="#1D2B6B"/>
+    <circle cx="1660" cy="700" r="40" stroke="#1D2B6B"/>
+  </g>
+  <g fill="none" stroke="#233136" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(100 260)">
+      <path d="M-14 -14 L14 14 M-14 14 L14 -14"/>
+      <circle cx="-15" cy="-15" r="8" fill="#FFFFFF"/>
+      <circle cx="15" cy="-15" r="8" fill="#FFFFFF"/>
+      <circle cx="-15" cy="15" r="8" fill="#FFFFFF"/>
+      <circle cx="15" cy="15" r="8" fill="#FFFFFF"/>
+      <rect x="-6" y="-6" width="12" height="12" rx="3" fill="#233136"/>
+    </g>
+    <g transform="translate(100 640)">
+      <rect x="-18" y="-11" width="36" height="25" rx="6"/>
+      <circle cx="0" cy="2" r="7"/>
+      <path d="M-6 -11 V-15 H6 V-11"/>
+    </g>
+    <g transform="translate(100 800)">
+      <rect x="-11" y="-19" width="22" height="38" rx="5"/>
+      <path d="M-4 12 H4"/>
+    </g>
+    <g transform="translate(1660 450)">
+      <circle cx="-9" cy="-8" r="7"/>
+      <path d="M-5 -3 V15"/>
+      <circle cx="9" cy="-8" r="7"/>
+      <path d="M5 -3 V15"/>
+    </g>
+    <g transform="translate(1660 700)">
+      <rect x="-19" y="-14" width="38" height="28" rx="5"/>
+      <path d="M-11 6 L-3 -2 L4 3 L11 -6"/>
+    </g>
+  </g>
+
+  <g fill="#233136">
+    <g font-size="30" font-weight="600">
+      <text x="165" y="207">DJI Tello</text>
+      <text x="165" y="587">Arduino UNO Q</text>
+      <text x="165" y="747">Kite iPhone app</text>
+      <text x="670" y="510">Perception</text>
+      <text x="935" y="380" text-anchor="end">Earpiece</text>
+      <text x="1190" y="380" text-anchor="middle">Cartesia</text>
+      <text x="1400" y="510">Rust audio</text>
+      <text x="1660" y="360" text-anchor="middle">AirPods</text>
+      <text x="1110" y="82" text-anchor="middle">Claude Haiku</text>
+      <text x="1370" y="82" text-anchor="middle">Claude Opus</text>
+      <text x="1630" y="82" text-anchor="middle">Google Routes</text>
+      <text x="1160" y="632" text-anchor="middle">SpacetimeDB</text>
+      <text x="1660" y="785" text-anchor="middle">Live dashboard</text>
+    </g>
+    <g font-size="24" fill="#6E7C81">
+      <text x="165" y="238">flies 1.8 m behind you</text>
+      <text x="165" y="618">webcam on your chest</text>
+      <text x="165" y="778">sends your GPS</text>
+      <text x="670" y="541">spots obstacles</text>
+      <text x="935" y="411" text-anchor="end">decides when to speak</text>
+      <text x="1190" y="411" text-anchor="middle">speaks and listens</text>
+      <text x="1400" y="541">puts each beep in 3D</text>
+      <text x="1660" y="391" text-anchor="middle">what you hear</text>
+      <text x="1110" y="113" text-anchor="middle">adds a warning</text>
+      <text x="1370" y="113" text-anchor="middle">answers questions</text>
+      <text x="1630" y="113" text-anchor="middle">walking directions</text>
+      <text x="1160" y="663" text-anchor="middle">holds the live walk</text>
+      <text x="1660" y="816" text-anchor="middle">the walk on a map</text>
+    </g>
+  </g>
+</svg>
