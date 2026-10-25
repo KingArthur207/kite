@@ -1,4 +1,5 @@
-// The Bluetooth link to the Kite computer (python -m phone.ble): find it, connect, write fixes, reconnect forever.
+// The Bluetooth link to every Kite receiver in range (python -m phone.ble on the main computer and on the
+// UNO Q board): find them, connect to each, write every fix to all of them, reconnect forever.
 import { BleManager, type Device, type Subscription } from 'react-native-ble-plx';
 import { chunk, writeSize } from './frame';
 
@@ -19,48 +20,57 @@ interface LinkHandlers {
   onSent: (count: number) => void;
 }
 
-// Starts the link; returns a function that stops it and disconnects.
+interface Peer {
+  device: Device;
+  size: number;
+  writing: boolean;
+  lostSub: Subscription;
+}
+
+// Starts the link; returns a function that stops it and disconnects from every receiver.
 export function startLink({ nextLine, onState, onSent }: LinkHandlers): () => void {
   let alive = true;
-  let device: Device | null = null;
-  let size = writeSize(null);
-  let writing = false;
-  let connecting = false;
+  const peers = new Map<string, Peer>(); // connected receivers, by device id
+  const connecting = new Set<string>();
+  let state: LinkState = 'searching';
   let sent = 0;
   let retry: ReturnType<typeof setTimeout> | undefined;
-  let lostSub: Subscription | undefined;
 
-  const later = (fn: () => void) => {
-    clearTimeout(retry);
-    retry = setTimeout(() => alive && fn(), RETRY_MS);
+  const setState = (next: LinkState) => {
+    if (next === state) return;
+    state = next;
+    onState(next);
+  };
+  // Connected while at least one receiver is; lost once the last one drops.
+  const refresh = () => {
+    if (peers.size > 0) setState('connected');
+    else if (state === 'connected') setState('lost');
   };
 
+  // Scanning stays on while connected, so a second receiver (or one that came back) is picked up.
   const scan = () => {
     manager.startDeviceScan([SERVICE_UUID], null, (err, found) => {
       if (!alive) return;
       if (err) {
         console.warn('[kite] scan', err.message);
         manager.stopDeviceScan();
-        later(scan);
+        clearTimeout(retry);
+        retry = setTimeout(() => alive && scan(), RETRY_MS);
         return;
       }
-      if (!found || connecting) return;
-      connecting = true;
-      manager.stopDeviceScan();
-      connect(found).finally(() => (connecting = false));
+      if (!found || peers.has(found.id) || connecting.has(found.id)) return;
+      connecting.add(found.id);
+      connect(found).finally(() => connecting.delete(found.id));
     });
   };
 
-  // The link dropped (disconnect event or a failed write): forget the device and look for it again.
-  const drop = () => {
-    if (!device) return;
-    const d = device;
-    device = null;
-    lostSub?.remove();
-    d.cancelConnection().catch(() => undefined);
-    if (!alive) return;
-    onState('lost');
-    later(scan);
+  const drop = (id: string) => {
+    const p = peers.get(id);
+    if (!p) return;
+    peers.delete(id);
+    p.lostSub.remove();
+    p.device.cancelConnection().catch(() => undefined);
+    if (alive) refresh();
   };
 
   const connect = async (found: Device) => {
@@ -71,40 +81,43 @@ export function startLink({ nextLine, onState, onSent }: LinkHandlers): () => vo
         d.cancelConnection().catch(() => undefined);
         return;
       }
-      device = d;
-      size = writeSize(d.mtu);
-      lostSub = d.onDisconnected(drop);
-      onState('connected');
+      peers.set(d.id, { device: d, size: writeSize(d.mtu), writing: false, lostSub: d.onDisconnected(() => drop(d.id)) });
+      refresh();
     } catch (e) {
       console.warn('[kite] connect', e instanceof Error ? e.message : e);
       found.cancelConnection().catch(() => undefined);
-      if (alive) later(scan);
+    }
+  };
+
+  const sendTo = async (p: Peer, line: string): Promise<boolean> => {
+    p.writing = true;
+    try {
+      // with-response writes keep chunks in order and surface a dead link as an error
+      for (const part of chunk(line, p.size)) {
+        await p.device.writeCharacteristicWithResponseForService(SERVICE_UUID, FIX_CHAR_UUID, btoa(part));
+      }
+      return true;
+    } catch (e) {
+      console.warn('[kite] write', e instanceof Error ? e.message : e);
+      drop(p.device.id);
+      return false;
+    } finally {
+      p.writing = false;
     }
   };
 
   const send = async () => {
-    const d = device;
-    const line = d && !writing ? nextLine() : null;
-    if (!d || !line) return;
-    writing = true;
-    try {
-      // with-response writes keep chunks in order and surface a dead link as an error
-      for (const part of chunk(line, size)) {
-        await d.writeCharacteristicWithResponseForService(SERVICE_UUID, FIX_CHAR_UUID, btoa(part));
-      }
-      onSent(++sent);
-    } catch (e) {
-      console.warn('[kite] write', e instanceof Error ? e.message : e);
-      if (device === d) drop();
-    } finally {
-      writing = false;
-    }
+    const line = peers.size > 0 ? nextLine() : null;
+    if (!line) return;
+    const writes = [...peers.values()].filter((p) => !p.writing).map((p) => sendTo(p, line));
+    if (writes.length === 0) return;
+    if ((await Promise.all(writes)).some(Boolean)) onSent(++sent);
   };
 
   onState('searching');
   // Scanning before Bluetooth is powered on fails, so wait for it (the simulator never gets there: it just searches).
-  const powerSub = manager.onStateChange((state) => {
-    if (state !== 'PoweredOn') return;
+  const powerSub = manager.onStateChange((s) => {
+    if (s !== 'PoweredOn') return;
     powerSub.remove();
     if (alive) scan();
   }, true);
@@ -116,8 +129,6 @@ export function startLink({ nextLine, onState, onSent }: LinkHandlers): () => vo
     clearTimeout(retry);
     powerSub.remove();
     manager.stopDeviceScan();
-    lostSub?.remove();
-    device?.cancelConnection().catch(() => undefined);
-    device = null;
+    for (const id of [...peers.keys()]) drop(id);
   };
 }
