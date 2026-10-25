@@ -135,3 +135,24 @@ def draw(frame: np.ndarray, nf: NearFrame, prof: CameraProfile, dets, cam_h: flo
     corridor_lines(right, prof, cam_h, nf.pitch, color=(255, 255, 255))
     top_row = cv2.hconcat([img, right])
     return cv2.vconcat([top_row, radar_strip(nf, top_row.shape[1])])
+
+
+# what the earpiece plays for each priority (earpiece/earpiece/sonar.py PRIORITY_URGENCY with the default ranges)
+TONES = {1: (1228, 0.13), 2: (812, 0.57), 3: (630, 0.80)}
+
+
+def tone_banner(img: np.ndarray, top: dict | None) -> np.ndarray:
+    """A strip across the bottom: the priority in force and the tone the walker hears for it, in its colour."""
+    h, w = img.shape[:2]
+    out = cv2.copyMakeBorder(img, 0, 64, 0, 0, cv2.BORDER_CONSTANT, value=(18, 18, 18))
+    p = top["priority"] if top else None
+    if p in TONES:
+        hz, every = TONES[p]
+        what = f"{top.get('kind', 'object')} ~{top['distance_m']:.1f} m" if top.get("distance_m") else top.get("kind", "")
+        text = f"P{p}  {hz} Hz, a beep every {every:.2f} s   {what}"
+        col = BGR[p]
+    else:
+        text, col = "clear ahead: no beeps", (150, 150, 150)
+    cv2.rectangle(out, (0, h), (w, h + 64), col, 3)
+    cv2.putText(out, text, (18, h + 43), cv2.FONT_HERSHEY_SIMPLEX, 1.0, col, 2, cv2.LINE_AA)
+    return out

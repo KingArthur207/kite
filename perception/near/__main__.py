@@ -51,6 +51,8 @@ def parse_args(argv=None):
     ap.add_argument("--wav", help="render the beeps the run would have made to this WAV (never played)")
     ap.add_argument("--hud", help="files only: write a review video (boxes | turbo depth | radar)")
     ap.add_argument("--radar", action="store_true", help="redraw an ASCII radar in the terminal (a TTY)")
+    ap.add_argument("--show", action="store_true", help="a live window: boxes, depth, radar and the tone each priority "
+                                                        "plays (q or Esc closes it)")
     ap.add_argument("--no-send", action="store_true", help="do not send obstacles to the earpiece")
     ap.add_argument("--ear-port", type=int, default=int(os.environ.get("KITE_EARPIECE_PORT", "5010")))
     return ap.parse_args(argv)
@@ -228,6 +230,11 @@ def main(argv=None) -> None:
                 jsonl.write(json.dumps(ev, separators=(",", ":")) + "\n")
             if ear:
                 ear.update(output.to_obstacles(ev, 0))     # the sender numbers every message, repeats included
+            if a.show:
+                from .hud import draw, tone_banner
+                cv2.imshow("Kite: what's ahead (q to quit)", tone_banner(draw(img, nf, prof, dets, a.cam_height), nf.top))
+                if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
+                    break
             if a.hud:
                 from .hud import draw
                 frame = draw(img, nf, prof, dets, a.cam_height)
@@ -254,6 +261,8 @@ def main(argv=None) -> None:
             src.release()
         if ear:
             ear.close()
+        if a.show:
+            cv2.destroyAllWindows()
         if a.wav and events:
             p = beeper.write_wav(a.wav, beeper.render(beeper.timeline_from_events(events)))
             print(f"[near] wrote {p} (not played)", flush=True)
