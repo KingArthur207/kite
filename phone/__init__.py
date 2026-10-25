@@ -1,13 +1,12 @@
-"""Kite's phone link: the walker's phone sends GPS and compass heading (and, over USB, camera frames) to the laptop.
+"""Kite's phone link: the walker's phone sends GPS to Kite.
 
-    python -m phone.ble             # Bluetooth LE (primary): the native app in phone-app/ connects (docs/phone.md)
-    python -m phone usb             # USB Personal Hotspot fallback: HTTPS page served by this laptop, + camera frames
-    python -m phone.detect -- ...   # the stand-in detector on the phone's camera (USB fallback only)
+    python -m phone.cloud           # primary: the app's fixes from SpacetimeDB to the earpiece (docs/phone.md)
+    python -m phone.latest --watch  # the newest phone position, from any computer with internet
+    python -m phone.ble             # older path: a Bluetooth LE receiver (phone/fake_phone.py stands in for a sender)
 
-The phone side is one page (site/src/phone.body.html + site/public/phone.js) with two transports: Web Bluetooth when
-opened from trykite.pages.dev, a WebSocket when served by `python -m phone usb`. Both send the same JSON fix
-({t, lat, lng, acc, alt, speed, course, heading, heading_acc}); phone/fix.py turns it into an earpiece `position`.
-Design, the comparison behind it and the table checklist: docs/phone.md.
+The phone side is the native app in phone-app/: it pushes each fix to SpacetimeDB over the phone's own internet as a
+`position` event. phone/fix.py and phone/link.py turn fixes into earpiece `position` events and announce a lost
+phone, whichever way the fixes arrive. Setup and troubleshooting: docs/phone.md.
 """
 
 from __future__ import annotations
