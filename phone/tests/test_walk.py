@@ -2,7 +2,7 @@
 
 import math
 
-import phone  # puts the earpiece package on sys.path
+import phone  # noqa: F401  (puts the earpiece package on sys.path)
 from earpiece.route import Route, Step
 from phone.walk_server import WalkSession
 
