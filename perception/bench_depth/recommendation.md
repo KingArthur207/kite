@@ -5,7 +5,7 @@ model, a combination, and the numbers below are why.
 
 - **No model's own metric scale can be trusted.** Raw, every Depth Anything V2 variant is far off on the chest-camera
   walks (AbsRel 0.50 to 1.23). Anchoring the scale to the floor, which sits a known 1.2 m below a chest camera,
-  cuts the error by 3 to 8 times: Indoor Small goes from 0.496 to 0.145 AbsRel, and its corridor error goes from
+  cuts the error by 3 to 7 times: Indoor Small goes from 0.496 to 0.145 AbsRel, and its corridor error goes from
   0.464 to 0.086.
 - **Motion stereo is the most accurate source, where it can see.** Using only its confident pixels, it reaches
   0.046 corridor AbsRel and catches 100 % of the P1 frames. But it is blind when the walker stands still (0 %
