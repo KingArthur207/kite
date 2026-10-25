@@ -54,7 +54,7 @@ decides only the yaw stick; distance, height and safety stay as above. `law` tur
 `retrained` and `pd` are kite.fly's own yaw sources (simulation-tested only). Keep a hand on `e` and a spotter next
 to the walker.
 
-Needs the YOLO pose weights once (`data/models/yolo11n-pose.pt`):
+The YOLO weights are in `data/models/` and come down with a pull (`yolo11n-pose.pt` for the follow, `yolo11n.pt` for detection). To fetch the pose file again:
 
 ```bash
 mkdir -p data/models && curl -L -o data/models/yolo11n-pose.pt https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n-pose.pt

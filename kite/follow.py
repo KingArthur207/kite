@@ -46,7 +46,7 @@ Weights (one time, on normal internet; never fetched at runtime):
     pip install -e ".[follow]"
     mkdir -p data/models && curl -L -o data/models/yolo11n.pt \\
         https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt
-data/models/ is gitignored. KITE_YOLO_WEIGHTS or --weights point elsewhere.
+data/models/yolo11n.pt is in git. KITE_YOLO_WEIGHTS or --weights point elsewhere.
 """
 
 from __future__ import annotations

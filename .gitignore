@@ -38,7 +38,9 @@ earpiece/out/
 earpiece/.cache/
 .wrangler/
 recordings/
-data/models/
+data/models/*
+!data/models/*.pt
+!data/models/*.pth
 # perception/bench_depth datasets (DIODE slice) and caches, never committed
 data/depth_bench/
 
