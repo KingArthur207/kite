@@ -33,9 +33,10 @@ KIND_COLOURS = {"sent": ACCENT, "recv": OK, "info": MUTED, "warn": WARN, "error"
 ACCENT_BGR = (87, 119, 217)
 OTHER_BGR = (130, 128, 125)
 
-AIRBORNE = ("taking off", "locking", "following", "landing")  # pilot states in which the drone may be in the air
+# pilot states in which the drone may be in the air
+AIRBORNE = ("taking off", "climbing", "following", "searching", "holding", "landing")
 
-STATE_COLOURS = {"following": OK, "locking": WARN, "taking off": WARN, "landing": WARN, "emergency": ERROR,
+STATE_COLOURS = {"following": OK, "climbing": WARN, "searching": WARN, "holding": WARN, "taking off": WARN, "landing": WARN, "emergency": ERROR,
                  "offline": ERROR}
 
 
@@ -52,7 +53,7 @@ def _fonts(root):
 
 def draw_people(img, seen, follow) -> None:
     """Every person YOLO sees (thin, grey) and the one being followed (thick, accent), drawn in place on img."""
-    track = follow._snapshot() if follow is not None else None
+    track = follow.snapshot() if follow is not None else None
     for d in (seen.last if seen is not None and time.time() - seen.last_t < 1.0 else []):
         cv2.rectangle(img, (int(d.x1), int(d.y1)), (int(d.x2), int(d.y2)), OTHER_BGR, 1, cv2.LINE_AA)
     if track is not None and track.confirmed and time.time() - track.t < 1.0:

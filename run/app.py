@@ -5,15 +5,17 @@
     python run/app.py --yaw fly       # steer yaw with the retrained kite.fly brain (simulation-tested only)
 
 Console commands (type in the window, Enter):
-    takeoff   take off, find the person right in front of the drone and lock on, then follow them
+    takeoff   take off, climb to --height, then follow the person in front of the drone
     land      stop following and land
+    follow    look for the person again (after "person not found")
     e         EMERGENCY: motors off at once (the drone drops if it is in the air), then the app quits
     status    battery, height, video and follow state
     quit      land, then close (closing the window does the same)
 
-Stand about 1 m in front of the drone facing away from it before takeoff. It locks onto you (the largest person in
-view), climbs to --height (default --walker-height + 0.3) and holds --behind behind you, reading the distance from the
-angle to the top of your head: give your real --walker-height. Safety: an open space, prop guards, a
+Stand 1-2 m in front of the drone facing away from it before takeoff. It climbs to --height above the floor (default
+--walker-height + 0.3), locks onto the largest person in view (you) and holds --behind behind you, reading the distance
+from the angle down to the top of your head (and your shoulders, from the pose model): give your real
+--walker-height. Lost for 20 s: it drops to just below head height and turns 30 deg at a time to find you. Safety: an open space, prop guards, a
 spotter. Everything flies through kite's SafetyGovernor (stick cap, 0.5-2.3 m altitude band, lands on low battery,
 hovers when video or telemetry stall).
 """
@@ -63,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--behind", type=float, default=1.0, help="follow distance behind the person, m (default 1.0)")
     p.add_argument("--video-backend", choices=VIDEO_BACKENDS, default=None,
                    help="video reader: pyav (default), opencv, raw, auto (raw on macOS)")
-    p.add_argument("--weights", default=None, help="YOLO weights (default data/models/yolo11n.pt)")
+    p.add_argument("--weights", default=None, help="YOLO pose weights (default data/models/yolo11n-pose.pt)")
     return p
 
 
@@ -77,9 +79,9 @@ def main(argv: list[str] | None = None) -> int:
     if not 0.8 <= args.height <= 2.2:
         print("--height must be 0.8-2.2 m (the safety governor holds 0.5-2.3 m)")
         return 2
-    if abs(args.height - args.walker_height) < 0.2:
-        print("--height must be at least 0.2 m above (or below) --walker-height: the distance is read from the "
-              "angle down (or up) to the top of the head")
+    if args.height < args.walker_height + 0.2:
+        print(f"--height must be at least --walker-height + 0.2 m ({args.walker_height + 0.2:.2f}): the follow flies "
+              "above the head and reads the distance from the angle down to it")
         return 2
     quiet_libraries()
 
