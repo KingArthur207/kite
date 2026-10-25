@@ -5,10 +5,6 @@
 <p align="center"><b>A guide dog that flies. Kite tells a blind pedestrian what's coming before they reach it.</b></p>
 
 <p align="center">
-  <a href="https://trykite.pages.dev"><img src="site/public/assets/try-kite.svg" alt="Try Kite at trykite.pages.dev" width="400"></a>
-</p>
-
-<p align="center">
   <a href="https://trykite.pages.dev"><img src="site/public/assets/og.png" alt="Kite: hear the street before you reach it. Open trykite.pages.dev" width="760"></a>
 </p>
 
