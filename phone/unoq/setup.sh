@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs ON the UNO Q (install.sh calls it): BlueZ, a venv with bless, and the kite-phone service.
 set -euo pipefail
-MAIN="${1:?main computer IP}"
+: "${1:?main computer IP}"   # install.sh passes it; unused here for now, but still required
 DIR="$HOME/kite-phone"
 
 sudo DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -q bluez python3-venv python3-numpy python3-scipy >/dev/null

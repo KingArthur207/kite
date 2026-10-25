@@ -2,7 +2,7 @@
 # Run the earpiece suite under every engine combination (no devices, nothing played aloud).
 #   bench/matrix.sh [logdir]      from earpiece/, with the venv's python first on PATH
 set -u
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 LOG=${1:-.cache/matrix}
 mkdir -p "$LOG"
 PY=${PYTHON:-.venv/bin/python}
