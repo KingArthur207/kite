@@ -2,11 +2,11 @@
 """Get back into the UNO Q over its USB-C cable when nobody knows its Linux password. Standard library only.
 
     python unoq_rescue.py                 set a new password, save the board's token here, check the camera
-    python unoq_rescue.py --restart       ... and restart kite-link afterwards (picks up a camera plugged in late)
     python unoq_rescue.py --check         only report: who adb logs in as, the token, the camera, kite-link
 
 Plug the board into this computer with a USB-C cable that carries data, and close Arduino App Lab (it runs its own
-adb). Nothing on the board is erased or reflashed.
+adb). Nothing on the board is erased or reflashed. Afterwards unplug it from this computer: its one USB-C port
+goes back to the camera hub, and kite-link switches the port to host mode at every start.
 
 How it gets in without the old password:
   1. `adb shell` over USB needs no password once the board's first setup is done; it logs in as `arduino`.
@@ -28,6 +28,7 @@ import getpass
 import glob
 import os
 import platform
+import re
 import secrets
 import shutil
 import subprocess
@@ -43,6 +44,7 @@ PLATFORM_TOOLS = "https://dl.google.com/android/repository/platform-tools-latest
 FACTORY_PASSWORD = "arduino"
 FALLBACK_IMAGE = "busybox:stable"
 RC = "__KITE_RC="
+CODEC = re.compile(r"venus|codec|encoder|decoder", re.I)   # the SoC's video codecs, not cameras
 REFLASH = "https://docs.arduino.cc/tutorials/uno-q/update-image/"
 
 
@@ -137,11 +139,19 @@ class Adb:
         return remote
 
 
-def pick_device(adb: Adb) -> str:
+def list_devices(adb: Adb) -> list[list[str]]:
     rc, text = adb.raw("devices", timeout=30)
     if rc != 0:
         raise Fail(f"adb didn't start: {text.strip()}\nClose Arduino App Lab (it runs its own adb) and try again.")
-    rows = [ln.split() for ln in text.splitlines()[1:] if ln.strip() and not ln.startswith("*")]
+    return [ln.split() for ln in text.splitlines()[1:] if ln.strip() and not ln.startswith("*")]
+
+
+def pick_device(adb: Adb) -> str:
+    rows = list_devices(adb)
+    if not rows:                    # an adb server started before the board was plugged in can miss it
+        adb.raw("kill-server", timeout=30)
+        adb.raw("start-server", timeout=30)
+        rows = list_devices(adb)
     ready = [r[0] for r in rows if len(r) >= 2 and r[1] == "device"]
     if adb.serial:
         if adb.serial not in ready:
@@ -251,15 +261,6 @@ def set_password(adb: Adb, user: str, pw: str, route: str, prefix: str, out=prin
     out("      write it down now: App Lab, ssh and sudo all use it")
 
 
-def restart_link(adb: Adb, pw: str, out=print) -> None:
-    f = adb.push_secret(pw + "\n")
-    try:
-        rc, text = adb.sh(f"sudo -S -k -p '' systemctl restart kite-link < {f}")
-    finally:
-        adb.sh(f"rm -f {f}")
-    out("PASS  kite-link restarted" if rc == 0 else f"WARN  couldn't restart kite-link: {text[-200:]}")
-
-
 def save_token(adb: Adb, path: Path = TOKEN_FILE, out=print) -> bool:
     rc, tok = adb.sh("cat /etc/kite/token 2>/dev/null")
     tok = tok.strip()
@@ -285,22 +286,19 @@ def report(adb: Adb, out=print) -> str:
     out(f"PASS  adb shell on '{host.strip()}' as '{user}', no password needed")
     _, active = adb.sh("systemctl is-active kite-link 2>/dev/null")
     out(("PASS" if active.strip() == "active" else "WARN") + f"  kite-link service: {active.strip() or 'not installed'}")
-    rc, cams = adb.sh("ls /sys/class/video4linux 2>/dev/null")
-    _, usb = adb.sh("lsusb 2>/dev/null | grep -iv 'root hub'")
-    if rc == 0 and cams.split():
-        out(f"PASS  camera devices: {' '.join(cams.split())}")
+    _, names = adb.sh("cat /sys/class/video4linux/*/name 2>/dev/null")
+    cams = [n.strip() for n in names.splitlines() if n.strip() and not CODEC.search(n)]
+    if cams:
+        out(f"PASS  camera: {', '.join(dict.fromkeys(cams))}")
     else:
-        out("WARN  no camera on the board. Webcam into a POWERED USB-C hub, hub into the board, then power-cycle "
-            "the board (or run this with --restart)")
-    if usb.strip():
-        out("      USB: " + "; ".join(ln.split(" ", 6)[-1] for ln in usb.strip().splitlines()))
+        out("INFO  no camera now, as expected while the board's one USB-C port is on this computer. Afterwards: "
+            "unplug it here, webcam into a POWERED USB-C hub, hub into the board, power the board up")
     return user
 
 
 def main(argv=None, out=print, prompt=getpass.getpass, runner=subprocess.run) -> int:
     ap = argparse.ArgumentParser(description="Reset the UNO Q's password and save its token, over USB.")
     ap.add_argument("--check", action="store_true", help="only report; change nothing")
-    ap.add_argument("--restart", action="store_true", help="restart kite-link after setting the password")
     ap.add_argument("--serial", default="", help="adb serial, if more than one device is plugged in")
     ap.add_argument("--adb", default="", help="path to adb")
     ap.add_argument("--user", default="", help="whose password to set (default: the adb user, or arduino if that is root)")
@@ -320,9 +318,7 @@ def main(argv=None, out=print, prompt=getpass.getpass, runner=subprocess.run) ->
         route, prefix = find_root(adb, out)
         pw = ask_password(prompt, out)
         set_password(adb, user, pw, route, prefix, out)
-        if a.restart:
-            restart_link(adb, pw, out)
-        out("next: python kite_link.py doctor")
+        out("next: unplug the board from this computer and plug the camera hub back in; then python kite_link.py doctor")
         return 0
     except Fail as e:
         out(f"FAIL  {e.code}")

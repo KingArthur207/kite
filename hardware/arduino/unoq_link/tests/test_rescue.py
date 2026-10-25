@@ -20,19 +20,26 @@ class Board:
 
     def __init__(self, uid=1000, nopasswd=False, password="forgotten-pw", docker=True,
                  images=("ghcr.io/arduino/app-bricks/python-apps-base:0.5.0",), token=TOKEN, devices=("ABC123\tdevice",),
-                 sudo_ok=True) -> None:
+                 sudo_ok=True, cams=("qcom-venus-encoder", "qcom-venus-decoder")) -> None:
         self.uid, self.nopasswd, self.password, self.docker = uid, nopasswd, password, docker
         self.images, self.token, self.devices, self.sudo_ok = list(images), token, list(devices), sudo_ok
         self.files: dict[str, str] = {}
         self.argv: list[list[str]] = []
-        self.restarted = False
+        self.cams = list(cams)
+        self.restarts = 0
         self.pulled = False
+        self.late: list[str] = []
 
     def __call__(self, argv, capture_output=True, text=True, timeout=None):
         self.argv.append(list(argv))
         args = argv[1:]
         if args[:1] == ["-s"]:
             args = args[2:]
+        if args[0] in ("kill-server", "start-server"):
+            self.restarts += 1
+            if args[0] == "start-server" and self.late:
+                self.devices = list(self.late)
+            return self._done(0, "")
         if args[0] == "devices":
             return self._done(0, "List of devices attached\n" + "\n".join(self.devices) + "\n\n")
         if args[0] == "push":
@@ -64,8 +71,8 @@ class Board:
         f = self._file(s)
         simple = {"id -u": str(self.uid), "id -un": "root" if self.uid == 0 else "arduino", "hostname": "kite-unoq",
                   "id -Gn": "arduino dialout video docker" if self.docker else "arduino dialout video",
-                  "systemctl is-active kite-link 2>/dev/null": "active", "ls /sys/class/video4linux 2>/dev/null": "video0 video1",
-                  "lsusb 2>/dev/null | grep -iv 'root hub'": "Bus 001 Device 002: ID 046d:0825 Logitech, Inc. Webcam C270"}
+                  "systemctl is-active kite-link 2>/dev/null": "active",
+                  "cat /sys/class/video4linux/*/name 2>/dev/null": "\n".join(self.cams)}
         if s in simple:
             return 0, simple[s]
         if s.startswith(("chmod 600 ", "rm -f ")):
@@ -98,9 +105,6 @@ class Board:
             if self.password != "arduino":
                 return 1, "sudo: incorrect password"
             return self._chpasswd(f)
-        if s.startswith("sudo -S -k -p '' systemctl restart kite-link < "):
-            self.restarted = self._sudo_pw_ok(self.files[f])
-            return (0 if self.restarted else 1), ""
         if s == "cat /etc/kite/token 2>/dev/null":
             return (0, self.token) if self.token else (1, "")
         raise AssertionError(f"unexpected board command: {s}")
@@ -171,11 +175,18 @@ def test_check_changes_nothing(tmp_path):
     assert rc == 0 and b.password == "forgotten-pw" and "can be set through Docker" in text
 
 
-def test_restart_uses_the_new_password(tmp_path):
-    b = Board()
-    rc, text = run(b, tmp_path, "--restart")
-    assert rc == 0 and b.restarted and "kite-link restarted" in text
-    never_leaked(b)
+def test_board_missed_by_an_old_adb_server_is_found_after_a_restart(tmp_path):
+    b = Board(devices=())
+    b.late = ["ABC123\tdevice"]
+    rc, text = run(b, tmp_path)
+    assert rc == 0 and b.restarts == 2 and b.password == NEW
+
+
+def test_the_socs_video_codecs_are_not_taken_for_a_camera(tmp_path):
+    _, text = run(Board(), tmp_path)
+    assert "no camera now" in text and "PASS  camera" not in text
+    _, text = run(Board(cams=("qcom-venus-encoder", "UVC Camera (046d:0825)", "UVC Camera (046d:0825)")), tmp_path)
+    assert "PASS  camera: UVC Camera (046d:0825)" in text
 
 
 def test_pulls_a_tiny_image_when_the_board_has_none(tmp_path):
