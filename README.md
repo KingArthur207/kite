@@ -5,16 +5,6 @@
 <p align="center"><b>A guide dog that flies. Kite tells a blind pedestrian what's coming before they reach it.</b></p>
 
 <p align="center">
-  <a href="https://trykite.pages.dev"><img src="site/public/assets/og.png" alt="Kite: hear the street before you reach it. Open trykite.pages.dev" width="760"></a>
-</p>
-
-<p align="center">
-  <a href="https://trykite.pages.dev/#hear"><b>🎧 Hear a 41-second walk</b></a> &nbsp;·&nbsp;
-  <a href="https://trykite.pages.dev/how"><b>How it works</b></a> &nbsp;·&nbsp;
-  <a href="https://trykite.pages.dev/judges"><b>For judges: every track, criterion by criterion</b></a>
-</p>
-
-<p align="center">
   <img src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
   <img src="https://img.shields.io/badge/Rust-audio%20engine-000000?logo=rust&logoColor=white" alt="Rust">
   <img src="https://img.shields.io/badge/TypeScript-sim%20%2B%20dashboard-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
@@ -38,7 +28,7 @@
 
 ## 🏆 Tracks at a glance
 
-Each track below has its own section further down. The same answers, laid out against each track's judging criteria, are on [trykite.pages.dev/judges](https://trykite.pages.dev/judges).
+Each track below has its own section further down.
 
 | Track | What to look at | Evidence |
 |---|---|---|
@@ -52,34 +42,6 @@ Each track below has its own section further down. The same answers, laid out ag
 | **Most Creative Hack** | A guide dog that flies: a second point of view above the walker's head, the street turned into sound that comes from where things are, three tones for urgency, streets an image model imagined, and a fruit fly's steering circuit on the drone | [`perception/near/`](perception/near/), [`scripts/imagine_scenes.py`](scripts/imagine_scenes.py), [`kite/fly/`](kite/fly/) |
 
 
-## 🎬 Demo
-
-**Hear it first:** [trykite.pages.dev](https://trykite.pages.dev) has a 41-second walk to the Palace of Fine Arts. Every sound in it came out of the real earpiece code with the real Cartesia voice; the walk itself is simulated. Put headphones on.
-
-**At the table**, the judge wears Kite:
-
-1. The judge puts on a sleep mask and AirPods, and we clip the body camera (a Logitech webcam on an Arduino UNO Q, streaming over Wi-Fi) to their chest. A spotter stays at arm's length.
-2. The judge walks 3 or 4 m along the aisle and someone steps into their path. The beeps come from that side and climb through three tones as the gap closes: low and slow past 3 m, middle from 1.2 to 3 m, high and almost continuous under 1.2 m. At about 1.5 m Kite says "Stop. Person ahead." Once the way has stayed clear for 1.5 s, it says "Path is clear. You can continue." The judge can also ask "Kite, what's in front of me?" and Claude answers from the camera.
-3. Mask off. A reveal window replays the last 20 s of the body camera with its boxes and the STOP banner, and the dashboard shows the walk's timeline and the stop on the map.
-4. We play the Tello footage of Moss St with Kite's cues on it.
-
-The judge can also walk the browser sim of Moss St with the screen blacked out, guided by the same earpiece. `scripts/demo.sh bodycam`, `scripts/demo.sh live` and `scripts/demo.sh sim` start each one.
-
-**What runs where**
-
-| Part | State |
-|---|---|
-| Earpiece: sonar, beacon, speech queue, stop and wait, Cartesia voice in and out, safety phrases that play with no signal | Real. Runs on a laptop with any headphones or AirPods |
-| Claude: judgment, scene descriptions, "what's in front of me?", reading text aloud, voice assistant with tools | Real. Needs `ANTHROPIC_API_KEY`; nothing on the safety path waits for it |
-| SpacetimeDB tables, live dashboard, walk timeline | Real, live on Maincloud, with a local server for zero-network demos |
-| Google walking directions and place search | Real. Needs `GOOGLE_MAPS_API_KEY` |
-| Body camera on the Arduino UNO Q, three priority tones | Real. Streams over Wi-Fi to the laptop; the whole chain, from the board's server to the tones in a running earpiece, is checked end to end by [`e2e_bodycam.py`](perception/near/e2e_bodycam.py) |
-| Live walk with the reveal window | Real. On recorded clips the detector printed `STOP - person 1.3 m` and the earpiece said "Stop. Person ahead." |
-| Detector | YOLO11n plus Depth Anything V2, the same way on body camera, drone and sim frames; near-field priorities fuse five distance cues |
-| The street in the sim | Simulated: Moss St at Howard from OpenStreetMap, with cars and people on its real lanes. Hazards come from the detector on the sim's camera frames, never from the sim's own object list |
-| Drone layer (`kite/`) | Safety governor, preflight GO/NO-GO, follow mode that locks onto the walker, and a flight check that reads each move's direction from the drone's own camera; exercised on an emulator, fakes and recorded clips |
-| Tello footage | Recorded on Moss St and played at the table, since drones are banned inside the venue |
-| Collisions in the sim | Measured on Moss St (seed 1, 20 walks each): a blind scripted walker hits 2.70 scripted obstacles per walk, and 1.25 when it follows Kite's cues. [Details](sim/README.md) |
 
 ## 🏠 Two ways to wear it
 
