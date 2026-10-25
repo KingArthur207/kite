@@ -6,6 +6,9 @@ camera to the computer. No processing. The computer finds the board by itself: n
 ## Board (once)
 
 1. **App Lab wizard** (USB-C cable): name the board `kite-unoq`, set a password, give it any Wi-Fi with internet.
+   A person has to pick this password and write it down. It is the board's only login, for `ssh` and `sudo`, and
+   it is never saved in the repo, so if it's lost the only fix is to re-run the wizard. If an agent is doing the
+   setup, it must stop and ask a human for the password instead of making one up.
 2. **Paste one line** into App Lab's terminal (or `ssh arduino@kite-unoq.local`):
 
    ```
