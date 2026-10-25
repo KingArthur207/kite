@@ -56,7 +56,7 @@ from a sign, because `scene` is spoken as Kite's own words.
 
 ```sh
 cd earpiece
-KITE_NO_DEVICE_TESTS=1 .venv/bin/python -m pytest -q tests/test_safety_evals.py   # 2,404 offline tests, ~45 s
+KITE_NO_DEVICE_TESTS=1 .venv/bin/python -m pytest -q tests/test_safety_evals.py   # 2,405 offline tests, ~45 s
 .venv/bin/python evals/offline_report.py            # the table below; -v lists every miss
 uv pip install -e ".[evals]"                         # Pillow, for the live image cases
 KITE_LIVE_TESTS=1 .venv/bin/python evals/run_live.py # 20 Haiku snapshots + 10 Opus images, about $0.08
