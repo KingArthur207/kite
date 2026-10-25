@@ -142,12 +142,15 @@ class WalkSession:
                 self.ignored_accuracy = True
                 return self._view()
             self.ignored_accuracy = False
-            if self.holding and self._pending and now >= self._retry_at and not self._fatal:
-                self._reroute(now)
+            if self.holding and self._pending and not self._fatal:
+                if now >= self._retry_at:
+                    self._reroute(now)
+                else:
+                    self.hold_s = self._retry_at - now     # counts down; never shortens a failure's backoff
             follower = self.follower
             if follower is not None and not follower.rerouting and not follower.done:
                 follower.update(float(lat), float(lng), heading, now, None if accuracy is None else float(accuracy))
-            if self._pending and not self._fatal:
+            if self._pending and not self._fatal and not self.holding:
                 self._consider_reroute(now)
             return self._view()
 
@@ -204,7 +207,8 @@ class WalkSession:
             self._pending = False
             self.holding = False
             return
-        delay = QUOTA_S if isinstance(err, RouteQuota) else UNAVAILABLE_S
+        # The failed call counts against the 20 s / 5-in-10-min budget too, so wait for whichever is longer.
+        delay = max(QUOTA_S if isinstance(err, RouteQuota) else UNAVAILABLE_S, self._wait(now))
         self.holding = True
         self.hold_s = delay
         self._retry_at = now + delay
@@ -317,7 +321,7 @@ SESSION = WalkSession()
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, fmt, *args):
+    def log_message(self, fmt: str, *args: object) -> None:
         print("[walk] " + (fmt % args), flush=True)
 
     def _send(self, code: int, body: bytes, content_type: str) -> None:
@@ -352,6 +356,7 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def _read_json(self) -> dict | None:
+        """The body as a JSON object, or None once an error reply has been sent."""
         try:
             n = int(self.headers.get("Content-Length", "0") or 0)
         except ValueError:
@@ -367,14 +372,14 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(n) if n else b"{}"
         try:
             data = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, ValueError, RecursionError):   # RecursionError: deeply nested arrays
             data = None
         if not isinstance(data, dict):
             self._json(400, {"ok": False, "error": "Expected a JSON object."})
             return None
         return data
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         if not self._local():
             return
         path = self.path.split("?", 1)[0]
@@ -392,7 +397,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._json(404, {"ok": False, "error": "Not found."})
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         if not self._local():
             return
         path = self.path.split("?", 1)[0]
@@ -418,6 +423,7 @@ class Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError, OverflowError):
             self._json(400, {"ok": False, "error": "accuracy and heading must be numbers."})
             return
+        destination = ""
         if path == "/api/start":
             destination = str(data.get("destination") or "").strip()
             if not destination:
@@ -426,9 +432,16 @@ class Handler(BaseHTTPRequestHandler):
             if len(destination) > MAX_DESTINATION:
                 self._json(400, {"ok": False, "error": "The destination is too long."})
                 return
-            self._json(200, SESSION.start(lat, lng, destination, accuracy, heading))
+        try:
+            if path == "/api/start":
+                body = SESSION.start(lat, lng, destination, accuracy, heading)
+            else:
+                body = SESSION.tick(lat, lng, accuracy, heading)
+        except Exception as e:          # a surprise in route handling must still answer the page
+            self.log_message("%s failed: %s", path, type(e).__name__)
+            self._json(500, {"ok": False, "error": "Internal error."})
             return
-        self._json(200, SESSION.tick(lat, lng, accuracy, heading))
+        self._json(200, body)
 
 
 def main() -> None:

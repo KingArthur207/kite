@@ -70,7 +70,8 @@ class PhoneLink:
         try:
             fix = parse_fix(raw, now=self.clock())
         except ValueError:                       # BadMessage
-            self.stats["bad"] += 1
+            with self._lock:                     # any thread: += on a dict entry is not atomic
+                self.stats["bad"] += 1
             return None
         with self._lock:
             self.stats["messages"] += 1
