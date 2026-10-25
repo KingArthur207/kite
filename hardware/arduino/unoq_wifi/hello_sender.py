@@ -3,7 +3,7 @@
 
 Campus Wi-Fi like eduroam usually stops devices from reaching each other directly, so the hello goes
 through the internet instead: the board pushes it to Kite's SpacetimeDB database, and listen.py on any
-computer anywhere reads it from there (it also shows up as a live device on the caregiver dashboard).
+computer anywhere reads it from there (it also shows up as a live device on the demo dashboard).
 
     {"msg": "hello", "n": 12, "host": "<board name>"}     pushed as type=heartbeat, source=unoq
 

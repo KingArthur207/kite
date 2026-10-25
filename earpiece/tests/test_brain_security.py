@@ -16,7 +16,6 @@ def brain():
     calls: list = []
     a = Actions(navigate=lambda d: calls.append(("navigate", d)) or "ok",
                 control=lambda x: calls.append(("control", x)) or "ok",
-                alert_caregiver=lambda m: calls.append(("alert", m)) or "sent",
                 stop_speaking=lambda: calls.append(("stop",)),
                 ear_check=lambda: calls.append(("ears",)),
                 remember=lambda k, t: calls.append(("remember", k, t)) or "saved")
@@ -39,7 +38,7 @@ def test_system_prompt_marks_context_as_untrusted():
 
 
 def test_tool_names_are_the_allow_list():
-    assert {t["name"] for t in TOOLS} == {"navigate_to", "control", "remember", "alert_caregiver"}
+    assert {t["name"] for t in TOOLS} == {"navigate_to", "control", "remember"}
     for t in TOOLS:
         assert t["input_schema"].get("additionalProperties") is False
 

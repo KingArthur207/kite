@@ -90,7 +90,7 @@ class Earpiece:
         self.listener = Listener(self.cfg.listen, self.cfg.cartesia_key, on_text=self.heard,
                                  cue=self.cue, on_listening=self._on_listening, say=self.say, log=log)
         self.memory = memory if memory is not None else MemoryStore(log=log)
-        self.brain = Brain(self.context, Actions(self.navigate, self.control, self.alert_caregiver,
+        self.brain = Brain(self.context, Actions(self.navigate, self.control,
                                                  self.stop_speaking, self.ear_check,
                                                  remember=self.remember, recall=self.recall,
                                                  forget=self.forget, rename=self.rename_memory,
@@ -284,9 +284,8 @@ class Earpiece:
 
     # ================================================================== inbound events
     def handle(self, msg: Msg) -> None:
-        # caregiver rows are already in Spacetime; a raw JPEG stays local (its description is
-        # mirrored as a `scene` event instead)
-        if self.bridges and msg.source != "caregiver" and msg.type != "scene_image":
+        # a raw JPEG stays local (its description is mirrored as a `scene` event instead)
+        if self.bridges and msg.type != "scene_image":
             self._mirror(msg)
         now = time.monotonic()
         t = msg.type
@@ -328,7 +327,7 @@ class Earpiece:
         elif t == "scene_image":
             self._scene_image(msg, now)
         elif t == "position":
-            # a phone that is not the walker's (phone/link.py PhoneHub) only reaches the caregiver map, which
+            # a phone that is not the walker's (phone/link.py PhoneHub) only reaches the dashboard map, which
             # it already did in _mirror() above: guidance follows exactly one phone
             if msg.data.get("walker") is False:
                 return
@@ -777,10 +776,6 @@ class Earpiece:
             self.log(f"[memory] place notes failed ({type(e).__name__}: {e})")
         finally:
             self._place_notes_busy.release()
-
-    def alert_caregiver(self, message: str) -> str:
-        self._event("caregiver_alert", {"message": message, "position": self.position})
-        return "I've alerted your caregiver."
 
     def stop_speaking(self) -> None:
         self.speaker.cancel_all(keep_critical=True)

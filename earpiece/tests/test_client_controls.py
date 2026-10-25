@@ -110,9 +110,9 @@ def test_requests_yields_only_the_asked_kinds_and_reconnects(monkeypatch):
         assert wait_for(lambda: t.stats["clients"] == 1, 10)
         t.publish({"type": "spoken", "text": "not for the client"})
         t.publish({"type": "voice_request", "intent": "navigate", "destination": "Crissy Field"})
-        t.publish({"type": "caregiver_alert", "message": "help"})
+        t.publish({"type": "voice_request", "intent": "navigate", "destination": "Fort Mason"})
         reader.join(10)
-        assert [m["type"] for m in out] == ["voice_request", "caregiver_alert"]
+        assert [m.get("destination") for m in out] == ["Crissy Field", "Fort Mason"]
     finally:
         t.stop()
     # nothing listens: it backs off 1 s and retries, never raises. The third back-off ends the test.

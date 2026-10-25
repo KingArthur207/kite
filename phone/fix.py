@@ -109,7 +109,7 @@ def to_position(fix: Fix, source: str = "phone", walker: bool | None = None) -> 
     if fix.acc is not None:
         msg["accuracy"] = round(fix.acc, 1)
     if fix.speed is not None:
-        msg["speed"] = round(fix.speed, 2)       # speed + course: the caregiver map draws a predicted path
+        msg["speed"] = round(fix.speed, 2)       # speed + course: the dashboard map draws a predicted path
     if fix.course is not None:
         msg["course"] = round(fix.course, 1)
     if walker is not None:

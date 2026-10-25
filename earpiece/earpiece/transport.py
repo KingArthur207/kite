@@ -2,7 +2,7 @@
 
     UDP  :5010  JSON datagrams in (fire-and-forget; best for 10-30 Hz perception frames)
     WS   :5011  JSON both ways: events in; out go `state` (5 Hz), `spoken`, `heard`,
-                `voice_request` (e.g. navigate), `caregiver_alert`
+                `voice_request` (e.g. navigate)
 Both bind to localhost by default (--bind 0.0.0.0 to accept the drone laptop on
 the LAN). Each peer is rate-limited (token bucket) so a runaway sender cannot
 starve the audio loop, and every message is validated by events.parse().

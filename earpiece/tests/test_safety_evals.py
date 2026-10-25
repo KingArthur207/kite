@@ -2,7 +2,7 @@
 
 Kite's safety cues are deterministic code; Claude may only make Kite more cautious. These tests
 check the code that enforces that, with no network and no model:
-  * judgment.validate() / forbidden(): the Haiku judgment line and the caregiver inbox never say
+  * judgment.validate() / forbidden(): the Haiku judgment line never says
     permission, an all-clear, a cleared stop or a reroute, however it is spelled or disguised;
   * vision.clean_description(): a scene description never stores or speaks an instruction, even
     one written on a sign (prompt injection), and keeps the facts around it;
@@ -190,33 +190,6 @@ def test_fuzz_reply_parser_never_speaks_unsafe_text(seed):
         assert up in (None, ("crowd", "hazard"))
 
 
-# ================================================================ caregiver inbox (shared filter)
-@pytest.mark.parametrize("text", cases(C["caregiver"]["allow"]))
-def test_everyday_caregiver_messages_get_through(text):
-    assert not forbidden(text)
-
-
-@pytest.mark.parametrize("text", cases(C["caregiver"]["known_false_positives"]))
-def test_caregiver_known_false_positives(text):
-    assert forbidden(text)
-
-
-def test_caregiver_inbox_end_to_end_speaks_only_safe_messages():
-    from test_caregiver_inbox import FakeSpacetime, make, say
-    fake = FakeSpacetime()
-    inbox, got, http = make(fake)
-    inbox.poll(http)
-    unsafe = [t for t in flat(J["block"]) if t.strip()]
-    safe = C["caregiver"]["allow"]
-    for i, t in enumerate(unsafe + safe):
-        fake.add(10 + i, say(t))
-    inbox.poll(http)
-    heard = [m.text for m in got]
-    assert len(heard) == len(safe)
-    assert all(any(h.endswith(s) for h in heard) for s in safe)
-    assert inbox.stats["rejected"] + inbox.stats["bad"] == len(unsafe)
-
-
 # ================================================================ vision: scene descriptions
 @pytest.mark.parametrize("text", cases(C["vision_scene"]["drop"]))
 def test_scene_sentence_with_an_instruction_is_dropped(text):
@@ -397,7 +370,7 @@ class FakeStream:
 def llm_brain(reply):
     said, acts = [], []
     a = Actions(navigate=lambda d: acts.append(("nav", d)) or "ok", control=lambda x: acts.append(("control", x)) or "ok",
-                alert_caregiver=lambda m: acts.append(("help", m)) or "sent", stop_speaking=lambda: None,
+                stop_speaking=lambda: None,
                 ear_check=lambda: None, remember=lambda k, t: acts.append(("remember", k, t)) or "saved")
     b = Brain(lambda: {"hazards": [], "scene": "A crosswalk ahead."}, a, lambda t, p, **k: said.append(t), None,
               log=lambda *_: None)
@@ -457,15 +430,13 @@ def test_fuzz_brain_tools_stay_inside_the_allow_list(seed):
                 assert isinstance(a[1], str) and 0 < len(a[1]) <= 120
             elif a[0] == "remember":
                 assert a[1] in ("place", "hazard", "note") and isinstance(a[2], str) and 0 < len(a[2]) <= 300
-            elif a[0] == "help":
-                assert isinstance(a[1], str) and 0 < len(a[1]) <= 300
 
 
 @pytest.mark.parametrize("name,inp", [
     ("navigate_to", {"destination": None}), ("navigate_to", {"destination": 42}),
     ("navigate_to", {"destination": "home", "priority": "critical"}), ("control", {"action": "clear_stop"}),
     ("control", {"action": ["mute_cues"]}), ("remember", {"kind": "hazard", "text": None}),
-    ("alert_caregiver", {"message": {"text": "x"}}), ("set_priority", {"level": "critical"}),
+    ("set_priority", {"level": "critical"}),
 ])
 def test_bad_tool_calls_are_errors_and_do_nothing(name, inp):
     b, _, acts = llm_brain("")
@@ -478,15 +449,13 @@ def test_good_tool_calls_still_work():
     assert b._run_tool("navigate_to", {"destination": "Moss Street"}) == ("ok", False)
     assert b._run_tool("control", {"action": "mute_cues"}) == ("ok", False)
     assert b._run_tool("remember", {"kind": "hazard", "text": "Low branch by the cafe"}) == ("saved", False)
-    assert b._run_tool("alert_caregiver", {"message": "I'm lost"}) == ("sent", False)
-    assert acts == [("nav", "Moss Street"), ("control", "mute_cues"), ("remember", "hazard", "Low branch by the cafe"),
-                    ("help", "I'm lost")]
+    assert acts == [("nav", "Moss Street"), ("control", "mute_cues"), ("remember", "hazard", "Low branch by the cafe")]
 
 
 def test_suite_size():
     """The corpus is the evidence; keep it big."""
     n = (len(flat(J["block"])) + len(J["allow"]) + len(flat(C["vision_scene"]["drop"])) + len(C["vision_scene"]["keep"])
          + len(C["vision_scene"]["trim"]) + len(C["ocr"]["framed"]) + len(C["ocr"]["verbatim"]) + len(B["block"])
-         + len(B["allow"]) + len(C["caregiver"]["allow"]))
+         + len(B["allow"]))
     assert n >= 500
     assert len(list(variants(C["seeds"]))) >= 500

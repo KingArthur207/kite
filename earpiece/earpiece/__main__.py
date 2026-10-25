@@ -6,7 +6,6 @@
     python -m earpiece render --jsonl events.jsonl out.wav   # same, from a detector/recorded timeline
     python -m earpiece selftest            # check audio, voices, STT, controls, network
     python -m earpiece send '{"type":"say","text":"hello"}'   # poke a running earpiece
-    python -m earpiece caregiver           # the caregiver's hands-free voice line (Grok Voice)
 """
 
 from __future__ import annotations
@@ -77,12 +76,10 @@ def cmd_run(a) -> int:
 
     app.speaker.on_spoken = on_spoken
     if a.spacetime or cfg.net.spacetime_enabled:
-        from .spacetime import CaregiverInbox, SpacetimeBridge
+        from .spacetime import SpacetimeBridge
         app.bridges.append(SpacetimeBridge(cfg.net.spacetime_host, cfg.net.spacetime_db,
                                            source="earpiece", log=_log))
     app.start(prewarm=not a.no_prewarm)
-    if a.spacetime or cfg.net.spacetime_enabled:
-        CaregiverInbox(app.handle, cfg.net.spacetime_host, cfg.net.spacetime_db, log=_log)
     if not a.no_stem:
         app.gestures.enable_stem()
 
@@ -197,11 +194,6 @@ def cmd_selftest(a) -> int:
     return run(play=not a.silent, log=_log)
 
 
-def cmd_caregiver(a) -> int:
-    from .caregiver_voice import cmd_caregiver as run
-    return run(a)
-
-
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="kite-earpiece", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -221,7 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--udp-port", type=int, default=5010)
     r.add_argument("--ws-port", type=int, default=5011)
     r.add_argument("--no-judgment", action="store_true", help="turn off the Claude judgment layer (also KITE_JUDGMENT=0)")
-    r.add_argument("--spacetime", action="store_true", help="mirror events to SpacetimeDB (SPACETIME_HOST) and speak caregiver messages from it")
+    r.add_argument("--spacetime", action="store_true", help="mirror events to SpacetimeDB (SPACETIME_HOST)")
     r.add_argument("--no-prewarm", action="store_true", help="skip the phrase and cue warm-up (test runs: "
                    "no Cartesia calls for phrases that are not cached yet)")
     rr = sub.add_parser("render", help="render a scenario or a JSONL timeline to a WAV file")
@@ -235,8 +227,6 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--port", type=int, default=5010)
     t = sub.add_parser("selftest", help="check audio, voices, STT, controls and network")
     t.add_argument("--silent", action="store_true", help="do not play sound")
-    from .caregiver_voice import add_parser as add_caregiver
-    add_caregiver(sub)
     return p
 
 
@@ -245,8 +235,7 @@ def main(argv=None) -> int:
     a = p.parse_args(argv)
     if a.cmd is None:
         a = p.parse_args(["run", *(argv or sys.argv[1:])])
-    return {"run": cmd_run, "render": cmd_render, "send": cmd_send, "selftest": cmd_selftest,
-            "caregiver": cmd_caregiver}[a.cmd](a)
+    return {"run": cmd_run, "render": cmd_render, "send": cmd_send, "selftest": cmd_selftest}[a.cmd](a)
 
 
 if __name__ == "__main__":
