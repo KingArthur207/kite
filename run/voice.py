@@ -120,10 +120,11 @@ def _earpiece_listen():
 class VoiceCommands:
     """Hands-free Cartesia Ink on the AirPods microphone. on_command(text, heard) gets each console command once."""
 
-    def __init__(self, on_command, log, mic: str = "airpods"):
+    def __init__(self, on_command, log, mic: str = "airpods", verbose: bool = False):
         self.on_command = on_command
         self.log = log
         self.mic = mic
+        self.verbose = verbose  # python run/voice.py: every listener line, every sentence, the mic level
         self.listener = None
         self._last_err = 0.0
 
@@ -147,13 +148,18 @@ class VoiceCommands:
         lcfg.input_substr = self.mic
         lcfg.hands_free = True
         try:
-            _idx, name = listen.pick_input(self.mic)
+            idx, name = listen.pick_input(self.mic)
         except Exception as e:
             self.log(f"voice off: no microphone ({type(e).__name__}: {e})", "error")
             return False
         if self.mic and self.mic.lower() not in (name or "").lower():
             self.log(f"voice: no microphone named like {self.mic!r}; using {name}", "warn")
+        if self.verbose:
+            self.log(f"voice: microphone #{idx if idx is not None else 'default'}: {name}, "
+                     f"{lcfg.sample_rate} Hz", "info")
         self.listener = _make_listener(listen)(self, lcfg, key)
+        if self.verbose:
+            self._meter(self.listener)
         self.listener.start_hands_free(lambda: False)  # output is not spoken here: the mic never needs gating
         self.log(f"voice: listening on {name} for 'kite ...' (Cartesia {lcfg.stt_model})", "info")
         return True
@@ -162,8 +168,38 @@ class VoiceCommands:
         if self.listener is not None:
             self.listener.stop()
 
+    def _meter(self, listener) -> None:
+        """Print the microphone's loudness once a second: 0.000 means no sound reaches this program."""
+        opener = listener._open_source
+        log = self.log
+
+        def open_metered():
+            src = opener()
+            get = src.get
+            seen = {"t": time.monotonic(), "peak": 0.0, "blocks": 0}
+
+            def metered(timeout):
+                block = get(timeout)
+                if block is not None and block.size:
+                    seen["peak"] = max(seen["peak"], float(abs(block).max()))
+                    seen["blocks"] += 1
+                now = time.monotonic()
+                if now - seen["t"] >= 1.0:
+                    hint = "  <- silent: wrong mic, or Windows mic permission off" if seen["peak"] < 0.002 else ""
+                    log(f"voice: mic level {seen['peak']:.3f} ({seen['blocks']} blocks){hint}", "info")
+                    seen.update(t=now, peak=0.0, blocks=0)
+                return block
+
+            src.get = metered
+            return src
+
+        listener._open_source = open_metered
+
     def _listen_log(self, text: str) -> None:
         """The listener's own lines. A dead network retries every second: show that at most every 10 s."""
+        if self.verbose:
+            self.log(f"voice: {text.removeprefix('[listen] ')}", "info")
+            return
         if "error" in text or "failed" in text:
             now = time.monotonic()
             if now - self._last_err < 10.0:
@@ -198,7 +234,9 @@ def _make_listener(listen):
             early = early[0] if early is not None else None
             cmd = parse_command(text)
             if cmd is None:
-                if text.strip() and (_WAKE_START.match(text) or _WAKE_ANY.search(text)):
+                if self.owner.verbose:
+                    self.owner.log(f"voice: heard {text.strip()!r}, no 'kite' command in it", "info")
+                elif text.strip() and (_WAKE_START.match(text) or _WAKE_ANY.search(text)):
                     self.owner.log(f"voice: heard {text.strip()!r}, no command in it", "warn")
                 return
             if cmd == early:  # already sent from the first words
@@ -260,21 +298,24 @@ def _main(argv: list[str] | None = None) -> int:
     if a.list:
         import sounddevice as sd
 
+        apis = [h["name"] for h in sd.query_hostapis()]
         for i, d in enumerate(sd.query_devices()):
             if d["max_input_channels"] > 0:
-                print(f"{i:3d}  {d['name']}  ({int(d['default_samplerate'])} Hz)")
+                print(f"{i:3d}  {d['name']}  ({apis[d['hostapi']]}, {int(d['default_samplerate'])} Hz)")
         return 0
 
     def log(text: str, kind: str = "info") -> None:
         print(f"{time.strftime('%H:%M:%S')} {kind:5s} {text}", flush=True)
 
     voice = VoiceCommands(lambda cmd, text: log(f"heard {text.strip()!r} -> would type: {cmd}", "sent"), log,
-                          a.voice_mic)
+                          a.voice_mic, verbose=True)
     if not voice.start():
         return 1
     log("say 'kite take off', 'kite land', 'kite take me to the nearest coffee shop' ... (Ctrl+C to stop)")
     try:
-        threading.Event().wait()
+        stop = threading.Event()
+        while not stop.wait(0.5):  # a timed wait: Ctrl+C reaches Python on Windows too
+            pass
     except KeyboardInterrupt:
         pass
     finally:
