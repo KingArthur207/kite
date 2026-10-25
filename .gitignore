@@ -47,6 +47,9 @@ data/depth_bench/
 
 # Stand-in detector weights stay local (sim/standin_detect.py --download)
 weights/
+# The webcam demo's checkpoints are in git so a pull is enough to run it.
+!third_party/videotesting/weights/
+!third_party/videotesting/weights/**
 
 # Stock clips and demo renders stay local (Pexels/Mixkit), never committed
 clips/

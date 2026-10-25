@@ -11,7 +11,7 @@ python run/demo.py                       # same window, webcam, SegFormer-B0 ove
 
 ## demo.py: the same window, on a webcam
 
-`python run/demo.py` opens the kite window and paints SegFormer-B0 street segmentation on the webcam. A connected Logitech C270 is chosen over the built-in camera. `python run/app.py` is unchanged and still talks only to the drone.
+`python run/demo.py` opens the kite window and paints SegFormer-B0 street segmentation on the webcam. A connected Logitech C270 is chosen over the built-in camera. The checkpoints are in `third_party/videotesting/weights/` and come down with a pull. `python run/app.py` is unchanged and still talks only to the drone.
 
 ## app.py: take off, lock onto the person in front, follow them
 
