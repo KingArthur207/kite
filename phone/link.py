@@ -152,7 +152,7 @@ class PhoneLink:
 
 def short_id(central) -> str:
     """A stable 4-hex id for a central (CoreBluetooth's per-central UUID); "" when the backend gives none."""
-    return hashlib.sha1(str(central).encode()).hexdigest()[:4] if central else ""
+    return hashlib.sha1(str(central).encode(), usedforsecurity=False).hexdigest()[:4] if central else ""
 
 
 class PhoneHub:

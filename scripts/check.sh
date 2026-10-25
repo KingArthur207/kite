@@ -178,7 +178,7 @@ step_audit() {
   # medium and above; each accepted finding is marked `# nosec <id>` with its reason. kite/sources,
   # camera.py and record.py are another team's (skipped here, not judged). scripts/ are dev tools run by
   # hand, so their /tmp caches, fixed-URL fetches and the Tello's all-interfaces video port are expected.
-  run "bandit" bash -c "cd '$ROOT' && uvx -q bandit -q -ll -r earpiece/earpiece earpiece/evals kite perception site/tools -x kite/sources,kite/camera.py,kite/record.py"
+  run "bandit" bash -c "cd '$ROOT' && uvx -q bandit -q -ll -r earpiece/earpiece earpiece/evals kite perception site/tools phone run hardware/arduino/unoq_link -x kite/sources,kite/camera.py,kite/record.py,phone/tests,hardware/arduino/unoq_link/tests"
   run "bandit, scripts" bash -c "cd '$ROOT' && uvx -q bandit -q -ll -r scripts -s B104,B108,B310"
   run "npm audit, dashboard" bash -c "cd '$ROOT/dashboard' && npm audit --audit-level=high"
   run "npm audit, spacetime module" bash -c "cd '$ROOT/dashboard/spacetimedb' && npm audit --audit-level=high"

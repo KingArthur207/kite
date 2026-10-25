@@ -556,7 +556,7 @@ class HFDepth(DepthBackend):
         repo, self.metric, _ = DA2[name]
         self.name, self.device, self.long_side, self.torch = name, device, long_side, torch
         try:
-            self.model = AutoModelForDepthEstimation.from_pretrained(
+            self.model = AutoModelForDepthEstimation.from_pretrained(  # nosec B615: offline unless KITE_DEPTH_DOWNLOAD=1
                 repo, cache_dir=hf_cache(), local_files_only=not _may_download()).to(device).eval()
         except OSError as e:
             raise BackendUnavailable(f"{repo} not in {hf_cache()}: run python -m perception.bench_depth --setup") from e
@@ -609,8 +609,9 @@ class DepthPro(DepthBackend):
         self.dtype = torch.float16 if fp16 and device != "cpu" else torch.float32
         try:
             kw = dict(cache_dir=hf_cache(), local_files_only=not _may_download())
-            self.proc = DepthProImageProcessorFast.from_pretrained("apple/DepthPro-hf", **kw)
-            self.model = DepthProForDepthEstimation.from_pretrained("apple/DepthPro-hf", torch_dtype=self.dtype,
+            # nosec B615 on both: offline unless KITE_DEPTH_DOWNLOAD=1 (kw above)
+            self.proc = DepthProImageProcessorFast.from_pretrained("apple/DepthPro-hf", **kw)  # nosec B615
+            self.model = DepthProForDepthEstimation.from_pretrained("apple/DepthPro-hf", torch_dtype=self.dtype,  # nosec B615
                                                                     **kw).to(device).eval()
         except OSError as e:
             raise BackendUnavailable("apple/DepthPro-hf not downloaded: python -m perception.bench_depth --setup") from e
@@ -779,7 +780,7 @@ class VideoDepthAnything(DepthBackend):
         except ImportError as e:
             raise BackendUnavailable(f"Video Depth Anything import failed ({e}); needs easydict, einops") from e
         try:
-            ck = hf_hub_download("depth-anything/Metric-Video-Depth-Anything-Small",
+            ck = hf_hub_download("depth-anything/Metric-Video-Depth-Anything-Small",  # nosec B615: gated as above
                                  "metric_video_depth_anything_vits.pth", cache_dir=hf_cache(),
                                  local_files_only=not _may_download())
         except Exception as e:  # noqa: BLE001
@@ -789,7 +790,7 @@ class VideoDepthAnything(DepthBackend):
 
     def _load(self):
         m = self.cls(encoder="vits", features=64, out_channels=[48, 96, 192, 384])
-        m.load_state_dict(self.torch.load(self.ck, map_location="cpu"), strict=True)
+        m.load_state_dict(self.torch.load(self.ck, map_location="cpu", weights_only=True), strict=True)
         self.model = m.to(self.device).eval()
 
     def reset(self):

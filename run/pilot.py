@@ -29,6 +29,10 @@ from pathlib import Path
 TICK_S = 0.05  # 20 Hz control loop
 
 
+WIN_SAY = ("Add-Type -AssemblyName System.Speech; "
+           "(New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak($env:KITE_SAY)")
+
+
 def speaker():
     """say(text) without blocking the control loop: macOS `say`, else Windows SAPI via PowerShell, else nothing."""
     import shutil
@@ -38,11 +42,13 @@ def speaker():
     if sys.platform == "darwin" and shutil.which("say"):
         return lambda text: subprocess.Popen(["say", text])
     if sys.platform == "win32":
+        import os
+
         def win(text: str) -> None:
-            t = text.replace("'", "''")
-            subprocess.Popen(["powershell", "-NoProfile", "-Command",
-                              f"Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis."
-                              f"SpeechSynthesizer).Speak('{t}')"], creationflags=0x08000000)
+            # The text goes in an environment variable, never into the command: PowerShell also ends a quoted
+            # string at the curly quotes, so escaping ' alone would let a line run code.
+            subprocess.Popen(["powershell", "-NoProfile", "-Command", WIN_SAY],
+                             env={**os.environ, "KITE_SAY": text}, creationflags=0x08000000)
         return win
     return None
 STATES = {"CLIMB": "climbing", "FOLLOW": "following", "REACQUIRE": "searching", "HOLD": "holding"}

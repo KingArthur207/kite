@@ -19,7 +19,7 @@ import numpy as np
 from ..depth_zoo import ROOT, Intrinsics
 
 DATA = ROOT / "data" / "depth_bench"
-DIODE_URL = "http://diode-dataset.s3.amazonaws.com/val.tar.gz"
+DIODE_URL = "https://diode-dataset.s3.amazonaws.com/val.tar.gz"
 DIODE_K = Intrinsics(886.81, 927.06, 512.0, 384.0, 1024, 768)   # as published with the dataset
 SIZE = (640, 480)
 MAX_GT = 80.0
@@ -43,7 +43,7 @@ def download_diode(dest: Path = DATA / "diode") -> Path:
     tgz = dest / "val.tar.gz"
     if not tgz.exists():
         print(f"[data] downloading {DIODE_URL} (2.6 GB) ...", flush=True)
-        urllib.request.urlretrieve(DIODE_URL, tgz)     # noqa: S310  (fixed https/http dataset URL)
+        urllib.request.urlretrieve(DIODE_URL, tgz)     # noqa: S310  # nosec B310: fixed https dataset URL
     with tarfile.open(tgz) as t:
         t.extractall(dest, filter="data")
     return root

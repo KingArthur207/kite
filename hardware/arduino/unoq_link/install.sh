@@ -147,8 +147,9 @@ $SUDO mkdir -p "$INSTALL_DIR" "$ETC_DIR" "$UNIT_DIR"
 for f in board.py kite_common.py; do $SUDO cp "$TMP/$f" "$INSTALL_DIR/$f"; done
 $SUDO chown -R "$KITE_USER" "$INSTALL_DIR"
 if [ ! -s "$ETC_DIR/token" ]; then
-  python3 -c 'import secrets; print(secrets.token_hex(16))' > "$TMP/token"
-  $SUDO cp "$TMP/token" "$ETC_DIR/token"
+  # umask 077: the token file is never readable by other users, not even between cp and chmod below
+  (umask 077 && python3 -c 'import secrets; print(secrets.token_hex(16))' > "$TMP/token" &&
+    $SUDO cp "$TMP/token" "$ETC_DIR/token")
   say "made a new token"
 fi
 $SUDO chown "$KITE_USER" "$ETC_DIR/token"

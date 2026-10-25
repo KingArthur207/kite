@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import ssl
 import time
@@ -35,15 +36,48 @@ def latest(timeout: float = 5.0) -> list[dict]:
     req = urllib.request.Request(f"{HOST}/v1/database/{DB}/sql", data=QUERY.encode(), method="POST")
     with urllib.request.urlopen(req, timeout=timeout, context=_ssl()) as r:   # nosec B310: fixed https host
         reply = json.load(r)
-    names = [e["name"]["some"] for e in reply[0]["schema"]["elements"]]
+    return fixes(reply)
+
+
+def _num(v, lo: float, hi: float) -> float | None:
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
+        return None
+    return float(v)
+
+
+def fixes(reply, now: float | None = None) -> list[dict]:
+    """The phone positions in an SQL reply, newest first. The table is public and anyone can push to it, so a
+    row whose payload isn't an object with a finite lat and lng on the globe is skipped, not trusted."""
+    now = time.time() if now is None else now
+    try:
+        names = [e["name"]["some"] for e in reply[0]["schema"]["elements"]]
+        rows = list(reply[0]["rows"])
+    except (KeyError, IndexError, TypeError):
+        return []
     out = []
-    for row in reply[0]["rows"]:
-        d = dict(zip(names, row))
-        if not str(d.get("source", "")).startswith("phone"):
+    for row in rows:
+        d = dict(zip(names, row)) if isinstance(row, list) else {}
+        source = d.get("source")
+        if not isinstance(source, str) or not source.startswith("phone"):
             continue
-        p = json.loads(d["payload"])
-        t = d["t"][0] / 1e6
-        out.append({**p, "source": d["source"], "t": t, "age_s": round(time.time() - t, 1)})
+        try:
+            p = json.loads(d["payload"])
+            t = float(d["t"][0]) / 1e6
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        if not isinstance(p, dict) or not math.isfinite(t):
+            continue
+        lat, lng = _num(p.get("lat"), -90, 90), _num(p.get("lng"), -180, 180)
+        if lat is None or lng is None:
+            continue
+        fix = {**p, "lat": lat, "lng": lng, "source": source, "t": t, "age_s": round(now - t, 1)}
+        if p.get("accuracy") is not None:
+            acc = _num(p.get("accuracy"), 0, 1e6)
+            if acc is None:
+                fix.pop("accuracy")
+            else:
+                fix["accuracy"] = acc
+        out.append(fix)
     return sorted(out, key=lambda p: -p["t"])
 
 
@@ -60,7 +94,7 @@ def main() -> None:
         try:
             rows = latest()
             print("\n".join(line(p) for p in rows) if rows else "no phone position yet")
-        except OSError as e:
+        except (OSError, ValueError) as e:
             print(f"can't reach SpacetimeDB: {e}")
         if not args.watch:
             return

@@ -5,7 +5,15 @@ after the walker has been off the route long enough for RouteFollower to call it
 even then at most once every 20 seconds and five times in ten minutes.
 
 The Mapbox token and the Google key stay in the repo-root .env. Neither is written
-into the page or into a log.
+into the page or into a log. The page fetches the Mapbox token from /api/config to
+draw the map (a public pk. token, made to be used in browsers: restrict it to this
+URL in the Mapbox account). The Google key never leaves this process.
+
+It listens on 127.0.0.1 only, and because any web page can send requests to
+127.0.0.1, it also serves only requests whose Host names this computer (a page
+that rebinds its own domain to 127.0.0.1 can't read the walker's position) and
+takes a POST only as application/json from its own page (another site's form or
+fetch can't spend Google Routes calls).
 
     python -m phone.walk_server
 """
@@ -13,6 +21,7 @@ into the page or into a log.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -40,6 +49,28 @@ REROUTE_MAX = 5
 REROUTE_WINDOW_S = 600.0
 UNAVAILABLE_S = 15.0
 QUOTA_S = 60.0
+MAX_BODY = 65536
+MAX_DESTINATION = 200
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def _host_name(header: str | None) -> str:
+    name = (header or "").strip().lower()
+    if name.startswith("["):
+        return name[1:].split("]", 1)[0]
+    return name.rsplit(":", 1)[0] if name.count(":") == 1 else name
+
+
+def _number(v, lo: float, hi: float, name: str) -> float | None:
+    """None stays None; anything else must be a finite number in [lo, hi]."""
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        raise ValueError(f"{name} must be a number")
+    f = float(v)
+    if not math.isfinite(f) or not lo <= f <= hi:
+        raise ValueError(f"{name} is out of range")
+    return f
 
 
 def load_env() -> None:
@@ -300,19 +331,52 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, code: int, payload: dict) -> None:
         self._send(code, json.dumps(payload).encode("utf-8"), "application/json")
 
+    def _local(self) -> bool:
+        """Only requests that name this computer: a DNS-rebinding page sends its own domain as Host."""
+        if _host_name(self.headers.get("Host")) in LOOPBACK:
+            return True
+        self.close_connection = True          # the body (if any) is never read
+        self._json(403, {"ok": False, "error": "This server is for this computer only."})
+        return False
+
+    def _same_origin(self) -> bool:
+        """A POST must be JSON from this page. Another site can't send application/json without a CORS
+        preflight, which this server never approves, and a browser that sends Origin must send ours."""
+        ctype = (self.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        origin = self.headers.get("Origin")
+        host = (self.headers.get("Host") or "").strip().lower()
+        if ctype == "application/json" and (origin is None or origin.strip().lower() == f"http://{host}"):
+            return True
+        self.close_connection = True
+        self._json(403, {"ok": False, "error": "Send JSON from the walk page."})
+        return False
+
     def _read_json(self) -> dict | None:
-        n = int(self.headers.get("Content-Length", "0") or 0)
-        if n > 65536:
+        try:
+            n = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            n = -1
+        if n < 0 or n > MAX_BODY:
+            self.close_connection = True
+        if n < 0:
+            self._json(400, {"ok": False, "error": "Bad Content-Length."})
+            return None
+        if n > MAX_BODY:
             self._json(413, {"ok": False, "error": "Request is too large."})
             return None
         raw = self.rfile.read(n) if n else b"{}"
         try:
-            return json.loads(raw.decode("utf-8"))
+            data = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            self._json(400, {"ok": False, "error": "Expected JSON."})
+            data = None
+        if not isinstance(data, dict):
+            self._json(400, {"ok": False, "error": "Expected a JSON object."})
             return None
+        return data
 
     def do_GET(self):
+        if not self._local():
+            return
         path = self.path.split("?", 1)[0]
         if path in ("/", "/walk.html"):
             if not PAGE.is_file():
@@ -329,24 +393,38 @@ class Handler(BaseHTTPRequestHandler):
         self._json(404, {"ok": False, "error": "Not found."})
 
     def do_POST(self):
+        if not self._local():
+            return
         path = self.path.split("?", 1)[0]
         if path not in ("/api/start", "/api/tick"):
             self._json(404, {"ok": False, "error": "Not found."})
+            return
+        if not self._same_origin():
             return
         data = self._read_json()
         if data is None:
             return
         try:
-            lat, lng = float(data["lat"]), float(data["lng"])
-        except (KeyError, TypeError, ValueError):
+            lat = _number(data["lat"], -90.0, 90.0, "lat")
+            lng = _number(data["lng"], -180.0, 180.0, "lng")
+            if lat is None or lng is None:
+                raise ValueError("lat and lng are required.")
+        except (KeyError, TypeError, ValueError, OverflowError):
             self._json(400, {"ok": False, "error": "lat and lng are required."})
             return
-        accuracy = data.get("accuracy")
-        heading = data.get("heading")
+        try:
+            accuracy = _number(data.get("accuracy"), 0.0, 1e6, "accuracy")
+            heading = _number(data.get("heading"), -360.0, 720.0, "heading")
+        except (TypeError, ValueError, OverflowError):
+            self._json(400, {"ok": False, "error": "accuracy and heading must be numbers."})
+            return
         if path == "/api/start":
             destination = str(data.get("destination") or "").strip()
             if not destination:
                 self._json(400, {"ok": False, "error": "A destination is required."})
+                return
+            if len(destination) > MAX_DESTINATION:
+                self._json(400, {"ok": False, "error": "The destination is too long."})
                 return
             self._json(200, SESSION.start(lat, lng, destination, accuracy, heading))
             return
