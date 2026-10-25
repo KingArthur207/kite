@@ -149,6 +149,17 @@ async def run(args, server_cls=None, stream=None, stop: asyncio.Event | None = N
         if not args.no_watch:
             from .earpiece_watch import EarpieceWatch
             watch = EarpieceWatch(f"ws://{host}:{args.ear_ws_port}").start()
+    if args.spacetime:
+        # online copy of each phone's newest position, readable from any network (python -m phone.latest)
+        from earpiece.spacetime import SpacetimeBridge
+        bridge = SpacetimeBridge(source="phone", log=printer.log)
+        udp = send
+
+        def send(msg: dict) -> None:
+            if msg.get("type") == "position":
+                bridge.publish(msg)
+            if udp is not None:
+                udp(msg)
     hub = PhoneHub(send=send, walker=args.walker, log=printer.log, link_stale_s=args.stale, forward_hz=args.rate,
                    announce=not args.no_announce)
     from .netinfo import on_tello_wifi
@@ -238,6 +249,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--stale", type=float, default=LINK_STALE_S, help="seconds of silence before the phone is lost")
     p.add_argument("--walker", metavar="ID",
                    help="the phone that guides (e.g. 3fa2 or phone-3fa2); default: the first to connect")
+    p.add_argument("--spacetime", action="store_true",
+                   help="also put each phone's newest position in SpacetimeDB (read it anywhere: python -m phone.latest)")
     p.add_argument("--no-send",action="store_true", help="print only, send nothing to the earpiece")
     p.add_argument("--no-announce", action="store_true", help="do not ask the earpiece to say the phone was lost")
     p.add_argument("--no-watch", action="store_true", help="do not watch the earpiece's WebSocket for status")
