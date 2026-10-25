@@ -157,11 +157,11 @@ def register(name: str, factory: Callable[..., DepthBackend], metric: bool, lice
 
 def get(name: str, device: str = "cpu", **kw) -> DepthBackend:
     """A backend by name. Suffixes compose: "da2-relative-s+anchor", "da2-metric-outdoor-s+anchor+temporal".
-    "fused" is the anchored outdoor Small model fused with motion stereo; "fused:<dense name>" picks the dense
+    "fused" is the anchored Indoor Small model (the shoot-out's pick) fused with motion stereo; "fused:<dense name>" picks the dense
     model. Keyword arguments go to the base factory (cam_h also to the anchoring)."""
     cam_h = kw.get("cam_h", CHEST_H)
     if name.startswith("fused"):
-        dense = name.split(":", 1)[1] if ":" in name else "da2-metric-outdoor-s+anchor"
+        dense = name.split(":", 1)[1] if ":" in name else "da2-metric-indoor-s+anchor"
         if "+anchor" not in dense:
             dense += "+anchor"
         return Fused(get(dense, device, **kw), MotionStereo(cam_h=cam_h))

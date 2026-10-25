@@ -1,0 +1,78 @@
+{
+  "_about": "Hand labels for perception/near/evaluate.py: the priority each labelled object SHOULD get from a chest camera walking straight ahead (null = not in the +-0.5 m corridor). Points (x, y at 960 wide) and kinds reuse perception/bench_labels.json. Distances were judged by eye from known sizes (a person ~1.65-1.75 m, a bike wheel ~0.7 m, a scooter wheel ~0.25 m) and, on the sim frames, from the sim's exact geometry (level camera, fx 1000 at 960 wide, 1.2 m high: d = 1200 / (foot row - 360)). Where an object sits on a boundary (a distance near 2 m or 5 m, a footprint on the corridor's edge) every defensible answer is listed; 'acc' counts a prediction in the list as right. These are our labels on generated and simulated frames: a careful smoke test, not a dataset. Clips: the priority of the key object over time (seconds), compared with the most urgent priority the system reports in that frame.",
+  "stills": {
+    "data/imagined/scooter.jpg": {"profile": "generic", "items": [
+      {"kind": "e_scooter", "at": [495, 230], "p": [2], "why": "wheel ~0.25 m spans ~30 px at 960: ~4.5 m, straddles the centre line"},
+      {"kind": "pole", "at": [455, 120], "p": [3], "why": "street light behind the scooter, >10 m, on the line"},
+      {"kind": "pole", "at": [20, 145], "p": [null]},
+      {"kind": "vehicle", "at": [272, 158], "p": [null]}]},
+    "data/imagined/doorway.jpg": {"profile": "generic", "items": [
+      {"kind": "person", "at": [630, 280], "p": [2, null], "why": "~3 m, stepping out on the right: footprint at the corridor's right edge"},
+      {"kind": "bike", "at": [348, 255], "p": [null]}]},
+    "data/imagined/oncoming.jpg": {"profile": "generic", "items": [
+      {"kind": "person", "at": [495, 330], "p": [2], "why": "~1.65 m tall over ~360 px at fx 700: ~3.2 m, on the line"},
+      {"kind": "person", "at": [40, 300], "p": [null]},
+      {"kind": "person", "at": [145, 290], "p": [null]},
+      {"kind": "person", "at": [270, 300], "p": [null]}]},
+    "data/imagined/cyclist.jpg": {"profile": "generic", "items": [
+      {"kind": "bike", "at": [330, 345], "p": [2], "why": "wheel ~0.7 m over ~85 px: ~4-4.5 m; the bike's length reaches the centre line"},
+      {"kind": "person", "at": [300, 225], "p": [2, null], "why": "the rider's body is left of the corridor, the bike is not"},
+      {"kind": "pole", "at": [312, 70], "p": [null]}]},
+    "data/imagined/car_turning.jpg": {"profile": "generic", "items": [
+      {"kind": "vehicle", "at": [665, 240], "p": [2, 3], "why": "~6-7 m (prompted 6 m); a car's P2 boundary is 6.75 m"},
+      {"kind": "pole", "at": [224, 120], "p": [null]}]},
+    "sim/docs/street_dressing_poles.jpg": {"profile": "sim", "items": [
+      {"kind": "pole", "at": [325, 300], "p": [null, 3], "why": "~5 m, ~0.8 m left of the line"},
+      {"kind": "vehicle", "at": [600, 480], "p": [2, 3], "why": "~6.8 m, its left side crosses the line"},
+      {"kind": "person", "at": [490, 405], "p": [3]}]},
+    "sim/docs/street_dressing_sw_sidewalk.jpg": {"profile": "sim", "items": [
+      {"kind": "tree", "at": [598, 420], "p": [2, null], "why": "~4.3 m, trunk ~0.45 m right"},
+      {"kind": "fire_hydrant", "at": [518, 460], "p": [2]},
+      {"kind": "person", "at": [42, 440], "p": [null]},
+      {"kind": "vehicle", "at": [230, 430], "p": [null]}]},
+    "sim/docs/street_dressing_howard.jpg": {"profile": "sim", "items": [
+      {"kind": "trash_can", "at": [655, 540], "p": [2, null], "why": "~4.8 m, ~0.85 m right: the corridor's soft edge"},
+      {"kind": "tree", "at": [572, 420], "p": [null, 3]},
+      {"kind": "vehicle", "at": [830, 360], "p": [null]}]},
+    "sim/docs/street_dressing_corner_se.jpg": {"profile": "sim", "items": [
+      {"kind": "person", "at": [335, 560], "p": [2], "why": "~3.4 m, ~0.4 m left"},
+      {"kind": "vehicle", "at": [650, 525], "p": [2, null], "why": "parked ~4.4 m, its near side ~0.3 m right of the line"},
+      {"kind": "person", "at": [862, 400], "p": [null]}]},
+    "sim/docs/osm_facades_howard.jpg": {"profile": "sim", "items": [
+      {"kind": "tree", "at": [640, 420], "p": [null]},
+      {"kind": "vehicle", "at": [705, 380], "p": [null]}]},
+    "sim/docs/osm_facades_corner_chest.jpg": {"profile": "sim", "items": [
+      {"kind": "person", "at": [222, 400], "p": [null]},
+      {"kind": "curb", "at": [700, 525], "p": [null, 3], "why": "the curb edge ~7 m ahead starts just right of the corridor"}]},
+    "sim/docs/osm_facades_spawn.jpg": {"profile": "sim", "items": [
+      {"kind": "vehicle", "at": [90, 520], "p": [null]},
+      {"kind": "person", "at": [480, 390], "p": [3], "why": "far down the line"},
+      {"kind": "person", "at": [285, 385], "p": [null]}]},
+    "sim/docs/street_dressing_spawn.jpg": {"profile": "sim", "items": [
+      {"kind": "vehicle", "at": [140, 540], "p": [null]},
+      {"kind": "person", "at": [480, 390], "p": [3]},
+      {"kind": "fire_hydrant", "at": [200, 410], "p": [null]}]},
+    "sim/docs/hybrid_capture_osm_chest.jpg": {"profile": "sim", "items": [
+      {"kind": "person", "at": [480, 390], "p": [3], "why": "~24 m on the line"},
+      {"kind": "vehicle", "at": [850, 380], "p": [null]},
+      {"kind": "curb", "at": [500, 520], "p": [3, null], "why": "drop off the curb ~7.7 m ahead"}]}
+  },
+  "clips": {
+    "doorway": {"profile": "generic", "walk": 0.8, "key": "person", "p": [
+      [0.0, 1.5, [2, null]], [1.5, 3.2, [2]], [3.2, 3.8, [1, 2]], [3.8, 6.1, [1]]]},
+    "oncoming": {"profile": "generic", "walk": 1.0, "key": "person", "p": [
+      [0.0, 2.6, [2]], [2.6, 3.4, [1, 2]], [3.4, 6.1, [1]]]},
+    "cyclist": {"profile": "generic", "walk": 0.4, "key": "bike", "p": [
+      [0.0, 6.1, [2]]]},
+    "scooter": {"profile": "generic", "walk": 0.6, "key": "e_scooter", "p": [
+      [0.0, 2.6, [2]], [2.6, 3.8, [1, 2]], [3.8, 6.1, [1]]]},
+    "car_turning": {"profile": "generic", "walk": 0.0, "key": "vehicle",
+      "note": "3.3-4.3 s: the car's box grows ~2.5x in one second while it closes from ~7 m to ~4.5 m (looming time to contact ~1.1 s), which the spec makes P1; by distance alone it is P2. Both are accepted.",
+      "p": [[0.0, 0.8, [2, 3]], [0.8, 3.3, [3]], [3.3, 4.3, [1, 2]], [4.3, 4.6, [2, 3]], [4.6, 5.3, [2, null]],
+            [5.3, 6.1, [null, 3]]]}
+  },
+  "profiles": {
+    "generic": {"fx_at_960": 700, "cam_h": 1.2, "pitch": 0.0, "fit_pitch": true},
+    "sim": {"fx_at_960": 1000, "cam_h": 1.2, "pitch": 0.0, "fit_pitch": false, "ignore_bottom": 0.1}
+  }
+}
