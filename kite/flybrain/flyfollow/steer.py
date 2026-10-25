@@ -51,7 +51,7 @@ FX_NOM = 921.0
 FY_NOM = 919.0
 TRAINED_MAX_YAW = 60.0  # Settings.max_yaw_stick in training: the readout's output scale (not the output clamp)
 MAX_TICKS_PER_CALL = 3
-# Output conditioning defaults, chosen on the ReachGlass sim sweep (docs/integration/REACHGLASS.md): deadband +
+# Output conditioning defaults, chosen on a host-stack sim sweep: deadband +
 # hysteresis cut the stick change per loop without adding lag; any low-pass (40 to 250 ms) added lag and cost
 # bearing error, so it is off by default. The slew cap never bound in the sim: a safety net only. Deadband 4 /
 # hysteresis 3 with the smooth fine-tune (FLY-YAW_smooth2_best.json) was the smoothest setting that still
