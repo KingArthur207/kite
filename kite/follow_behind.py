@@ -12,10 +12,11 @@ the altitude only while it sees the walker. Here:
                  5 runs; sticks to that box (overlap, or a short jump between consecutive runs); after a loss it
                  prefers a person near where they were; after lost_s x 3 unseen it lets go and locks anyone.
   estimate()     range from up to three cues, fused by their expected errors (log space):
-                   full_height  the whole body in frame: the walker's height over the box height
+                   full_height  the whole body in frame (the box bottom where the floor is, when the altitude is
+                                known): the walker's height over the box height
                    head_elev    head top in frame and the altitude known: (altitude - walker height) / tan(angle).
                                 Works with the camera above OR below the head (the sign of the angle says which)
-                   bbox_width   sides and bottom in frame: a 0.48 m wide body
+                   bbox_width   sides and feet in frame: a 0.48 m wide body
                  plus range_lo, the most conservative cue (and a 0.28 m wide body: the narrowest a person looks).
                  No cue (the box is cut at the top and the bottom, e.g. while climbing) -> no range -> no forward.
   FollowBehind   the control law, every tick:
@@ -217,6 +218,13 @@ def estimate(box, cam: Camera, altitude_m: float | None, person_h: float, edge_p
     side_ok = x1 > edge_px and x2 < cam.width - edge_px
     cues: dict[str, float] = {}
     sig: dict[str, float] = {}
+    # the box bottom is the feet only if it sits where the floor is: from above, a box ending inside the frame is
+    # often the head and shoulders alone (read as a whole body, that is a person 5-10x too far away)
+    feet = _range_to_height(cam, cx, y2, altitude_m) if (bottom_ok and altitude_m is not None) else None
+
+    def on_floor(r: float) -> bool:
+        return altitude_m is None or (feet is not None and 0.67 < r / feet < 1.5)
+
     if top_ok and bottom_ok and h > 1:
         cues["full_height"], sig["full_height"] = cam.fy * person_h / h / math.cos(b), 0.07
     if top_ok and altitude_m is not None and abs(altitude_m - person_h) >= 0.15:
@@ -230,7 +238,7 @@ def estimate(box, cam: Camera, altitude_m: float | None, person_h: float, edge_p
             sig["head_elev"] = math.hypot(dz / abs(diff), math.radians(3.0) / max(math.sin(e) * math.cos(e), 1e-3))
     if side_ok and bottom_ok and w > 1:  # a box cut by the frame bottom may be narrower than the body
         cues["bbox_width"], sig["bbox_width"] = cam.fx * BODY_WIDTH_M / w / math.cos(b), 0.35
-    cues = {k: v for k, v in cues.items() if _ok(v)}
+    cues = {k: v for k, v in cues.items() if _ok(v) and (k == "head_elev" or on_floor(v))}
     obs = PersonObs(math.degrees(b), None, None, cues=cues)
     if cues:
         wts = {k: 1.0 / sig[k] ** 2 for k in cues}

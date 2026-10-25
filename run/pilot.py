@@ -71,6 +71,7 @@ class Pilot:
         self._lock_t0 = 0.0
         self._lock_said = 0.0
         self._pending = None  # discrete command we wait on: "takeoff" | "land"
+        self._ready_line = ""
         self.last_frame = None  # newest kite Frame (BGR), for the UI
         self._fps_n, self._fps_t = 0, time.time()
         self.closed = threading.Event()
@@ -180,8 +181,9 @@ class Pilot:
             return False
         self.follow = BehindMode(self.frames, lambda: self.seen, bcfg, load_camera(), log=self._follow_log,
                                  yaw_source=yaw_source).start_tracker()
-        self.log(f"ready: video ({cfg.drone.video_backend} reader), person detector on {self.seen._detect.device}. "
-                 "Stand in front of the drone, then type takeoff", "info")
+        self._ready_line = (f"ready: video ({cfg.drone.video_backend} reader), person detector on "
+                            f"{self.seen._detect.device}. Stand in front of the drone, then type takeoff")
+        self.log("waiting for the first video frame ...", "info")
         return True
 
     def _follow_log(self, msg: str, quiet: bool = False, **extra) -> None:
@@ -224,6 +226,8 @@ class Pilot:
     def _read_frame(self) -> None:
         f = self.frames.read() if self.frames is not None else None
         if f is not None and (self.last_frame is None or f.seq != self.last_frame.seq):
+            if self.last_frame is None and self._ready_line:
+                self.log(self._ready_line, "info")  # only now: a takeoff before the first frame is refused
             self.last_frame = f
             self._fps_n += 1
         now = time.time()
