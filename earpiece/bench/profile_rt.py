@@ -20,7 +20,6 @@ import base64
 import collections
 import gc
 import json
-import math
 import os
 import resource
 import socket
@@ -82,7 +81,7 @@ def micro() -> None:
     for n in (0, 3, 20):
         raw = frame(n)
         print(f"  events.parse, obstacles frame with {n:2d} objects ({len(raw):4d} B): "
-              f"{timeit(lambda: events.parse(raw), 2000):7.1f} us")
+              f"{timeit(lambda raw=raw: events.parse(raw), 2000):7.1f} us")
 
     from earpiece import rust_sonar
 
@@ -120,7 +119,7 @@ def micro() -> None:
     print("  cue synthesis, mono, per kind:")
     for kind in ("person", "vehicle", "obstacle", "curb"):
         print(f"    {kind:9s} " + ", ".join(
-            f"{name} {timeit(wrap(lambda: sounds.proximity_cue(kind, 900.0)), 100):6.0f} us"
+            f"{name} {timeit(wrap(lambda kind=kind: sounds.proximity_cue(kind, 900.0)), 100):6.0f} us"
             for name, wrap in engines))
     mono = sounds.proximity_cue("vehicle", 900.0)
     print(f"  binaural placement of one cue ({'rust' if spatial.NATIVE else 'python'}): "
@@ -144,7 +143,7 @@ def micro() -> None:
         st = spatial.render(mono, 0.0, 48000)
         for i in range(8):
             e.play(st, at=i * 3000, bus="cue")
-        print(f"  mixer render, 512-frame block with ~8 voices, {name:6s}: {timeit(lambda: e.render(512), 300):7.1f} us")
+        print(f"  mixer render, 512-frame block with ~8 voices, {name:6s}: {timeit(lambda e=e: e.render(512), 300):7.1f} us")
         if hasattr(e, "shutdown"):
             e.shutdown()
 
