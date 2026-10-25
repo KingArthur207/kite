@@ -5,7 +5,7 @@
 
 Two switches, the buttons on the camera pane or ``yolo`` and ``seg`` typed in the console:
 YOLO makes every detected object something to go around, and segmentation steers by the ground.
-Both on, the guidance reads both. Segmentation loads the first time it is turned on.
+Both on, the guidance reads both. Both models load at start, before any frame is guided.
 
 The camera pane shows that overlay. The map and the console are the same window as
 ``python run/app.py``. This script does not open the drone, and ``run/app.py`` is unchanged.
@@ -217,8 +217,8 @@ class Demo:
         self._painted = False
         self._seg_on = bool(getattr(args, "seg", False))
         self._yolo_on = not getattr(args, "no_yolo", False)
-        self._seg_state = "off"  # off, loading, ready, failed
-        self._seg_models = None
+        self._loaded = False  # both models are loaded before any frame is processed
+        self._seg_state = "loading"  # loading, ready, failed
         self._said: tuple[str, ...] = ()
         self._camera_name = ""
         self._size = ""
@@ -257,14 +257,15 @@ class Demo:
 
     def toggles(self) -> list[dict]:
         """The camera pane's buttons."""
-        notes = {"loading": "loading", "failed": "unavailable"}
+        loading = "" if self._loaded else "loading"
+        seg_note = "unavailable" if self._seg_state == "failed" else loading
         return [
-            {"key": "yolo", "label": "YOLO", "on": self._yolo_on, "note": ""},
-            {"key": "seg", "label": "Segmentation", "on": self._seg_on, "note": notes.get(self._seg_state, "") if self._seg_on else ""},
+            {"key": "yolo", "label": "YOLO", "on": self._yolo_on, "note": loading if self._yolo_on else ""},
+            {"key": "seg", "label": "Segmentation", "on": self._seg_on, "note": seg_note if self._seg_on else ""},
         ]
 
     def toggle(self, key: str, on: bool | None = None) -> None:
-        """Turn YOLO or segmentation on or off (None flips). The frame loop picks it up."""
+        """Use YOLO or segmentation, or stop using it (None flips). Both stay loaded; the frame loop picks it up."""
         if key not in ("seg", "yolo"):
             return
         with self._lock:
@@ -278,34 +279,33 @@ class Demo:
                 self._painted = False
         name = "segmentation" if key == "seg" else "YOLO"
         self.log(f"{name} {'on' if now else 'off'}", "info")
-        if seg and self._seg_state in ("off", "failed"):
-            self._seg_state = "loading"  # the frame loop loads it before its next frame
         if not (seg or yolo):
             self.log("guidance off: camera only", "info")
 
-    def _load_segmentation(self) -> None:
-        """Load SegFormer-B0 on the frame loop's thread, between frames.
+    def _load_models(self) -> bool:
+        """YOLO26n, then SegFormer-B0, one after the other on this thread, before any frame is processed.
 
-        Never on a thread of its own: importing transformers while YOLO runs on another thread can leave
-        half-imported modules behind ("partially initialized module"), and then it fails for the whole run.
-        YOLO pauses while this loads.
+        Nothing else imports or runs a model meanwhile: importing transformers while YOLO runs on another
+        thread can leave half-imported modules behind. False when YOLO did not load. Segmentation that did
+        not load is marked unavailable and YOLO still runs.
         """
-        if not (self._seg_on and self._seg_state == "loading"):
-            return
-        self.log("loading SegFormer-B0 (YOLO pauses) ...", "info")
+        device = getattr(self.args, "device", "") or ""
+        self.log("loading YOLO26n and SegFormer-B0 ...", "info")
         try:
-            models = load_segmentation(getattr(self.args, "device", "") or "")
+            self._perception = load_perception(device)
+        except Exception as exc:
+            self.log(f"YOLO unavailable: {_why(exc)}", "error")
+            return False
+        try:
+            self._perception.segmenter, self._perception.lights = load_segmentation(device)
+            self._seg_state = "ready"
         except Exception as exc:
             self._seg_state = "failed"
-            root = exc
-            while root.__cause__ is not None or root.__context__ is not None:
-                root = root.__cause__ or root.__context__
-            detail = "" if root is exc else f" ({type(root).__name__}: {root})"
-            self.log(f"segmentation unavailable: {exc}{detail}", "error")
-            return
-        self._seg_models = models
-        self._seg_state = "ready"
-        self.log("segmentation ready", "info")
+            self.log(f"segmentation unavailable: {_why(exc)}", "error")
+        self._loaded = True
+        on = [name for name, used in (("YOLO", self._yolo_on), ("segmentation", self._seg_on)) if used]
+        self.log(f"models ready; on: {', '.join(on) or 'nothing (camera only)'}", "info")
+        return True
 
     def request_land(self) -> None:
         return None
@@ -409,20 +409,13 @@ class Demo:
         self.log(f"camera: {self._camera_name}", "info")
         self._grabber = threading.Thread(target=self._grab, name="webcam", daemon=True)
         self._grabber.start()
-        try:
-            self.log("loading YOLO26n ...", "info")
-            self._perception = load_perception(getattr(self.args, "device", "") or "")
-        except Exception as exc:
-            self.log(f"YOLO unavailable: {exc}", "error")
+        if not self._load_models():
             while not self._stop.wait(0.2):
                 pass
             return
         if self._stop.is_set():
             self._close_perception()
             return
-        self.log("YOLO ready", "info")
-        if self._seg_on:
-            self._seg_state = "loading"
         _vendor_path()
         from streetseg.camera import Pose
         from streetseg.sources import C270_DIAGONAL_FOV
@@ -435,12 +428,9 @@ class Demo:
             if frame is None:
                 self._stop.wait(0.01)
                 continue
-            self._load_segmentation()
             with self._lock:
                 seg, yolo = self._seg_on, self._yolo_on
-            if self._seg_models is not None and self._perception.segmenter is None:
-                self._perception.segmenter, self._perception.lights = self._seg_models
-            seg = seg and self._perception.segmenter is not None
+            seg = seg and self._seg_state == "ready"
             if (seg, yolo) != mode:
                 mode = (seg, yolo)
                 self._perception.set_modes(seg, yolo)
@@ -476,9 +466,17 @@ class Demo:
             close()
 
 
+def _why(exc: BaseException) -> str:
+    """The error, and the one underneath it when a library wrapped it."""
+    root = exc
+    while root.__cause__ is not None or root.__context__ is not None:
+        root = root.__cause__ or root.__context__
+    return str(exc) if root is exc else f"{exc} ({type(root).__name__}: {root})"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python run/demo.py", description="kite window with YOLO26n and SegFormer-B0 on the webcam")
-    parser.add_argument("--seg", action="store_true", help="start with segmentation on (it loads in the background)")
+    parser.add_argument("--seg", action="store_true", help="start with segmentation on (both models always load at start)")
     parser.add_argument("--no-yolo", action="store_true", help="start with YOLO obstacle guidance off")
     parser.add_argument("--camera", default="", help="DirectShow name to open (default: the Logitech C270 if it is connected)")
     parser.add_argument("--device", default="", help="torch device for the models (default: cpu)")
@@ -495,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     app = App(
         lambda log: Demo(args, log),
         title="kite",
-        opening="starting: opening the camera and loading YOLO ...",
+        opening="starting: opening the camera and loading YOLO and segmentation ...",
         hint="yolo · seg · status · quit",
         close_note="closing the camera ...",
         shutdown_note="closing the camera ...",

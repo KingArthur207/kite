@@ -92,35 +92,47 @@ def test_the_window_opens_with_yolo_only():
     assert [(t["key"], t["on"]) for t in demo_.toggles()] == [("yolo", False), ("seg", True)]
 
 
-def test_segmentation_loads_once_on_the_frame_thread(monkeypatch):
+def _loaders(monkeypatch, calls, seg=None):
+    def yolo(device=""):
+        calls.append("yolo")
+        return type("P", (), {"segmenter": None, "lights": None})()
+
+    def segmentation(device=""):
+        calls.append("seg")
+        if seg is not None:
+            raise seg
+        return "segmenter", "lights"
+
+    monkeypatch.setattr(demo, "load_perception", yolo)
+    monkeypatch.setattr(demo, "load_segmentation", segmentation)
+
+
+def test_both_models_load_before_anything_runs(monkeypatch):
     calls = []
-    monkeypatch.setattr(demo, "load_segmentation", lambda device="": calls.append(device) or ("seg", "lights"))
+    _loaders(monkeypatch, calls)
     logs = []
     demo_ = _demo(logs)
+    assert demo_.toggles()[0]["note"] == "loading"
     demo_.send("seg")
-    assert calls == []  # nothing loads on the caller's (window) thread
-    assert demo_.toggles()[1]["note"] == "loading"
-    demo_._load_segmentation()
-    assert calls == [""]
-    assert demo_._seg_models == ("seg", "lights")
-    assert demo_.toggles()[1] == {"key": "seg", "label": "Segmentation", "on": True, "note": ""}
+    assert calls == []  # a toggle never loads anything
+    assert demo_._load_models()
+    assert calls == ["yolo", "seg"]
+    assert (demo_._perception.segmenter, demo_._perception.lights) == ("segmenter", "lights")
+    assert [t["note"] for t in demo_.toggles()] == ["", ""]
+    assert ("info", "models ready; on: YOLO, segmentation") in logs
     demo_.toggle("seg")
     demo_.toggle("seg")
-    demo_._load_segmentation()
-    assert calls == [""]
-    assert ("info", "segmentation on") in logs
+    assert calls == ["yolo", "seg"]
 
 
-def test_a_failed_load_shows_on_the_button(monkeypatch):
-    def broken(device=""):
-        raise FileNotFoundError("no weights")
-
-    monkeypatch.setattr(demo, "load_segmentation", broken)
+def test_a_failed_segmentation_load_leaves_yolo_running(monkeypatch):
+    calls = []
+    _loaders(monkeypatch, calls, seg=FileNotFoundError("no weights"))
     logs = []
-    demo_ = _demo(logs)
-    demo_.toggle("seg", True)
-    demo_._load_segmentation()
+    demo_ = _demo(logs, seg=True)
+    assert demo_._load_models()
     assert demo_.toggles()[1]["note"] == "unavailable"
+    assert demo_.toggles()[0]["note"] == ""
     assert ("error", "segmentation unavailable: no weights") in logs
 
 
@@ -164,16 +176,17 @@ def test_the_chest_webcam_goes_around_a_person_close_in_front(monkeypatch):
 
 
 def test_a_failed_import_logs_the_error_underneath(monkeypatch):
-    def wrapped(device=""):
+    try:
         try:
             raise ImportError("cannot import name 'dispatch_model'")
         except ImportError as exc:
             raise RuntimeError("Could not import module 'SegformerForSemanticSegmentation'") from exc
-
-    monkeypatch.setattr(demo, "load_segmentation", wrapped)
+    except RuntimeError as wrapped:
+        error = wrapped
+    calls = []
+    _loaders(monkeypatch, calls, seg=error)
     logs = []
     demo_ = _demo(logs)
-    demo_.toggle("seg", True)
-    demo_._load_segmentation()
+    demo_._load_models()
     assert ("error", "segmentation unavailable: Could not import module 'SegformerForSemanticSegmentation' "
             "(ImportError: cannot import name 'dispatch_model')") in logs

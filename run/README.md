@@ -21,10 +21,11 @@ python run/demo.py                       # same window, webcam, YOLO26n obstacle
 | Both | all of the above, one decision from the ground and the objects together | either, whichever applies |
 
 Both use the same lanes: the ground within 5 m is split into left, center and right, and the walker is sent down the
-clearest. With YOLO on, every detected object (except the walker and signals) blocks the ground under its box, and
+clearest. With YOLO on, every detected object (every person too: the chest camera never sees the walker; signals aside) blocks the ground under its box, and
 an object that covers less than 12 % of a lane is walked past rather than steered around. With segmentation off
-the ground is taken as walkable except under a box. Segmentation loads the first time it is turned on (`--seg` turns it
-on at launch, `--no-yolo` starts with YOLO off). With both off the pane shows the plain camera. A connected Logitech C270 is chosen over the built-in camera. The checkpoints are in `third_party/videotesting/weights/` and come down with a pull. `python run/app.py` is unchanged and still talks only to the drone.
+the ground is taken as walkable except under a box. Both models load at start, one after the other, before any frame is
+guided; the buttons only choose which are used (`--seg` turns segmentation on at launch, `--no-yolo` starts with YOLO
+off). With both off the pane shows the plain camera. A connected Logitech C270 is chosen over the built-in camera. The checkpoints are in `third_party/videotesting/weights/` and come down with a pull. `python run/app.py` is unchanged and still talks only to the drone.
 
 ## app.py: take off, lock onto the person in front, follow them
 
