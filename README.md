@@ -1,7 +1,7 @@
 <h1 align="center">
   <img src="site/public/assets/kite-mark.svg" alt="" width="54" valign="middle">&nbsp;Kite
 </h1>
-
+<p> UN UPDATED README. THIS IS OUT OF DATE PLEASE GO TO DEVPOST </p>
 <p align="center"><b>A guide dog that flies. Kite tells a blind pedestrian what's coming before they reach it.</b></p>
 
 <p align="center">
