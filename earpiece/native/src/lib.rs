@@ -13,11 +13,20 @@
 //! And it owns the sonar's *decisions*: `Sonar` is the per-tick logic of
 //! `sonar.py` (tracks, time-to-contact, urgency, beep scheduling, "Stop."), so
 //! when each warning beep is due no longer depends on Python bytecode.
+//!
+//! And the cue *sounds*: `sounds` is `sounds.py` sample for sample. With both,
+//! `Sonar.start_native` runs the whole warning path (tick, synthesis, placement,
+//! scheduling into the mixer, the stale-perception watchdog) on a native thread,
+//! so a stalled Python interpreter cannot delay a beep.
 
 mod mixer;
+pub mod numpy_rng;
 pub mod sonar;
 mod sonar_py;
+mod sonar_thread;
+pub mod sounds;
 pub mod spatial;
+mod ziggurat;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use mixer::{Cmd, Mixer, Voice};
@@ -37,7 +46,7 @@ struct Core {
 }
 
 #[derive(Default)]
-struct Stats {
+pub(crate) struct Stats {
     blocks: AtomicU64,
     limited_blocks: AtomicU64,
     max_render_ns: AtomicU64,
@@ -49,8 +58,44 @@ struct Stats {
     glitches: AtomicU64,
     last_cb_ns: AtomicU64,
     stream_errors: AtomicU64,
-    dropped_cmds: AtomicU64,
-    now: AtomicU64,
+    pub(crate) dropped_cmds: AtomicU64,
+    pub(crate) now: AtomicU64,
+}
+
+/// What a native producer (the sonar thread) needs to schedule into the mixer
+/// without going through Python: the command ring, the returned-buffer ring and
+/// the published clock.
+#[derive(Clone)]
+pub(crate) struct EngineLink {
+    pub(crate) producer: Arc<Mutex<Producer<Cmd>>>,
+    pub(crate) garbage: Arc<Mutex<Consumer<Vec<f32>>>>,
+    pub(crate) stats: Arc<Stats>,
+    pub(crate) rate: u32,
+}
+
+impl EngineLink {
+    /// The mixer clock in frames, as the audio thread last published it.
+    pub(crate) fn now(&self) -> i64 {
+        self.stats.now.load(Relaxed) as i64
+    }
+
+    pub(crate) fn play(&self, v: Voice) -> bool {
+        let mut p = self.producer.lock().unwrap_or_else(|e| e.into_inner());
+        match p.push(Cmd::Play(v)) {
+            Ok(()) => true,
+            Err(_) => {
+                self.stats.dropped_cmds.fetch_add(1, Relaxed);
+                false
+            }
+        }
+    }
+
+    /// Free the buffers the audio thread handed back (off the real-time thread).
+    pub(crate) fn drain_garbage(&self) {
+        if let Ok(mut g) = self.garbage.try_lock() {
+            while g.pop().is_ok() {}
+        }
+    }
 }
 
 struct DeviceHandle {
@@ -71,14 +116,15 @@ struct Params {
 }
 
 #[pyclass(frozen)]
-struct Engine {
+pub(crate) struct Engine {
     core: Arc<Mutex<Core>>,
-    producer: Mutex<Producer<Cmd>>,
+    producer: Arc<Mutex<Producer<Cmd>>>,
     events: Mutex<Consumer<(u8, u64)>>,
-    garbage: Mutex<Consumer<Vec<f32>>>,
+    garbage: Arc<Mutex<Consumer<Vec<f32>>>>,
     stats: Arc<Stats>,
     device: Mutex<Option<DeviceHandle>>,
     params: Mutex<Params>,
+    recording: Arc<Mutex<Vec<f32>>>,
     epoch: Instant,
     rate: u32,
 }
@@ -148,6 +194,69 @@ impl Engine {
             muted: p.muted,
         });
     }
+
+    pub(crate) fn link(&self) -> EngineLink {
+        EngineLink {
+            producer: self.producer.clone(),
+            garbage: self.garbage.clone(),
+            stats: self.stats.clone(),
+            rate: self.rate,
+        }
+    }
+}
+
+/// The native null output: renders a block every block period on its own thread,
+/// exactly like the device callback (same lock discipline, same stats), and keeps up
+/// to `max` interleaved samples of what it rendered. No sound device is opened.
+fn null_output(
+    core: Arc<Mutex<Core>>,
+    stats: Arc<Stats>,
+    rec: Arc<Mutex<Vec<f32>>>,
+    epoch: Instant,
+    rate: u32,
+    block: u32,
+    max: usize,
+    stop: mpsc::Receiver<()>,
+) {
+    let period = std::time::Duration::from_nanos(block as u64 * 1_000_000_000 / rate as u64);
+    let expected_ns = period.as_nanos() as u64;
+    let mut buf = vec![0.0f32; block as usize * 2];
+    let mut next = Instant::now();
+    loop {
+        let t0 = Instant::now();
+        match core.try_lock() {
+            Ok(mut g) => {
+                let Core { mixer, cmds } = &mut *g;
+                let b = mixer.render(&mut buf, cmds);
+                let now_frames = mixer.now;
+                drop(g);
+                record(&stats, t0, epoch, expected_ns, b, now_frames);
+            }
+            Err(_) => {
+                buf.fill(0.0); // an offline render holds the lock: never block here
+                stats.contended.fetch_add(1, Relaxed);
+            }
+        }
+        if max > 0 {
+            let mut r = rec.lock().unwrap_or_else(|e| e.into_inner());
+            let room = max.saturating_sub(r.len()).min(buf.len());
+            r.extend_from_slice(&buf[..room]);
+        }
+        next += period;
+        let now = Instant::now();
+        let wait = if next > now {
+            next - now
+        } else {
+            if now - next > std::time::Duration::from_millis(200) {
+                next = now; // starved for a long time: do not try to catch up in a burst
+            }
+            std::time::Duration::ZERO
+        };
+        match stop.recv_timeout(wait) {
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            _ => return, // close() or the Engine is gone
+        }
+    }
 }
 
 fn pick_device(host: &cpal::Host, substr: &str) -> Result<(cpal::Device, String), String> {
@@ -200,9 +309,9 @@ impl Engine {
         );
         Engine {
             core: Arc::new(Mutex::new(Core { mixer, cmds: cc })),
-            producer: Mutex::new(cp),
+            producer: Arc::new(Mutex::new(cp)),
             events: Mutex::new(ec),
-            garbage: Mutex::new(gc),
+            garbage: Arc::new(Mutex::new(gc)),
             stats: Arc::new(Stats::default()),
             device: Mutex::new(None),
             params: Mutex::new(Params {
@@ -212,9 +321,57 @@ impl Engine {
                 duck,
                 muted: false,
             }),
+            recording: Arc::new(Mutex::new(Vec::new())),
             epoch: Instant::now(),
             rate,
         }
+    }
+
+    /// Run the mixer in real time on a native thread with no sound device (the clock
+    /// advances a `block` at a time, like a device callback). Keeps the first
+    /// `record_s` seconds of output for `take_recording`. Returns ("null", 2, block).
+    #[pyo3(signature = (block=512, record_s=0.0))]
+    fn open_null(&self, py: Python<'_>, block: u32, record_s: f64) -> PyResult<(String, u16, u32)> {
+        if block == 0 || block > 16384 {
+            return Err(PyValueError::new_err("block must be in 1..=16384"));
+        }
+        self.close(py);
+        let max = if record_s.is_finite() && record_s > 0.0 {
+            (record_s * self.rate as f64) as usize * 2
+        } else {
+            0
+        };
+        self.recording
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        let (core, stats, rec) = (
+            self.core.clone(),
+            self.stats.clone(),
+            self.recording.clone(),
+        );
+        let (epoch, rate) = (self.epoch, self.rate);
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        let thread = std::thread::Builder::new()
+            .name("kite-audio-null".into())
+            .spawn(move || null_output(core, stats, rec, epoch, rate, block, max, stop_rx))
+            .map_err(|e| PyRuntimeError::new_err(format!("spawn: {e}")))?;
+        self.stats.last_cb_ns.store(0, Relaxed);
+        *self.device.lock().unwrap() = Some(DeviceHandle {
+            stop: stop_tx,
+            thread: Some(thread),
+            name: "null".into(),
+            channels: 2,
+            buffer: block,
+        });
+        Ok(("null".into(), 2, block))
+    }
+
+    /// What the null output has rendered so far (interleaved stereo float32 LE
+    /// bytes); the buffer is emptied.
+    fn take_recording<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let v = std::mem::take(&mut *self.recording.lock().unwrap_or_else(|e| e.into_inner()));
+        f32_bytes(py, &v)
     }
 
     // ---------------------------------------------------------------- control
@@ -631,6 +788,99 @@ fn fractional_delay<'py>(
     f32_bytes(py, &out)
 }
 
+// -------------------------------------------------------------------- cue synthesis
+fn profile_arg(profile: &str) -> PyResult<sounds::Profile> {
+    sounds::Profile::parse(profile).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "unknown sound profile {profile:?}; expected 'standard' or 'gentle'"
+        ))
+    })
+}
+
+fn finite(name: &str, v: f64) -> PyResult<f64> {
+    if v.is_finite() {
+        Ok(v)
+    } else {
+        Err(PyValueError::new_err(format!(
+            "{name} must be finite, got {v}"
+        )))
+    }
+}
+
+/// `sounds.proximity_cue(kind, freq)` under `profile`: mono float32 LE bytes at 48 kHz,
+/// sample-identical to the numpy/scipy reference. Releases the GIL.
+#[pyfunction]
+#[pyo3(signature = (kind, freq, profile="standard"))]
+fn synth_proximity<'py>(
+    py: Python<'py>,
+    kind: &str,
+    freq: f64,
+    profile: &str,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let p = profile_arg(profile)?;
+    let freq = finite("freq", freq)?;
+    if freq <= 0.0 {
+        return Err(PyValueError::new_err("freq must be positive"));
+    }
+    let class = sounds::cue_class(kind);
+    let out = py.detach(move || sounds::class_cue(class, freq, p));
+    f32_bytes(py, &out)
+}
+
+/// `sounds.beacon_tick(region, bearing)` under `profile` (mono float32 LE bytes).
+#[pyfunction]
+#[pyo3(signature = (region, bearing, profile="standard"))]
+fn synth_beacon<'py>(
+    py: Python<'py>,
+    region: &str,
+    bearing: f64,
+    profile: &str,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let p = profile_arg(profile)?;
+    let bearing = finite("bearing", bearing)?;
+    let region = region.to_string();
+    let out = py
+        .detach(move || sounds::beacon_tick(&region, bearing, p))
+        .ok_or_else(|| PyValueError::new_err("region must be on, near, side or behind"))?;
+    f32_bytes(py, &out)
+}
+
+/// Any other cue of `sounds.py` by name: `"person"`, `"vehicle"`, `"obstacle"` and
+/// `"drop"` take `[freq]` and the profile; the status cues and building blocks take
+/// their numeric arguments in order (see `sounds::status`). Mono float32 LE bytes.
+#[pyfunction]
+#[pyo3(signature = (name, args=Vec::new(), profile="standard"))]
+fn synth<'py>(
+    py: Python<'py>,
+    name: &str,
+    args: Vec<f64>,
+    profile: &str,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let p = profile_arg(profile)?;
+    for &a in &args {
+        finite("argument", a)?;
+    }
+    let name = name.to_string();
+    let out = py.detach(move || {
+        let class = match name.as_str() {
+            "person" => Some(sounds::CueClass::Person),
+            "vehicle" => Some(sounds::CueClass::Vehicle),
+            "obstacle" => Some(sounds::CueClass::Obstacle),
+            "drop" => Some(sounds::CueClass::Drop),
+            _ => None,
+        };
+        match class {
+            Some(c) => args
+                .first()
+                .filter(|&&f| f > 0.0)
+                .map(|&f| sounds::class_cue(c, f, p)),
+            None => sounds::status(&name, &args),
+        }
+    });
+    let out = out.ok_or_else(|| PyValueError::new_err("unknown cue name or wrong arguments"))?;
+    f32_bytes(py, &out)
+}
+
 #[pymodule]
 fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
@@ -639,6 +889,10 @@ fn kite_audio(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(render_binaural, m)?)?;
     m.add_function(wrap_pyfunction!(render_binaural_batch, m)?)?;
     m.add_function(wrap_pyfunction!(fractional_delay, m)?)?;
+    m.add_function(wrap_pyfunction!(synth_proximity, m)?)?;
+    m.add_function(wrap_pyfunction!(synth_beacon, m)?)?;
+    m.add_function(wrap_pyfunction!(synth, m)?)?;
+    m.add("SOUND_RATE", sounds::RATE)?;
     m.add("SINC_TAPS_MAX", spatial::MAX_SINC_TAPS)?;
     m.add("BUS_CUE", mixer::BUS_CUE)?;
     m.add("BUS_ALERT", mixer::BUS_ALERT)?;

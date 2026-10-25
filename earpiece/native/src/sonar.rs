@@ -293,6 +293,12 @@ impl Sonar {
         }
     }
 
+    /// `sonar.critical_pitch_q(cfg)`: the quantised pitch of every critical beep.
+    pub fn critical_pitch_q(&self) -> i64 {
+        let c = &self.cfg;
+        pround((c.pitch_low_hz + (c.pitch_high_hz - c.pitch_low_hz) * 1.0) / 25.0) * 25
+    }
+
     /// `Engine.samples`: seconds -> frames, `int(round(seconds * rate))`.
     pub fn samples(&self, seconds: f64) -> i64 {
         pround(seconds * self.rate as f64)

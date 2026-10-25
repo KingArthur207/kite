@@ -40,15 +40,25 @@ Design rules (each one traced to a source; measurements in tests/test_sounds.py)
     the pitch survives as residue pitch of the remaining harmonics. Gentle
     shaping fades out with urgency and is gone at the critical pitch, so an
     imminent collision always sounds at full strength.
+
+Engines: when the Rust extension `kite_audio` is built (and KITE_AUDIO_ENGINE is not
+"python"), every public cue below is synthesised by its port in native/src/sounds.rs,
+sample for sample the same as the numpy/scipy code here (tests/test_rust_sounds.py),
+1.5 to 2.6x faster (libm's sin dominates both) and with the GIL released. The native
+sonar thread (KITE_SONAR_THREAD=native) synthesises its beeps there directly. Inside
+`with sounds.reference():` this module's own code runs instead (the parity tests, and
+the fallback when the extension is missing).
 """
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import math
 import os
 import re
 import sys
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
 from scipy.signal import butter, lfilter
@@ -59,6 +69,45 @@ PROFILES = ("standard", "gentle")
 _profile = os.environ.get("KITE_SOUND_PROFILE", "standard").strip().lower()
 if _profile not in PROFILES:
     _profile = "standard"
+
+
+def _load_native():
+    """The kite_audio module if it is built with the cue synthesiser, else None."""
+    if os.environ.get("KITE_AUDIO_ENGINE", "auto").strip().lower() == "python":
+        return None
+    try:
+        import kite_audio
+    except ImportError:
+        return None
+    return kite_audio if hasattr(kite_audio, "synth") else None
+
+
+_ka = _load_native()
+NATIVE = _ka is not None              # True: cues are synthesised in Rust
+_reference = contextvars.ContextVar("kite_sounds_reference", default=False)
+_profile_listeners: list[Callable[[str], None]] = []   # e.g. the native sonar thread's cue cache
+
+
+@contextlib.contextmanager
+def reference():
+    """Synthesise with this module's numpy/scipy code inside the block (per thread)."""
+    token = _reference.set(True)
+    try:
+        yield
+    finally:
+        _reference.reset(token)
+
+
+def _native():
+    return _ka if _ka is not None and not _reference.get() else None
+
+
+def _f32(raw: bytes) -> np.ndarray:
+    return np.frombuffer(raw, dtype="<f4").astype(np.float32)
+
+
+def _synth(name: str, *args: float) -> np.ndarray:
+    return _f32(_ka.synth(name, [float(a) for a in args], _profile))
 
 # Loudness targets (LU, BS.1770 K-weighted, one cue integrated over a 400 ms window).
 SONAR_TARGET_LU = -21.0           # the mean of the old kinds at equal peak, so overall level is unchanged
@@ -155,6 +204,18 @@ def set_profile(name: str) -> None:
         for fn in ("_cue_render", "_beacon_render"):
             if hasattr(getattr(mod, fn, None), "cache_clear"):
                 getattr(mod, fn).cache_clear()
+    for fn in list(_profile_listeners):
+        fn(name)
+
+
+def on_profile_change(fn: Callable[[str], None]) -> None:
+    """Call fn(profile) after every set_profile (native caches that must re-render)."""
+    _profile_listeners.append(fn)
+
+
+def remove_profile_listener(fn: Callable[[str], None]) -> None:
+    with contextlib.suppress(ValueError):
+        _profile_listeners.remove(fn)
 
 
 def _urgency(pitch_hz: float) -> float:
@@ -198,6 +259,8 @@ def _finish(x: np.ndarray, target_lu: float, amount: float, fade_s: float = 0.00
 
 # ---------------------------------------------------------------- building blocks (status cues)
 def sine_pip(freq: float, dur_s: float = 0.07, peak: float = 0.5) -> np.ndarray:
+    if _native():
+        return _synth("sine_pip", freq, dur_s, peak)
     t = _t(dur_s)
     x = np.sin(2 * math.pi * freq * t) + 0.25 * np.sin(2 * math.pi * 2 * freq * t)
     return _norm(x * _env(t.size, decay_tau_s=dur_s * 0.6), peak)
@@ -205,6 +268,8 @@ def sine_pip(freq: float, dur_s: float = 0.07, peak: float = 0.5) -> np.ndarray:
 
 def knock(freq: float, dur_s: float = 0.09, peak: float = 0.5) -> np.ndarray:
     """Marimba-ish: fundamental + inharmonic 3.9x / 9.2x partials that die fast."""
+    if _native():
+        return _synth("knock", freq, dur_s, peak)
     t = _t(dur_s)
     x = (np.sin(2 * math.pi * freq * t) * np.exp(-t / (dur_s * 0.5))
          + 0.5 * np.sin(2 * math.pi * 3.9 * freq * t) * np.exp(-t / 0.012)
@@ -214,6 +279,8 @@ def knock(freq: float, dur_s: float = 0.09, peak: float = 0.5) -> np.ndarray:
 
 def buzz(freq: float, dur_s: float = 0.09, peak: float = 0.5) -> np.ndarray:
     """Band-limited square-ish wave with a quick upward bend: reads as 'machine, urgent'."""
+    if _native():
+        return _synth("buzz", freq, dur_s, peak)
     t = _t(dur_s)
     f = freq * (1.0 + 0.06 * np.minimum(t / 0.03, 1.0))
     ph = 2 * math.pi * np.cumsum(f) / RATE
@@ -222,6 +289,8 @@ def buzz(freq: float, dur_s: float = 0.09, peak: float = 0.5) -> np.ndarray:
 
 
 def glide(f0: float, f1: float, dur_s: float = 0.12, peak: float = 0.5) -> np.ndarray:
+    if _native():
+        return _synth("glide", f0, f1, dur_s, peak)
     t = _t(dur_s)
     f = f0 * (f1 / f0) ** (t / t[-1])
     ph = 2 * math.pi * np.cumsum(f) / RATE
@@ -255,6 +324,8 @@ def _click(n: int, seed: int) -> np.ndarray:
 def person_cue(freq: float) -> np.ndarray:
     """Wooden knock: bar partials 1 : 2.76 : 3.9 (inharmonic, decaying faster the higher they
     are) + a mallet click. Short, percussive and soft-edged: the least alarming cue."""
+    if _native():
+        return _synth("person", freq)
     amount = gentle_amount(freq)
     f = freq * 0.8
     t = _t(_dur(0.08, amount))
@@ -270,6 +341,8 @@ def person_cue(freq: float) -> np.ndarray:
 def vehicle_cue(freq: float) -> np.ndarray:
     """Machine buzz: band-limited sawtooth (all harmonics, 1/k) with a quick upward bend and
     60 Hz amplitude modulation (roughness = 'alarm'). Sustained, so it reads as engine."""
+    if _native():
+        return _synth("vehicle", freq)
     amount = gentle_amount(freq)
     f0 = freq * 0.75
     t = _t(_dur(0.09, amount))
@@ -284,6 +357,8 @@ def vehicle_cue(freq: float) -> np.ndarray:
 def obstacle_cue(freq: float) -> np.ndarray:
     """Clean pip: harmonics 1-6 falling ~4.5 dB/harmonic, flat sustain, no modulation. The
     steady envelope (vs. the knock's fast decay) is what tells pole from person."""
+    if _native():
+        return _synth("obstacle", freq)
     amount = gentle_amount(freq)
     t = _t(_dur(0.07, amount))
     ph = 2 * math.pi * freq * t
@@ -294,6 +369,8 @@ def obstacle_cue(freq: float) -> np.ndarray:
 
 def drop_cue(freq: float) -> np.ndarray:
     """Falling glide, 1.2f -> 0.6f (one octave down): 'the ground drops away'. Harmonics 1-4."""
+    if _native():
+        return _synth("drop", freq)
     amount = gentle_amount(freq)
     t = _t(_dur(0.12, amount))
     f0, f1 = freq * 1.2, freq * 0.6
@@ -311,6 +388,8 @@ DROP_KINDS = ("stairs_down", "curb", "drop", "stairs", "step")
 
 def proximity_cue(kind: str, freq: float) -> np.ndarray:
     """The repeated sonar pip for one object class at a given pitch (urgency)."""
+    if (ka := _native()) is not None:
+        return _f32(ka.synth_proximity(kind, float(freq), _profile))
     if kind in PERSON_KINDS:
         return person_cue(freq)
     if kind in VEHICLE_KINDS:
@@ -378,6 +457,10 @@ def beacon_tick(region: str, bearing_deg: float = 0.0) -> np.ndarray:
     continuous brightness, as in Ahmetovic et al.'s IS+P / MS+P); 'near' and 'side' are a
     rising pair when the waypoint is to the right and a falling pair when it is to the left;
     'behind' is the turn-around triple pulse."""
+    if (ka := _native()) is not None:
+        if region not in BEACON_PITCH_HZ:
+            raise KeyError(region)
+        return _f32(ka.synth_beacon(region, float(bearing_deg), _profile))
     if region == "behind":
         return beacon_behind()
     amount = gentle_amount(None)
@@ -403,6 +486,8 @@ def beacon_behind() -> np.ndarray:
     energy sits in Blauert's 0.72-1.8 kHz back band, with no bright partials. Three beats and
     a dull timbre set it apart from the bright double 'on' ping and from both turn contours,
     in mono and even when front and back are confused."""
+    if _native():
+        return _synth("beacon_behind")
     lp = butter(2, 1800.0, btype="lowpass", fs=RATE)
     f = BEACON_PITCH_HZ["behind"]
     notes = []
@@ -415,6 +500,8 @@ def beacon_behind() -> np.ndarray:
 
 # ---------------------------------------------------------------- status
 def chime(*freqs: float, step_s: float = 0.09, peak: float = 0.42) -> np.ndarray:
+    if _native() and freqs:
+        return _synth("chime", step_s, peak, *freqs)
     parts = []
     for i, f in enumerate(freqs):
         parts.append(knock(f, 0.16 if i == len(freqs) - 1 else step_s, peak))
@@ -422,56 +509,78 @@ def chime(*freqs: float, step_s: float = 0.09, peak: float = 0.42) -> np.ndarray
 
 
 def arrived() -> np.ndarray:
+    if _native():
+        return _synth("arrived")
     return chime(784, 988, 1175, 1568)
 
 
 def ready() -> np.ndarray:
+    if _native():
+        return _synth("ready")
     return chime(659, 988)
 
 
 def listening() -> np.ndarray:
     """Rising chirp: 'mic is live, speak now'."""
+    if _native():
+        return _synth("listening")
     return glide(600, 1300, 0.16, 0.4)
 
 
 def heard() -> np.ndarray:
     """Short same-pitch double blip: 'got it'. Level, not rising: A5 -> D6 rising pips were
     the right-turn beacon's exact notes and contour (the dull side ping is nearly a sine)."""
+    if _native():
+        return _synth("heard")
     return _seq(sine_pip(1319, 0.05, 0.38), _gap(0.035), sine_pip(1319, 0.06, 0.38))
 
 
 def error() -> np.ndarray:
     """Low soft buzz: 'did not catch that' / 'not available'."""
+    if _native():
+        return _synth("error")
     return buzz(196, 0.22, 0.4)
 
 
 def sensor_lost() -> np.ndarray:
     """Descending minor third, twice: 'obstacle detection is down'."""
+    if _native():
+        return _synth("sensor_lost")
     return _seq(sine_pip(784, 0.1, 0.45), _gap(0.03), sine_pip(659, 0.14, 0.45),
                 _gap(0.12), sine_pip(784, 0.1, 0.45), _gap(0.03), sine_pip(659, 0.14, 0.45))
 
 
 def sensor_back() -> np.ndarray:
+    if _native():
+        return _synth("sensor_back")
     return _seq(sine_pip(659, 0.08, 0.42), _gap(0.03), sine_pip(784, 0.12, 0.42))
 
 
 def critical_alarm() -> np.ndarray:
     """Three fast high buzzes. Only for imminent collision."""
+    if _native():
+        return _synth("critical_alarm")
     b = buzz(1320, 0.06, 0.6)
     return _seq(b, _gap(0.035), b, _gap(0.035), b)
 
 
 def crossing_go() -> np.ndarray:
     """Walk signal on: steady rapid ticks like an accessible pedestrian signal."""
+    if _native():
+        return _synth("crossing_go")
     return _seq(*[x for _ in range(4) for x in (knock(2000, 0.03, 0.4), _gap(0.07))])
 
 
 def crossing_wait() -> np.ndarray:
     """Don't walk: slow low locator tone."""
+    if _native():
+        return _synth("crossing_wait")
     return _seq(sine_pip(440, 0.05, 0.4), _gap(0.4), sine_pip(440, 0.05, 0.4))
 
 
 def ear_check(side: str) -> np.ndarray:
+    if _native():
+        return _synth("ear_check_left" if side == "left" else "ear_check_right")
     return knock(880 if side == "left" else 1320, 0.12, 0.5)
 
 
@@ -486,6 +595,8 @@ def nav_chime(text: str = "") -> np.ndarray:
     contour so it never contradicts the words: a rising pair before a right turn, a falling
     pair before a left, and a single knock when the instruction names no side."""
     side = turn_side(text)
+    if _native():
+        return _synth("nav_chime", side)
     if side == 0:
         return chime(1175, peak=0.32)
     return chime(*turn_pitches(988.0, side), step_s=0.07, peak=0.32)

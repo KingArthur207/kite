@@ -200,6 +200,13 @@ class Sonar:
         for k in [k for k, t in self.tracks.items() if source is None or t.source == source]:
             del self.tracks[k]
 
+    # The stale-perception watchdog of this engine is the app's (Earpiece._watchdog);
+    # the native sonar thread runs its own (rust_sonar.RustSonar).
+    native_watchdog = False
+
+    def note_perception(self, now: float | None = None) -> None:
+        """A frame or heartbeat arrived (only the native watchdog needs to be told)."""
+
     # ------------------------------------------------------------------ urgency
     def _score(self, t: Track) -> None:
         c = self.cfg
@@ -341,10 +348,36 @@ def use_rust(cfg: SonarCfg) -> bool:
     return choice == "rust" or (choice == "auto" and rust_sonar.available())
 
 
-def create(engine: Engine, cfg: SonarCfg, speak: Callable[..., object] | None = None, log=print):
-    """The selected sonar: the Rust decision core (rust_sonar.RustSonar) or this module's Sonar.
-    Both take the same inputs and produce the same cue stream."""
+def use_thread(cfg: SonarCfg, engine) -> tuple[bool, str]:
+    """KITE_SONAR_THREAD (SonarCfg.thread): "native" ticks the Rust sonar on its own thread
+    when everything it needs is there. Returns (native, why not)."""
+    choice = (getattr(cfg, "thread", None) or "python").strip().lower()
+    if choice not in ("python", "native"):
+        raise ValueError(f"sonar thread must be native or python, not {cfg.thread!r}")
+    if choice == "python":
+        return False, ""
+    from . import rust_sonar
+    if not use_rust(cfg):
+        return False, "the Rust sonar is not selected or not built"
+    if not rust_sonar.native_available():
+        return False, "kite_audio predates the native sonar thread"
+    if getattr(engine, "_e", None) is None:
+        return False, "the audio engine is the Python one"
+    if engine.rate != sounds.RATE:
+        return False, f"the native thread renders at {sounds.RATE} Hz, the engine runs at {engine.rate}"
+    return True, ""
+
+
+def create(engine: Engine, cfg: SonarCfg, speak: Callable[..., object] | None = None, log=print,
+           perception_stale_s: float = 1.5):
+    """The selected sonar: the Rust decision core (rust_sonar.RustSonar, ticked from Python or
+    on its native thread) or this module's Sonar. All take the same inputs and produce the
+    same cue stream."""
+    thread, why = use_thread(cfg, engine)
+    if (getattr(cfg, "thread", None) or "").strip().lower() == "native" and not thread:
+        log(f"[sonar] native thread unavailable ({why}): ticking from the Python control loop")
     if use_rust(cfg):
         from .rust_sonar import RustSonar
-        return RustSonar(engine, cfg, speak=speak, log=log)
+        return RustSonar(engine, cfg, speak=speak, log=log, thread=thread,
+                         perception_stale_s=perception_stale_s)
     return Sonar(engine, cfg, speak=speak, log=log)

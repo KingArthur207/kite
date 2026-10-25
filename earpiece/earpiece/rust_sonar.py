@@ -7,20 +7,30 @@ the two-source cap, beep scheduling, "Stop." and label decisions), and the parit
 tests in tests/test_rust_sonar.py drive both with identical frames and require
 identical beeps, gains, buses, pitches, bearings and speech.
 
-What stays in Python is the playback of what Rust decided: looking up the rendered
-cue (`sonar._cue`, pre-warmed for every critical beep) and handing it to the engine,
-plus the speak callback. `tracks` and `tick()` return read-only snapshots
-(`kite_audio.TrackState`) with the attributes of `sonar.Track`.
+Two ways to run it:
 
-Select with KITE_SONAR_ENGINE=rust|python (default: rust when the extension is built).
+  * ticked from Python (default, KITE_SONAR_THREAD=python): the app's 50 Hz control
+    loop calls tick(); Rust decides, and this module plays what it decided (the
+    rendered cue `sonar._cue`, pre-warmed for every critical beep) and calls speak.
+  * native thread (KITE_SONAR_THREAD=native, needs the Rust audio engine): a Rust
+    thread ticks every 20 ms, synthesises and places each beep in Rust (sounds.rs,
+    sample-identical to sounds.py) and schedules it straight into the mixer, and runs
+    the stale-perception watchdog. Python only feeds frames; tick() then just polls
+    the "speak" requests and watchdog transitions out of a lock-free ring. A stalled
+    interpreter can delay what Kite says, but not a beep (tests/test_sonar_thread.py).
+
+`tracks` and `tick()` return read-only snapshots (`kite_audio.TrackState`) with the
+attributes of `sonar.Track`. Select the decisions with KITE_SONAR_ENGINE=rust|python
+(default: rust when the extension is built).
 """
 
 from __future__ import annotations
 
+import collections
 import time
 from typing import Callable
 
-from . import sonar as sonar_mod
+from . import sonar as sonar_mod, sounds
 from .config import SonarCfg
 from .events import Obstacle
 
@@ -30,10 +40,16 @@ except ImportError:            # extension not built: the Python sonar is used i
     _ka = None
 
 _I64 = (-(2 ** 63), 2 ** 63 - 1)
+TICK_PERIOD_S = 0.02           # the native thread's step, the Python control loop's period
 
 
 def available() -> bool:
     return _ka is not None and hasattr(_ka, "Sonar")
+
+
+def native_available() -> bool:
+    """kite_audio has the native sonar thread (and the cue synthesiser it needs)."""
+    return available() and hasattr(_ka.Sonar, "start_native") and hasattr(_ka, "synth")
 
 
 def _ob(o: Obstacle) -> tuple:
@@ -44,7 +60,8 @@ def _ob(o: Obstacle) -> tuple:
 class RustSonar:
     native = True
 
-    def __init__(self, engine, cfg: SonarCfg, speak: Callable[..., object] | None = None, log=print):
+    def __init__(self, engine, cfg: SonarCfg, speak: Callable[..., object] | None = None, log=print,
+                 thread: bool = False, perception_stale_s: float = 1.5, prewarm: bool = True):
         if not available():
             raise RuntimeError("kite_audio extension is not built (or predates the Rust sonar)")
         self.engine = engine
@@ -52,6 +69,56 @@ class RustSonar:
         self.log = log
         self._s = _ka.Sonar(engine.rate, cfg)
         self.speak = speak                 # speak(text, priority, key=, ttl=)
+        self.thread = False                # True: ticks on the native thread
+        self._perception: collections.deque = collections.deque()
+        if thread:
+            self.start_native(perception_stale_s, prewarm=prewarm)
+
+    # ------------------------------------------------------------------ native thread
+    def start_native(self, perception_stale_s: float = 1.5, prewarm: bool = True) -> None:
+        if not native_available():
+            raise RuntimeError("kite_audio predates the native sonar thread")
+        eng = getattr(self.engine, "_e", None)
+        if eng is None:
+            raise RuntimeError("the native sonar thread needs the Rust audio engine")
+        self._s.start_native(eng, time.monotonic(), TICK_PERIOD_S, perception_stale_s,
+                             sounds.profile(), prewarm)
+        self.thread = True
+        sounds.on_profile_change(self._s.set_profile)
+
+    def close(self) -> None:
+        """Stop the native thread (if any). Safe to call twice."""
+        if self.thread:
+            self.thread = False
+            sounds.remove_profile_listener(self._s.set_profile)
+            self._s.stop_native()
+
+    def native_step(self, now: float) -> None:
+        """Run one native step on this thread (deterministic tests): what the native thread
+        does every period. poll() then hands out what it decided to say."""
+        self._s.set_profile(sounds.profile())       # a no-op unless the profile changed
+        self._s.native_step(self.engine._e, now)
+
+    @property
+    def native_watchdog(self) -> bool:
+        """True when the stale-perception watchdog runs natively (the app only announces)."""
+        return self.thread
+
+    @property
+    def perception_ok(self) -> bool | None:
+        return self._s.perception_ok
+
+    def note_perception(self, now: float | None = None) -> None:
+        self._s.note_perception(time.monotonic() if now is None else now)
+
+    def take_perception_events(self) -> list[tuple[bool, bool]]:
+        """Native watchdog transitions since the last call: (ok, first), oldest first."""
+        out = list(self._perception)
+        self._perception.clear()
+        return out
+
+    def native_stats(self) -> dict:
+        return self._s.native_stats()
 
     # ------------------------------------------------------------------ flags
     @property
@@ -93,8 +160,12 @@ class RustSonar:
 
     # ------------------------------------------------------------------ tick
     def tick(self, now: float | None = None) -> list:
-        """Call ~50 Hz. Rust decides; this plays what it decided, in the same order
-        Python's Sonar.tick would. Returns the sonified tracks (snapshots)."""
+        """Call ~50 Hz. Python-ticked: Rust decides, this plays what it decided, in the
+        same order Python's Sonar.tick would. Native thread: the beeps are already
+        scheduled; this hands the queued speech to speak() and returns the tracks the
+        native thread last sonified. Returns the sonified tracks (snapshots)."""
+        if self.thread:
+            return self._poll()
         now = time.monotonic() if now is None else now
         eng = self.engine
         chosen, cues = self._s.tick(now, int(eng.now))
@@ -108,5 +179,28 @@ class RustSonar:
                 self._speak(text, priority, key=key, ttl=ttl)
         return chosen
 
+    def poll(self) -> list:
+        """Dispatch what native steps queued (speech, watchdog transitions); return the
+        tracks the last native step sonified."""
+        return self._poll()
+
+    def _poll(self) -> list:
+        chosen, events = self._s.poll()
+        for e in events:
+            if e[0] == "say":
+                if self._speak is not None:
+                    _, text, priority, key, ttl = e
+                    self._speak(text, priority, key=key, ttl=ttl)
+            else:
+                _, ok, first, _at = e
+                self._perception.append((ok, first))
+        return chosen
+
     def summary(self) -> list[dict]:
         return sonar_mod.summarize(self._s.tracks())
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass

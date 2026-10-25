@@ -49,6 +49,10 @@ class SonarCfg:
     engine: str = field(default_factory=lambda: os.environ.get("KITE_SONAR_ENGINE", "auto"))
     # where the per-tick decisions run: "rust" (kite_audio.Sonar, identical cue stream),
     # "python" (sonar.py), or "auto" = rust when the extension is built
+    thread: str = field(default_factory=lambda: os.environ.get("KITE_SONAR_THREAD", "python"))
+    # who ticks the Rust sonar: "python" (the app's 50 Hz control loop) or "native" (a Rust
+    # thread that also synthesises and schedules the beeps, so a Python stall cannot delay
+    # one; needs the Rust audio engine; falls back to "python" when unavailable)
     walk_speed_mps: float = 1.2       # assumed closing speed for static obstacles
     corridor_half_width_m: float = 0.55   # half shoulder width + margin
     corridor_margin_m: float = 0.35       # soft edge: partial urgency just outside the corridor
