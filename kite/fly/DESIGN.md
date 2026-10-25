@@ -176,7 +176,7 @@ following. It ships only if it beats kite's own yaw law (section 7). Shared cons
   | dec_tau_yaw_ms | 10 | 150 | log | 80 |
   | dec_deadzone | 0 | 10 | lin | 0.5 |
 
-  - The names and bounds match `data/reference/` (the previously trained values plus their readout
+  - The names and bounds match `data/reference/` (kite's earlier trained values, v1 and smooth, plus their readout
     normalization `norm`), so those load as the `FLY-YAW-PREV` arm and seed the fine-tune.
 - **`calibrate.py` (FLY-YAW-HAND):**
   1. Show a spot at ±30, ±18, ±10, ±4, 0° and sizes 0.6 / 1.0 / 1.5.

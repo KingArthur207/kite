@@ -76,7 +76,7 @@ log = logging.getLogger("kite.follow_behind")
 # ------------------------------------------------------------------ settings
 @dataclass
 class BehindCfg:
-    # The defaults are the settings the follow flew well with on the real Tello (on-site config, step 4).
+    # The defaults are the settings the follow flew well with on the real Tello.
     # Geometry (the Tello camera is fixed, +-21 deg vertical view): at 1.8 m behind the head and shoulders are in
     # frame (shoulders come into view from ~1.6 m behind); at 1.0 m only the head is.
     distance_m: float = 1.8  # horizontal distance behind the person

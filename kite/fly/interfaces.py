@@ -29,7 +29,7 @@ BRAIN_FILE = DATA_DIR / "pursuit_core1.npz"  # MaleCNS v1.0 pursuit subgraph, 1,
 # only: neither passed G3 (DESIGN section 11), so kite's own yaw law stays the default.
 TRAINED_FILE = DATA_DIR / "fly_yaw.json"  # the kite-retuned fly (FLY-YAW, size-blind, CMA seed 1 gen 50)
 PD_FILE = DATA_DIR / "pred_pd.json"  # the CMA-tuned PRED-PD gains (kp 2.33, kd 0.09, deadband 1.52 deg)
-REFERENCE_DIR = DATA_DIR / "reference"  # the previously trained yaw parameters and their readout calibration
+REFERENCE_DIR = DATA_DIR / "reference"  # the earlier trained yaw parameters (v1, smooth) and their readout calibration
 PREV_PARAMS = REFERENCE_DIR / "fly_yaw_prev_smooth.json"
 PREV_CALIBRATION = REFERENCE_DIR / "fly_calibration_prev.json"
 
@@ -57,7 +57,7 @@ ARMS = ("KITE-LAW", "KITE-LAW-CMA", "PRED-PD", "FLY-YAW-HAND", "FLY-YAW-PREV", "
 #   PRED-PD       ablation: FlySteer's latency-compensating filter and stick conditioning around a classical PD
 #                 (yaw = kp * theta_hat + kd * dtheta_hat), CMA-tuned; separates "the fly helps" from "prediction helps"
 #   FLY-YAW-HAND  fly brain with the hand (ridge) calibration of the readout, untrained
-#   FLY-YAW-PREV  fly brain with the previously trained yaw parameters (REFERENCE_DIR), not retuned for kite
+#   FLY-YAW-PREV  fly brain with kite's earlier trained yaw parameters (smooth, REFERENCE_DIR), before the retune
 #   FLY-YAW       fly brain fine-tuned for kite (the candidate to ship)
 
 
