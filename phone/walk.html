@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Walk</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.css" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font: 15px/1.4 "Segoe UI", system-ui, sans-serif; color: #1c1917; background: #e7e5e4; }
+    #map { position: fixed; inset: 0; }
+    .card {
+      position: fixed; top: 16px; left: 16px; z-index: 2;
+      width: min(22.5rem, calc(100vw - 32px));
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      padding: 16px 16px 12px;
+      background: rgba(255, 255, 255, 0.94);
+      border-radius: 16px;
+      box-shadow: 0 8px 28px rgba(28, 25, 23, 0.16);
+      backdrop-filter: blur(8px);
+    }
+    .card h1 { margin: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; }
+    .card .lead { margin: 4px 0 12px; font-size: 0.82rem; color: #57534e; }
+    .card label { display: block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; color: #78716c; margin-bottom: 4px; }
+    #destination {
+      width: 100%; padding: 9px 10px; margin-bottom: 10px;
+      border: 1px solid #e7e5e4; border-radius: 10px; font: inherit; color: #1c1917; background: #fafaf9;
+    }
+    #start, #recenter {
+      padding: 9px 14px; border-radius: 999px; font: inherit; font-weight: 650; cursor: pointer;
+    }
+    #start { border: none; background: #4264fb; color: #fff; }
+    #start:disabled { background: #a8a29e; cursor: not-allowed; }
+    #recenter {
+      display: none; margin-left: 8px; background: #fff; color: #1c1917; border: 1px solid #d6d3d1;
+    }
+    #recenter.visible { display: inline-block; }
+    #guidance { margin: 12px 0 8px; font-size: 1.02rem; font-weight: 650; }
+    .facts {
+      display: grid; grid-template-columns: auto 1fr; gap: 3px 12px;
+      font-size: 0.78rem; color: #57534e; margin: 0 0 8px;
+    }
+    .facts dt { margin: 0; }
+    .facts dd { margin: 0; color: #1c1917; font-variant-numeric: tabular-nums; text-align: right; }
+    #status { margin: 0; font-size: 0.8rem; font-weight: 650; }
+    #status.live { color: #0a7a32; }
+    #status.stale { color: #9a3412; }
+    #status.wait { color: #57534e; }
+    #status.error { color: #b91c1c; }
+    #status.nav { color: #4264fb; }
+    .puck {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #4264fb; border: 3px solid #fff;
+      box-shadow: 0 0 0 7px rgba(66, 100, 251, 0.28), 0 2px 8px rgba(0, 0, 0, 0.28);
+    }
+    .puck::after {
+      content: ""; position: absolute; left: 50%; top: -9px;
+      transform: translateX(-50%);
+      border-left: 6px solid transparent; border-right: 6px solid transparent;
+      border-bottom: 10px solid #4264fb;
+    }
+    .you {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #16a34a; border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+    }
+    .dest {
+      width: 18px; height: 18px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+      background: #e11d48; border: 2px solid #fff;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    }
+    .mapboxgl-ctrl-top-right { top: 12px; }
+  </style>
+</head>
+<body>
+  <div id="map" role="region" aria-label="Walking map"></div>
+  <div class="card">
+    <h1>Walk</h1>
+    <p class="lead">From the phone's GPS to Cloyne Court Hotel. The route is requested once.</p>
+    <label for="destination">Destination</label>
+    <input type="text" id="destination" value="Cloyne Court Hotel, 2600 Ridge Road, Berkeley, CA" autocomplete="off">
+    <div>
+      <button type="button" id="start" disabled>Start navigation</button>
+      <button type="button" id="recenter">Re-center</button>
+    </div>
+    <p id="guidance">Press start to route from where you are.</p>
+    <dl class="facts">
+      <dt>Remaining</dt><dd id="remaining_m">—</dd>
+      <dt>Next</dt><dd id="next">—</dd>
+      <dt>In</dt><dd id="next_in_m">—</dd>
+      <dt>GPS age</dt><dd id="gps_age">—</dd>
+      <dt>Accuracy</dt><dd id="accuracy_m">—</dd>
+      <dt>Route requests</dt><dd id="google_calls">—</dd>
+    </dl>
+    <p id="status" class="status wait">Waiting for the map…</p>
+  </div>
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.4/mapbox-gl.js"></script>
+  <script>
+    const ST_HOST = "https://maincloud.spacetimedb.com";
+    const ST_DB = "kite-sync-pl6rp";
+    const ST_QUERY = "SELECT * FROM latest WHERE type = 'position'";
+    const DEST = { lat: 37.875830, lng: -122.257220 };
+    const RAW_PUCK_MIN_M = 8;
+
+    const el = id => document.getElementById(id);
+    let map = null;
+    let puckMarker = null;
+    let youMarker = null;
+    let rawMarker = null;
+    let puckAnim = null;
+    let puckAt = null;
+
+    let hasFix = false;
+    let lastFixMicros = null;
+    let lastPostedMicros = null;
+    let navigating = false;
+    let followPuck = false;
+    let routeFitted = false;
+    let latestFix = null;
+    let latestAge = null;
+    let pannedPreNav = false;
+
+    function ageOf(micros) {
+      const sec = (Array.isArray(micros) ? micros[0] : micros) / 1e6;
+      return (Date.now() / 1000) - sec;
+    }
+    function fmtAge(s) {
+      if (!Number.isFinite(s)) return "—";
+      if (s < 90) return Math.max(0, s).toFixed(0) + " s";
+      if (s < 3600) return Math.round(s / 60) + " min";
+      return (s / 3600).toFixed(1) + " h";
+    }
+    function fmtM(m) {
+      if (m == null || !Number.isFinite(Number(m))) return "—";
+      m = Number(m);
+      if (m >= 1000) return (m / 1000).toFixed(2) + " km";
+      return Math.round(m) + " m";
+    }
+    function setStatus(text, kind) {
+      const s = el("status");
+      s.textContent = text;
+      s.className = "status " + (kind || "wait");
+    }
+    function asLatLng(p) {
+      if (!p) return null;
+      if (Array.isArray(p)) return { lat: Number(p[0]), lng: Number(p[1]) };
+      if (p.lat == null || p.lng == null) return null;
+      return { lat: Number(p.lat), lng: Number(p.lng) };
+    }
+    function lngLat(p) {
+      const q = asLatLng(p);
+      return q ? [q.lng, q.lat] : null;
+    }
+    function haversineM(a, b) {
+      const R = 6371000;
+      const dLat = (b.lat - a.lat) * Math.PI / 180;
+      const dLng = (b.lng - a.lng) * Math.PI / 180;
+      const lat1 = a.lat * Math.PI / 180, lat2 = b.lat * Math.PI / 180;
+      const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+    }
+    function bearingDeg(from, to) {
+      const y = Math.sin((to.lng - from.lng) * Math.PI / 180) * Math.cos(to.lat * Math.PI / 180);
+      const x = Math.cos(from.lat * Math.PI / 180) * Math.sin(to.lat * Math.PI / 180)
+        - Math.sin(from.lat * Math.PI / 180) * Math.cos(to.lat * Math.PI / 180) * Math.cos((to.lng - from.lng) * Math.PI / 180);
+      return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+    function lineFeature(path) {
+      const coords = (path || []).map(lngLat).filter(Boolean);
+      if (coords.length < 2) return { type: "FeatureCollection", features: [] };
+      return { type: "Feature", geometry: { type: "LineString", coordinates: coords }, properties: {} };
+    }
+    function circleFeature(center, radiusM) {
+      if (!center || !Number.isFinite(radiusM) || radiusM <= 0) {
+        return { type: "FeatureCollection", features: [] };
+      }
+      const coords = [];
+      for (let i = 0; i <= 64; i++) {
+        const b = (i / 64) * 2 * Math.PI;
+        const dy = radiusM * Math.cos(b);
+        const dx = radiusM * Math.sin(b);
+        const dLat = dy / 111320;
+        const dLng = dx / (111320 * Math.cos(center.lat * Math.PI / 180));
+        coords.push([center.lng + dLng, center.lat + dLat]);
+      }
+      return { type: "Feature", geometry: { type: "Polygon", coordinates: [coords] }, properties: {} };
+    }
+    function setSource(id, data) {
+      const src = map.getSource(id);
+      if (src) src.setData(data);
+    }
+    function marker(className, at) {
+      const node = document.createElement("div");
+      node.className = className;
+      return new mapboxgl.Marker({ element: node, rotationAlignment: "map", pitchAlignment: "map" })
+        .setLngLat([at.lng, at.lat]).addTo(map);
+    }
+    function animatePuck(to) {
+      if (!puckMarker) {
+        puckMarker = marker("puck", to);
+        puckAt = to;
+        return;
+      }
+      if (puckAnim) cancelAnimationFrame(puckAnim);
+      const from = puckAt;
+      const start = performance.now();
+      const spin = from ? bearingDeg(from, to) : 0;
+      if (from && haversineM(from, to) > 1) puckMarker.setRotation(spin);
+      function frame(now) {
+        const t = Math.min(1, (now - start) / 800);
+        const ease = t * (2 - t);
+        const lat = from.lat + (to.lat - from.lat) * ease;
+        const lng = from.lng + (to.lng - from.lng) * ease;
+        puckMarker.setLngLat([lng, lat]);
+        if (t < 1) puckAnim = requestAnimationFrame(frame);
+        else { puckAnim = null; puckAt = to; }
+      }
+      if (!from) { puckMarker.setLngLat([to.lng, to.lat]); puckAt = to; return; }
+      puckAnim = requestAnimationFrame(frame);
+    }
+    function showYou(at) {
+      if (!youMarker) youMarker = marker("you", at);
+      else youMarker.setLngLat([at.lng, at.lat]);
+    }
+    function hideYou() {
+      if (youMarker) { youMarker.remove(); youMarker = null; }
+    }
+    function showRaw(at, accuracyM, puck) {
+      const show = at && (!puck || haversineM(at, puck) > RAW_PUCK_MIN_M);
+      if (show) {
+        if (!rawMarker) rawMarker = marker("you", at);
+        else rawMarker.setLngLat([at.lng, at.lat]);
+      } else if (rawMarker) {
+        rawMarker.remove();
+        rawMarker = null;
+      }
+      setSource("accuracy", circleFeature(at, Number(accuracyM)));
+    }
+    function fitRouteOnce(data) {
+      if (routeFitted || !map) return;
+      const pts = []
+        .concat(data.traveled || [], data.route_remaining || data.remaining || [])
+        .map(asLatLng).filter(Boolean);
+      const puck = asLatLng(data.puck);
+      if (puck) pts.push(puck);
+      if (pts.length < 2) return;
+      const bounds = new mapboxgl.LngLatBounds();
+      pts.forEach(p => bounds.extend([p.lng, p.lat]));
+      const w = map.getContainer().clientWidth;
+      const h = map.getContainer().clientHeight;
+      const pad = { top: 48, bottom: 32, left: Math.min(340, Math.floor(w * 0.34)), right: 24 };
+      if (pad.left + pad.right > w - 80) pad.left = 16;
+      if (pad.top + pad.bottom > h - 80) { pad.top = 16; pad.bottom = 16; }
+      map.fitBounds(bounds, { padding: pad, maxZoom: 15, duration: 800 });
+      routeFitted = true;
+      return true;
+    }
+    function applyNav(data) {
+      if (!data || data.ok === false) {
+        setStatus(data && data.error ? data.error : "Navigation error", "error");
+        navigating = false;
+        el("start").disabled = !hasFix;
+        el("start").textContent = "Start navigation";
+        return;
+      }
+      setSource("traveled", lineFeature(data.traveled));
+      if (data.holding) {
+        setSource("remaining", { type: "FeatureCollection", features: [] });
+        setSource("hold", lineFeature(data.remaining));
+      } else {
+        setSource("hold", { type: "FeatureCollection", features: [] });
+        setSource("remaining", lineFeature(data.route_remaining || data.remaining));
+      }
+      const puck = asLatLng(data.puck);
+      if (puck) animatePuck(puck);
+      const raw = asLatLng(data.raw) || (latestFix ? { lat: latestFix.lat, lng: latestFix.lng } : null);
+      const acc = data.accuracy_m != null ? data.accuracy_m : (latestFix && latestFix.accuracy);
+      showRaw(raw, acc, puck);
+
+      if (data.guidance) el("guidance").textContent = data.guidance;
+      el("remaining_m").textContent = fmtM(data.remaining_m);
+      el("next").textContent = data.next ? data.next : "—";
+      el("next_in_m").textContent = data.next_in_m != null ? fmtM(data.next_in_m) : "—";
+      if (data.google_calls != null) el("google_calls").textContent = String(data.google_calls);
+
+      let stat = "Following the route";
+      let kind = "nav";
+      if (data.arrived) {
+        stat = "You have arrived.";
+        kind = "live";
+        navigating = false;
+        followPuck = false;
+        el("start").disabled = !hasFix;
+        el("start").textContent = "Start navigation";
+      } else if (data.holding && data.hold_s != null) {
+        stat = "Next route request held for " + Math.round(data.hold_s) + " s";
+        kind = "stale";
+      } else if (data.on_route === false) {
+        stat = "Off the route. It will recalculate only if this lasts.";
+        kind = "stale";
+      } else if (latestAge != null && latestAge >= 20) {
+        stat = "GPS fix is old. Still following the route.";
+        kind = "stale";
+      }
+      setStatus(stat, kind);
+      try {
+        const fitted = fitRouteOnce(data);
+        if (navigating && followPuck && puck && !fitted) {
+          map.easeTo({ center: [puck.lng, puck.lat], duration: 700 });
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+    function fixPayload() {
+      if (!latestFix) return null;
+      const body = {
+        lat: latestFix.lat, lng: latestFix.lng,
+        destination: el("destination").value.trim(),
+        accuracy: latestFix.accuracy
+      };
+      if (latestFix.heading != null) body.heading = latestFix.heading;
+      return body;
+    }
+    async function postNav(path) {
+      const body = fixPayload();
+      if (!body || !body.destination) return;
+      try {
+        const res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        applyNav(await res.json());
+      } catch (e) {
+        setStatus("Could not reach the routing server. " + e.message, "error");
+      }
+    }
+
+    async function pollGps() {
+      let body;
+      try {
+        const res = await fetch(ST_HOST + "/v1/database/" + ST_DB + "/sql", { method: "POST", body: ST_QUERY });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        body = await res.json();
+      } catch (e) {
+        if (!navigating) setStatus("Could not reach SpacetimeDB. " + e.message, "stale");
+        return;
+      }
+      const names = body[0].schema.elements.map(e => e.name.some);
+      const rows = body[0].rows
+        .map(row => Object.fromEntries(names.map((n, i) => [n, row[i]])))
+        .filter(d => String(d.source || "").startsWith("phone"));
+      if (!rows.length) {
+        if (!navigating) setStatus("No phone position yet.", "wait");
+        return;
+      }
+      rows.sort((a, b) => ageOf(a.t) - ageOf(b.t));
+      const row = rows[0];
+      const fix = JSON.parse(row.payload);
+      const age = ageOf(row.t);
+      latestFix = fix;
+      latestAge = age;
+      const microKey = Array.isArray(row.t) ? row.t[0] : row.t;
+      hasFix = true;
+      el("start").disabled = navigating;
+      el("gps_age").textContent = fmtAge(age);
+      el("accuracy_m").textContent = fix.accuracy == null ? "—" : "±" + Number(fix.accuracy).toFixed(0) + " m";
+      const at = { lat: Number(fix.lat), lng: Number(fix.lng) };
+
+      if (!navigating) {
+        const live = age < 20;
+        setStatus(live ? "Live. Ready to start." : "Last fix is old, and still usable.", live ? "live" : "stale");
+        if (map) {
+          showYou(at);
+          if (!pannedPreNav) {
+            map.easeTo({ center: [at.lng, at.lat], zoom: 16, duration: 600 });
+            pannedPreNav = true;
+          }
+        }
+        return;
+      }
+      if (lastFixMicros !== microKey) {
+        lastFixMicros = microKey;
+        lastPostedMicros = microKey;
+        await postNav("/api/tick");
+      }
+    }
+
+    function addRouteLayers() {
+      const empty = { type: "FeatureCollection", features: [] };
+      for (const id of ["traveled", "remaining", "hold", "accuracy"]) {
+        map.addSource(id, { type: "geojson", data: empty });
+      }
+      map.addLayer({
+        id: "accuracy-fill", type: "fill", source: "accuracy",
+        paint: { "fill-color": "#4264fb", "fill-opacity": 0.12 }
+      });
+      map.addLayer({
+        id: "traveled-line", type: "line", source: "traveled",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#a8a29e", "line-width": 7, "line-opacity": 0.9 }
+      });
+      map.addLayer({
+        id: "remaining-casing", type: "line", source: "remaining",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#1e3a8a", "line-width": 11, "line-opacity": 0.35 }
+      });
+      map.addLayer({
+        id: "remaining-line", type: "line", source: "remaining",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#4264fb", "line-width": 6 }
+      });
+      map.addLayer({
+        id: "hold-line", type: "line", source: "hold",
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#44403c", "line-width": 4, "line-dasharray": [1.2, 1.4] }
+      });
+    }
+
+    async function boot() {
+      let token = "";
+      try {
+        const cfg = await fetch("/api/config");
+        token = (await cfg.json()).mapboxToken || "";
+      } catch (e) {
+        setStatus("Open this page from the walk server so the map can load.", "error");
+        return;
+      }
+      if (!token) {
+        setStatus("Mapbox token is missing from .env.", "error");
+        return;
+      }
+      mapboxgl.accessToken = token;
+      map = new mapboxgl.Map({
+        container: "map",
+        style: "mapbox://styles/mapbox/streets-v12",
+        center: [DEST.lng, DEST.lat],
+        zoom: 13.4,
+        attributionControl: true
+      });
+      map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), "top-right");
+      map.on("load", () => {
+        addRouteLayers();
+        const pin = document.createElement("div");
+        pin.className = "dest";
+        new mapboxgl.Marker({ element: pin }).setLngLat([DEST.lng, DEST.lat]).setPopup(
+          new mapboxgl.Popup({ offset: 16, closeButton: false }).setText("Cloyne Court Hotel")
+        ).addTo(map);
+        setStatus("Waiting for GPS…", "wait");
+        pollGps();
+      });
+      map.on("dragstart", () => {
+        if (!navigating) return;
+        followPuck = false;
+        el("recenter").classList.add("visible");
+      });
+      el("recenter").addEventListener("click", () => {
+        followPuck = true;
+        el("recenter").classList.remove("visible");
+        if (puckAt) map.easeTo({ center: [puckAt.lng, puckAt.lat], duration: 500 });
+      });
+      el("start").addEventListener("click", async () => {
+        if (!hasFix || navigating) return;
+        navigating = true;
+        followPuck = true;
+        routeFitted = false;
+        el("start").disabled = true;
+        el("start").textContent = "Navigating…";
+        el("recenter").classList.remove("visible");
+        hideYou();
+        lastPostedMicros = null;
+        await postNav("/api/start");
+        if (latestFix) lastPostedMicros = lastFixMicros;
+      });
+      setInterval(pollGps, 1000);
+    }
+    boot();
+  </script>
+</body>
+</html>
