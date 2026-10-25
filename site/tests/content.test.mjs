@@ -35,7 +35,7 @@ test("the kite/drone flip is CSS-only, about 1.8 s a side, with a still fallback
 
 const judges = read("judges.html");
 const SPONSOR = ["cartesia", "spacetime", "anthropic", "moss", "spacexai"];
-const CALHACKS = ["people", "hardware", "complex", "overall", "commit"];
+const CALHACKS = ["people", "hardware", "complex", "creative", "overall", "commit"];
 const card = (id) => judges.match(new RegExp(`<article class="card track" id="${id}">[\\s\\S]*?</article>`))[0];
 
 test("/judges cards run from most to least likely to win, and the contents list matches", () => {
