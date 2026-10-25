@@ -123,7 +123,7 @@ def test_flight_test_flies_every_axis_and_move_and_lands(capsys):
     assert check.direction_verdict.startswith("the drone moves as commanded"), out
     assert "DIRECTION SUMMARY" in out and "fb  " in out and "VERDICT: the drone moves as commanded" in out
     video = next(d for n, _, d in check.results if n == "video")
-    assert float(video.split()[0]) >= 22  # the emulator camera (~25 fps here), counted by frame number, not by our polling
+    assert float(video.split()[0]) >= 22  # the emulator camera (30 fps), counted by frame number, not by our polling
     for cmd in ("takeoff", "forward 30", "back 30", "left 30", "right 30", "up 30", "down 30", "cw 45", "ccw 45", "land"):
         assert cmd in sent, (cmd, sent)
     assert not snap.flying and ("land", True, "down") in check.results

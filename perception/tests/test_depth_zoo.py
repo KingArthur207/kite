@@ -2,6 +2,7 @@
 scoring rules. No model and no download: fake backends and the numpy ray caster stand in."""
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -322,3 +323,260 @@ def test_real_depth_anything_small_anchors_on_a_rendered_sidewalk():
     r = dz.get("da2-metric-outdoor-s+anchor").estimate(img, K)
     assert r.meta["anchor"]["ok"]
     assert r.meta["anchor"]["pitch"] == pytest.approx(pose.pitch, abs=4.0)
+
+
+# ------------------------------------------------------------------ model-free plumbing (no torch, no weights)
+def test_paths_and_the_download_switch_follow_the_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("KITE_HF_CACHE", str(tmp_path / "hf"))
+    monkeypatch.setenv("KITE_DEPTH_THIRD_PARTY", str(tmp_path / "tp"))
+    monkeypatch.delenv("KITE_DEPTH_DOWNLOAD", raising=False)
+    assert dz.hf_cache() == str(tmp_path / "hf") and dz.third_party() == tmp_path / "tp"
+    assert not dz._may_download()
+    monkeypatch.setenv("KITE_DEPTH_DOWNLOAD", "1")
+    assert dz._may_download()
+    monkeypatch.delenv("KITE_HF_CACHE")
+    assert dz.hf_cache().endswith(str(Path("weights") / "hf"))
+
+
+def test_the_base_backend_is_abstract_and_its_hooks_are_no_ops():
+    be = dz.DepthBackend()
+    with pytest.raises(NotImplementedError):
+        be.estimate(np.zeros((4, 4, 3), np.uint8))
+    assert be.reset() is None and be.close() is None
+
+
+def test_default_intrinsics_fills_in_or_rescales_to_the_frame():
+    f = np.zeros((240, 320, 3), np.uint8)
+    assert dz.default_intrinsics(f, None) == dz.Intrinsics.from_fov(320, 240, 60.0)
+    assert dz.default_intrinsics(f, K) == K.scaled(320, 240)
+    Ks = K.scaled(320, 240)
+    assert dz.default_intrinsics(f, Ks) is Ks
+    assert np.allclose(K.matrix(), [[K.fx, 0, 320], [0, K.fy, 240], [0, 0, 1]])
+    assert not K.rays().flags.writeable                # the cached rays are shared: read-only
+
+
+def test_fit14_keeps_both_sides_multiples_of_14():
+    assert dz._fit14(640, 480, 448) == (448, 336)
+    w, h = dz._fit14(1920, 1080, 518)
+    assert w % 14 == 0 and h % 14 == 0 and w == 518
+    assert dz._fit14(10, 1, 14) == (14, 14)           # never below one patch
+
+
+def test_get_builds_fused_and_passes_cam_h_to_the_geometry_backends(fake_registry):
+    f = dz.get("fused:plane")
+    assert isinstance(f, dz.Fused) and isinstance(f.motion, dz.MotionStereo)
+    assert f.dense.name == "plane+anchor"              # the dense half is always anchored
+    assert dz.get("fused:plane+anchor").dense.name == "plane+anchor"
+    fg = dz.get("flat-ground", cam_h=1.5, pitch=4.0)
+    assert isinstance(fg, dz.FlatGround) and fg.cam_h == 1.5 and fg.pitch == 4.0
+    assert dz.get("motion-stereo", cam_h=0.9).cam_h == 0.9
+    anch = dz.get("const+anchor", cam_h=1.4, pitch_prior=6.0)
+    assert anch.cam_h == 1.4 and anch.pitch_prior == 6.0 and anch.base.name == "const"
+
+
+def test_available_reports_ok_or_the_first_line_of_why(fake_registry):
+    def broken(device="cpu"):
+        raise dz.BackendUnavailable("weights missing\nrun the setup")
+
+    def no_pkg(device="cpu"):
+        raise ImportError("no module named magic")
+
+    dz.register("broken", broken, True, "test")
+    dz.register("nopkg", no_pkg, True, "test")
+    got = dz.available(names=["const", "broken", "nopkg"])
+    assert got == {"const": "ok", "broken": "weights missing", "nopkg": "no module named magic"}
+
+
+def test_edge_confidence_is_capped_and_drops_on_depth_edges():
+    flat = dz.edge_confidence(np.full((40, 40), 3.0, np.float32))
+    assert flat.dtype == np.float32 and np.allclose(flat, 0.8)
+    step = np.full((40, 40), 2.0, np.float32)
+    step[:, 20:] = 10.0
+    c = dz.edge_confidence(step)
+    assert c[20, 19] < 0.05 and c[20, 20] < 0.05      # both sides of the edge are "flying pixels"
+    assert c[20, 2] == pytest.approx(0.8) and c[20, 37] == pytest.approx(0.8)
+
+
+def test_sigma_and_confidence_convert_both_ways():
+    s = np.array([0.02, 0.05, 0.2], np.float32)
+    c = dz.sigma_to_conf(s)
+    assert c == pytest.approx([0.862, 0.5, 0.0588], abs=1e-3)       # the docstring's numbers
+    assert dz.conf_to_sigma(c) == pytest.approx(s, rel=1e-3)
+    assert dz.sigma_to_conf(np.array([np.nan]))[0] == 0.0
+    assert dz.sigma_to_conf(np.array([np.inf]))[0] == 0.0
+    assert np.isfinite(dz.conf_to_sigma(np.array([0.0, 1.0]))).all()  # clipped: no division by zero
+
+
+def test_down_vector_and_angles_round_trip():
+    for p, r in [(0.0, 0.0), (8.0, 0.0), (20.0, -4.0), (-10.0, 12.0)]:
+        n = dz.down_vector(p, r)
+        assert np.linalg.norm(n) == pytest.approx(1.0)
+        assert dz.angles_of(n) == pytest.approx((p, r), abs=1e-9)
+    assert dz.angles_of(np.array([0.0, 0.0, 1.5]))[0] == pytest.approx(90.0)   # clamped asin
+
+
+def test_fit_ground_plane_says_why_it_failed():
+    z = floor_depth(K, 8.0)
+    none = dz.fit_ground_plane(z, K, mask=np.zeros(z.shape, bool))
+    assert not none.ok and "candidate" in none.reason and math.isnan(none.pitch) and none.scale == 1.0
+    ceiling = np.flipud(floor_depth(K, -8.0)).copy()    # a plane above the camera: its normal points up
+    assert not dz.fit_ground_plane(ceiling, K).ok
+    half = floor_depth(dz.Intrinsics.from_fov(320, 240, 60.0), 8.0) * 0.5
+    fit = dz.fit_ground_plane(half, K, 1.2)             # full-size intrinsics on a half-size map are rescaled
+    assert fit.ok and fit.scale == pytest.approx(2.0, rel=0.01) and fit.pitch == pytest.approx(8.0, abs=0.3)
+    sparse = dz.fit_ground_plane(z, K, min_inliers=10 ** 6)
+    assert not sparse.ok and "candidate" in sparse.reason
+    thin = dz.fit_ground_plane(z, K, min_ratio=1.01)
+    assert not thin.ok and "too few floor pixels" in thin.reason and thin.inliers.any()
+    steep = dz.fit_ground_plane(z, K, pitch_range=(50.0, 60.0))     # a floor, but not at a plausible pitch
+    assert not steep.ok and steep.reason == "no floor-like plane among the samples"
+
+
+def test_fit_ground_disparity_rejects_a_ramp_the_wrong_way_and_an_empty_map():
+    z = floor_depth(K, 10.0)
+    q = np.where(z > 0, 1 / np.maximum(z, 1e-6), 0).astype(np.float32)
+    assert "candidate" in dz.fit_ground_disparity(np.zeros_like(q), K).reason
+    rows = np.linspace(2.0, 0.1, q.shape[0], dtype=np.float32)[:, None]
+    falling = np.repeat(rows, q.shape[1], axis=1)       # nearer at the top: not a floor seen from above
+    assert not dz.fit_ground_disparity(falling, K).ok
+    half = q[::2, ::2].copy()
+    fit = dz.fit_ground_disparity(half, K, 1.2, pitch_prior=10.0)
+    assert fit.ok and fit.scale == pytest.approx(1.0, rel=0.02)
+    left = np.zeros(q.shape, bool)
+    left[:, :320] = True
+    masked = dz.fit_ground_disparity(q, K, 1.2, pitch_prior=10.0, mask=left)
+    assert masked.ok and not masked.inliers[:, 320:].any()            # only the masked-in pixels vote
+    thin = dz.fit_ground_disparity(q, K, 1.2, min_ratio=1.01)
+    assert not thin.ok and "too few floor pixels" in thin.reason
+
+
+def test_disparity_to_depth_inverts_and_sends_the_horizon_far():
+    q = np.array([[0.0, 1e-4, 0.5, 2.0]], np.float32)
+    z = dz.disparity_to_depth(q, 1.0, 0.0)
+    assert z.dtype == np.float32
+    assert z[0, 0] == dz.MAX_DEPTH and z[0, 1] == dz.MAX_DEPTH        # at or past the horizon: far, not inf
+    assert z[0, 2] == pytest.approx(2.0) and z[0, 3] == pytest.approx(0.5)
+    assert dz.disparity_to_depth(q, 2.0, 0.5)[0, 2] == pytest.approx(1 / 1.5)
+
+
+def test_failed_disparity_anchoring_falls_back_to_one_over_q():
+    q = np.full((480, 640), 0.25, np.float32)           # a wall in disparity: no ramp
+    a = dz.anchor_to_ground(q, K, 1.2, kind="disparity")
+    assert a.scale == 1.0 and a.shift == 0.0 and math.isnan(a.pitch) and a.inlier_ratio == 0.0
+    assert np.allclose(a.depth_m, 4.0)
+
+
+class Script(dz.DepthBackend):
+    """A fake model that plays a list of depth maps (and optional disparities) in order."""
+
+    def __init__(self, maps, metric=True, disp=None):
+        self.maps, self.disp, self.metric, self.name, self.i = maps, disp, metric, "script", 0
+        self.resets = self.closes = 0
+
+    def estimate(self, frame_bgr, intrinsics=None):
+        z = self.maps[min(self.i, len(self.maps) - 1)]
+        meta = {} if self.disp is None else {"disparity": self.disp[min(self.i, len(self.disp) - 1)], "x": 1}
+        self.i += 1
+        return dz.DepthResult(z.astype(np.float32), np.full(z.shape, 0.6, np.float32), 1.0, meta)
+
+    def reset(self):
+        self.resets += 1
+
+    def close(self):
+        self.closes += 1
+
+
+def _floor_or_far(pitch=8.0):
+    z = floor_depth(K, pitch)
+    return np.where(z > 0, z, 80.0).astype(np.float32)
+
+
+def test_anchored_holds_the_last_scale_through_a_short_miss_then_lets_go():
+    img = np.zeros((480, 640, 3), np.uint8)
+    wall = np.full((480, 640), 3.0, np.float32)
+    a = dz.Anchored(Script([_floor_or_far() * 0.5, wall, wall, wall]), cam_h=1.2, hold=2)
+    assert a.name == "script+anchor" and a.metric
+    r0 = a.estimate(img, K)
+    assert r0.meta["anchor"]["ok"] and r0.meta["anchor"]["scale"] == pytest.approx(2.0, rel=0.01)
+    r1 = a.estimate(img, K)                              # the wall: no floor, the last scale is held
+    assert not r1.meta["anchor"]["ok"] and r1.meta["anchor"]["scale"] == pytest.approx(2.0, rel=0.01)
+    assert np.allclose(r1.depth_m, 3.0 * r1.meta["anchor"]["scale"], rtol=1e-4)
+    assert float(r1.confidence.max()) == pytest.approx(0.3)          # and trusted half as much
+    a.estimate(img, K)
+    r3 = a.estimate(img, K)                              # past `hold`: the raw map, unscaled
+    assert r3.meta["anchor"]["scale"] is None and np.allclose(r3.depth_m, 3.0)
+    a.reset()
+    a.close()
+    assert a.last is None and a.miss == 0 and a.base.resets == 1 and a.base.closes == 1
+
+
+def test_anchored_smooths_the_scale_in_log_space():
+    img = np.zeros((480, 640, 3), np.uint8)
+    floor = _floor_or_far()
+    a = dz.Anchored(Script([floor * 0.5, floor * 0.25]), cam_h=1.2, alpha=0.5)
+    assert a.estimate(img, K).meta["anchor"]["scale"] == pytest.approx(2.0, rel=0.01)
+    s = a.estimate(img, K).meta["anchor"]["scale"]
+    assert s == pytest.approx(math.sqrt(2.0 * 4.0), rel=0.02)          # geometric mean of 2 and 4
+
+
+def test_anchored_relative_model_uses_its_disparity_and_hides_it():
+    img = np.zeros((480, 640, 3), np.uint8)
+    z = floor_depth(K, 10.0)
+    q = np.where(z > 0, 1 / np.maximum(z, 1e-6) / 3.0, 0).astype(np.float32)
+    base = Script([np.ones((480, 640), np.float32)], metric=False, disp=[q])
+    r = dz.Anchored(base, cam_h=1.2).estimate(img, K)
+    assert r.meta["anchor"]["ok"] and r.meta["anchor"]["scale"] == pytest.approx(3.0, rel=0.01)
+    assert "disparity" not in r.meta and r.meta["x"] == 1
+    m = z > 0
+    assert np.median(np.abs(r.depth_m[m] - z[m]) / z[m]) < 0.01
+
+
+def test_temporal_and_fused_pass_reset_and_close_to_what_they_wrap():
+    img = np.zeros((48, 64, 3), np.uint8)
+    base = Script([np.full((48, 64), 2.0, np.float32)])
+    t = dz.Temporal(base, work_width=64)
+    assert t.name == "script+temporal" and t.temporal
+    t.estimate(img)
+    assert t.prev is not None
+    t.forward_m = 0.1                                    # walking: the warped prior is moved 10 cm nearer
+    r = t.estimate(img)
+    assert float(r.depth_m.mean()) < 2.0
+    t.reset()
+    t.close()
+    assert t.prev is None and base.resets == 1 and base.closes == 1
+    dense = Script([np.full((48, 64), 2.0, np.float32)])
+    f = dz.Fused(dense, dz.MotionStereo(work_width=64, pose_width=64))
+    f.corr = 1.3
+    f.reset()
+    f.close()
+    assert f.corr == 1.0 and dense.resets == 1 and dense.closes == 1 and f.motion.state is None
+
+
+def test_push_pull_fill_fills_a_hole_from_both_sides():
+    z = np.full((64, 64), 2.0, np.float32)
+    z[:, 32:] = 8.0
+    w = np.ones_like(z)
+    w[24:40, 24:40] = 0.0                                 # a hole straddling the 2 m / 8 m edge
+    out = dz.push_pull_fill(z, w)
+    assert out.dtype == np.float32
+    assert out[0, 0] == pytest.approx(2.0, rel=1e-3) and out[0, 63] == pytest.approx(8.0, rel=1e-3)
+    assert 2.0 < out[32, 31] < 8.0 and 2.0 < out[32, 32] < 8.0
+    assert out[32, 24] < 4.0 < out[32, 39]               # each side of the hole leans to its own neighbour
+
+
+def test_pipeline_depth_uses_the_cli_focal_length_when_given():
+    seen = []
+
+    class Spy(dz.DepthBackend):
+        name = "spy"
+
+        def estimate(self, frame_bgr, intrinsics=None):
+            seen.append(intrinsics)
+            h, w = frame_bgr.shape[:2]
+            return dz.DepthResult(np.full((h, w), 5.0, np.float32), np.ones((h, w), np.float32), 0.0)
+
+    d = dz.PipelineDepth(Spy(), size=(224, 126), fx=700.0)(np.zeros((270, 480, 3), np.uint8))
+    assert d.shape == (126, 224) and np.allclose(d, 5.0)
+    assert seen[0].fx == pytest.approx(350.0) and (seen[0].width, seen[0].height) == (480, 270)
+    dz.PipelineDepth(Spy())(np.zeros((270, 480, 3), np.uint8))
+    assert seen[1] == dz.Intrinsics.from_fov(480, 270, 60.0)

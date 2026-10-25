@@ -81,13 +81,14 @@ def main(argv: list[str] | None = None) -> int:
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="replace")
     args = build_parser().parse_args(argv)
+    min_height = round(args.walker_height + 0.2, 2)  # to the cm: 1.81 + 0.2 is 2.0100000000000002 in floats
     if args.height is None:
-        args.height = min(round(args.walker_height + 0.2, 2), 2.2)
+        args.height = min(min_height, 2.2)
     if not 0.8 <= args.height <= 2.2:
         print("--height must be 0.8-2.2 m (the safety governor holds 0.5-2.3 m)")
         return 2
-    if args.height < args.walker_height + 0.2:
-        print(f"--height must be at least --walker-height + 0.2 m ({args.walker_height + 0.2:.2f}): the follow flies "
+    if args.height < min_height:
+        print(f"--height must be at least --walker-height + 0.2 m ({min_height:.2f}): the follow flies "
               "above the head and reads the distance from the angle down to it")
         return 2
     quiet_libraries()

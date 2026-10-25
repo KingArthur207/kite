@@ -49,7 +49,7 @@ class Latest:
         self.jpeg: bytes | None = None
         self.seq = 0
 
-    def put(self, jpeg: bytes):
+    def put(self, jpeg: bytes) -> None:
         with self.cond:
             self.jpeg, self.seq = jpeg, self.seq + 1
             self.cond.notify_all()
@@ -60,7 +60,7 @@ class Latest:
             return self.seq, self.jpeg
 
 
-def produce(spec: str, latest: Latest, fps: float, width: int, quality: int):
+def produce(spec: str, latest: Latest, fps: float, width: int, quality: int) -> None:
     kind, _ = parse_spec(spec)
     looped = kind in LOOPED_KINDS
     opts = {"realtime": True} if looped else {}
@@ -91,12 +91,12 @@ def produce(spec: str, latest: Latest, fps: float, width: int, quality: int):
             time.sleep(2)
 
 
-def make_handler(latest: Latest, bound: str = "127.0.0.1"):
+def make_handler(latest: Latest, bound: str = "127.0.0.1") -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        def log_message(self, fmt, *args):
+        def log_message(self, fmt: str, *args: object) -> None:
             pass
 
-        def do_GET(self):
+        def do_GET(self) -> None:
             if self.path.split("?")[0] != "/video.mjpg":
                 self.send_error(404, "try /video.mjpg")
                 return
@@ -133,7 +133,7 @@ def parser() -> argparse.ArgumentParser:
     return ap
 
 
-def main():
+def main() -> None:
     a = parser().parse_args()
     latest = Latest()
     threading.Thread(target=produce, args=(a.source, latest, a.fps, a.width, a.quality), daemon=True).start()

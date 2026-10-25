@@ -16,6 +16,7 @@ What it guarantees to the near loop:
 
 from __future__ import annotations
 
+import http.client
 import os
 import sys
 import threading
@@ -97,7 +98,7 @@ class UnoqSource:
     def _status(self) -> dict | None:
         try:
             code, body = self.direct.call("/status")
-        except OSError:
+        except (OSError, ValueError, http.client.HTTPException):   # unreachable, a garbled reply, a cut-off body
             return None
         if code == 401:
             raise SystemExit("the UNO Q rejected this computer's token (401): save it again with "
@@ -107,8 +108,16 @@ class UnoqSource:
         return body.get("status") if isinstance(body.get("status"), dict) else body   # board: {"ok", "status", "host"}
 
     def _watch_status(self) -> None:
+        said = None
         while not self._stop.wait(STATUS_EVERY_S):
-            st = self._status()
+            try:
+                st = self._status()
+            except (Exception, SystemExit) as e:  # noqa: BLE001  (a 401 or any surprise must not end this watch:
+                # it is what keeps the test pattern's fake distances out of the loop)
+                if str(e) != said:
+                    said = str(e)
+                    self.out(f"[near] UNO Q status: {type(e).__name__}: {e}", flush=True)
+                continue
             if not st:
                 continue
             cam = st.get("camera") or {}
@@ -126,18 +135,20 @@ class UnoqSource:
             try:
                 with self.direct.open("/video.mjpg", timeout=10) as r:
                     boundary = self.kl.boundary_of(r.headers.get("Content-Type", ""))
-                    backoff = 0.5
                     for jpeg in self.kl.iter_mjpeg(r, boundary):
                         if self._stop.is_set():
                             return
                         if not self.kl.is_jpeg(jpeg):
                             continue
+                        backoff = 0.5                     # frames flow: the next drop retries quickly again
                         with self._cond:
                             if self._seq > self._taken:
                                 self.frames_dropped += 1          # the loop never asked for the previous one
                             self._jpeg, self._seq = jpeg, self._seq + 1
                             self.frames_in += 1
                             self._cond.notify_all()
+                    # iter_mjpeg returns on EOF or a truncated frame: the board closed or the link dropped mid-frame
+                    raise EOFError("the video stream ended")
             except Exception as e:  # noqa: BLE001  (any network error: reconnect, never crash the loop)
                 if self._stop.is_set():
                     return
@@ -171,7 +182,10 @@ class UnoqSource:
                 self.out("[near] the UNO Q is sending its test pattern (no camera): skipping frames", flush=True)
             return False, None
         self._warned_pattern = False
-        img = self._cv2.imdecode(self._np.frombuffer(jpeg, self._np.uint8), self._cv2.IMREAD_COLOR)
+        try:
+            img = self._cv2.imdecode(self._np.frombuffer(jpeg, self._np.uint8), self._cv2.IMREAD_COLOR)
+        except self._cv2.error:                       # a corrupt JPEG is a skipped frame, never a crash
+            img = None
         return (img is not None), img
 
     def release(self) -> None:
