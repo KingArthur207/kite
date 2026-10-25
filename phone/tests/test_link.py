@@ -130,6 +130,16 @@ def test_a_heartbeat_without_coordinates_keeps_the_link_but_forwards_nothing(rig
     assert rig.link.fix.heading == 90.0 and rig.link.last_gps is None
 
 
+def test_a_heartbeat_right_after_a_fix_never_swallows_that_fix(rig):
+    """A fix held by the rate limit, then a coordinate-less heartbeat: the fix is still forwarded."""
+    rig.link.on_chunk(line(t=1, lat=37.1))
+    rig.link.tick(100.0)
+    rig.link.on_chunk(line(t=2, lat=37.2))
+    rig.link.on_chunk(line(t=None, lat=None, lng=None, heading=90))   # arrives before the next forward
+    rig.link.tick(100.5)
+    assert [p["lat"] for p in positions(rig.sent)] == [37.1, 37.2]
+
+
 def test_forwarded_position_is_what_the_earpiece_accepts(rig):
     from earpiece.events import parse
     rig.link.on_chunk(line(speed=1.3, course=450.0))

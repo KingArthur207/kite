@@ -44,6 +44,7 @@ class PhoneLink:
         self.announce = announce
         self.log = log or (lambda s: None)
         self.fix: Fix | None = None                # newest message (may have no coordinates)
+        self._gps_fix: Fix | None = None           # newest message WITH coordinates: what tick() forwards
         self.last_msg: float | None = None         # laptop clock of the newest valid message
         self.last_gps: float | None = None         # laptop clock when the newest NEW GPS fix arrived
         self._last_t: float | None = None          # phone timestamp of that fix
@@ -80,6 +81,7 @@ class PhoneLink:
             if fix.has_position and (fix.t is None or fix.t != self._last_t):
                 self._last_t = fix.t
                 self.last_gps = fix.received
+                self._gps_fix = fix                # a heartbeat after it must not replace it before it is sent
                 self._pending = True
         return fix
 
@@ -123,8 +125,8 @@ class PhoneLink:
                     out.append(self._say(NO_GPS_TEXT, "phone-gps"))
             if gps_age is not None and gps_age <= self.gps_stale_s:
                 self._gps_warned = False
-            if up and self._pending and now - self._last_forward >= self.forward_every and self.fix is not None:
-                pos = to_position(self.fix, self.source, self.walker)
+            if up and self._pending and now - self._last_forward >= self.forward_every and self._gps_fix is not None:
+                pos = to_position(self._gps_fix, self.source, self.walker)
                 if pos is not None:
                     out.append(pos)
                     self.stats["forwarded"] += 1
