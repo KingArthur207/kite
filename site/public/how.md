@@ -75,7 +75,7 @@ Press an AirPod once and talk. Simple requests run on the laptop with no interne
 **Walker:** Kite, take me to my usual coffee shop.
 **Kite:** Okay, heading to Blue Bottle Coffee.
 
-_Moss knows “usual”_
+_Kite knows “usual”_
 
 2
 
@@ -103,7 +103,7 @@ _from what the cameras see_
 **Walker:** Remember this place as the bench.
 **Kite:** Saved. I'll remember this place as the bench.
 
-_Moss, again_
+_Memory, again_
 
 6
 

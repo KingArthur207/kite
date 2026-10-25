@@ -48,14 +48,14 @@
         <div><dt>What Kite does</dt><dd>A DJI Tello flies 30 cm above and behind your head; a chest camera watches your feet. AirPods beep from where things are, faster as they get closer, and a calm voice says "Stop."</dd></div>
         <div class="try"><dt>Try it at our table</dt><dd>Put on a sleep mask and the AirPods and walk. When one of us steps in front of you, the beeps speed up and Kite says "Stop. Person ahead." Then take the mask off and see the replay and the live map.</dd></div>
       </dl>
-      <p class="brief-foot">Built on Cartesia (voice), Claude (judgment), SpacetimeDB (live shared state) and Moss (memory). Drones aren't allowed indoors, so at the table the drone's view is recorded footage. Not at our table? <a href="/#hear">Hear the 41-second walk</a>.</p>
+      <p class="brief-foot">Built on Cartesia (voice), Claude (judgment) and SpacetimeDB (live shared state). Drones aren't allowed indoors, so at the table the drone's view is recorded footage. Not at our table? <a href="/#hear">Hear the 41-second walk</a>.</p>
     </header>
 
     <section class="section tracks-intro" aria-labelledby="tracks-h">
       <h2 id="tracks-h" class="display">Every track, <em>criterion by criterion.</em></h2>
       <p class="lede">Each track's judging criteria in its own words, then how Kite answers them.</p>
       <nav class="toc" aria-label="Tracks on this page">
-        <a href="#cartesia">Cartesia</a><a href="#spacetime">SpacetimeDB</a><a href="#anthropic">Anthropic</a><a href="#moss">Moss</a><a href="#spacexai">SpaceXAI</a><a href="#people">People-First Social Impact</a><a href="#hardware">Hardware</a><a href="#complex">Technically Complex</a><a href="#creative">Most Creative</a><a href="#overall">Overall</a><a href="#commit">Commit Fellowship</a>
+        <a href="#cartesia">Cartesia</a><a href="#spacetime">SpacetimeDB</a><a href="#anthropic">Anthropic</a><a href="#spacexai">SpaceXAI</a><a href="#people">People-First Social Impact</a><a href="#hardware">Hardware</a><a href="#complex">Technically Complex</a><a href="#creative">Most Creative</a><a href="#overall">Overall</a><a href="#commit">Commit Fellowship</a>
       </nav>
     </section>
 
@@ -124,20 +124,6 @@
           </dl>
         </article>
 
-        <article class="card track" id="moss">
-          <div class="meta">
-            <img class="track-logo" src="/assets/logos/moss.svg" alt="Moss logo" width="90" height="22" />
-            <p class="sticker">Best Use of Moss</p>
-            <h2>Moss is <mark>Kite's memory of you</mark>.</h2>
-            <div class="crit"><p class="crit-h">judged on</p><ul><li>Voice AI that listens, responds and acts in real time</li><li>A personal agent that remembers you</li></ul></div>
-          </div>
-          <dl>
-            <div><dt>Searched on every sentence you speak</dt><dd>Saved places and hazards are searched in 3 to 12 ms, in process, before Claude answers, so you never hear a wait.</dd></div>
-            <div><dt>A personal agent</dt><dd>"Remember this place as the bench." "Take me to my usual coffee shop." Arrive at a corner you've marked and Kite reminds you the curb there is tall.</dd></div>
-            <div><dt>Without it</dt><dd>Every walk starts from zero, and "my usual" means nothing.</dd></div>
-          </dl>
-        </article>
-
 
         <article class="card track" id="spacexai">
           <div class="meta">
@@ -198,13 +184,13 @@
             <div class="crit"><p class="crit-h">judged on</p><ul><li>Technical complexity</li></ul></div>
           </div>
           <dl>
-            <div><dt>A lock-free Rust audio engine</dt><dd>Mixing and limiting run outside Python's lock, so the network, Claude or Moss can never make a beep stutter.</dd></div>
+            <div><dt>A lock-free Rust audio engine</dt><dd>Mixing and limiting run outside Python's lock, so the network or Claude can never make a beep stutter.</dd></div>
             <div><dt>Binaural rendering from a model of the head</dt><dd>A spherical-head model sets the timing and loudness difference between your ears.</dd></div>
             <div><dt>Time-to-contact sonar and a time-aware speech scheduler</dt><dd>Beep rate follows how soon you'd reach each object. Every sentence has a priority and an expiry.</dd></div>
             <div><dt>Distance from one camera, fused like a car</dt><dd>Five independent distance cues per object (known size, ground contact, Depth Anything anchored to the floor, walking motion and looming) fused with a Kalman filter per track. On hand-labelled real frames it ranks 92.7% right, against 73.2% for a box-height rule. A benchmark of depth models against laser-scanned ground truth picked the combination.</dd></div>
             <div><dt>Beeps that survive a frozen interpreter</dt><dd>A dedicated Rust thread schedules every sonar beep itself, sample-identical to the Python path. With Python frozen for half a second, the beeps still land on time.</dd></div>
             <div><dt>One detector, two cameras, measured</dt><dd>YOLO runs on the drone's view and the chest camera's. Scored against the browser simulation's ground truth on 168 frames, it finds 99% of people and 91% of cars from the drone, and 96% and 85% from the chest.</dd></div>
-            <div><dt>Five AI and data services, the safety path still instant</dt><dd>Cartesia, Claude, Moss and SpacetimeDB each run off the audio thread, so a beep never waits on a network and Kite keeps guiding with no connection at all. Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.</dd></div>
+            <div><dt>Four AI and data services, the safety path still instant</dt><dd>Cartesia, Claude and SpacetimeDB each run off the audio thread, so a beep never waits on a network and Kite keeps guiding with no connection at all. Grok Imagine renders the streets the perception benchmark and Claude's injection tests run on.</dd></div>
           </dl>
           <div class="evidence two">
             <figure><img src="/assets/evidence/yolo-drone-view.jpg" alt="The drone's view of a simulated sidewalk: YOLO draws green boxes around the pedestrians and yellow boxes around the parked cars, each with a confidence score" width="640" height="480" loading="lazy" /><figcaption>drone view, YOLO boxes</figcaption></figure>
