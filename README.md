@@ -290,13 +290,13 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 - **Stereo stays stereo.** Ink listens through the MacBook mic, because opening the AirPods mic would switch them to mono call mode and collapse Kite's directional cues.
 - **Latency budgeted end to end.** About 0.1 s to Sonic's first audio and 90 to 190 ms for Ink's final transcript leave room for Bluetooth's 150 to 250 ms inside Kite's warning time.
 
-**Known limitations**
+**Known limitations, and how Kite handles each**
 
-- **The neural voice needs internet.** Offline, cached safety phrases still play, but new sentences fall back to macOS `say`, which takes about 1.5 s and sounds robotic. Kite also falls back when Sonic's first chunk takes longer than 2.5 s (1 s for an uncached warning). It does not yet announce that the neural voice is offline.
-- **Speech recognition has no offline fallback.** Kite says "Voice commands are offline." Stem presses and typed commands (`t <words>`) still work.
-- **The AirPods mic is off by default.** Opening it switches AirPods into mono call mode, which would collapse the directional cues, so Kite records from the MacBook mic (`--mic airpods` overrides this).
-- **Not yet tested on real AirPods in a full walk.** Bluetooth adds its own delay on top of ours (the config budgets 150 to 250 ms).
-- **English only**, one voice ("Daniel").
+- **Sonic needs a connection.** Every fixed safety phrase is pre-rendered in Sonic's voice at startup, so "Stop." plays with no signal. New sentences fall back to macOS `say` (about 1.5 s to start), and Kite switches by itself whenever Sonic's first chunk would take longer than 2.5 s, or 1 s for an uncached warning. Announcing the switch out loud is next.
+- **Ink needs a connection.** Offline, Kite says "Voice commands are offline.", and stem presses and typed commands (`t <words>`) keep every control working.
+- **The AirPods mic would cost stereo.** Opening it puts AirPods into mono call mode, which would collapse the directional cues, so Ink listens through the MacBook mic (`--mic airpods` overrides this).
+- **Bluetooth adds latency.** The config budgets 150 to 250 ms for it on top of Sonic's ~0.1 s to first audio; a full street walk on AirPods is the next measurement.
+- **English only for now, in one voice ("Daniel").** The voice is one setting (`SpeechCfg.voice_id`); Ink is asked for English.
 
 ## 🧠 Anthropic: Claude makes the careful calls
 
@@ -338,6 +338,8 @@ The module in [`dashboard/spacetimedb/src/index.ts`](dashboard/spacetimedb/src/i
 **The earpiece bridge** ([`earpiece/earpiece/spacetime.py`](earpiece/earpiece/spacetime.py)) mirrors every event the earpiece receives, plus what it says and hears and voice requests. High-rate frames (`obstacles`, `heartbeat`) are coalesced to two a second per source. Publishing never blocks: events go on a bounded queue that one thread POSTs as plain HTTP reducer calls, so a dead network can't stall the audio. `scripts/replay.py --spacetime` uses the same bridge.
 
 **The dashboard** ([`dashboard/src/App.tsx`](dashboard/src/App.tsx)) reads only from SpacetimeDB through a live subscription: the walker's position and trail (from the phone's GPS in the live demo), active hazards, the last things Kite said, device status and a live feed. It shows no camera video. The hosted database is `kite-sync-pl6rp` on Maincloud; a local `spacetime start` instance with the same module is the offline fallback.
+
+**Both ways, between people.** Type a message in the dashboard's "Message the walker" box and it becomes a row in SpacetimeDB; the earpiece's inbox picks it up within about a second, runs it through the same go-ahead filter as Claude (nothing on this channel can say "cross" or "go"), and speaks it in Cartesia's voice at info priority, so it never interrupts a warning. The safety corpus checks the filter on 20 everyday messages that must get through and 325 go-ahead phrasings that must not ([`CaregiverInbox`](earpiece/earpiece/spacetime.py), [`corpus.json`](earpiece/evals/corpus.json)).
 
 ## 📍 Moss: Kite's memory of the wearer's world
 

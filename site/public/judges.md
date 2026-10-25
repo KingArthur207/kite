@@ -90,6 +90,18 @@ The drone laptop, the earpiece and the dashboard share one SpacetimeDB module, a
 
 The dashboard shows the walker on a live map from the phone's GPS, the last thing Kite said and every stop, all read from SpacetimeDB through a subscription.
 
+**Both ways, between people**
+
+Type a message on the dashboard and it becomes a row in SpacetimeDB; the walker hears it about a second later in Cartesia's voice, after the same go-ahead filter as Claude.
+
+**The phone and the board, on any network**
+
+The walker's phone sends its GPS to the Kite receiver on the Arduino UNO Q or the laptop, which writes the newest position to SpacetimeDB, so routing and the dashboard read it from anywhere. The UNO Q posts a signed heartbeat there too, which is how the laptop finds the body camera on campus Wi-Fi with no IP to type.
+
+**Without it**
+
+Three machines with three versions of the truth, and a sync server to write and keep alive.
+
 **The phone and the board, on any network**
 
 The walker's phone sends its GPS to the Kite receiver on the Arduino UNO Q or the laptop, which writes the newest position to SpacetimeDB, so routing and the dashboard read it from anywhere. The UNO Q posts a signed heartbeat there too, which is how the laptop finds the body camera on campus Wi-Fi with no IP to type.

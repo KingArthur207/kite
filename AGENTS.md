@@ -17,16 +17,17 @@ with him.
 | Claude judgment, vision and the safety evals (`corpus.json` and its cases) | `judgment.py`, `vision.py`, `earpiece/evals/` | Anthropic. Add eval cases; never delete them |
 | Arduino UNO Q body camera, phone GPS, near-field priorities with three tones | `hardware/arduino/unoq_link/`, `phone/`, `perception/near/` | Best Hardware Hack, Most Technically Complex, People-First Social Impact |
 | Rust audio engine and the native sonar thread | `earpiece/native/` | Most Technically Complex |
+| The live dashboard's message to the walker, spoken in Cartesia's voice after the go-ahead filter | `dashboard/src/App.tsx` ("Message the walker"), `CaregiverInbox` in `earpiece/earpiece/spacetime.py`, the `caregiver` cases in `earpiece/evals/corpus.json` | SpacetimeDB ("instant sync between users"), Cartesia. Kept by Karthik on Oct 24 |
 
 Renaming user-facing words is fine. "Live dashboard", "walk view" and `?view=walk` are all welcome, as long as the
 feature underneath keeps working.
 
 ## Removed features: never restore them
 
-Eddy removed every caregiver feature on Oct 24: the Grok Voice caregiver line (`python -m earpiece caregiver`),
-the dashboard "Message the walker" box and the earpiece's `CaregiverInbox`, and Claude's `alert_caregiver` tool
-with its `caregiver_alert` events. Don't bring them back, in code, the README or the site, even from an older
-branch. The phone GPS stays, shown on the dashboard map for the demo.
+Removed on Oct 24: the Grok Voice caregiver line (`python -m earpiece caregiver`), and Claude's `alert_caregiver`
+tool with its `caregiver_alert` events. Don't bring them back, in code, the README or the site. The dashboard's
+message to the walker is **not** removed (see the table above). Its internal names (`CaregiverInbox`, source
+`caregiver`) are just names; the dashboard and the README call it a message from the live dashboard.
 
 ## The tracks
 
