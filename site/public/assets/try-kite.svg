@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="440" height="72" viewBox="0 0 440 72" role="img" aria-label="Try Kite at trykite.pages.dev">
+  <title>Try Kite at trykite.pages.dev</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1D2B6B"/>
+      <stop offset="1" stop-color="#25357F"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="438" height="70" rx="35" fill="url(#bg)"/>
+  <rect x="1" y="1" width="438" height="70" rx="35" fill="none" stroke="#E2448F" stroke-width="2"/>
+  <!-- the kite mark: navy and pink panels, a tail that curls in the wind -->
+  <g transform="translate(30 14)">
+    <path d="M14 2 L34 10 L26 32 Z" fill="#E2448F"/>
+    <path d="M14 2 L26 32 L6 24 Z" fill="#F4F1EA"/>
+    <path d="M14 2 L34 10 L26 32 L6 24 Z" fill="none" stroke="#F4F1EA" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M26 32 C 22 38, 14 36, 10 42" fill="none" stroke="#F4F1EA" stroke-width="1.6" stroke-linecap="round"/>
+  </g>
+  <text x="80" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="22" font-weight="700" fill="#FFFFFF">Try Kite</text>
+  <text x="178" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="18" font-weight="500" fill="#F7B9D5">trykite.pages.dev</text>
+  <circle cx="398" cy="36" r="20" fill="#E2448F"/>
+  <path d="M390 36 H405 M399 29 L406 36 L399 43" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
