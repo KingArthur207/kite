@@ -290,6 +290,14 @@ Voice is the whole interface for someone who cannot see a screen, so Cartesia is
 - **Stereo stays stereo.** Ink listens through the MacBook mic, because opening the AirPods mic would switch them to mono call mode and collapse Kite's directional cues.
 - **Latency budgeted end to end.** About 0.1 s to Sonic's first audio and 90 to 190 ms for Ink's final transcript leave room for Bluetooth's 150 to 250 ms inside Kite's warning time.
 
+**Known limitations**
+
+- **The neural voice needs internet.** Offline, cached safety phrases still play, but new sentences fall back to macOS `say`, which takes about 1.5 s and sounds robotic. Kite also falls back when Sonic's first chunk takes longer than 2.5 s (1 s for an uncached warning). It does not yet announce that the neural voice is offline.
+- **Speech recognition has no offline fallback.** Kite says "Voice commands are offline." Stem presses and typed commands (`t <words>`) still work.
+- **The AirPods mic is off by default.** Opening it switches AirPods into mono call mode, which would collapse the directional cues, so Kite records from the MacBook mic (`--mic airpods` overrides this).
+- **Not yet tested on real AirPods in a full walk.** Bluetooth adds its own delay on top of ours (the config budgets 150 to 250 ms).
+- **English only**, one voice ("Daniel").
+
 ## 🧠 Anthropic: Claude makes the careful calls
 
 **Who it is for.** Blind and low-vision pedestrians who walk city streets alone, for example in San Francisco, where Kite's sample walk runs up Lyon Street to the Palace of Fine Arts. They need to hear about the crowd at the crossing or the sign at head height before they reach it, in a sentence rather than a list of detections.
