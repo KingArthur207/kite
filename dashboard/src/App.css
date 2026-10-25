@@ -266,6 +266,39 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 .present .tally { font-size: 1rem; }
 .present .who-acted { font-size: .95rem; }
 
+/* Analytics view (default): the map beside both live cameras, a stats strip below. Sized for a 16:9 screen. */
+.analytics { flex: 1; min-height: 0; display: grid; gap: 14px; padding: 0 24px 20px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto; }
+.analytics .map { grid-row: 1 / 3; min-height: 0; }
+.video-pane { position: relative; margin: 0; min-height: 0; background: #0A0A0B; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.video-pane img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.video-empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 1.5rem; color: var(--ink-2); overflow-wrap: anywhere; }
+.video-empty p { margin: 0; }
+.video-pane figcaption { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; gap: .5rem; pointer-events: none; }
+.video-label, .video-state { background: rgba(0, 0, 0, .62); backdrop-filter: blur(8px); border-radius: 999px; padding: .22rem .7rem; font-size: .82rem; font-weight: 600; }
+.video-state { display: inline-flex; align-items: center; gap: .4rem; color: var(--ink-2); }
+.video-state i { width: 7px; height: 7px; border-radius: 50%; background: #636366; }
+.video-state.live { color: var(--ok-text); } .video-state.live i { background: var(--ok); }
+.stats { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, .7fr)) minmax(0, 2.4fr) minmax(0, 1.5fr); gap: 10px; }
+.stat { background: var(--card); border-radius: 16px; padding: 12px 16px; min-width: 0; box-shadow: var(--shadow); }
+.stat h2 { margin: 0 0 .15rem; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.stat-value { margin: 0; font-size: 1.55rem; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-value.accent { color: var(--accent-text); } .stat-value.warn { color: var(--warn-text); }
+.stat-sub { margin: 0; font-size: .8rem; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat .spoken-now { margin: 0; font-size: 1.1rem; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.stat .spoken-now.is-stop { color: var(--stop-text); }
+.feed-settings { position: relative; }
+.feed-settings summary { list-style: none; cursor: pointer; background: var(--card); border: 1px solid var(--edge); border-radius: 999px; padding: .5rem 1rem; font-size: .9rem; font-weight: 500; min-height: 40px; box-sizing: border-box; display: flex; align-items: center; }
+.feed-settings summary::-webkit-details-marker { display: none; }
+.feed-settings form { position: absolute; right: 0; top: calc(100% + 8px); z-index: 1000; width: 26rem; display: flex; flex-direction: column; gap: .7rem;
+  background: var(--sunk); border: 1px solid var(--edge); border-radius: 16px; padding: 14px 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, .6); }
+.feed-settings label { display: flex; flex-direction: column; gap: .3rem; font-size: .8rem; color: var(--ink-2); }
+.feed-settings input { font: .85rem ui-monospace, "SF Mono", monospace; color: var(--ink); background: var(--card); border: 1px solid var(--edge); border-radius: 10px; padding: .5rem .6rem; }
+.feed-settings button { align-self: flex-end; }
+.present .analytics { padding-top: 6px; }
+.present .stat-value { font-size: 1.8rem; }
+.present .stat .spoken-now { font-size: 1.3rem; }
+
 /* Narrow screens (a caregiver's phone): one scrolling column, the status first. */
 @media (max-width: 900px) {
   .app { height: auto; min-height: 100vh; }
@@ -274,6 +307,9 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
   .header-actions { margin-left: auto; }
   .header-actions button { padding: .4rem .8rem; }
   .banner { margin: 0 16px 12px; }
+  .analytics { display: flex; flex-direction: column; padding: 0 16px 24px; }
+  .analytics .map { height: 56vh; flex: none; } .video-pane { aspect-ratio: 16 / 9; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stat.wide { grid-column: 1 / -1; }
   .layout, .present .layout { display: flex; flex-direction: column; gap: 14px; padding: 0 16px 24px; }
   .main-col, aside { display: contents; }
   .hero { order: -3; }

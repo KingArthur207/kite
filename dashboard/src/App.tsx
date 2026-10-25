@@ -9,12 +9,15 @@ import {
   type Ev, type Moment, type Payload, type Who,
 } from './timeline';
 import { Badge, LiveState, StopCard, Timeline } from './Reveal';
+import { FeedSettings, VideoPane, useFeeds } from './Feeds';
 import {
   MAX_MESSAGE, QUIET_S, UNHEARD_AFTER_S, ago, ageS, blockedWord, deliveryOf, direction, facing, humanize,
   linkOf, meters, relative, type Link,
 } from './view';
 import './App.css';
 
+// Default (analytics) view: what Kite knows (phones on the map, hazards, spoken lines, rates) beside the walker's
+// and the drone's live camera feeds. `?view=caregiver` keeps the old caregiver dashboard below.
 // Caregiver dashboard: live view of the shared Kite world state, plus short messages to the walker
 // (a `say` from source `caregiver`; the earpiece polls for them and speaks them). No camera video (privacy).
 // Press P for presentation mode (the reveal): no raw feed or controls, bigger map, timeline and last line.
@@ -50,6 +53,7 @@ const SHOWN_MESSAGES = 3;
 const PRESENT_SOURCES = 6;   // busiest sources shown in presentation mode
 // Moment colours on the map; stops are always red.
 const PIN_COLOR: Record<string, string> = { stop: '#FF453A', help: '#FF453A', kite: '#63E6E2', claude: '#FF8A5B', caregiver: '#64D2FF' };
+const CAREGIVER = new URLSearchParams(location.search).get('view') === 'caregiver';
 const FIXTURE = fixtureOn();   // ?fixture=two-phones in dev: fake phones rendered locally, never written to SpacetimeDB
 
 const toEv = (r: Row): Ev => ({ id: r.id?.toString() ?? r.key ?? '', type: r.type, source: r.source, priority: r.priority, t: Number(r.t.toMillis()), p: parse(r.payload) });
@@ -114,6 +118,7 @@ function App() {
   const [everLive, setEverLive] = useState(false);
   const [polite, announce] = useAnnouncer();
   const [urgent, announceUrgent] = useAnnouncer();
+  const [feeds, saveFeeds] = useFeeds();
 
   useEffect(() => { if (conn.isActive) setEverLive(true); }, [conn.isActive]);
   const link = linkOf(conn.isActive, everLive, conn.connectionError);
@@ -135,8 +140,18 @@ function App() {
   }, []);
   useEffect(() => {
     history.replaceState(null, '', present ? '#present' : location.pathname + location.search);
-    document.title = present ? 'Kite: the walk' : 'Kite caregiver dashboard';
+    document.title = !CAREGIVER ? 'Kite live' : present ? 'Kite: the walk' : 'Kite caregiver dashboard';
+    // The analytics view presents full-screen; Esc leaves full screen, which leaves presentation mode too.
+    if (CAREGIVER) return;
+    if (present && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+    else if (!present && document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }, [present]);
+  useEffect(() => {
+    if (CAREGIVER) return;
+    const onFs = () => { if (!document.fullscreenElement) setPresent(false); };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
 
   // Parse every payload once per table change, not once per render (the clock re-renders every second).
   const fixtureTick = FIXTURE ? Math.floor(now / 1000) : 0;
@@ -283,12 +298,13 @@ function App() {
     <div className={`app ${present ? 'present' : ''}`}>
       <header>
         <img className="mark" src={`${import.meta.env.BASE_URL}kite-mark.svg`} alt="" width="34" height="34" />
-        <h1>Kite <span className="subtitle">{present ? 'The walk' : 'Caregiver'}</span></h1>
+        <h1>Kite <span className="subtitle">{!CAREGIVER ? 'live' : present ? 'The walk' : 'Caregiver'}</span></h1>
         <span className={`conn ${link}`} role="status">
           <i aria-hidden="true" />{LINK_TEXT[link]}<span className="conn-via"> · SpacetimeDB</span>
         </span>
         {FIXTURE && <span className="fixture-chip">Fixture data</span>}
         <span className="header-actions">
+          {!CAREGIVER && !present && <FeedSettings feeds={feeds} onSave={saveFeeds} />}
           <button type="button" className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
             aria-keyshortcuts="P" title="Presentation mode (P, Esc to leave)">{present ? 'Exit' : 'Present'} <kbd aria-hidden="true">P</kbd></button>
           {!present && <button type="button" onClick={onClear} disabled={!live}>Clear run</button>}
@@ -305,7 +321,7 @@ function App() {
         <div className="banner quiet">No device has written for {ago(quietS).replace(' ago', '')}. The walk may be over, or the devices are offline.</div>
       ) : null}
 
-      {helpOpen && (
+      {CAREGIVER && helpOpen && (
         <div className="banner help">
           <strong>The walker asked for help</strong> <span>“{helpOpen.text}”</span>
           <span className="muted">{ago(ageS(now, helpOpen.t))}</span>
@@ -316,6 +332,46 @@ function App() {
         </div>
       )}
 
+      {!CAREGIVER ? (
+        <main className="analytics">
+          <WalkMap clients={clients} pose={pose} follow={follow} onFollow={setFollow} hazards={hazardMarks} beacon={beacon}
+            pins={pins} focusId={focusId} onPick={setFocusId} initialView="all" waiting={waiting} />
+          <VideoPane label="Walker camera" param="webcam" src={feeds.webcam} />
+          <VideoPane label="Drone camera" param="drone" src={feeds.drone} />
+          <div className="stats" role="group" aria-label="What Kite knows right now">
+            <section className="stat">
+              <h2>Phones live</h2>
+              <p className={`stat-value ${liveCount ? 'accent' : ''}`}>{liveCount}</p>
+              <p className="stat-sub">{clients.length - liveCount ? `${clients.length - liveCount} quiet` : hero.word}</p>
+            </section>
+            <section className="stat">
+              <h2>Accuracy</h2>
+              <p className="stat-value">{primary ? accuracyText(primary.fix) || '–' : '–'}</p>
+              <p className="stat-sub">{primary ? primary.name : 'No fix yet'}</p>
+            </section>
+            <section className="stat">
+              <h2>Speed</h2>
+              <p className="stat-value">{primary?.fix.speed != null ? `${primary.fix.speed.toFixed(1)} m/s` : '–'}</p>
+              <p className="stat-sub">{primary ? (speedText(primary.fix) ? 'Walking' : 'Standing') : '–'}</p>
+            </section>
+            <section className="stat">
+              <h2>Events/min</h2>
+              <p className="stat-value">{capped ? '≥' : ''}{stats.perMin}</p>
+              <p className="stat-sub">{stats.sources.length} sources</p>
+            </section>
+            <section className="stat wide">
+              <h2>Kite just said {speaker && <Badge who={speaker} />}</h2>
+              {lastSpoken ? <p className={`spoken-now ${isStopText(spokenText) ? 'is-stop' : ''}`}>“{spokenText}” <span className="muted small">{ago(ageS(now, lastSpoken.t))}</span></p>
+                : <p className="stat-sub">{haveData ? 'Nothing spoken yet.' : 'Loading…'}</p>}
+            </section>
+            <section className="stat wide">
+              <h2>Active hazards</h2>
+              <p className={`stat-value ${hazardList.length ? 'warn' : ''}`}>{hazardList.length}</p>
+              <p className="stat-sub">{hazardList.length ? hazardList.slice(0, 3).map(([, e]) => [kindOf(e.p), whereOf(e.p)].filter(Boolean).join(' ')).join(' · ') : 'None right now'}</p>
+            </section>
+          </div>
+        </main>
+      ) : (
       <main className="layout">
         <div className="main-col">
           <WalkMap clients={clients} pose={pose} follow={follow} onFollow={setFollow} hazards={hazardMarks} beacon={beacon}
@@ -460,6 +516,7 @@ function App() {
           )}
         </aside>
       </main>
+      )}
 
       <div className="sr-only" aria-live="polite" aria-atomic="true">{polite}</div>
       <div className="sr-only" aria-live="assertive" aria-atomic="true">{urgent}</div>
