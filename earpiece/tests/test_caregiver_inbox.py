@@ -316,3 +316,13 @@ def test_the_poll_thread_backs_off_logs_sparingly_and_drops_its_token(monkeypatc
     assert identity_calls["n"] == 6                       # the token is dropped after each failure
     assert sleeps[:5] == [2.0, 4.0, 8.0, 16.0, 30.0]      # doubling, capped at MAX_BACKOFF_S
     assert sleeps[5:] == [1.0, 1.0]                       # back to the normal interval once it works
+
+
+def test_inbox_stays_off_without_a_token_unless_opted_in():
+    from earpiece.spacetime import caregiver_inbox_allowed
+
+    assert not caregiver_inbox_allowed({})
+    assert not caregiver_inbox_allowed({"KITE_CAREGIVER_TOKEN": "   "})
+    assert not caregiver_inbox_allowed({"KITE_CAREGIVER_ALLOW_UNSIGNED": "true"})
+    assert caregiver_inbox_allowed({"KITE_CAREGIVER_TOKEN": "a" * 32})
+    assert caregiver_inbox_allowed({"KITE_CAREGIVER_ALLOW_UNSIGNED": "1"})
