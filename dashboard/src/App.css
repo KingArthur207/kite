@@ -49,7 +49,7 @@ header h1 .subtitle { font-weight: 450; margin-left: .35rem; color: var(--ink-3)
 .conn { display: inline-flex; align-items: center; gap: .45rem; font-size: .875rem; font-weight: 550; color: var(--ink-2); }
 .conn i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .conn.live i { background: var(--ok); }
-.conn.connecting i, .conn.reconnecting i { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+.conn.connecting i, .conn.reconnecting i { background: var(--warn); animation: pulse 1.2s ease-in-out 4; }
 .conn.offline { color: var(--stop-text); } .conn.offline i { background: var(--stop); }
 .conn-via { font-weight: 400; color: var(--ink-3); }
 .fixture-chip { font-size: .75rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--accent-text); background: var(--accent-soft); border-radius: 999px; padding: .15rem .6rem; }
@@ -76,7 +76,7 @@ h2 { font-size: .72rem; font-weight: 650; letter-spacing: .09em; text-transform:
 .ring i { width: 16px; height: 16px; border-radius: 50%; background: var(--ink-3); }
 .hero.live .ring { border-color: rgba(48, 209, 88, .35); }
 .hero.live .ring i { background: var(--accent); box-shadow: 0 0 0 6px var(--accent-soft); }
-.hero.live .ring::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--accent); animation: ripple 2.4s ease-out infinite; }
+.hero.live .ring::after { content: ""; position: absolute; inset: -1px; border-radius: 50%; border: 1px solid var(--accent); animation: ripple 2.4s ease-out 2 forwards; }
 .hero.warn .ring { border-color: rgba(255, 159, 10, .45); } .hero.warn .ring i { background: var(--warn); }
 @keyframes ripple { from { transform: scale(.6); opacity: .7; } to { transform: scale(1.35); opacity: 0; } }
 .hero-word { margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; }
