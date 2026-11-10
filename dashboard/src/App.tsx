@@ -83,6 +83,10 @@ function summary(type: string, p: Payload): string {
 }
 
 
+// P toggles presentation mode. A single-letter shortcut can fire by accident for speech-input and switch users,
+// so the header has a switch that turns it off (WCAG 2.1.4); the choice is kept in this browser.
+const KEYS_STORE = 'kite.keys';
+const readKeys = () => { try { return localStorage.getItem(KEYS_STORE) !== 'off'; } catch { return true; } };
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 
 const LINK_TEXT: Record<Link, string> = { live: 'Live', connecting: 'Connecting…', reconnecting: 'Reconnecting…', offline: 'Offline' };
@@ -116,6 +120,13 @@ function App() {
   const [polite, announce] = useAnnouncer();
   const [urgent, announceUrgent] = useAnnouncer();
   const [feeds, saveFeeds] = useFeeds();
+  const [keysOn, setKeysOn] = useState(readKeys);
+  const keysRef = useRef(keysOn);
+  keysRef.current = keysOn;
+  const toggleKeys = (on: boolean) => {
+    setKeysOn(on);
+    try { localStorage.setItem(KEYS_STORE, on ? 'on' : 'off'); } catch { /* private mode: this page only */ }
+  };
 
   useEffect(() => { if (conn.isActive) setEverLive(true); }, [conn.isActive]);
   const link = linkOf(conn.isActive, everLive, conn.connectionError);
@@ -129,7 +140,7 @@ function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
-      if (e.key.toLowerCase() === 'p') setPresent(on => !on);
+      if (e.key.toLowerCase() === 'p') { if (keysRef.current) setPresent(on => !on); }
       else if (e.key === 'Escape') setPresent(false);
     };
     window.addEventListener('keydown', onKey);
@@ -227,6 +238,11 @@ function App() {
       announce(`${SAID_BY[speaker]}: ${spokenText.replace(/^message:\s*/i, '')}`);
   }, [ready, lastSpoken?.id, lastSpoken?.t, lastStop?.id]);
 
+  // The quiet banner's count ticks every second, so screen readers hear one steady sentence when it appears.
+  useEffect(() => {
+    if (quiet) announce(`No device has written for over ${QUIET_S} seconds. The walk may be over, or the devices are offline.`);
+  }, [quiet]);
+
   // Caregiver messages: the newest few from the table, plus local ones still on their way.
   const sentRows = sorted.filter(e => e.type === 'say' && e.source === 'caregiver').slice(0, SHOWN_MESSAGES);
   const arrivedKeys = useMemo(() => new Set(sorted.filter(e => e.type === 'say' && e.source === 'caregiver').map(e => str(e.p.key))), [sorted]);
@@ -299,8 +315,14 @@ function App() {
         {FIXTURE && <span className="fixture-chip">Fixture data</span>}
         <span className="header-actions">
           {!CAREGIVER && !present && <FeedSettings feeds={feeds} onSave={saveFeeds} />}
+          {!present && (
+            <label className="keys-toggle">
+              <input type="checkbox" checked={keysOn} onChange={e => toggleKeys(e.target.checked)} />P shortcut
+            </label>
+          )}
           <button type="button" className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
-            aria-keyshortcuts="P" title="Presentation mode (P, Esc to leave)">{present ? 'Exit' : 'Present'} <kbd aria-hidden="true">P</kbd></button>
+            aria-keyshortcuts={keysOn ? 'P' : undefined} title={keysOn ? 'Presentation mode (P, Esc to leave)' : 'Presentation mode (Esc to leave)'}>
+            {present ? 'Exit' : 'Present'}{keysOn && <> <kbd aria-hidden="true">P</kbd></>}</button>
           {!present && <button type="button" onClick={onClear} disabled={!live}>Clear run</button>}
         </span>
       </header>
@@ -437,7 +459,7 @@ function App() {
                 <button type="submit" disabled={!live || sending || !draftText || !!blocked}>{sending ? 'Sending…' : 'Send'}</button>
               </form>
               <div className="msg-under">
-                <span id="msg-blocked" className="blocked">{blocked && `Kite won't speak this: “${blocked}” could sound like permission to move.`}</span>
+                <span id="msg-blocked" className="blocked" aria-live="polite">{blocked && `Kite won't speak this: “${blocked}” could sound like permission to move.`}</span>
                 <span id="msg-count" className={`count ${draft.length > MAX_MESSAGE - 20 ? 'near' : ''}`}>
                   {draft.length} / {MAX_MESSAGE}<span className="sr-only"> characters</span>
                 </span>

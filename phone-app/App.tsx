@@ -124,16 +124,16 @@ export default function App() {
           <StatusBar style="light" />
           <View style={styles.brandRow} accessible={false}>
             <Image source={require('./assets/icon.png')} style={styles.mark} accessibilityIgnoresInvertColors />
-            <Text style={styles.brand} maxFontSizeMultiplier={1.3}>
+            <Text style={styles.brand} maxFontSizeMultiplier={2}>
               Kite
             </Text>
           </View>
           <View style={[styles.middle, pressed && styles.pressed]}>
             <Beacon mode={mode} />
-            <Text style={styles.word} maxFontSizeMultiplier={1.4}>
+            <Text style={styles.word} maxFontSizeMultiplier={2} numberOfLines={1} adjustsFontSizeToFit>
               {word}
             </Text>
-            <Text style={styles.sub} maxFontSizeMultiplier={1.4}>
+            <Text style={styles.sub} maxFontSizeMultiplier={2}>
               {sub}
             </Text>
           </View>
@@ -161,10 +161,10 @@ const TINT: Record<Mode, string> = { idle: '#636366', searching: '#FFFFFF', conn
 function Stat({ value, label }: { value: string; label: string }) {
   return (
     <View style={styles.stat}>
-      <Text style={styles.statValue} maxFontSizeMultiplier={1.3}>
+      <Text style={styles.statValue} maxFontSizeMultiplier={2}>
         {value}
       </Text>
-      <Text style={styles.statLabel} maxFontSizeMultiplier={1.3}>
+      <Text style={styles.statLabel} maxFontSizeMultiplier={2}>
         {label.toUpperCase()}
       </Text>
     </View>
@@ -172,20 +172,24 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 // A ring with a dot in it. Searching: ripples spread out from the dot. Connected: green, still, softly lit.
-// Lost: amber, pulsing slowly. Idle: grey.
+// Lost: amber, pulsing slowly. Idle: grey. The ripples play for under 5 s after each change and then settle,
+// so nothing keeps moving on screen while the app waits (WCAG 2.2.2); the spoken and haptic cues carry the state.
 function Beacon({ mode }: { mode: Mode }) {
   const t = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
-  const moving = (mode === 'searching' || mode === 'lost') && !reduceMotion;
+  const [settled, setSettled] = useState(false);
+  const moving = (mode === 'searching' || mode === 'lost') && !reduceMotion && !settled;
   const tint = TINT[mode];
 
+  useEffect(() => setSettled(false), [mode]);
   useEffect(() => {
     t.setValue(0);
     if (!moving) return;
     const loop = Animated.loop(
       Animated.timing(t, { toValue: 1, duration: mode === 'lost' ? 2400 : 1800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      { iterations: 2 },
     );
-    loop.start();
+    loop.start(({ finished }) => finished && setSettled(true));
     return () => loop.stop();
   }, [moving, mode, t]);
 
@@ -235,9 +239,9 @@ const styles = StyleSheet.create({
   word: { color: C.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.6, textAlign: 'center' },
   sub: { color: 'rgba(235, 235, 245, 0.6)', fontSize: 17, marginTop: 8, textAlign: 'center' },
   card: { flexDirection: 'row', backgroundColor: '#1C1C1E', borderRadius: 20, paddingVertical: 18 },
-  cardOff: { opacity: 0.5 },
+  cardOff: { opacity: 0.85 },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { color: C.text, fontSize: 22, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  statLabel: { color: 'rgba(235, 235, 245, 0.45)', fontSize: 12, fontWeight: '600', letterSpacing: 0.8, marginTop: 4 },
+  statLabel: { color: 'rgba(235, 235, 245, 0.6)', fontSize: 12, fontWeight: '600', letterSpacing: 0.8, marginTop: 4 },
   divider: { width: StyleSheet.hairlineWidth, backgroundColor: '#3A3A3C', marginVertical: 4 },
 });
