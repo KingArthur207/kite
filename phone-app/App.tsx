@@ -124,16 +124,16 @@ export default function App() {
           <StatusBar style="light" />
           <View style={styles.brandRow} accessible={false}>
             <Image source={require('./assets/icon.png')} style={styles.mark} accessibilityIgnoresInvertColors />
-            <Text style={styles.brand} maxFontSizeMultiplier={1.3}>
+            <Text style={styles.brand} maxFontSizeMultiplier={2}>
               Kite
             </Text>
           </View>
           <View style={[styles.middle, pressed && styles.pressed]}>
             <Beacon mode={mode} />
-            <Text style={styles.word} maxFontSizeMultiplier={1.4}>
+            <Text style={styles.word} maxFontSizeMultiplier={2} numberOfLines={1} adjustsFontSizeToFit>
               {word}
             </Text>
-            <Text style={styles.sub} maxFontSizeMultiplier={1.4}>
+            <Text style={styles.sub} maxFontSizeMultiplier={2}>
               {sub}
             </Text>
           </View>
@@ -161,10 +161,10 @@ const TINT: Record<Mode, string> = { idle: '#636366', searching: '#FFFFFF', conn
 function Stat({ value, label }: { value: string; label: string }) {
   return (
     <View style={styles.stat}>
-      <Text style={styles.statValue} maxFontSizeMultiplier={1.3}>
+      <Text style={styles.statValue} maxFontSizeMultiplier={2}>
         {value}
       </Text>
-      <Text style={styles.statLabel} maxFontSizeMultiplier={1.3}>
+      <Text style={styles.statLabel} maxFontSizeMultiplier={2}>
         {label.toUpperCase()}
       </Text>
     </View>
