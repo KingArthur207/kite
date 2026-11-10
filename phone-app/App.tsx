@@ -235,9 +235,9 @@ const styles = StyleSheet.create({
   word: { color: C.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.6, textAlign: 'center' },
   sub: { color: 'rgba(235, 235, 245, 0.6)', fontSize: 17, marginTop: 8, textAlign: 'center' },
   card: { flexDirection: 'row', backgroundColor: '#1C1C1E', borderRadius: 20, paddingVertical: 18 },
-  cardOff: { opacity: 0.5 },
+  cardOff: { opacity: 0.85 },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { color: C.text, fontSize: 22, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  statLabel: { color: 'rgba(235, 235, 245, 0.45)', fontSize: 12, fontWeight: '600', letterSpacing: 0.8, marginTop: 4 },
+  statLabel: { color: 'rgba(235, 235, 245, 0.6)', fontSize: 12, fontWeight: '600', letterSpacing: 0.8, marginTop: 4 },
   divider: { width: StyleSheet.hairlineWidth, backgroundColor: '#3A3A3C', marginVertical: 4 },
 });
