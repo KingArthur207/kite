@@ -237,9 +237,9 @@ tr:last-child td, tr:last-child th { border-bottom: 0; }
 .when { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 650; font-size: .85rem; }
 .when .muted { font-weight: 400; font-size: .75rem; margin-left: .2rem; }
 .moment-kind { font-size: .7rem; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.moment:hover .moment-kind, .moment.on .moment-kind { color: var(--ink-2); }   /* ink-3 is under 4.5:1 on #3A3A3C */
 .k-stop .moment-kind, .k-help .moment-kind { color: var(--stop-text); }
 .moment-text { font-weight: 550; line-height: 1.3; text-wrap: pretty; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.moment:hover .moment-kind, .moment.on .moment-kind { color: var(--ink-2); }   /* ink-3 is under 4.5:1 on #3A3A3C */
 .moment-detail { font-size: .78rem; }
 /* The three-line clamp lifts on the card in focus, under the pointer or picked, so a long line (or wider text spacing) is never lost. */
 .moment:focus-visible .moment-text, .moment:hover .moment-text, .moment.on .moment-text { display: block; overflow: visible; }

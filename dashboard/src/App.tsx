@@ -315,17 +315,17 @@ function App() {
         {FIXTURE && <span className="fixture-chip">Fixture data</span>}
         <span className="header-actions">
           {!CAREGIVER && !present && <FeedSettings feeds={feeds} onSave={saveFeeds} />}
+          {!present && (
+            <label className="keys-toggle">
+              <input type="checkbox" checked={keysOn} onChange={e => toggleKeys(e.target.checked)} />P shortcut
+            </label>
+          )}
           <button type="button" className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
             aria-keyshortcuts={keysOn ? 'P' : undefined} title={keysOn ? 'Presentation mode (P, Esc to leave)' : 'Presentation mode (Esc to leave)'}>
             {present ? 'Exit' : 'Present'}{keysOn && <> <kbd aria-hidden="true">P</kbd></>}</button>
           {!present && <button type="button" onClick={onClear} disabled={!live}>Clear run</button>}
         </span>
       </header>
-          {!present && (
-            <label className="keys-toggle">
-              <input type="checkbox" checked={keysOn} onChange={e => toggleKeys(e.target.checked)} />P shortcut
-            </label>
-          )}
 
       {link === 'reconnecting' || link === 'offline' ? (
         <div className="banner warn">
