@@ -84,6 +84,23 @@ function Camera({ view, setView, target, live, frame }: {
   return null;
 }
 
+// Leaflet makes its container focusable (arrow keys pan, + and - zoom) but gives it no role or name, so a
+// screen reader landed on an unnamed group of tooltip text.
+function MapAccess() {
+  const map = useMap();
+  useEffect(() => {
+    const el = map.getContainer();
+    el.setAttribute('role', 'application');
+    el.setAttribute('aria-roledescription', 'map');
+    el.setAttribute('aria-label', 'Map. Arrow keys move it, plus and minus zoom.');
+  }, [map]);
+  return null;
+}
+
+// Map pins repeat the timeline cards, which are the keyboard and screen reader route to the same moments,
+// so the pins' SVG paths stay out of the tab order instead of being unnamed stops.
+const untabbable = (e: L.LeafletEvent) => (e.target as L.Path).getElement()?.setAttribute('tabindex', '-1');
+
 // Clicking a timeline moment flies there and pauses auto-follow so the map stays on it.
 function FocusOn({ at, setView }: { at?: LatLng; setView: (v: MapView) => void }) {
   const map = useMap();
@@ -144,6 +161,7 @@ export function WalkMap({ clients, pose, follow, onFollow, hazards, beacon, pins
           maxNativeZoom={19}
           maxZoom={MAX_ZOOM}
         />
+        <MapAccess />
         <Camera view={view} setView={setView} target={target} live={liveRef.current} frame={frameRef.current} />
         {clients.map(c => {
           const at: LatLng = [c.fix.lat, c.fix.lng];
@@ -186,7 +204,7 @@ export function WalkMap({ clients, pose, follow, onFollow, hazards, beacon, pins
           const on = pin.id === focusId;
           return (
             <CircleMarker key={`${pin.id}-${on}`} center={pin.at} radius={on ? 10 : pin.stop ? 7 : 4}
-              eventHandlers={{ click: () => onPick(pin.id) }}
+              eventHandlers={{ add: untabbable, click: () => onPick(pin.id) }}
               pathOptions={{ color: '#000', weight: on ? 3 : 2, fillColor: pin.color, fillOpacity: 1 }}>
               <Tooltip permanent={on || pin.stop} direction="top" offset={[0, -8]}
                 className={`map-label ${pin.stop ? 'p-critical' : ''} ${on ? 'focus' : ''}`}>
