@@ -172,20 +172,24 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 // A ring with a dot in it. Searching: ripples spread out from the dot. Connected: green, still, softly lit.
-// Lost: amber, pulsing slowly. Idle: grey.
+// Lost: amber, pulsing slowly. Idle: grey. The ripples play for under 5 s after each change and then settle,
+// so nothing keeps moving on screen while the app waits (WCAG 2.2.2); the spoken and haptic cues carry the state.
 function Beacon({ mode }: { mode: Mode }) {
   const t = useRef(new Animated.Value(0)).current;
   const reduceMotion = useReduceMotion();
-  const moving = (mode === 'searching' || mode === 'lost') && !reduceMotion;
+  const [settled, setSettled] = useState(false);
+  const moving = (mode === 'searching' || mode === 'lost') && !reduceMotion && !settled;
   const tint = TINT[mode];
 
+  useEffect(() => setSettled(false), [mode]);
   useEffect(() => {
     t.setValue(0);
     if (!moving) return;
     const loop = Animated.loop(
       Animated.timing(t, { toValue: 1, duration: mode === 'lost' ? 2400 : 1800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      { iterations: 2 },
     );
-    loop.start();
+    loop.start(({ finished }) => finished && setSettled(true));
     return () => loop.stop();
   }, [moving, mode, t]);
 
