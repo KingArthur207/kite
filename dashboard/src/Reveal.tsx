@@ -120,7 +120,9 @@ export function Timeline({ moments, walkStart, walkEnd, focusId, onPick }: {
               <li key={m.id} data-id={m.id}>
                 <button type="button" className={`moment k-${m.kind} w-${m.who} ${m.id === focusId ? 'on' : ''}`}
                   aria-pressed={m.id === focusId} title={m.pos ? 'Show on the map' : 'No position recorded at this time'}
-                  onClick={() => onPick(m.id === focusId ? undefined : m.id)}>
+                  onClick={() => onPick(m.id === focusId ? undefined : m.id)}
+                  // Tabbing along the strip: scroll snapping can leave the focused card half cut off, so bring it fully in.
+                  onFocus={e => e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' })}>
                   <span className="moment-top">
                     <span className="when">{walkStart != null ? offset(m.t, walkStart) : ''} <span className="muted">{clock(m.t)}</span></span>
                     <Badge who={m.who} />
