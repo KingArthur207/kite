@@ -83,6 +83,10 @@ function summary(type: string, p: Payload): string {
 }
 
 
+// P toggles presentation mode. A single-letter shortcut can fire by accident for speech-input and switch users,
+// so the header has a switch that turns it off (WCAG 2.1.4); the choice is kept in this browser.
+const KEYS_STORE = 'kite.keys';
+const readKeys = () => { try { return localStorage.getItem(KEYS_STORE) !== 'off'; } catch { return true; } };
 const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 
 const LINK_TEXT: Record<Link, string> = { live: 'Live', connecting: 'Connecting…', reconnecting: 'Reconnecting…', offline: 'Offline' };
@@ -116,6 +120,13 @@ function App() {
   const [polite, announce] = useAnnouncer();
   const [urgent, announceUrgent] = useAnnouncer();
   const [feeds, saveFeeds] = useFeeds();
+  const [keysOn, setKeysOn] = useState(readKeys);
+  const keysRef = useRef(keysOn);
+  keysRef.current = keysOn;
+  const toggleKeys = (on: boolean) => {
+    setKeysOn(on);
+    try { localStorage.setItem(KEYS_STORE, on ? 'on' : 'off'); } catch { /* private mode: this page only */ }
+  };
 
   useEffect(() => { if (conn.isActive) setEverLive(true); }, [conn.isActive]);
   const link = linkOf(conn.isActive, everLive, conn.connectionError);
@@ -129,7 +140,7 @@ function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
-      if (e.key.toLowerCase() === 'p') setPresent(on => !on);
+      if (e.key.toLowerCase() === 'p') { if (keysRef.current) setPresent(on => !on); }
       else if (e.key === 'Escape') setPresent(false);
     };
     window.addEventListener('keydown', onKey);
@@ -300,10 +311,16 @@ function App() {
         <span className="header-actions">
           {!CAREGIVER && !present && <FeedSettings feeds={feeds} onSave={saveFeeds} />}
           <button type="button" className="present-toggle" onClick={() => setPresent(on => !on)} aria-pressed={present}
-            aria-keyshortcuts="P" title="Presentation mode (P, Esc to leave)">{present ? 'Exit' : 'Present'} <kbd aria-hidden="true">P</kbd></button>
+            aria-keyshortcuts={keysOn ? 'P' : undefined} title={keysOn ? 'Presentation mode (P, Esc to leave)' : 'Presentation mode (Esc to leave)'}>
+            {present ? 'Exit' : 'Present'}{keysOn && <> <kbd aria-hidden="true">P</kbd></>}</button>
           {!present && <button type="button" onClick={onClear} disabled={!live}>Clear run</button>}
         </span>
       </header>
+          {!present && (
+            <label className="keys-toggle">
+              <input type="checkbox" checked={keysOn} onChange={e => toggleKeys(e.target.checked)} />P shortcut
+            </label>
+          )}
 
       {link === 'reconnecting' || link === 'offline' ? (
         <div className="banner warn">

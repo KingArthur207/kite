@@ -36,14 +36,16 @@ header button:hover:not(:disabled), .message button:hover:not(:disabled), .quick
 header button:active:not(:disabled), .quick button:active:not(:disabled), .message button:active:not(:disabled) { transform: scale(.97); }
 button:disabled { opacity: .45; cursor: not-allowed; }
 kbd { font: 600 .7rem ui-monospace, monospace; border: 1px solid var(--edge); border-radius: 5px; padding: 0 .3rem; margin-left: .35rem; color: var(--ink-3); }
-@media (hover: none) { kbd { display: none; } }
+@media (hover: none) { kbd, .keys-toggle { display: none; } }
+.keys-toggle { display: inline-flex; align-items: center; gap: .4rem; min-height: 40px; white-space: nowrap; font-size: .85rem; color: var(--ink-2); cursor: pointer; }
+.keys-toggle input { width: 1.1rem; height: 1.1rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
 
 /* Header: mark, name, connection, actions. */
 header { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem 1rem; padding: 14px 24px; }
 .mark { display: block; box-sizing: border-box; padding: 3px; border-radius: 9px; background: #F2F2F7; margin-right: .4rem; }
 header h1 { margin: 0 0 0 -.4rem; font-size: 1.3rem; font-weight: 650; letter-spacing: -.02em; }
 header h1 .subtitle { font-weight: 450; margin-left: .35rem; color: var(--ink-3); }
-.header-actions { margin-left: auto; display: flex; gap: .5rem; }
+.header-actions { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem; }
 .conn { display: inline-flex; align-items: center; gap: .45rem; font-size: .875rem; font-weight: 550; color: var(--ink-2); }
 .conn i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
 .conn.live i { background: var(--ok); }
