@@ -238,6 +238,11 @@ function App() {
       announce(`${SAID_BY[speaker]}: ${spokenText.replace(/^message:\s*/i, '')}`);
   }, [ready, lastSpoken?.id, lastSpoken?.t, lastStop?.id]);
 
+  // The quiet banner's count ticks every second, so screen readers hear one steady sentence when it appears.
+  useEffect(() => {
+    if (quiet) announce(`No device has written for over ${QUIET_S} seconds. The walk may be over, or the devices are offline.`);
+  }, [quiet]);
+
   // Caregiver messages: the newest few from the table, plus local ones still on their way.
   const sentRows = sorted.filter(e => e.type === 'say' && e.source === 'caregiver').slice(0, SHOWN_MESSAGES);
   const arrivedKeys = useMemo(() => new Set(sorted.filter(e => e.type === 'say' && e.source === 'caregiver').map(e => str(e.p.key))), [sorted]);
@@ -454,7 +459,7 @@ function App() {
                 <button type="submit" disabled={!live || sending || !draftText || !!blocked}>{sending ? 'Sending…' : 'Send'}</button>
               </form>
               <div className="msg-under">
-                <span id="msg-blocked" className="blocked">{blocked && `Kite won't speak this: “${blocked}” could sound like permission to move.`}</span>
+                <span id="msg-blocked" className="blocked" aria-live="polite">{blocked && `Kite won't speak this: “${blocked}” could sound like permission to move.`}</span>
                 <span id="msg-count" className={`count ${draft.length > MAX_MESSAGE - 20 ? 'near' : ''}`}>
                   {draft.length} / {MAX_MESSAGE}<span className="sr-only"> characters</span>
                 </span>
