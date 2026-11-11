@@ -3,10 +3,14 @@
 -r requirements.txt
 ultralytics>=8.4.185
 lap>=0.5.12
-torch
-torchvision
-transformers>=4.46
+# Floors exclude releases with published advisories (checked against OSV, Nov 2026).
+# torch < 2.13 has remote-code-execution advisories in torch.load among others.
+torch>=2.13.0
+torchvision>=0.28.0   # the release built for torch 2.13
+transformers>=5.10.1  # 5.10.0 was yanked; earlier 5.x have advisories
 huggingface_hub
-pillow
+pillow>=13.0.0        # 12.x and earlier carry image-decoder advisories
+# Floors for packages that only arrive indirectly (constraints never install anything).
+-c constraints-models.txt
 djitellopy>=2.5
 gdown>=5.2

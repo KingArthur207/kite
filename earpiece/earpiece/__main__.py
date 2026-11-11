@@ -76,12 +76,16 @@ def cmd_run(a) -> int:
 
     app.speaker.on_spoken = on_spoken
     if a.spacetime or cfg.net.spacetime_enabled:
-        from .spacetime import CaregiverInbox, SpacetimeBridge
+        from .spacetime import CaregiverInbox, SpacetimeBridge, caregiver_inbox_allowed
         app.bridges.append(SpacetimeBridge(cfg.net.spacetime_host, cfg.net.spacetime_db,
                                            source="earpiece", log=_log))
     app.start(prewarm=not a.no_prewarm)
     if a.spacetime or cfg.net.spacetime_enabled:
-        CaregiverInbox(app.handle, cfg.net.spacetime_host, cfg.net.spacetime_db, log=_log)
+        if caregiver_inbox_allowed(os.environ):
+            CaregiverInbox(app.handle, cfg.net.spacetime_host, cfg.net.spacetime_db, log=_log)
+        else:
+            _log("[caregiver] inbox off: set KITE_CAREGIVER_TOKEN (or KITE_CAREGIVER_ALLOW_UNSIGNED=1 "
+                 "on a private database) to let the dashboard talk to the walker")
     if not a.no_stem:
         app.gestures.enable_stem()
 

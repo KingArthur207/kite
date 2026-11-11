@@ -89,6 +89,19 @@ def sign_caregiver(token: str, text: str, ts_ms: int) -> dict:
     return {"ts": ts_ms, "sig": hmac.new(token.encode(), f"{ts_ms}:{text}".encode(), hashlib.sha256).hexdigest()}
 
 
+def caregiver_inbox_allowed(env) -> bool:
+    """Whether the earpiece may listen for caregiver messages at all.
+
+    The `event` table is public and `push` is open to any identity, so without
+    KITE_CAREGIVER_TOKEN any stranger could make the walker hear a message. The
+    inbox therefore stays off unless a token is set, or the operator opts in to
+    unsigned messages with KITE_CAREGIVER_ALLOW_UNSIGNED=1 (private database only).
+    """
+    if (env.get("KITE_CAREGIVER_TOKEN") or "").strip():
+        return True
+    return (env.get("KITE_CAREGIVER_ALLOW_UNSIGNED") or "").strip() == "1"
+
+
 def _identity(http: httpx.Client, host: str) -> str:
     r = http.post(f"{host}/v1/identity")
     r.raise_for_status()
